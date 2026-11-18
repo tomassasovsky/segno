@@ -12,3 +12,11 @@ tags:
   # which segno_engine's build hook builds for every test run, through the
   # device-free pump.
   fuzz:
+  # The Segno.vst3 editors' art (test/vst3_faces/vst3_faces_render_test.dart):
+  # renders only into the directory packages/segno_engine/vst3/build.sh
+  # names, so it skips everywhere else.
+  vst3-faces:
+  # A suite that registers fonts (test/vst3_faces) or other process-wide state
+  # later tests would inherit: `very_good test --optimization` (CI's build
+  # job) runs it in an isolate of its own instead of the shared bundle.
+  skip_very_good_optimization:

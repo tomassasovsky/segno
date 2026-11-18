@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 # Tests that segno-wifi-ctl owns the radio through NetworkManager and nothing
-# else (#468).
+# else (#468, #1843).
 #
 # The bug these exist to prevent was not a crash, it was a takeover. The helper
 # used to fall back to its own wpa_supplicant when an NM join failed, which
-# meant setting wlan0 `managed no` — and because the backend was then chosen by
+# meant setting wlan0 `managed no`, and because the backend was then chosen by
 # reading that same state, every later call picked the fallback again. A
 # console ended up running our supplicant and NetworkManager's dbus-owned one
 # at the same time, on one interface, forever. The access point saw it
 # reconnect every few seconds and nothing in any log said why.
 #
-# So these assert absence as much as behaviour: no second supplicant, no
-# `managed no`, and — because a shipped console is already in the broken state
-# — that the first run after an update repairs it.
+# NetworkManager runs wpa_supplicant itself now, as on Raspberry Pi OS
+# (#1843), so these assert absence as much as behaviour: no second
+# supplicant, no `managed no`.
 set -uo pipefail
 
 here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -38,6 +38,13 @@ case "\$*" in
     *"-f WIFI radio"*) printf 'enabled\n' ;;
     *"GENERAL.CONNECTION device show"*) printf 'GENERAL.CONNECTION:Studio\n' ;;
     *"IP4.ADDRESS device show"*) printf 'IP4.ADDRESS[1]:10.0.0.5/24\n' ;;
+    monitor)
+        # nmcli monitor's banner, then a join's device lines, then an end.
+        printf 'NetworkManager is running\n'
+        printf 'wlan0: connecting (prepare)\n'
+        printf "wlan0: using connection 'Studio \\"5G\\"'\n"
+        printf 'wlan0: connected\n'
+        ;;
     *) : ;;
 esac
 exit 0
@@ -111,22 +118,43 @@ check "never starts wpa_supplicant" no \
     "$([ -f "$work/supplicant-spawned" ] && echo yes || echo no)"
 teardown
 
-# --- repairing a console that already shipped with the bug ------------------
-
-echo "an interface left unmanaged is reclaimed"
+echo "a scan never switches the radio on"
 setup
-NM_STATE="10 (unmanaged)" run_ctl status
-check "hands wlan0 back to NetworkManager" yes \
-    "$(called_with 'device set wlan0 managed yes')"
-check "says so" yes \
-    "$(grep -q 'reclaiming' "$work/stderr" && echo yes || echo no)"
+# The page scans every few seconds while it is open (#1817); one landing just
+# after the Wi-Fi switch went off must not undo it.
+run_ctl scan
+check "no radio call" no "$(called_with 'radio wifi on')"
 teardown
 
-echo "a managed interface is left alone"
+echo "status says connected and not connecting"
 setup
 run_ctl status
-check "does not churn the managed state" no \
-    "$(called_with 'device set wlan0 managed yes')"
+check "connected" yes \
+    "$(grep -qF '"connected":true,"connecting":false,"ssid":"Studio"' "$work/stdout" && echo yes || echo no)"
+teardown
+
+echo "status names the network an activation is joining"
+setup
+NM_STATE="50 (connecting (configuring))" run_ctl status
+check "connecting to Studio" yes \
+    "$(grep -qF '"connected":false,"connecting":true,"ssid":"Studio"' "$work/stdout" && echo yes || echo no)"
+teardown
+
+echo "monitor streams one JSON event per NetworkManager change"
+setup
+run_ctl monitor
+check "skips the banner, keeps each change, escapes quotes" \
+    "$(printf '%s\n' '{"event":"wlan0: connecting (prepare)"}' '{"event":"wlan0: using connection '"'"'Studio \"5G\"'"'"'"}' '{"event":"wlan0: connected"}')" \
+    "$(cat "$work/stdout")"
+teardown
+
+echo "no verb hands the interface back and forth"
+setup
+NM_STATE="10 (unmanaged)" run_ctl status
+# A console whose wlan0 NetworkManager does not manage is a fault to see in
+# status, not one the helper papers over by changing who owns the radio.
+check "never sets managed either way" no \
+    "$(grep -qF 'managed' "$work/nmcli-args" && echo yes || echo no)"
 teardown
 
 # --- no nmcli is honest, not a fallback ------------------------------------
@@ -134,10 +162,18 @@ teardown
 echo "NetworkManager absent"
 setup
 rm -f "$work/bin/nmcli"
-PATH="$work/bin:/usr/bin:/bin" sh "$CTL" status >"$work/stdout" 2>"$work/stderr"
+# A PATH with the few tools the helper needs here and no nmcli, so the test
+# holds on a machine that has NetworkManager installed (CI installs it for
+# run_network_config_tests.sh).
+mkdir -p "$work/sys"
+for t in rm cat sed tr mktemp chmod date; do
+    ln -s "$(command -v "$t")" "$work/sys/$t"
+done
+SH=$(command -v sh)
+PATH="$work/bin:$work/sys" "$SH" "$CTL" status >"$work/stdout" 2>"$work/stderr"
 check "status reports unsupported rather than improvising" yes \
     "$(grep -q '"supported":false' "$work/stdout" && echo yes || echo no)"
-printf 'pw\n' | PATH="$work/bin:/usr/bin:/bin" sh "$CTL" connect Studio \
+printf 'pw\n' | PATH="$work/bin:$work/sys" "$SH" "$CTL" connect Studio \
     >"$work/stdout" 2>"$work/stderr"; rc=$?
 check "connect fails loudly" 1 "$rc"
 check "names the missing piece" yes \

@@ -1,0 +1,158 @@
+{
+  "sample_rate": 96000,
+  "channel_layout": {
+    "master_channels": 2,
+    "captured_inputs": [
+      0,
+      1
+    ]
+  },
+  "capture_frames": 34388800,
+  "overrun_count": 0,
+  "zero_filled_frames": 0,
+  "overrun_gaps": [],
+  "layers": [
+    {
+      "channel": 3,
+      "slot": 1,
+      "generation": 0,
+      "frame": 4706112,
+      "frame_count": 1097234,
+      "lane_count": 2,
+      "filename": "layer-3-4706112-1.pcm"
+    },
+    {
+      "channel": 3,
+      "slot": 2,
+      "generation": 0,
+      "frame": 5802112,
+      "frame_count": 1097234,
+      "lane_count": 2,
+      "filename": "layer-3-5802112-2.pcm"
+    },
+    {
+      "channel": 3,
+      "slot": 3,
+      "generation": 0,
+      "frame": 6900864,
+      "frame_count": 1097234,
+      "lane_count": 2,
+      "filename": "layer-3-6900864-3.pcm"
+    },
+    {
+      "channel": 3,
+      "slot": 4,
+      "generation": 0,
+      "frame": 6939008,
+      "frame_count": 1097234,
+      "lane_count": 2,
+      "filename": "layer-3-6939008-4.pcm"
+    },
+    {
+      "channel": 2,
+      "slot": 2,
+      "generation": 0,
+      "frame": 12473024,
+      "frame_count": 1097234,
+      "lane_count": 2,
+      "filename": "layer-2-12473024-2.pcm"
+    },
+    {
+      "channel": 2,
+      "slot": 3,
+      "generation": 0,
+      "frame": 16485568,
+      "frame_count": 1097234,
+      "lane_count": 2,
+      "filename": "layer-2-16485568-3.pcm"
+    },
+    {
+      "channel": 2,
+      "slot": 0,
+      "generation": 0,
+      "frame": 17955776,
+      "frame_count": 1097234,
+      "lane_count": 2,
+      "filename": "layer-2-17955776-0.pcm"
+    },
+    {
+      "channel": 2,
+      "slot": 3,
+      "generation": 0,
+      "frame": 20150592,
+      "frame_count": 1097234,
+      "lane_count": 2,
+      "filename": "layer-2-20150592-3.pcm"
+    },
+    {
+      "channel": 2,
+      "slot": 4,
+      "generation": 0,
+      "frame": 22344704,
+      "frame_count": 1097234,
+      "lane_count": 2,
+      "filename": "layer-2-22344704-4.pcm"
+    }
+  ],
+  "slug": "perf-20260922-192840",
+  "armSnapshot": {
+    "masterGain": 1.0,
+    "limiterOn": false,
+    "limiterCeiling": 0.99,
+    "latencyOffsetFrames": 574,
+    "tempoBpm": 84.0,
+    "fxStagesVersion": 1,
+    "tracks": [],
+    "monitors": []
+  },
+  "disarmSnapshot": {
+    "tempoBpm": 84.0,
+    "tracks": [
+      {
+        "channel": 2,
+        "state": "stopped",
+        "volume": 1.0,
+        "muted": false,
+        "multiple": 1,
+        "lanes": [
+          {
+            "lane": 0,
+            "lenFrames": 1097234,
+            "deferred": false,
+            "pcmRef": "loops/track2-lane0.wav",
+            "takeId": 1
+          },
+          {
+            "lane": 1,
+            "lenFrames": 1097234,
+            "deferred": false,
+            "pcmRef": "loops/track2-lane1.wav"
+          }
+        ]
+      },
+      {
+        "channel": 3,
+        "state": "stopped",
+        "volume": 1.0,
+        "muted": false,
+        "multiple": 1,
+        "lanes": [
+          {
+            "lane": 0,
+            "lenFrames": 1097234,
+            "deferred": false,
+            "pcmRef": "loops/track3-lane0.wav",
+            "takeId": 1
+          },
+          {
+            "lane": 1,
+            "lenFrames": 1097234,
+            "deferred": false,
+            "pcmRef": "loops/track3-lane1.wav"
+          }
+        ]
+      }
+    ]
+  },
+  "finalized": true
+}

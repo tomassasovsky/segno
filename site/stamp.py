@@ -10,7 +10,8 @@ at once.
     python3 site/stamp.py --check   exit 1 if any reference is stale (CI)
 
 styles.css is stamped before the pages because its own hash covers the
-font references inside it.
+font references inside it. The devlog pages and feed.xml are stamped here and
+by build_log.py, so either script leaves them current.
 """
 
 import hashlib
@@ -19,8 +20,11 @@ import re
 import sys
 
 PUBLIC = pathlib.Path(__file__).resolve().parent / "public"
-# styles.css first: the pages reference it, so its hash must be final.
-FILES = ["styles.css", "index.html", "404.html"]
+# styles.css first: the pages reference it, so its hash must be final. The
+# devlog output (build_log.py) is stamped too, so one run covers every page.
+FILES = ["styles.css", "index.html", "404.html", "feed.xml"] + sorted(
+    str(p.relative_to(PUBLIC)) for p in PUBLIC.glob("log/**/index.html")
+)
 # A relative or root-relative path, or a URL on the site's own host (og:image),
 # with an extension nginx caches for a year (nginx.conf). Paths that do not
 # name a file under public/ are left alone.

@@ -361,7 +361,7 @@ class FxChannelFooter extends StatelessWidget {
         ],
         FxBlock(
           caption: isRack ? l10n.fxRackInput : l10n.fxEffectInput,
-          child: _InputChoice(
+          child: FxInputChoice(
             value: channels.input,
             onChanged: (input) => onChannels(channels.copyWith(input: input)),
           ),
@@ -369,38 +369,17 @@ class FxChannelFooter extends StatelessWidget {
         const SizedBox(width: 24),
         FxBlock(
           caption: isRack ? l10n.fxRackOutput : l10n.fxEffectOutput,
-          child: Row(
-            children: [
-              LoopChoiceButton(
-                key: const Key('fx_output_stereo'),
-                label: l10n.fxChannelStereo,
-                selected: !mono,
-                onTap: () => onChannels(
-                  channels.copyWith(output: FxChannelOutput.stereo),
-                ),
-                width: 109,
-                height: 64,
-                fontSize: 22,
-              ),
-              SizedBox(width: context.spacing.sm),
-              LoopChoiceButton(
-                key: const Key('fx_output_mono'),
-                label: l10n.fxChannelMono,
-                selected: mono,
-                onTap: () =>
-                    onChannels(channels.copyWith(output: FxChannelOutput.mono)),
-                width: 99,
-                height: 64,
-                fontSize: 22,
-              ),
-            ],
+          child: FxOutputChoice(
+            value: channels.output,
+            onChanged: (output) =>
+                onChannels(channels.copyWith(output: output)),
           ),
         ),
         const SizedBox(width: 24),
         // Balance on a stereo output, Pan on a mono one — the same control
         // doing two different jobs, so it is named for the job it is doing.
         Expanded(
-          child: _BalanceControl(
+          child: FxBalanceControl(
             label: mono ? l10n.fxPan : l10n.fxBalance,
             value: channels.placement,
             onChanged: (value) =>
@@ -482,11 +461,16 @@ class FxBlock extends StatelessWidget {
   }
 }
 
-/// The instance's input channel handling, as the pen's dropdown.
-class _InputChoice extends StatelessWidget {
-  const new({required this.value, required this.onChanged});
+/// Which of the input's channels an effect takes, picked from the pen's
+/// dropdown.
+class FxInputChoice extends StatelessWidget {
+  /// Creates an [FxInputChoice].
+  const new({required this.value, required this.onChanged, super.key});
 
+  /// The input it takes.
   final FxChannelInput value;
+
+  /// Reports the input picked.
   final ValueChanged<FxChannelInput> onChanged;
 
   @override
@@ -515,12 +499,63 @@ class _InputChoice extends StatelessWidget {
   }
 }
 
-/// The balance or pan slider, with its ends named.
-class _BalanceControl extends StatelessWidget {
+/// Whether an effect's output is stereo or mono, as two buttons.
+class FxOutputChoice extends StatelessWidget {
+  /// Creates an [FxOutputChoice].
+  const new({required this.value, required this.onChanged, super.key});
+
+  /// The output it gives.
+  final FxChannelOutput value;
+
+  /// Reports the output picked.
+  final ValueChanged<FxChannelOutput> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final mono = value == FxChannelOutput.mono;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        LoopChoiceButton(
+          key: const Key('fx_output_stereo'),
+          label: l10n.fxChannelStereo,
+          selected: !mono,
+          onTap: () => onChanged(FxChannelOutput.stereo),
+          width: 109,
+          height: 64,
+          fontSize: 22,
+        ),
+        SizedBox(width: context.spacing.sm),
+        LoopChoiceButton(
+          key: const Key('fx_output_mono'),
+          label: l10n.fxChannelMono,
+          selected: mono,
+          onTap: () => onChanged(FxChannelOutput.mono),
+          width: 99,
+          height: 64,
+          fontSize: 22,
+        ),
+      ],
+    );
+  }
+}
+
+/// How the balance or pan control reads [placement] (`-1..1`): Centre, or
+/// the placement to two decimals.
+String fxBalanceText(AppLocalizations l10n, double placement) =>
+    placement == 0 ? l10n.fxCentre : placement.toStringAsFixed(2);
+
+/// The balance or pan slider, with its ends named: where an effect's output
+/// sits between left and right, its balance on a stereo output and its pan
+/// on a mono one ([label]).
+class FxBalanceControl extends StatelessWidget {
+  /// Creates an [FxBalanceControl].
   const new({
     required this.label,
     required this.value,
     required this.onChanged,
+    super.key,
   });
 
   /// What this control is doing right now: Balance on stereo, Pan on mono.
@@ -529,6 +564,7 @@ class _BalanceControl extends StatelessWidget {
   /// The placement, `-1` (left) .. `1` (right).
   final double value;
 
+  /// Reports a new placement.
   final ValueChanged<double> onChanged;
 
   @override
@@ -554,7 +590,7 @@ class _BalanceControl extends StatelessWidget {
                   ),
                 ),
                 AppText(
-                  value == 0 ? l10n.fxCentre : value.toStringAsFixed(2),
+                  fxBalanceText(l10n, value),
                   key: const Key('fx_balance_readout'),
                   style: TextStyle(
                     color: surface.textSecondary,

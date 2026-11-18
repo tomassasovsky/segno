@@ -2,7 +2,9 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:daw_export/src/automation_thinning.dart';
+import 'package:daw_export/src/chain_timeline.dart';
 import 'package:daw_export/src/daw_project.dart';
+import 'package:daw_export/src/device_chain.dart';
 import 'package:daw_export/src/effect_text.dart';
 import 'package:daw_export/src/event_log_reader.dart';
 import 'package:daw_export/src/manifest_json.dart';
@@ -13,12 +15,12 @@ import 'package:daw_export/src/wav_info.dart';
 /// `events.log` (docs/formats/performance-event-log-format.md) directly — no
 /// import of `performance_repository`/`segno_engine`, matching this
 /// package's own-input-model rule — into a [DawProject] whose clips
-/// reference the capture's already-rendered stems (`stems/wet/`, falling
-/// back to `stems/dry/` for a channel whose wet render failed or hasn't run)
-/// and per-lane loop exports (`loops/`), and whose tracks carry automation
-/// lanes reconstructed from the raw logged volume/mute gestures (part 10)
-/// only where the clip is the unity-gain dry stem: the wet render already
-/// applies those gestures, so automating them again would apply them twice.
+/// reference the capture's already-rendered lane stems (`stems/dry/` and
+/// `stems/wet/`, listed in `stems/stems.json`, #1824) and per-lane loop
+/// exports (`loops/`), and whose tracks carry automation lanes reconstructed
+/// from the raw logged volume/mute gestures (part 10) only where the clip is
+/// the unity-gain dry stem: the wet render already applies those gestures,
+/// so automating them again would apply them twice.
 abstract final class DawManifestReader {
   /// Reads `<captureDir>/performance.json` and returns the [DawProject] it
   /// describes, or `null` if the manifest is missing/unreadable/corrupt (a
@@ -78,171 +80,227 @@ abstract final class DawManifestReader {
     final armTracks = tracksOf(manifest['armSnapshot']);
     final disarmTracks = tracksOf(manifest['disarmSnapshot']);
 
-    // channel -> (lane -> heardPcmRef or pcmRef). Built from arm first,
-    // then disarm overwrites — disarm is the later, fresher pass (a track
-    // recorded fresh during the session has no arm-time entry at all, and a
-    // track that was already settled at arm keeps its arm-time entry unless
-    // disarm captured something newer for the same lane).
-    final pcmRefsByChannel = <int, Map<int, String>>{};
-    final laneFramesByChannel = <int, Map<int, int>>{};
+    // channel -> lane -> its loops: the clean take (pcmRef) and the loop as
+    // it played (#1713: its heard image unless the lane played clean or the
+    // image is missing, else the clean take). Arm first, then disarm
+    // overwrites: disarm is the later pass (a track recorded fresh during
+    // the session has no arm-time loop, and a lane settled at arm keeps its
+    // arm-time loop unless disarm captured something newer).
+    final loopsByChannel = <int, Map<int, _LaneLoops>>{};
     for (final t in [...armTracks, ...disarmTracks]) {
       final channel = (t['channel'] as num?)?.toInt();
       if (channel == null) continue;
-      final laneMap = pcmRefsByChannel.putIfAbsent(channel, () => {});
       for (final lane in (t['lanes'] as List<dynamic>? ?? const [])) {
         final laneJson = lane as Map<String, dynamic>;
         final laneIndex = (laneJson['lane'] as num?)?.toInt();
-        // A take's heard image (#1713) is what it played as, so its clip
-        // carries that unless the lane played clean (its effects edited) or
-        // the image is missing; otherwise the clean loop.
+        final clean = laneJson['pcmRef'] as String?;
+        if (laneIndex == null || clean == null) continue;
         final heardRef = laneJson['heardPcmRef'] as String?;
-        final pcmRef =
+        final heard =
             heardRef != null &&
                 laneJson['source'] != 'clean' &&
                 File('$captureDir/$heardRef').existsSync()
             ? heardRef
-            : laneJson['pcmRef'] as String?;
-        if (laneIndex == null || pcmRef == null) continue;
-        laneMap[laneIndex] = pcmRef;
+            : clean;
         final lenFrames = (laneJson['lenFrames'] as num?)?.toInt();
-        if (lenFrames != null && lenFrames > 0) {
-          laneFramesByChannel.putIfAbsent(channel, () => {})[laneIndex] =
-              lenFrames;
-        }
+        loopsByChannel.putIfAbsent(channel, () => {})[laneIndex] = (
+          clean: clean,
+          heard: heard,
+          frames: lenFrames != null && lenFrames > 0 ? lenFrames : null,
+        );
       }
     }
 
-    // Arm-time gains, mute and solo per channel: the state the logged
-    // gestures start from (events.log is relative to arm). Solo is tracked
-    // across channels, since a solo on one track silences the others.
-    // Mute is lane 0's flag, or the track's when lane 0 has none, as the
-    // renderer reads it (perf_render.c).
-    final mutedAtArm = <int>{};
+    // Arm-time gains, mute and solo per lane: the state the logged gestures
+    // start from (events.log is relative to arm). Solo is tracked across
+    // channels, since a solo on one track silences the others. A lane's
+    // mute is its own flag, and lane 0's falls back to the track's, as the
+    // renderer reads them (perf_render.c).
     final soloedAtArm = <int>{};
     final trackGainAtArm = <int, double>{};
-    final laneVolumeAtArm = <int, double>{};
+    final laneVolumeAtArm = <(int, int), double>{};
+    final mutedAtArm = <(int, int)>{};
     for (final t in armTracks) {
       final channel = (t['channel'] as num?)?.toInt();
       if (channel == null) continue;
       if (t['solo'] as bool? ?? false) soloedAtArm.add(channel);
       final gain = (t['volume'] as num?)?.toDouble();
       if (gain != null) trackGainAtArm[channel] = gain;
-      bool? laneMuted;
+      final trackMuted = t['muted'] as bool? ?? false;
+      var laneZeroListed = false;
       for (final lane in (t['lanes'] as List<dynamic>? ?? const [])) {
         final laneJson = lane as Map<String, dynamic>;
-        if ((laneJson['lane'] as num?)?.toInt() != 0) continue;
+        final index = (laneJson['lane'] as num?)?.toInt();
+        if (index == null) continue;
         final volume = (laneJson['volume'] as num?)?.toDouble();
-        if (volume != null) laneVolumeAtArm[channel] = volume;
-        laneMuted = laneJson['muted'] as bool?;
+        if (volume != null) laneVolumeAtArm[(channel, index)] = volume;
+        final muted = laneJson['muted'] as bool?;
+        if (index == 0) laneZeroListed = true;
+        if (muted ?? (index == 0 && trackMuted)) {
+          mutedAtArm.add((channel, index));
+        }
       }
-      if (laneMuted ?? t['muted'] as bool? ?? false) mutedAtArm.add(channel);
+      if (!laneZeroListed && trackMuted) mutedAtArm.add((channel, 0));
     }
 
     final logEntries = EventLogReader.readAll(captureDir);
+    final stems = _laneStems(captureDir);
+    final armTime = logEntries == null
+        ? (clock: 0, beat: 0.0)
+        : EventLogReader.readArmTime(logEntries);
 
+    // Each looper track is a Group of its lanes (#1824): per lane its dry
+    // stem with its clean loop, which plays, and its wet stem with its loop
+    // as heard, a reference, off. A lane with no dry stem plays its wet one.
     final tracks = <DawTrack>[];
-    for (final channel in pcmRefsByChannel.keys.toList()..sort()) {
-      final sessionClips = <DawSessionClip>[];
-      final lanes = pcmRefsByChannel[channel]!;
-      for (final lane in lanes.keys.toList()..sort()) {
-        final pcmRef = lanes[lane]!;
-        final audio = _audioFile(
-          captureDir,
-          pcmRef,
-          sampleRate: sampleRate,
-          fallbackFrames: laneFramesByChannel[channel]?[lane],
-        );
-        if (audio == null) continue;
-        sessionClips.add(DawSessionClip(laneIndex: lane, audio: audio));
-      }
-
-      DawClip? stem(String kind) {
-        final audio = _audioFile(
-          captureDir,
-          'stems/$kind/track$channel.wav',
-          sampleRate: sampleRate,
-          fallbackFrames: captureFrames,
-        );
-        return audio == null ? null : DawClip(audio: audio, startSeconds: 0);
-      }
-
-      final wet = stem('wet');
-      final dry = stem('dry');
-      if (wet == null && dry == null && sessionClips.isEmpty) continue;
-
-      // The dry stem plays at unity, so its track carries the logged volume
-      // and mute as volume automation: off while not audible. The wet render
-      // already applies them (perf_render.c's wet pass), so the wet track
-      // carries none.
-      final volume = dry == null || logEntries == null
-          ? null
-          : _dryVolume(
-              EventLogReader.readChannelAutomation(
-                logEntries,
-                channel,
-                sampleRate,
-                effectiveTempoBpm,
-                initialTrackGain: trackGainAtArm[channel] ?? 1,
-                initialLaneVolume: laneVolumeAtArm[channel] ?? 1,
-                initiallyMuted: mutedAtArm.contains(channel),
-                initiallySoloed: soloedAtArm,
-              ),
-              effectiveTempoBpm,
-            );
+    final channels = {...loopsByChannel.keys, ...stems.keys}.toList()..sort();
+    for (final channel in channels) {
       final name = trackNameOf(manifest, channel);
-      final info = _info(EffectText.track(manifest, channel));
-      if (wet != null) {
-        tracks.add(
-          DawTrack(
-            name: name,
-            arrangementClips: [wet],
-            sessionClips: sessionClips,
-            info: info,
-          ),
-        );
-        if (dry != null) {
-          // The same take before its effects, for processing again: off, so
-          // the set does not play it on top of the wet stem.
+      final group = DawGroup(
+        name: name,
+        info: _info(EffectText.trackStage(manifest, channel)),
+        devices: _trackStageDevices(manifest, channel, armTime),
+      );
+      final loops = loopsByChannel[channel] ?? const {};
+      final rendered = stems[channel] ?? const {};
+      final lanes = {...loops.keys, ...rendered.keys}.toList()..sort();
+      for (final lane in lanes) {
+        DawClip? stem(String? file) {
+          if (file == null) return null;
+          final audio = _audioFile(
+            captureDir,
+            file,
+            sampleRate: sampleRate,
+            fallbackFrames: captureFrames,
+          );
+          return audio == null ? null : DawClip(audio: audio, startSeconds: 0);
+        }
+
+        DawAudioFile? loop(String? file) => file == null
+            ? null
+            : _audioFile(
+                captureDir,
+                file,
+                sampleRate: sampleRate,
+                fallbackFrames: loops[lane]?.frames,
+              );
+
+        final dry = stem(rendered[lane]?.dry);
+        final wet = stem(rendered[lane]?.wet);
+        final clean = loop(loops[lane]?.clean);
+        final heard = loop(loops[lane]?.heard);
+        if (dry == null && wet == null && clean == null) continue;
+        final label = '$name L${lane + 1}';
+        final info = _info(EffectText.lane(manifest, channel, lane));
+        if (dry != null || wet == null) {
+          // The dry stem plays at unity, so its track carries the logged
+          // volume and mute as volume automation: off while not audible.
+          // The wet render already applies them, so the wet track carries
+          // none.
+          final volume = dry == null || logEntries == null
+              ? null
+              : _dryVolume(
+                  EventLogReader.readChannelAutomation(
+                    logEntries,
+                    channel,
+                    sampleRate,
+                    effectiveTempoBpm,
+                    lane: lane,
+                    initialTrackGain: trackGainAtArm[channel] ?? 1,
+                    initialLaneVolume: laneVolumeAtArm[(channel, lane)] ?? 1,
+                    initiallyMuted: mutedAtArm.contains((channel, lane)),
+                    initiallySoloed: soloedAtArm,
+                  ),
+                  effectiveTempoBpm,
+                );
+          // The dry stem plays through the lane's chain as Segno's plugins
+          // (#1804), so the lane can be edited in Live; its clean loop goes
+          // through them too. The heard loop stays on the reference.
           tracks.add(
             DawTrack(
-              name: '$name dry',
-              kind: DawTrackKind.dry,
-              active: false,
-              arrangementClips: [dry],
+              name: label,
+              group: group,
+              arrangementClips: [?dry],
+              loop: clean,
               volume: volume,
+              devices: dry == null
+                  ? const []
+                  : _laneDevices(armTracks, channel, lane, armTime, (
+                      entries: logEntries,
+                      sampleRate: sampleRate,
+                      tempoBpm: effectiveTempoBpm,
+                    )),
               info: info,
             ),
           );
         }
-      } else {
-        tracks.add(
-          DawTrack(
-            name: name,
-            arrangementClips: [?dry],
-            sessionClips: sessionClips,
-            volume: volume,
-            info: info,
-          ),
-        );
+        if (wet != null) {
+          tracks.add(
+            DawTrack(
+              name: '$label (as heard)',
+              kind: DawTrackKind.laneHeard,
+              group: group,
+              active: dry == null,
+              arrangementClips: [wet],
+              loop: heard,
+              info: info,
+            ),
+          );
+        }
       }
     }
 
-    // Each captured input as the player heard it: the engine records an
-    // input after its monitor chain, volume and pan (mix_monitors_frame,
-    // silent while its monitor is off), so it plays beside the loops. Then
-    // the captured output, which holds both: a reference, off.
+    // Each input, beside the loops. Since #1805 the engine records every
+    // input raw (its clean sample, before its monitor chain, gate, volume
+    // and pan), which plays, and each monitored one also as heard (after
+    // them, silent while its monitor is off), a reference, off. A take from
+    // before it has only the inputs as heard, which play. Then the captured
+    // output, which holds both loops and inputs: a reference, off.
     final parts = _partsByStream(captureDir, manifest, sampleRate);
-    for (final input in capturedInputsOf(manifest)) {
-      final clips = parts[1 + input];
-      if (clips == null) continue;
+    final recordedRaw = rawInputsOf(manifest).toSet();
+    final inputs = {...capturedInputsOf(manifest), ...recordedRaw}.toList()
+      ..sort();
+    for (final input in inputs) {
+      final name = inputNameOf(manifest, input);
+      final effects = _info(EffectText.input(manifest, input));
+      final heard = parts[1 + input];
+      final raw = recordedRaw.contains(input)
+          ? parts[kRawStreamBase + input]
+          : null;
+      if (raw != null) {
+        // The raw recording plays through the monitor chain the take
+        // started with, as Segno's plugins (#1804), with the chain's
+        // switching and setting changes as their automation (#1836). The
+        // monitor's own volume, pan and on/off are not replayed yet.
+        final devices = _inputDevices(manifest, input, armTime, (
+          entries: logEntries,
+          sampleRate: sampleRate,
+          tempoBpm: effectiveTempoBpm,
+        ));
+        tracks.add(
+          DawTrack(
+            name: '$name raw',
+            kind: DawTrackKind.input,
+            arrangementClips: raw,
+            devices: devices,
+            info:
+                'The input as played: before its effects, volume and pan.'
+                '${devices.isEmpty ? '' : ' Its effects play here as Segno '
+                          'plugins.'}\n'
+                '$effects',
+          ),
+        );
+      }
+      if (heard == null) continue;
       tracks.add(
         DawTrack(
-          name: inputNameOf(manifest, input),
-          kind: DawTrackKind.input,
-          arrangementClips: clips,
+          name: raw == null ? name : '$name (as heard)',
+          kind: raw == null ? DawTrackKind.input : DawTrackKind.inputHeard,
+          active: raw == null,
+          arrangementClips: heard,
           info:
               'The input as heard: after its effects, volume and pan.\n'
-              '${_info(EffectText.input(manifest, input))}',
+              '$effects',
         ),
       );
     }
@@ -262,6 +320,116 @@ abstract final class DawManifestReader {
     return DawProject(tracks: tracks, tempoBpm: effectiveTempoBpm);
   }
 
+  /// Lane [lane] of looper track [channel]'s chain at arm as Live devices,
+  /// each plugin placed in time by [armTime], with its switching and
+  /// setting changes from [replay].
+  static List<DawDevice> _laneDevices(
+    List<Map<String, dynamic>> armTracks,
+    int channel,
+    int lane,
+    ({int clock, double beat}) armTime,
+    _Replay replay,
+  ) {
+    for (final t in armTracks) {
+      final lanes = t['lanes'];
+      if (t['channel'] != channel || lanes is! List) continue;
+      for (final entry in lanes) {
+        if (entry is! Map<String, dynamic> || entry['lane'] != lane) continue;
+        final effects = entry['effects'];
+        final chainEnabled = entry['chainEnabled'] != false;
+        final log = replay.entries;
+        return devicesOfChain(
+          effects,
+          chainEnabled: chainEnabled,
+          timeline: log == null
+              ? null
+              : ChainTimeline.lane(
+                  log,
+                  channel,
+                  lane,
+                  effects: effects,
+                  chainEnabled: chainEnabled,
+                  sampleRate: replay.sampleRate,
+                  tempoBpm: replay.tempoBpm,
+                ),
+          origin: ChainOrigin.lane(
+            channel,
+            lane,
+            clockOffset: armTime.clock,
+            beatOffset: armTime.beat,
+          ),
+        );
+      }
+    }
+    return const [];
+  }
+
+  /// Looper track [channel]'s Track stage chain at arm as Live devices, for
+  /// its Group track, each plugin placed in time by [armTime].
+  static List<DawDevice> _trackStageDevices(
+    Map<String, dynamic> manifest,
+    int channel,
+    ({int clock, double beat}) armTime,
+  ) {
+    final arm = manifest['armSnapshot'];
+    final chains = arm is Map<String, dynamic> ? arm['trackChains'] : null;
+    for (final chain in chains is List ? chains : const []) {
+      if (chain is! Map<String, dynamic> || chain['channel'] != channel) {
+        continue;
+      }
+      return devicesOfChain(
+        chain['effects'],
+        chainEnabled: chain['chainEnabled'] != false,
+        origin: ChainOrigin.bus(
+          channel,
+          clockOffset: armTime.clock,
+          beatOffset: armTime.beat,
+        ),
+      );
+    }
+    return const [];
+  }
+
+  /// Input [input]'s monitor chain at arm as Live devices, placed in time
+  /// by [armTime], with its switching and setting changes from [replay].
+  static List<DawDevice> _inputDevices(
+    Map<String, dynamic> manifest,
+    int input,
+    ({int clock, double beat}) armTime,
+    _Replay replay,
+  ) {
+    final arm = manifest['armSnapshot'];
+    final monitors = arm is Map<String, dynamic> ? arm['monitors'] : null;
+    for (final monitor in monitors is List ? monitors : const []) {
+      if (monitor is! Map<String, dynamic> || monitor['input'] != input) {
+        continue;
+      }
+      final effects = monitor['effects'];
+      final chainEnabled = monitor['chainEnabled'] != false;
+      final log = replay.entries;
+      return devicesOfChain(
+        effects,
+        chainEnabled: chainEnabled,
+        timeline: log == null
+            ? null
+            : ChainTimeline.monitor(
+                log,
+                input,
+                effects: effects,
+                chainEnabled: chainEnabled,
+                sampleRate: replay.sampleRate,
+                tempoBpm: replay.tempoBpm,
+              ),
+        origin: ChainOrigin.monitor(
+          input,
+          clockOffset: armTime.clock,
+          beatOffset: armTime.beat,
+        ),
+      );
+    }
+    return const [];
+  }
+
   /// The `tempoBpm` a snapshot map carries, or `null` when [snapshot] is
   /// absent or not a map, the key is absent (a bundle written before #281),
   /// or the value is non-positive — the engine's own 0-as-unset sentinel,
@@ -272,6 +440,34 @@ abstract final class DawManifestReader {
     if (snapshot is! Map<String, dynamic>) return null;
     final bpm = (snapshot['tempoBpm'] as num?)?.toDouble();
     return bpm != null && bpm > 0 ? bpm : null;
+  }
+
+  /// The lane stems `stems/stems.json` lists (#1824), by channel and lane;
+  /// empty when the render wrote none or the index does not read.
+  static Map<int, Map<int, ({String? dry, String? wet})>> _laneStems(
+    String captureDir,
+  ) {
+    final file = File('$captureDir/stems/stems.json');
+    if (!file.existsSync()) return const {};
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(file.readAsStringSync());
+    } on FormatException {
+      return const {};
+    }
+    final lanes = decoded is Map<String, dynamic> ? decoded['lanes'] : null;
+    final stems = <int, Map<int, ({String? dry, String? wet})>>{};
+    for (final entry in lanes is List ? lanes : const []) {
+      if (entry case {'channel': final int channel, 'lane': final int lane}) {
+        final dry = entry['dry'];
+        final wet = entry['wet'];
+        stems.putIfAbsent(channel, () => {})[lane] = (
+          dry: dry is String ? dry : null,
+          wet: wet is String ? wet : null,
+        );
+      }
+    }
+    return stems;
   }
 
   /// The info text for a track whose effects are [effects].
@@ -342,9 +538,9 @@ abstract final class DawManifestReader {
 
   /// Each captured stream's audio as Arrangement clips, one per part file
   /// placed where the previous ones end: stream 0 is the master, `1 + n`
-  /// input `n`. Read from the sidecar's `parts` (#1198), or for a take
-  /// finalized before them, its single `master.wav` and
-  /// `live-input-<n>.wav`.
+  /// input `n` as heard, [kRawStreamBase] `+ n` input `n` raw. Read from
+  /// the sidecar's `parts` (#1198), or for a take finalized before them,
+  /// its single `master.wav` and `live-input-<n>.wav`.
   static Map<int, List<DawClip>> _partsByStream(
     String captureDir,
     Map<String, dynamic> manifest,
@@ -423,3 +619,16 @@ abstract final class DawManifestReader {
     );
   }
 }
+
+/// One lane's loops in `loops/`: its clean take, the loop as it played, and
+/// the manifest's length for them, if it has one.
+typedef _LaneLoops = ({String clean, String heard, int? frames});
+
+/// What a chain's changes are read from: the take's `events.log` entries,
+/// or `null` for a take without one, and the rate and tempo that place
+/// them in beats.
+typedef _Replay = ({
+  List<RawLogEntry>? entries,
+  int sampleRate,
+  double tempoBpm,
+});

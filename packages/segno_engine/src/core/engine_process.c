@@ -580,7 +580,17 @@ static int32_t le_consume_pending_mutes(le_engine* e, le_track* t,
     t->lanes[l].pending_mute = 0;
     any = 1;
     if (!apply) continue;
-    le_lane_store_muted(t, l, 1);
+    /* A mute that waited for the Rec-mode Stop's park (#1782) lands on the
+     * stopped track as le_apply_mute_cmd's spared mute does. */
+    const uint32_t bit = 1u << l;
+    if ((t->tail_spare_next & bit) && end_state == LE_TRACK_STOPPED &&
+        !load_i32(&t->lanes[l].a_muted)) {
+      store_i32(&t->lanes[l].a_muted, 1);
+      t->gate_spared = 1;
+    } else {
+      le_lane_store_muted(t, l, 1);
+    }
+    t->tail_spare_next &= ~bit;
     le_plog_push(e, frame,
                  (le_command){.code = LE_CMD_SET_LANE_MUTE,
                               .lanef = {ch, l, 1.0f}});
@@ -2630,6 +2640,10 @@ static void close_active_capture(le_engine* e, int32_t except_ch,
       }
     } else if (st == LE_TRACK_OVERDUBBING) {
       store_i32(&tr->a_state, LE_TRACK_PLAYING);
+      /* Its end: land any mute deferred during the dub, the one a Rec-mode
+       * Stop's park was waiting with included (#1782). */
+      tr->park = 0;
+      le_consume_pending_mutes(e, tr, LE_TRACK_PLAYING, 1, frame);
     }
   }
 }
@@ -2878,6 +2892,21 @@ static void handle_stop(le_engine* e, int32_t ch, uint64_t frame) {
     store_i32(&t->a_state, LE_TRACK_STOPPED);
     /* Stopping an overdub ends its capture: land any deferred mute. */
     le_consume_pending_mutes(e, t, LE_TRACK_STOPPED, 1, frame);
+  }
+}
+
+static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame);
+
+/* The Rec-mode Stop's park (#1782, le_engine_stop_record_park): every track
+ * stops through a Stop command, so an overdub on [ch] ends here. The mutes
+ * of [ch]'s lanes in [spare] spare its Post tail as they land: the ones that
+ * waited for the park, or the ones posted after it (le_apply_mute_cmd). */
+static void le_park(le_engine* e, int32_t ch, uint32_t spare, uint64_t frame) {
+  e->tracks[ch].tail_spare_next = spare;
+  e->tracks[ch].park = 0;
+  for (int32_t c = 0; c < e->track_count; ++c) {
+    const le_command stop = {.code = LE_CMD_STOP, .arg_i = c};
+    apply_command(e, &stop, frame);
   }
 }
 
@@ -3346,6 +3375,7 @@ static void le_handoff_disarm(le_engine* e, int32_t ch) {
   t->pending_capture_shadow = 0;
   t->pending_record = 0;
   t->pending_trigger = 0;
+  t->park = 0;
   store_i32(&t->a_pending, 0);
 }
 
@@ -3515,6 +3545,7 @@ static void handle_section_play(le_engine* e, int32_t ch, uint64_t frame) {
 static void le_handoff_set_arm(le_track* t, int32_t trigger) {
   t->pending_record = 1;
   t->pending_trigger = trigger;
+  t->park = 0;
   store_i32(&t->a_pending_trigger, trigger);
   atomic_store_explicit(&t->a_pending, 1, memory_order_release);
 }
@@ -3740,6 +3771,16 @@ static void le_apply_mute_cmd(le_engine* e, int32_t ch, int32_t lane,
       (st == LE_TRACK_RECORDING || st == LE_TRACK_OVERDUBBING)) {
     ln->pending_mute = 1;
     t->tail_spare_next &= ~(1u << lane);
+    /* The Rec-mode Stop's own mute while its park waits for the overdub's
+     * grid end (#1782): the pass runs to that end, and the mute lands with
+     * the park. Any later mute of the lane punches out as usual. */
+    const uint32_t own = LE_PARK_ARMED | (1u << lane);
+    if ((t->park & own) == own && t->pending_record &&
+        t->pending_trigger == 0) {
+      t->park &= ~(1u << lane);
+      return;
+    }
+    t->park = 0;
     /* The punch-out supersedes any armed (quantized) action on this track —
      * exactly as apply_command's LE_CMD_RECORD case clears it for a real
      * press. A stale arm would re-fire at the next loop top on the now-
@@ -4168,8 +4209,12 @@ static int le_apply_routing(le_engine* e, const le_mix_settings* mix,
     }
   }
   for (int ch = 0; ch < e->track_count; ++ch)
-    if (mix->lane_count_mask & (1u << ch))
+    if (mix->lane_count_mask & (1u << ch)) {
       atomic_store_explicit(&e->tracks[ch].lane_count, mix->lane_count[ch], memory_order_release);
+      /* The lanes the track mixes from here (#1824, events.log 17). */
+      le_plog_push(e, frame, (le_command){.code = LE_CMD_SET_LANE_COUNT,
+        .lanei = {ch, 0, mix->lane_count[ch]}});
+    }
   return 1;
 }
 
@@ -4939,16 +4984,47 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       break;
     case LE_CMD_STOP_RECORD_CONTROL: {
       if (!valid_channel(e, cmd->arg_i)) break;
-      if (le_cancel_count_in(e, frame)) break;
+      /* arg_f: the finish (0 now, 1 at the grid end, 2 drop the armed end),
+       * plus 4 for the park (#1782), which follows a Count-in cancel. */
+      const int park = cmd->arg_f >= 4.0f;
+      const float action = park ? cmd->arg_f - 4.0f : cmd->arg_f;
+      if (park && action != 0.0f && action != 1.0f) break;
+      const int cancelled = le_cancel_count_in(e, frame);
+      if (cancelled && !park) break;
       le_track* t = &e->tracks[cmd->arg_i];
       const int state = load_i32(&t->a_state);
+      /* The park: a playing loop, or an overdub that ends at once, parks
+       * now. An overdub whose end waits for the grid keeps its arm (a second
+       * Stop's included), and parks when it fires; the mute of each lane
+       * that follows waits for it. */
+      if (park && (state == LE_TRACK_PLAYING ||
+                   (state == LE_TRACK_OVERDUBBING && action == 0.0f))) {
+        if (state == LE_TRACK_OVERDUBBING) {
+          /* As the finish it replaces (LE_CMD_RECORD) does. */
+          t->pending_record = 0;
+          store_i32(&t->a_pending, 0);
+        }
+        le_park(e, cmd->arg_i, ~0u, frame);
+        break;
+      }
+      if (park && state == LE_TRACK_OVERDUBBING) {
+        if (!t->pending_record || t->pending_trigger != 0) {
+          const le_command arm = {.code = LE_CMD_ARM, .arg_i = cmd->arg_i};
+          apply_command(e, &arm, frame);
+        }
+        if (t->pending_record && t->pending_trigger == 0)
+          t->park = LE_PARK_ARMED | ((1u << LE_MAX_LANES) - 1u);
+        break;
+      }
+      /* A Stop that cancelled a countdown never finishes a capture. */
+      if (cancelled) break;
       if (state != LE_TRACK_RECORDING && state != LE_TRACK_OVERDUBBING) break;
       /* Reuse the existing grid-end rounding/arming body, not a new scheduler.
        * Refused/stale end intents cannot turn a completed capture into a start. */
       le_command finish = {.code = LE_CMD_RECORD, .arg_i = cmd->arg_i};
-      if (cmd->arg_f == 1.0f) finish.code = LE_CMD_ARM;
-      else if (cmd->arg_f == 2.0f) finish.code = LE_CMD_DISARM;
-      else if (cmd->arg_f != 0.0f) break;
+      if (action == 1.0f) finish.code = LE_CMD_ARM;
+      else if (action == 2.0f) finish.code = LE_CMD_DISARM;
+      else if (action != 0.0f) break;
       apply_command(e, &finish, frame);
       break;
     }
@@ -6359,6 +6435,10 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       }
       for (int t = 0; t < e->track_count; ++t) {
         le_fade_log(e, t, frame);
+        /* The lanes the track mixes at capture frame 0 (#1824, events.log
+         * 17); every change logs again (le_apply_routing). */
+        le_plog_push(e, frame, (le_command){.code = LE_CMD_SET_LANE_COUNT,
+          .lanei = {t, 0, le_lanes_active(&e->tracks[t])}});
         /* A track already reversed at arm logs its direction and the index
          * capture frame 0 reads (#1162); forward is the renderer's default. */
         le_track* tr = &e->tracks[t];
@@ -6805,11 +6885,11 @@ static inline LE_AUDIO_HOT_AT(4) void master_bus_frame(le_engine* e, float* out,
 }
 
 /* Performance-recording capture taps (le_perf_arm/disarm, segno_engine_api.h):
- * copy the post-limiter master output and each captured monitor input's
- * post-FX signal into their pre-published rings. Both are no-ops when not
- * armed (`e->perf.armed`, the audio-thread-local mirror of a_perf_armed);
- * neither ever blocks or allocates — a full ring just drops the frame and
- * bumps the shared overrun atomic. */
+ * copy the post-limiter master output, each captured monitor input's
+ * post-FX signal and each captured input's raw sample into their
+ * pre-published rings. All are no-ops when not armed (`e->perf.armed`, the
+ * audio-thread-local mirror of a_perf_armed); none ever blocks or allocates
+ * — a full ring just drops the frame and bumps the shared overrun atomic. */
 
 /* Tap for the master bus: [master_out_ch] selects the first enabled output
  * pair frozen at arm (mono when only one channel was captured). */
@@ -6818,6 +6898,49 @@ static inline void perf_tap_monitor_frame(le_engine* e, int input, float l,
   const float s[2] = {l, r};
   if (!le_audio_ring_push_frame(&e->perf.monitor_ring[input], s, 2)) {
     perf_note_drop(e);
+  }
+}
+
+/* Tap for each input's raw recording (#1805): every device input and active
+ * instrument frozen in perf_raw_mask at arm, monitored or not. Its clean
+ * mono sample (the device's, or an instrument source's), before the monitor's
+ * gate, chain, volume and pan, for every frame of the block. Once per block
+ * at its end, before the frames are counted, rather than in the frame loop:
+ * out of line and cold, so the mixer's hot code is the same with or without
+ * it (#1719), and nothing runs while not armed. Frames the latency harness
+ * took are recorded too: the raw input is the input whatever played. A
+ * block the device delivers no input buffer for records silence, which is
+ * what came in; a frame is never left out, so the drain's zero-fill (a
+ * glitch, #710) still means only a frame the ring could not take. */
+#if defined(_MSC_VER)
+__declspec(noinline)
+#else
+__attribute__((noinline, cold))
+#endif
+static void perf_tap_raw_block(le_engine* e, uint32_t frames) {
+  /* The block's input as le_engine_process left it in fx_par, and its first
+   * capture frame (the frames are counted after this), read here rather
+   * than passed, so the caller keeps nothing live past its frame loops. */
+  const float* in = e->fx_par.in;
+  const int ch_in = e->fx_par.ch_in;
+  const uint64_t perf_frame_base =
+      atomic_load_explicit(&e->a_perf_frames, memory_order_relaxed);
+  const uint64_t mask = e->perf_raw_mask;
+  for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
+    if (!(mask & (UINT64_C(1) << c))) continue;
+    const int instrument = c >= LE_INSTRUMENT_SOURCE_BASE;
+    /* le_perf_capture_sets holds device inputs to the configured count. */
+    const int device = !instrument && in != NULL && c < ch_in;
+    le_audio_ring* ring = &e->perf_raw_ring[c];
+    for (uint32_t f = 0; f < frames; ++f) {
+      const float x = instrument ? le_instrument_source_sample(e, c, f)
+                      : device   ? in[(size_t)f * (size_t)ch_in + (size_t)c]
+                                 : 0.0f;
+      if (!le_audio_ring_push_frame(ring, &x, 1)) {
+        e->perf.tap_frame = perf_frame_base + f;
+        perf_note_drop(e);
+      }
+    }
   }
 }
 
@@ -7389,6 +7512,7 @@ static inline LE_AUDIO_HOT_AT(1) void advance_transport_frame(le_engine* e, int 
       /* Which tracks' grid arms fire on this tick: read by the Once check
        * below, which runs after the arms so it sees what they did. */
       uint8_t fired[LE_MAX_TRACKS] = {0};
+      uint32_t parks = 0; /* #1782: tracks whose fired end parks */
       /* Grid-armed fire check. The loop top (wrap) is every division's
        * boundary AND the layer boundary, so it fires everything — the exact
        * pre-A3 behavior, and the whole behavior when the quantize division is
@@ -7444,7 +7568,13 @@ static inline LE_AUDIO_HOT_AT(1) void advance_transport_frame(le_engine* e, int 
           }
           pt->pending_record = 0;
           store_i32(&pt->a_pending, 0);
-          handle_record(e, qt, frame);
+          /* The Rec-mode Stop's park waited for this end (#1782): it lands
+           * below, after every arm this boundary fires. */
+          if (pt->park & LE_PARK_ARMED) {
+            parks |= 1u << qt;
+          } else {
+            handle_record(e, qt, frame);
+          }
           fired[qt] = 1;
         }
       }
@@ -7469,6 +7599,18 @@ static inline LE_AUDIO_HOT_AT(1) void advance_transport_frame(le_engine* e, int 
       /* Band's one-section handoff (#1323): on the primary's top after the
        * sounding section's lap end. */
       le_band_handoff_tick(e, wrapped, frame);
+      /* The parks armed ends wait for (#1782), after the arms above, so none
+       * of them restarts the parked transport. The mutes that waited spare
+       * the tail. */
+      for (int qt = 0; parks && qt < tc; ++qt) {
+        if (!(parks & (1u << qt))) continue;
+        le_track* pt = &e->tracks[qt];
+        uint32_t waited = 0;
+        for (int32_t l = 0; l < LE_MAX_LANES; ++l) {
+          if (pt->lanes[l].pending_mute) waited |= 1u << l;
+        }
+        le_park(e, qt, waited, frame);
+      }
       /* Once (slice 2b): a one-shot track whose own lap ended on this tick
        * stops here, after the arms above have done what they were queued
        * for. */
@@ -8484,7 +8626,10 @@ static inline int process_input_frame(le_engine* e, const float* in,
  * the block before this loop, as jobs (le_fx_monitor_job), so a chain's
  * output for block frame [i] is read from le_fx_par. [out_enabled] is the
  * structural output gate, intersected with the mask so a disabled output is
- * never a target. Live and independent of every track; never recorded. */
+ * never a target. Live and independent of every track, and never recorded
+ * into a loop. A performance capture taps each captured input here as
+ * heard, after its volume and pan; its raw recording (#1805) is taken once
+ * per block (perf_tap_raw_block). */
 static inline void mix_monitors_frame(
     le_engine* e, const float* in, float* out, uint32_t f, uint32_t i,
     int ch_in, int ch_out, uint32_t out_enabled, const int* mon_on,
@@ -11755,6 +11900,7 @@ LE_AUDIO_HOT_AT(0) void le_engine_process(le_engine* e, float* output, const flo
    * synchronize-with this add, so everything sequenced before it — every
    * tail store — is visible to the pops that follow. */
   if (e->perf.armed) {
+    perf_tap_raw_block(e, frames);
     atomic_fetch_add_explicit(&e->a_perf_frames, (uint64_t)frames,
                               memory_order_release);
   }

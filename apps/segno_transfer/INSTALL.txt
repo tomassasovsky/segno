@@ -30,6 +30,16 @@ The app uses SSH access already configured on your Mac. A new Mac/appliance
 pairing needs SSH setup first; in-app password entry is not included. Connection
 settings contains the username, recording folder and optional SSH key path.
 
+OPEN IN ABLETON LIVE
+
+Open in Live downloads a performance's Live set with every file it uses and
+opens it in Ableton Live. The app carries the Segno plugins (Segno.vst3) and
+offers to install them into ~/Library/Audio/Plug-Ins/VST3 when a set needs
+them. After installing, rescan plug-ins in Live (Settings > Plug-Ins >
+Rescan) or restart Live. If macOS says it cannot verify Segno.vst3, open
+System Settings > Privacy & Security and choose Open Anyway for it, as for
+the app.
+
 SOURCE, UPDATES AND HELP
 
 Downloads: https://github.com/tomassasovsky/segno/releases

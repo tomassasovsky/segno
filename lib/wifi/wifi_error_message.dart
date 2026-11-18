@@ -1,46 +1,18 @@
 import 'package:segno/l10n/l10n.dart';
-import 'package:segno/wifi/wifi_join_failure.dart';
+import 'package:wifi_repository/wifi_repository.dart';
 
-/// Maps a WiFi failure to a short operator-facing string.
+/// What the page says about a join of [ssid] that failed for [reason].
 ///
-/// When the cubit classified the failure, [kind] decides the copy — the raw
-/// text is never re-guessed. The text fallback below only serves errors that
-/// never went through [classifyWifiJoinFailure] (scan/status/load failures),
-/// and it deliberately does **not** map NM's `no-secrets` family to the
-/// password hint: without knowing whether the user just typed a password,
-/// `no-secrets` is not evidence about the password at all (#824, #829).
-String wifiErrorMessage(
+/// The helper decides [reason] from what wpa_supplicant logged (#1817,
+/// #1843), so only a key the access point refused reads as a wrong password;
+/// everything else names the network and is offered again.
+String wifiJoinErrorMessage(
   AppLocalizations l10n,
-  String? raw, {
-  WifiJoinErrorKind? kind,
-}) {
-  if (raw == null || raw.isEmpty) return '';
-  if (kind != null) {
-    return switch (kind) {
-      WifiJoinErrorKind.credentials => l10n.wifiConnectFailedPassword,
-      WifiJoinErrorKind.transient => l10n.wifiConnectFailedBackend,
-      WifiJoinErrorKind.timeout => l10n.wifiConnectFailedTimeout,
-      WifiJoinErrorKind.unknown => l10n.wifiConnectFailedGeneric,
-    };
-  }
-  final lower = raw.toLowerCase();
-  if (lower.contains('authentication failed') ||
-      lower.contains('wrong password') ||
-      lower.contains('invalid passphrase')) {
-    return l10n.wifiConnectFailedPassword;
-  }
-  if (lower.contains('secrets were required') ||
-      lower.contains('no secrets') ||
-      lower.contains('no-secrets')) {
-    return l10n.wifiConnectFailedBackend;
-  }
-  if (lower.contains('timed out waiting') || lower.contains('took too long')) {
-    return l10n.wifiConnectFailedTimeout;
-  }
-  if (lower.contains('segno-wifi-ctl') ||
-      lower.contains('processexception') ||
-      lower.contains('connection failed')) {
-    return l10n.wifiConnectFailedGeneric;
-  }
-  return raw;
-}
+  WifiJoinError reason,
+  String ssid,
+) => switch (reason) {
+  WifiJoinError.wrongPassword => l10n.networkJoinWrongPassword(ssid),
+  WifiJoinError.notFound => l10n.networkJoinNotFound(ssid),
+  WifiJoinError.noAddress => l10n.networkJoinNoAddress(ssid),
+  WifiJoinError.noConnection => l10n.networkJoinNoConnection(ssid),
+};

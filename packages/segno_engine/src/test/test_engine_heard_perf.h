@@ -92,39 +92,53 @@ static FILE* heard_perf_fixture(const char* dir, uint64_t capture_frames,
 }
 
 /* The dry stem is the clean takes and the wet stem the heard images (their
- * sides' mean): the arm image's from frame 0, then a retired layer's from
- * its logged retire, read from the heard section after its clean lanes. */
+ * sides' mean): the arm image's from frame 0, then, from the frame after the
+ * first pass retires, its result, the image the second pass retires (#1808:
+ * a pass retires the loop as it was before it), read from the heard section
+ * after its clean lanes. */
 static void test_heard_perf_wet_stem_plays_the_images(void) {
   printf("test_heard_perf_wet_stem_plays_the_images\n");
   enum { CAP = 64, RETIRE = 24 };
   const char* dir = heard_perf_dir("heard-layers");
-  float layer[3 * HP_LOOP];
-  for (int i = 0; i < HP_LOOP; ++i) {
-    layer[i] = 1.0f;                    /* clean */
-    layer[HP_LOOP + 2 * i] = 0.6f;      /* heard L */
-    layer[HP_LOOP + 2 * i + 1] = 0.2f;  /* heard R */
+  /* Two complete passes: the first retires the arm image (0.5 | 0.3, 0.1),
+   * the second the first pass's result (1.0 | 0.6, 0.2). */
+  for (int k = 0; k < 2; ++k) {
+    float layer[3 * HP_LOOP];
+    for (int i = 0; i < HP_LOOP; ++i) {
+      layer[i] = k == 0 ? 0.5f : 1.0f;                   /* clean */
+      layer[HP_LOOP + 2 * i] = k == 0 ? 0.3f : 0.6f;     /* heard L */
+      layer[HP_LOOP + 2 * i + 1] = k == 0 ? 0.1f : 0.2f; /* heard R */
+    }
+    char path[700];
+    snprintf(path, sizeof(path), "%s/layer-heard-%d.pcm", dir, k);
+    FILE* pf = fopen(path, "wb");
+    CHECK(pf != NULL);
+    if (pf != NULL) {
+      fwrite(layer, sizeof(float), 3 * HP_LOOP, pf);
+      fclose(pf);
+    }
   }
-  char path[700];
-  snprintf(path, sizeof(path), "%s/layer-heard.pcm", dir);
-  FILE* pf = fopen(path, "wb");
-  CHECK(pf != NULL);
-  if (pf != NULL) {
-    fwrite(layer, sizeof(float), 3 * HP_LOOP, pf);
-    fclose(pf);
-  }
-  char layers[400];
+  char layers[800];
   snprintf(layers, sizeof(layers),
            "{\"channel\": 0, \"slot\": 1, \"generation\": 0, \"frame\": %d, "
            "\"frame_count\": %d, \"lane_count\": 1, \"kind\": 0, "
-           "\"restore_id\": 0, \"filename\": \"layer-heard.pcm\", "
+           "\"restore_id\": 0, \"filename\": \"layer-heard-0.pcm\", "
+           "\"heard_mask\": 1}, "
+           "{\"channel\": 0, \"slot\": 2, \"generation\": 0, \"frame\": %d, "
+           "\"frame_count\": %d, \"lane_count\": 1, \"kind\": 0, "
+           "\"restore_id\": 0, \"filename\": \"layer-heard-1.pcm\", "
            "\"heard_mask\": 1}",
-           RETIRE, HP_LOOP);
+           RETIRE, HP_LOOP, RETIRE + HP_LOOP, HP_LOOP);
   FILE* lf = heard_perf_fixture(dir, CAP, layers);
   if (lf != NULL) {
     test_write_log_entry(
         lf, RETIRE,
         (le_command){.code = LE_PLOG_LAYER_RETIRED,
                      .evt = {.channel = 0, .slot = 1, .generation = 0}});
+    test_write_log_entry(
+        lf, RETIRE + HP_LOOP,
+        (le_command){.code = LE_PLOG_LAYER_RETIRED,
+                     .evt = {.channel = 0, .slot = 2, .generation = 0}});
     fclose(lf);
   }
   le_engine* e = le_engine_create();
@@ -138,8 +152,8 @@ static void test_heard_perf_wet_stem_plays_the_images(void) {
   CHECK(test_read_stem(dir, 0, dry, CAP) == CAP);
   CHECK(test_read_wet_stem(dir, 0, wet, CAP) == CAP);
   for (int f = 0; f < CAP; ++f) {
-    CHECK(fabsf(dry[f] - (f < RETIRE ? 0.5f : 1.0f)) < 1e-6f);
-    CHECK(fabsf(wet[f] - (f < RETIRE ? 0.2f : 0.4f)) < 1e-6f);
+    CHECK(fabsf(dry[f] - (f <= RETIRE ? 0.5f : 1.0f)) < 1e-6f);
+    CHECK(fabsf(wet[f] - (f <= RETIRE ? 0.2f : 0.4f)) < 1e-6f);
   }
   le_engine_destroy(e);
 }

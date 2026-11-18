@@ -173,8 +173,14 @@ tiles talk to host helpers (same pattern as OTA's `segno-update-ctl`):
 | `/usr/bin/segno-brightness-ctl` | DDC/CI brightness via `ddcutil` VCP 0x10 |
 | `/usr/bin/segno-touch-ctl` | per-screen touchscreen calibration matrix (`get` / `try` / `set` / `reset` / `restore` / `apply`) |
 
-WiFi is owned by **NetworkManager** (eth0 + wlan*). `systemd-networkd` is
-masked on the appliance image so the two managers do not fight. The unit
+WiFi is owned by **NetworkManager** (eth0 + wlan*), which drives the radio
+through **wpa_supplicant**, configured as on Raspberry Pi OS (#1843;
+[`NETWORK_PARITY.md`](NETWORK_PARITY.md) lists every piece and each
+difference). `systemd-networkd` is masked on the appliance image so the two
+managers do not fight. Saved networks live in
+`/data/NetworkManager/system-connections` and NetworkManager's state in
+`/data/NetworkManager/state` (bound at `/var/lib/NetworkManager`), so both
+survive an OS update. The unit
 announces itself as **`segno`** on the router/AP client list and the SSH
 prompt (the image hostname, set in `deploy/yocto/kas-segno-common.yml`; older
 images announced the board name, `raspberrypi5`).
@@ -188,6 +194,7 @@ segno-wifi-ctl scan
 printf '%s\n' 'your-psk' | segno-wifi-ctl connect 'YourSSID'   # key on stdin, never argv
 ip -4 addr show wlan0
 segno-wifi-ctl disconnect
+segno-wifi-ctl monitor        # one line per NetworkManager change; Ctrl-C ends it
 
 # Brightness (needs a DDC/CI-capable HDMI panel)
 segno-brightness-ctl supported
@@ -196,10 +203,74 @@ segno-brightness-ctl set 40
 segno-brightness-ctl set 80
 ```
 
+A failed `connect` exits non-zero and prints why on stdout:
+`{"error":"wrong-password"}` only when wpa_supplicant logged "WPA: 4-Way
+Handshake failed - pre-shared key may be incorrect" during the attempt, after
+the access point disconnected it with reason 15, 14 or 23 (wpa_supplicant
+writes the same line for any drop during the handshake),
+otherwise `not-found`, `no-address` or `no-connection`; stderr names
+wpa_supplicant's evidence (`CTRL-EVENT-ASSOC-REJECT ... status_code=16` is
+the access point timing out the 802.11 authentication, #1816;
+`Authentication with ... timed out.` is an access point that never started
+the handshake, #470). NetworkManager's `no-secrets` is not evidence about the
+key. A failed join never deletes a saved network.
+
+After installing an image, `deploy/rpi/verify-network-on-device.sh
+root@<console>` checks the whole stack from a workstation: the
+configuration, joining each saved network, a wrong password, a reboot,
+Wi-Fi without the Ethernet cable, and an access point that goes away. It
+prints what each step should show.
+
 In the app: Settings → Network (join a network) → Displays (drag brightness
 and confirm the panel dims). Bluetooth is retired (#1199): the image ships no
 BlueZ. If `supported` is false for brightness, the slider still persists but
 does not change the panel — note that for a gamma follow-up.
+
+### WiFi troubleshooting: the router rejects every join
+
+Symptom: the console cannot join a saved network it joined before, and every
+attempt fails the same way. `iw event` shows `failed to connect ..., status:
+16: Authentication rejected due to timeout waiting for next frame in
+sequence`, wpa_supplicant logs `CTRL-EVENT-ASSOC-REJECT ... status_code=16`,
+and NetworkManager ends the attempt as `no-secrets`. The app treats that as a backend failure and retries;
+it does not ask for the password. The same console still joins another access
+point, such as a phone hotspot, on the same channel. Do not forget the network
+and re-enter the password: the saved password is not the problem.
+
+On 2026-11-17 the console failed this way for an hour against an ASUS
+RT-AX89X, on both its 2.4 GHz and 5 GHz networks (#1816). Turning off
+**802.11ax / WiFi 6 mode** on the router's 2.4 GHz band fixed it at once; the
+console's saved network is the 2.4 GHz one, and the 5 GHz band was not
+changed. Later the same morning, WiFi 6 was turned back on and the console
+joined normally, through repeated reconnects and a reboot. Applying a wireless
+setting on that router restarts its radio, so the likeliest cause is a state
+in the router that the restart cleared, not the 802.11ax setting itself. The
+console's chip (CYW43455) has no 802.11ax, so it joins such a router as
+802.11n on 2.4 GHz or 802.11ac on 5 GHz.
+
+What to do, in order:
+
+1. Apply any setting on the router's wireless page, or reboot the router, so
+   its radio restarts. Then reconnect from Settings → Network.
+2. If it still fails, turn off 802.11ax / WiFi 6 mode on the band the console
+   uses.
+
+To check what the console sees, over Ethernet (WiFi changes do not cut that
+session):
+
+```bash
+iw event -t -f &                     # join attempts and their status codes
+nmcli con up '<saved network name>'  # retries with the saved password
+journalctl -b -t wpa_supplicant | grep -E 'ASSOC-REJECT|timed out|4-Way|CTRL-EVENT-CONNECTED'
+wpa_cli -i wlan0 status              # wpa_state, the access point, the key management in use
+kill %1                              # stop iw event
+```
+
+Newer firmware is not a fix to try. The console's WiFi firmware is the same as
+current Raspberry Pi OS (Bookworm and Trixie): `cyfmac43455-sdio-standard.bin`
+7.45.265, with the same clm_blob and nvram. The image also sets Pi OS's
+`brcmfmac` options, `roamoff=1 feature_disable=0x282000`
+(`/etc/modprobe.d/brcmfmac.conf`).
 
 ## Touchscreen calibration
 

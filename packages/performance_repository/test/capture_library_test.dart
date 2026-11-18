@@ -140,11 +140,12 @@ void main() {
       expect(await repo.listCaptures(), isEmpty);
     });
 
-    test("reads #1198's parts in stream and index order, and sums the main "
-        "output's frames", () async {
+    test("reads #1198's parts in stream and index order, the raw inputs' "
+        "(#1805) last, and sums the main output's frames", () async {
       take(
         'perf-20261006-201500',
         parts: [
+          part(PerfTarget.rawStreamBase, 1, 'input-raw-0-001.wav', frames: 30),
           part(1, 1, 'input-0-001.wav', frames: 30),
           part(0, 2, 'master-002.wav', frames: 200),
           part(0, 1, 'master-001.wav'),
@@ -157,6 +158,7 @@ void main() {
         'master-001.wav',
         'master-002.wav',
         'input-0-001.wav',
+        'input-raw-0-001.wav',
       ]);
       expect(only.masterParts, hasLength(2));
       expect(only.durationFrames, 1200);
@@ -215,6 +217,51 @@ void main() {
       },
     );
 
+    test('lists the finished September takes, whose arm snapshot was '
+        'written before capture destinations, and a start leaves them as '
+        'they are (#1853)', () async {
+      // The console's own manifests, byte for byte, beside stand-ins for
+      // the single files those takes hold.
+      final manifests = <String, String>{};
+      for (final e in Directory('test/fixtures/september').listSync()) {
+        if (e is! File || !e.path.endsWith('.performance.json')) continue;
+        final text = e.readAsStringSync();
+        final slug = (jsonDecode(text) as Map<String, dynamic>)['slug'];
+        final dir = '$root/$slug';
+        Directory(dir).createSync();
+        File('$dir/performance.json').writeAsStringSync(text);
+        for (final file in [
+          'master.wav',
+          'live-input-0.wav',
+          'live-input-1.wav',
+          'project.als',
+        ]) {
+          File('$dir/$file').writeAsBytesSync(Uint8List(64));
+        }
+        manifests[dir] = text;
+      }
+      expect(manifests, hasLength(17));
+
+      await repo.runBootRecovery();
+      final listed = await repo.listCaptures();
+
+      expect(listed.map((c) => c.path), unorderedEquals(manifests.keys));
+      for (final capture in listed) {
+        final native =
+            jsonDecode(manifests[capture.path]!) as Map<String, dynamic>;
+        expect(capture.durationFrames, native['capture_frames']);
+        expect(capture.sampleRate, 96000);
+        expect(capture.masterParts.single.file, 'master.wav');
+        expect(capture.parts, hasLength(3));
+        expect(capture.hasDawProject, isTrue);
+        expect(
+          File('${capture.path}/performance.json').readAsStringSync(),
+          manifests[capture.path],
+        );
+      }
+      expect(repo.unrecoveredTakes, isEmpty);
+    });
+
     test('says whether the DAW project is in the bundle', () async {
       take('perf-20261006-201500', files: {'project.als': 10});
       take('perf-20261006-201600');
@@ -259,10 +306,12 @@ void main() {
             part(0, 1, 'master-001.wav'),
             part(0, 2, 'master-002.wav'),
             part(1, 1, 'input-0-001.wav'),
+            part(PerfTarget.rawStreamBase, 1, 'input-raw-0-001.wav'),
           ],
           files: {
             'master-001.wav': 10,
             'input-0-001.wav': 10,
+            'input-raw-0-001.wav': 10,
             'stems/wet/track1.wav': 4,
             'stems/wet/track0.wav': 4,
             'stems/dry/track0.wav': 4,
@@ -278,6 +327,7 @@ void main() {
         expect(repo.dawPackageFiles(capture), [
           'master-001.wav',
           'input-0-001.wav',
+          'input-raw-0-001.wav',
           'stems/dry/track0.wav',
           'stems/wet/track0.wav',
           'stems/wet/track1.wav',

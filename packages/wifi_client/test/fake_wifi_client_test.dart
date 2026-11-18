@@ -31,11 +31,9 @@ void main() {
       await expectLater(
         client.connect('Studio 5G', psk: 'nope'),
         throwsA(
-          isA<WifiHelperException>().having(
-            (e) => e.restored,
-            'restored',
-            'MyHouseWTF_es',
-          ),
+          isA<WifiHelperException>()
+              .having((e) => e.restored, 'restored', 'MyHouseWTF_es')
+              .having((e) => e.join, 'join', WifiJoinError.wrongPassword),
         ),
       );
       await client.connect('Studio 5G', psk: FakeWifiClient.workingPassphrase);
@@ -50,10 +48,29 @@ void main() {
 
         await expectLater(
           client.connect(absent.ssid),
-          throwsA(isA<WifiHelperException>()),
+          throwsA(
+            isA<WifiHelperException>().having(
+              (e) => e.join,
+              'join',
+              WifiJoinError.notFound,
+            ),
+          ),
         );
       },
     );
+
+    test('announces each change it makes', () async {
+      final client = FakeWifiClient();
+      var changes = 0;
+      final subscription = client.changes().listen((_) => changes++);
+      addTearDown(subscription.cancel);
+
+      await client.disconnect();
+      await client.connect('Cafe Free');
+      await client.setEnabled(enabled: false);
+      await Future<void>.delayed(Duration.zero);
+      expect(changes, 3);
+    });
 
     test('forget drops the credential and the association', () async {
       final client = FakeWifiClient();

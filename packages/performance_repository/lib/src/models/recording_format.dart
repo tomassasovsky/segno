@@ -186,7 +186,8 @@ class TakePart {
 
   static final RegExp _sha256Hex = RegExp(r'^[0-9a-f]{64}$');
 
-  /// 0 for the main output, 1 + n for input n.
+  /// 0 for the main output, 1 + n for input n as heard,
+  /// `PerfTarget.rawStreamBase` + n for input n raw (#1805).
   final int stream;
 
   /// Position in the stream, from 1.
@@ -249,7 +250,8 @@ class TakeCheckpointStream {
     required this.parts,
   });
 
-  /// 0 for the main output, 1 + n for input n.
+  /// 0 for the main output, 1 + n for input n as heard,
+  /// `PerfTarget.rawStreamBase` + n for input n raw (#1805).
   final int stream;
 
   /// Interleaved channels.

@@ -129,6 +129,7 @@ Future<void> runSegno(
       exportsRoot: defaultExportDirectory,
       guards: registry,
       reserveBytes: StorageRepository.internalReserveBytes,
+      log: AppLog.warn,
     );
     final decoder = createNativeAudioDecoder();
     backing = BackingRepository.forEngine(

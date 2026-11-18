@@ -173,6 +173,17 @@ for reporting vulnerabilities.
 
 Segno is free software, licensed under the
 [GNU General Public License v3.0 or later](LICENSE). Third-party code under
-`packages/segno_engine/third_party/` keeps its own licenses.
+`packages/segno_engine/third_party/` keeps its own licenses. The hardware in
+[segno-hardware](https://github.com/tomassasovsky/segno-hardware) is licensed
+under CERN-OHL-S-2.0, and the design files in
+[segno-design](https://github.com/tomassasovsky/segno-design) under
+CC BY-SA 4.0.
+
+Companies that want to use Segno under other terms can ask for a commercial
+license at tomas@aquiles.dev. The Segno name and logo aren't covered by the
+open licenses; [TRADEMARKS.md](TRADEMARKS.md) says how you can use them.
+Contributors sign the [contributor license agreement](CLA.md), which keeps
+every contribution available under the open license and lets the project offer
+those commercial licenses.
 
 Created by [Tomás Sasovsky](https://github.com/tomassasovsky).

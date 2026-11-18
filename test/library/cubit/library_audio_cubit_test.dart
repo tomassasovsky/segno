@@ -61,6 +61,7 @@ void main() {
     performance = _MockPerformance();
     guards = GuardRegistry();
     when(() => performance.rendering).thenReturn(false);
+    when(() => performance.stemsRendered(any())).thenReturn(true);
     sessions = _MockSessions();
     dawWrites = [];
     when(() => performance.listCaptures()).thenAnswer((_) async => []);
@@ -576,6 +577,12 @@ void main() {
         'Segno/Performances/Evening loop/master-001.wav',
         'Segno/Performances/Evening loop/project.als',
       ]);
+      // A Live Project, which Live saves in place (#1837).
+      final info = Directory(
+        '${drive.mount}/Segno/Performances/Evening loop/Ableton Project Info',
+      );
+      expect(info.existsSync(), isTrue);
+      expect(info.listSync(), isEmpty);
       expect(cubit.state.export, isA<LibraryExportDone>());
 
       // Written again for the next package: one an earlier version left
@@ -827,6 +834,145 @@ void main() {
 
       expect(cubit.state.error, LibraryAudioError.dawProjectFailed);
       expect(cubit.state.dawProjectWritten, isFalse);
+    });
+
+    test('a take with no rendered stems renders them first (#1824)', () async {
+      final capture = take('perf-old');
+      when(() => performance.stemsRendered(capture.path)).thenReturn(false);
+      when(
+        () => performance.renderStems(
+          capture.path,
+          cancelled: any(named: 'cancelled'),
+          onProgress: any(named: 'onProgress'),
+        ),
+      ).thenAnswer((_) async => true);
+      final cubit = await withRecording(capture);
+
+      await cubit.writeProject();
+
+      verify(
+        () => performance.renderStems(
+          capture.path,
+          cancelled: any(named: 'cancelled'),
+          onProgress: any(named: 'onProgress'),
+        ),
+      ).called(1);
+      expect(dawWrites, [capture.path]);
+      expect(cubit.state.dawProjectWritten, isTrue);
+    });
+
+    test('a render that fails is reported, and the project is left as it '
+        'was', () async {
+      final capture = take('perf-old');
+      final project = File('${capture.path}/project.als')
+        ..writeAsBytesSync([1, 2, 3]);
+      when(() => performance.stemsRendered(capture.path)).thenReturn(false);
+      when(
+        () => performance.renderStems(
+          capture.path,
+          cancelled: any(named: 'cancelled'),
+          onProgress: any(named: 'onProgress'),
+        ),
+      ).thenAnswer((_) async => false);
+      final cubit = await withRecording(capture);
+
+      await cubit.writeProject();
+
+      expect(cubit.state.error, LibraryAudioError.dawProjectFailed);
+      expect(cubit.state.dawProjectWritten, isFalse);
+      expect(dawWrites, isEmpty);
+      expect(project.readAsBytesSync(), [1, 2, 3]);
+    });
+
+    group('the DAW package of a take with no rendered stems (#1824)', () {
+      late CaptureSummary capture;
+
+      setUp(() {
+        capture = take('perf-old');
+        File('${capture.path}/project.als').writeAsBytesSync([1, 2, 3]);
+        when(() => performance.stemsRendered(capture.path)).thenReturn(false);
+        when(() => performance.dawPackageFiles(any()))
+            .thenAnswer((_) => ['master-001.wav', 'project.als']);
+      });
+
+      test('renders the stems first, its progress shown as the copy is, '
+          'then writes and copies the package', () async {
+        when(
+          () => performance.renderStems(
+            capture.path,
+            cancelled: any(named: 'cancelled'),
+            onProgress: any(named: 'onProgress'),
+          ),
+        ).thenAnswer((invocation) async {
+          final onProgress =
+              invocation.namedArguments[#onProgress] as void Function(double);
+          onProgress(0.5);
+          return true;
+        });
+        final cubit = await withRecording(capture);
+        final fractions = <double>[];
+        final sub = cubit.stream.listen((s) {
+          if (s.export case LibraryExportRunning(:final fraction)) {
+            fractions.add(fraction);
+          }
+        });
+        addTearDown(sub.cancel);
+
+        await cubit.export(LibraryAudioExportKind.dawPackage, purpose: 'p');
+
+        expect(fractions, contains(0.5));
+        expect(dawWrites, [capture.path]);
+        expect(cubit.state.export, isA<LibraryExportDone>());
+      });
+
+      test('a render that fails stops the export and leaves the project as '
+          'it was', () async {
+        when(
+          () => performance.renderStems(
+            capture.path,
+            cancelled: any(named: 'cancelled'),
+            onProgress: any(named: 'onProgress'),
+          ),
+        ).thenAnswer((_) async => false);
+        final cubit = await withRecording(capture);
+
+        await cubit.export(LibraryAudioExportKind.dawPackage, purpose: 'p');
+
+        expect(cubit.state.error, LibraryAudioError.exportFailed);
+        expect(dawWrites, isEmpty);
+        expect(drive.copies, isEmpty);
+        expect(File('${capture.path}/project.als').readAsBytesSync(), [
+          1,
+          2,
+          3,
+        ]);
+      });
+
+      test('a cancel during the render ends the export with nothing '
+          'written', () async {
+        late LibraryAudioCubit cubit;
+        when(
+          () => performance.renderStems(
+            capture.path,
+            cancelled: any(named: 'cancelled'),
+            onProgress: any(named: 'onProgress'),
+          ),
+        ).thenAnswer((invocation) async {
+          cubit.cancelExport();
+          final cancelled =
+              invocation.namedArguments[#cancelled] as bool Function();
+          expect(cancelled(), isTrue);
+          return false;
+        });
+        cubit = await withRecording(capture);
+
+        await cubit.export(LibraryAudioExportKind.dawPackage, purpose: 'p');
+
+        expect(cubit.state.export, isNull);
+        expect(cubit.state.error, isNull);
+        expect(dawWrites, isEmpty);
+        expect(drive.copies, isEmpty);
+      });
     });
   });
 

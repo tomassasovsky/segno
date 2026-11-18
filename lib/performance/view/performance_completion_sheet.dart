@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:daw_export/daw_export.dart' show DawTrackKind;
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:pedal_repository/pedal_repository.dart';
@@ -263,11 +262,9 @@ class _Face extends StatelessWidget {
     // stopped flowing through this sheet (#679) no live path produces null,
     // but the sheet must not gamble on that).
     final duration = state.duration;
-    // The looper tracks recorded: the Live set's dry stems, inputs and
-    // master are not counted (#1799).
-    final recorded = state.tracks
-        .where((t) => t.kind == DawTrackKind.loop)
-        .length;
+    // The looper tracks recorded, one Group of lanes each in the Live set
+    // (#1824): its inputs and master are not counted (#1799).
+    final recorded = {for (final t in state.tracks) ?t.group}.length;
     final subtitle = duration == null
         ? l10n.perfSavedSubtitlePlain(name)
         : recorded == 0

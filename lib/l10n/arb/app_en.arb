@@ -1743,17 +1743,53 @@
     "@wifiConnectFailedPassword": {
         "description": "Shown when WPA authentication fails while joining a network."
     },
-    "wifiConnectFailedTimeout": "Couldn’t join — the network didn’t finish connecting.",
-    "@wifiConnectFailedTimeout": {
-        "description": "Shown when WiFi association times out before COMPLETED."
+    "networkJoinWrongPassword": "The password for {ssid} is wrong.",
+    "@networkJoinWrongPassword": {
+        "description": "A join failed because the access point tested the key and refused it (wpa_supplicant's 4-way handshake failed, #1817, #1843). The only failure worded as a password problem.",
+        "placeholders": {
+            "ssid": {
+                "type": "String"
+            }
+        }
     },
-    "wifiConnectFailedGeneric": "Couldn’t join that network.",
-    "@wifiConnectFailedGeneric": {
-        "description": "Fallback error when WiFi connect fails for an unknown reason."
+    "networkJoinNoConnection": "Couldn’t connect to {ssid}.",
+    "@networkJoinNoConnection": {
+        "description": "A join failed before the key was tested: the access point rejected or timed out the authentication or association, or the join ran out of time (#1817). Never worded as a password problem; Try again sits beside it.",
+        "placeholders": {
+            "ssid": {
+                "type": "String"
+            }
+        }
     },
-    "wifiConnectFailedBackend": "Couldn’t join — network error, not a password problem.",
-    "@wifiConnectFailedBackend": {
-        "description": "Shown when a join fails for backend/transient reasons (iwd race, NM no-secrets on a saved network) after automatic retries — explicitly not a credentials problem, so the owner does not forget the network and re-type the password (#829)."
+    "networkJoinNotFound": "Couldn’t find {ssid}. It may be out of range.",
+    "@networkJoinNotFound": {
+        "description": "A join failed because the network is not in range (#1817).",
+        "placeholders": {
+            "ssid": {
+                "type": "String"
+            }
+        }
+    },
+    "networkJoinNoAddress": "{ssid} didn’t give Segno an IP address.",
+    "@networkJoinNoAddress": {
+        "description": "A join came up but no IPv4 address came (DHCP, #1817).",
+        "placeholders": {
+            "ssid": {
+                "type": "String"
+            }
+        }
+    },
+    "networkTryAgain": "Try again",
+    "@networkTryAgain": {
+        "description": "Joins the network whose join just failed again, with the same key (#1817)."
+    },
+    "networkActionFailed": "Wi-Fi didn’t respond.",
+    "@networkActionFailed": {
+        "description": "A Wi-Fi action other than a join (scan, disconnect, forget, the radio switch) failed."
+    },
+    "networkListNoOthers": "No other networks found.",
+    "@networkListNoOthers": {
+        "description": "Network list when the only network in range is the one the console is on."
     },
     "consoleKeepIt": "Keep it",
     "@consoleKeepIt": {
@@ -1908,7 +1944,7 @@
     "@networkConnectingChecking": {
         "description": "Connecting dialog note when nothing was connected before."
     },
-    "networkRetrying": "Network error. Trying again…",
+    "networkRetrying": "Couldn’t connect. Trying again…",
     "@networkRetrying": {
         "description": "Connecting dialog note while the console re-activates after a backend failure (#829). Never worded as a password problem."
     },

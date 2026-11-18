@@ -13,8 +13,11 @@ with all of them (#1791).
 | `automation.als` | `audio_clips.als` plus a volume envelope (1 at beat 0, 0.25 at beat 4, 0.708 at beat 8) and an activator envelope (off at beat 2, on at beat 6). The template: `lib/src/live_set_template.dart` is this file, decompressed. |
 | `tempo.als` | `audio_clips.als` at 93.5 BPM. |
 | `session_loop_warped.als` | `audio_clips.als` with the Session clip warped and looping, the form `buildAls` gives lane loops. |
-| `vst3.als` | One audio track with a VST3 effect (TAL-Filter-2 3.1.2) as Live stores it: a `PluginDevice` whose `Vst3PluginInfo` names the plugin's class id as four signed 32-bit `Uid` fields, with the plugin's own state in a `Vst3Preset`. Nothing generates devices today (#1587); this is the shape a device chain would need. |
+| `vst3.als` | One audio track with a VST3 effect (TAL-Filter-2 3.1.2) as Live stores it: a `PluginDevice` whose `Vst3PluginInfo` names the plugin's class id as four signed 32-bit `Uid` fields, with the plugin's own state in a `Vst3Preset`. Live's shape for a VST3 effect, kept beside `segno_vst3.als`. |
 | `reference_tracks.als` | `automation.als` with the track switched off, a three-line info text, a second Arrangement clip right after the first, and a volume envelope that steps to silence at beat 2 and back at beat 6 (two events at each of those beats). The shapes `buildAls` gives a reference track (#1799). |
+| `group.als` | `automation.als` with its track inside a Group track named `Group` (#1824): the Group track before it, the track's `TrackGroupId` naming the group and its output routed to it (`AudioOut/GroupTrack`, shown as `Group`). The template for Group tracks: `lib/src/live_group_track_template.dart` is its Group track. **Not yet saved by Live**: see below. |
+| `segno_vst3.als` | Live's default set with, on `3 Audio`, Segno Delay loaded fresh from the browser and its Time moved to 743 ms, then Segno Doubler and Segno Distortion grouped into an Audio Effect Rack (Cmd+G), and the track's lane chooser on Mixer > Track Volume (#1804). Built in Live itself. `lib/src/live_device_template.dart` takes its first plugin device and its rack from it. It shows how Live lists a plugin's parameters (one slot per parameter, a list's value in steps, 128 slots) and numbers the lane chooser (`SelectedDevice` 6 for the Mixer after these devices). |
+| `plugin_automation.als` | Built in Live 12.2.7 from a set `buildAls` wrote (#1836): three tracks playing a pluck at every bar (`pluck.wav`, not kept here; the tests read only the set). **A**: Segno Delay with its Device On drawn off over bars 3 and 4, its Mix ramped and stepped, then Segno Mode delay with Delay mode drawn as a step. **B**: Segno Delay switched off, its Device On drawn on near the start, then a recorded pass that switched it off and on. **C**: an Audio Effect Rack of a Segno Doubler chain and a Segno Distortion chain, its Device On drawn off over bars 3 and 4 and the Distortion's Drive stepped. It shows how Live automates a plugin: every envelope on the track, a device in a rack included; a switch as `BoolEvent`s, a parameter as `FloatEvent`s, a drawn step as two events at one time and a recorded switch as one event a press; a stepped setting that is not a list normalized, its value and its envelope's; the lane chooser numbering a device's parameters after its Device On (track A shows Mix, entry 1, envelope 3; track C the Drive, entry 4, envelope 1). Live lists no bypass parameter (`kIsBypass`) for a plugin, and its Device On stops the plugin: a Segno Delay switched off there loses its echoes at once, and its delay line resumes when it comes back on. |
 | `tone.wav` | 2400 frames of a 440 Hz sine, 48 kHz, 16-bit mono (4.8 KB), which the sets reference. |
 
 ## How they were made
@@ -37,6 +40,25 @@ lacks (`ArrangementClipsListWrapper`, `TakeLanesListWrapper`,
 `MpePitchBendUsesTuning`), file sizes and checksums, and for the VST3 set the
 full device. To refresh the corpus for a newer Live, open each set in it, save
 it, copy it back here, and run `dart run tool/generate_live_set_template.dart`.
+
+### `group.als`, owed a Live save
+
+`group.als` was put together from files Live wrote, without Live saving the
+result, because the session that made it could not drive Live (#1824). Its
+Group track is the one in Live 12.2's bundled template
+`Core Library/Templates/Podcast & Radio.als` (saved by Live 12.2d1, the same
+`MinorVersion` as the rest of the corpus), with the template's devices (an
+Audio Effect Rack of mastering devices) taken out of its device chain, its
+lane chooser moved to the mixer, its name set to `Group`, its track id set
+to 9 and its pointee ids renumbered from `automation.als`'s `NextPointeeId`.
+It was inserted before `automation.als`'s audio track, whose `TrackGroupId`
+and `AudioOutputRouting` were set as the template's members have them.
+
+Owed: open `group.als` in Live 12.2.7 from a Live Project folder, make a
+reversible change, save it over itself (as above), copy it back, run
+`dart run tool/generate_live_group_track_template.dart`, and check that the
+tests still pass. Until then, an exported set's Group tracks are checked
+against Live's own Group track, not against one Live saved in this set.
 
 ## What Live checks
 

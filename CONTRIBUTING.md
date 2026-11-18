@@ -17,9 +17,8 @@ documentation. Before starting a larger change, open an issue to discuss it.
 
 ## Branches
 
-All work lands on the development branch, `claude/segno-integration`. The
-default branch, `master`, receives it at release. Branch from
-`claude/segno-integration` and open your pull request against it.
+All work lands on `master`. Branch from `master` and open your pull request
+against it.
 
 ## Making a change
 
@@ -78,9 +77,15 @@ For security problems, follow [SECURITY.md](SECURITY.md) instead.
 
 ## License
 
-By contributing, you agree that your contribution is licensed under the
-[GNU General Public License v3.0 or later](LICENSE), the license of the
-project.
+Contributions to Segno are covered by the
+[Segno Contributor License Agreement](CLA.md). You keep your copyright. Your
+contribution stays available under the license of the repository you
+contribute to (GPL-3.0-or-later here), and the agreement also lets the
+maintainer offer it under other terms, such as a commercial license. To agree,
+tick the CLA box in the pull request template.
+
+Using the Segno name or logo is covered separately, in
+[TRADEMARKS.md](TRADEMARKS.md).
 
 Everyone taking part is expected to follow the
 [code of conduct](CODE_OF_CONDUCT.md).

@@ -1,14 +1,30 @@
+# Creates NetworkManager's directories on /data before NetworkManager starts
+# (#432, #1843): the saved networks (keyfile.path in
+# segno-keyfile-on-data.conf) and the state directory that
+# var-lib-NetworkManager.mount puts at /var/lib/NetworkManager.
+#
+# A .mount unit creates its own mountpoint but never its source, so without
+# this a freshly flashed console would mount nothing. Root only, 0700, as
+# NetworkManager keeps /var/lib/NetworkManager and as Pi OS keeps the keyfile
+# directory.
+#
+# It also makes every keyfile 0600. NetworkManager ignores a keyfile that
+# others can read, and says so only in its log: a profile copied in by hand
+# or restored from a backup would vanish from the Network page. Pi OS has no
+# such step; NetworkManager writes its own keyfiles 0600 on both.
 [Unit]
-Description=Segno: NetworkManager connections on /data (survive OTA)
+Description=Segno: NetworkManager profiles and state on /data (survive an OS update)
 DefaultDependencies=no
 Requires=data.mount
 After=data.mount
-Before=NetworkManager.service network-pre.target
+Before=var-lib-NetworkManager.mount NetworkManager.service network-pre.target
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/bin/segno-nm-persist
+ExecStart=/bin/mkdir -p /data/NetworkManager/system-connections /data/NetworkManager/state
+ExecStart=/bin/chmod 0700 /data/NetworkManager/system-connections /data/NetworkManager/state
+ExecStart=/bin/sh -c 'find /data/NetworkManager/system-connections -type f -name "*.nmconnection" -exec chmod 600 {} +'
 
 [Install]
 WantedBy=NetworkManager.service
