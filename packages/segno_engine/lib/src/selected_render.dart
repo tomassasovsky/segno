@@ -74,7 +74,7 @@ enum RenderJobState {
 @immutable
 class RenderRequest {
   /// Creates a [RenderRequest].
-  const RenderRequest({
+  const new({
     required this.sources,
     this.lengthBars,
     this.tails = RenderTails.wrap,
@@ -143,7 +143,7 @@ class RenderRequest {
 @immutable
 class RenderPlan {
   /// Creates a [RenderPlan].
-  const RenderPlan({
+  const new({
     required this.frames,
     required this.method,
     required this.beatsMilli,
@@ -225,7 +225,7 @@ typedef RenderAdmission = ({EngineResult result, int job});
 @immutable
 class RenderJobStatus {
   /// Creates a [RenderJobStatus].
-  const RenderJobStatus({
+  const new({
     required this.state,
     required this.permille,
     this.failure = EngineResult.ok,

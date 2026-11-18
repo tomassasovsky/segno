@@ -7,13 +7,13 @@ version: 0.1.0
 publish_to: none
 
 environment:
-  sdk: ^3.11.0
-  flutter: ^3.41.0
+  sdk: ^3.14.0
+  flutter: ^3.50.0
 
 dependencies:
   controller_repository:
     path: ../controller_repository
-  equatable: ^2.0.7
+  equatable: ^3.0.0
   flutter:
     sdk: flutter
   midi_client:
@@ -26,4 +26,4 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   mocktail: ^1.0.5
-  very_good_analysis: ^10.2.0
+  very_good_analysis: ^11.0.0

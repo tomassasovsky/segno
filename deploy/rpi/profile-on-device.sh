@@ -20,7 +20,7 @@
 # profile snapshot runs only on a profile engine.
 #
 # The profile build runs through the shipped launcher, /usr/bin/segno-kiosk-launch,
-# with SEGNO_ENGINE_LIB and SEGNO_HOMESCREEN_CONFIG pointed at /data/profile and
+# with SEGNO_HOMESCREEN_CONFIG pointed at /data/profile and
 # LD_LIBRARY_PATH at its lib/ (which every process the app starts inherits), so
 # it gets the same HOME, ALSA and RT settings as the appliance. It runs as a
 # transient systemd unit, segno-devtools, with segno.service's limits and stop
@@ -122,7 +122,6 @@ remote "systemd-run --unit=segno-devtools --collect \
   --property=TimeoutStopFailureMode=abort --property=TimeoutAbortSec=120s \
   --property='ExecStopPost=/usr/bin/systemctl --no-block start segno.service' \
   --setenv=LD_LIBRARY_PATH=$REMOTE_DIR/bundle/lib \
-  --setenv=SEGNO_ENGINE_LIB=$REMOTE_DIR/bundle/lib/libsegno_engine.so \
   --setenv=SEGNO_HOMESCREEN_CONFIG=$REMOTE_DIR/homescreen.toml \
   /usr/bin/segno-kiosk-launch"
 

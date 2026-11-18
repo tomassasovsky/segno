@@ -99,6 +99,7 @@ class FakeAudioEngine with SimulatedInstruments implements AudioEngine {
   int recordCalls = 0;
   int stopRecordControlCalls = 0;
   int? lastStopRecordControlChannel;
+  int stopRecordParkCalls = 0;
   int cancelCountInCalls = 0;
   int stopTrackCalls = 0;
   int playCalls = 0;
@@ -275,6 +276,13 @@ class FakeAudioEngine with SimulatedInstruments implements AudioEngine {
   EngineResult stopRecordControl({required int channel}) {
     stopRecordControlCalls++;
     lastStopRecordControlChannel = channel;
+    _clearCountIn();
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult stopRecordPark({required int channel, int following = 0}) {
+    stopRecordParkCalls++;
     _clearCountIn();
     return EngineResult.ok;
   }
@@ -483,6 +491,10 @@ class FakeAudioEngine with SimulatedInstruments implements AudioEngine {
     stopTrackCalls++;
     return EngineResult.ok;
   }
+
+  @override
+  EngineResult spareTail({int channel = 0, int following = 0}) =>
+      EngineResult.ok;
 
   @override
   EngineResult play({int channel = 0}) {
@@ -1143,6 +1155,17 @@ class FakeAudioEngine with SimulatedInstruments implements AudioEngine {
     return EngineResult.ok;
   }
 
+  @override
+  EngineResult setLaneSource({
+    required int channel,
+    required int lane,
+    required LaneSource source,
+  }) => EngineResult.ok;
+
+  @override
+  EngineResult heardAttach({required int channel, required int lane}) =>
+      EngineResult.ok;
+
   // ---- Track-stage + output chains (FX v3), recorded so app tests
   // can assert the bootstrap restore + bloc pushes. ----
 
@@ -1633,6 +1656,33 @@ class FakeAudioEngine with SimulatedInstruments implements AudioEngine {
       ? laneExports[(channel, lane)] ?? Float32List(0)
       : Float32List(0);
 
+  /// Heard images (#1713) of the ordinal-0 layers, keyed by
+  /// `(channel, lane)`: what [importLayerHeard] staged, or a test seeds.
+  final Map<(int, int), Float32List> laneHeardExports = {};
+
+  @override
+  Float32List exportLayerHeard(int channel, int lane, int ordinal) =>
+      ordinal == 0
+      ? laneHeardExports[(channel, lane)] ?? Float32List(0)
+      : Float32List(0);
+
+  @override
+  Float32List exportTrackLaneHeard(int channel, int lane) =>
+      laneHeardExports[(channel, lane)] ?? Float32List(0);
+
+  @override
+  EngineResult importLayerHeard(
+    int channel,
+    int lane,
+    int ordinal,
+    Float32List pcm,
+  ) {
+    if (ordinal == 0) {
+      laneHeardExports[(channel, lane)] = Float32List.fromList(pcm);
+    }
+    return EngineResult.ok;
+  }
+
   @override
   EngineResult importLayer(
     int channel,
@@ -1994,7 +2044,7 @@ class FakeAudioEngine with SimulatedInstruments implements AudioEngine {
 }
 
 class _LengthSnapshot extends EngineSnapshot {
-  _LengthSnapshot(
+  new(
     FakeAudioEngine engine,
     EngineSnapshot source,
     Map<int, int> lengths,
@@ -2113,7 +2163,7 @@ class _LengthSnapshot extends EngineSnapshot {
 }
 
 class _LengthTrack extends TrackSnapshot {
-  _LengthTrack(
+  new(
     TrackSnapshot source,
     int? bars, {
     int? imageRevision,
@@ -2144,6 +2194,7 @@ class _LengthTrack extends TrackSnapshot {
          clearRestore: source.clearRestore,
          redoDepth: source.redoDepth,
          peelDepth: source.peelDepth,
+         historySeq: source.historySeq,
          multiple: source.multiple,
          syncDivisor: source.syncDivisor,
          lengthHistoryRefusals: source.lengthHistoryRefusals,

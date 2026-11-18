@@ -17,6 +17,9 @@
  * comp_pos, le_lanes_active) come from engine_core.h; the chain runner from
  * engine_fx.h.
  */
+/* #1718: this unit's audio-callback functions go to the hot section (engine_hot.h). */
+#define LE_AUDIO_TU 1
+
 #include <math.h>
 #include <stdint.h>
 #include <string.h>
@@ -24,6 +27,8 @@
 #include "audio_ring.h"      /* le_audio_ring_push_frame (performance capture) */
 #include "engine_core.h"     /* valid_channel, le_track_set_len, le_mask_to_channel */
 #include "engine_fx.h"       /* fx_apply_chain, le_fx_entry_reset */
+#include "engine_heard.h"    /* the heard image (#1713) */
+#include "engine_hot.h"      /* LE_AUDIO_HOT_AT (#1718) */
 #include "engine_instruments.h" /* le_instruments_block / _cut (#1197) */
 #include "engine_internal.h" /* le_engine_process prototype */
 #include "engine_workers.h"  /* le_fx_jobs_run (#1515) */
@@ -35,6 +40,20 @@
 #include "segno_engine_api.h"
 #include "perf_log_ring.h" /* le_perf_log_ring_push, le_perf_log_code (perf event log) */
 #include "tempo_grid.h"    /* le_grid_* (pure tempo/bar/subdivision math) */
+
+/* #1713: engine_mix_heard.c includes this file with LE_MIX_HEARD_TU defined
+ * to compile the mixer a second time, as mix_tracks_frame_heard, with its
+ * heard-image code (the #ifdef LE_MIX_HEARD_TU blocks). This translation
+ * unit's own mixer, mix_tracks_frame, has none, and every helper it inlines
+ * keeps its one caller here, so the plain mixer compiles as it did before
+ * the heard image. That copy defines none of this file's external
+ * functions. */
+
+/* #1718: LE_AUDIO_TU came before every include, so the pins took. */
+#if defined(__ELF__) && (defined(__GNUC__) || defined(__clang__)) && \
+    !defined(LE_AUDIO_HOT_PINNED)
+#error "define LE_AUDIO_TU before the first include (engine_hot.h)"
+#endif
 
 /* The loopback-latency-harness and auto-record tuning constants (LE_LATENCY_* /
  * LE_AUTO_RECORD_THRESHOLD) live in engine_core.h — shared with le_engine_configure
@@ -65,6 +84,7 @@ static void le_restore_multiple_or_divisor(le_track* t, int32_t base,
  * atomic (tracked apart from a_perf_overruns, the PCM-tap counter — a dropped
  * log entry and a dropped audio sample are different failure modes). RT-safe:
  * no allocation, no blocking, mirrors the audio-tap discipline below. */
+#ifndef LE_MIX_HEARD_TU
 void le_plog_push(le_engine* e, uint64_t frame, le_command cmd) {
   if (!e->perf.armed) return;
   le_perf_log_entry entry = {.frame = frame};
@@ -74,6 +94,7 @@ void le_plog_push(le_engine* e, uint64_t frame, le_command cmd) {
                               memory_order_relaxed);
   }
 }
+#endif /* LE_MIX_HEARD_TU */
 
 /* Whether the transport is HELD: no track is playing, recording, or
  * overdubbing, so the loop clock sits at the top (advance_transport_frame's
@@ -213,6 +234,25 @@ static void le_restart_once(le_engine* e, le_track* t) {
                                   pos, len);
 }
 
+/* Stores lane [l]'s mute, and the gate the mixer reads with it: every
+ * mute gates, except the Rec-mode Stop's spared one (le_apply_mute_cmd). */
+static void le_lane_store_muted(le_track* t, int32_t l, int32_t muted) {
+  store_i32(&t->lanes[l].a_muted, muted);
+  store_i32(&t->lanes[l].a_gate_muted, muted);
+}
+
+/* The track runs again (or is cleared): any tail its Rec-mode Stop spared
+ * is gated from here, fading out as a mute does, and spare intents still
+ * waiting for their mute are dropped (#1773). */
+static void le_track_gate_mutes(le_track* t) {
+  t->tail_spare_next = 0;
+  if (!t->gate_spared) return;
+  t->gate_spared = 0;
+  for (int32_t l = 0; l < LE_MAX_LANES; ++l) {
+    store_i32(&t->lanes[l].a_gate_muted, load_i32(&t->lanes[l].a_muted));
+  }
+}
+
 /* The unpark rule: starting to record or play ANYTHING while the transport is
  * held resumes the parked loop — each manually stopped content track returns to
  * PLAYING with its mute preserved (mute silences, park freezes; unparking
@@ -234,6 +274,7 @@ static void le_unpark_stopped(le_engine* e, uint64_t frame) {
     if (t->once_ended) continue; /* an automatic end needs its own launch */
     if (load_i32(&t->lanes[0].a_len) <= 0) continue;
     store_i32(&t->a_state, LE_TRACK_PLAYING);
+    le_track_gate_mutes(t);
     le_plog_push(e, frame, (le_command){.code = LE_CMD_PLAY, .arg_i = c});
   }
 }
@@ -325,13 +366,15 @@ static void le_transpose_log(le_engine* e, le_track* t, uint64_t frame,
 
 /* The sounding source's length (#1179 Part 4a-ii, LE_PLOG_SOURCE_LEN): 0
  * for the take itself, else the render's (a stretch keeps the pitch across a
- * retime). Logged just before the 328 of the same swap, so the renderer
- * renders the same length. */
+ * retime), and whether it plays through the pitch bridge (#1675). Logged
+ * just before the 328 of the same swap, so the renderer renders the same
+ * length and bridges the same source. */
 static void le_source_len_log(le_engine* e, le_track* t, uint64_t frame) {
   const int32_t len = load_i32(&t->lanes[0].a_len);
   const int32_t out = t->src_ent[0] != NULL ? t->src_ent[0]->out_len : 0;
   le_plog_push(e, frame, (le_command){.code = LE_PLOG_SOURCE_LEN,
-      .lanei = {(int32_t)(t - e->tracks), 0, out == len ? 0 : out}});
+      .lanei = {(int32_t)(t - e->tracks), le_track_bridge_of(e, t)->on,
+                out == len ? 0 : out}});
 }
 
 /* A printed Pre render never plays through a non-identity head (reversed or
@@ -537,11 +580,13 @@ static void le_capture_start_unmute(le_engine* e, le_track* t,
   for (int32_t l = 0; l < LE_MAX_LANES; ++l) {
     t->lanes[l].pending_mute = 0;
     if (load_i32(&t->lanes[l].a_muted) == 0) continue;
-    store_i32(&t->lanes[l].a_muted, 0);
+    le_lane_store_muted(t, l, 0);
     le_plog_push(e, frame,
                  (le_command){.code = LE_CMD_SET_LANE_MUTE,
                               .lanef = {ch, l, 0.0f}});
   }
+  /* Unmuted first, so a spared tail keeps ringing into the take. */
+  le_track_gate_mutes(t);
 }
 
 /* Lands the mutes deferred during a capture (LE_CMD_SET_LANE_MUTE's capturing
@@ -562,7 +607,17 @@ static int32_t le_consume_pending_mutes(le_engine* e, le_track* t,
     t->lanes[l].pending_mute = 0;
     any = 1;
     if (!apply) continue;
-    store_i32(&t->lanes[l].a_muted, 1);
+    /* A mute that waited for the Rec-mode Stop's park (#1782) lands on the
+     * stopped track as le_apply_mute_cmd's spared mute does. */
+    const uint32_t bit = 1u << l;
+    if ((t->tail_spare_next & bit) && end_state == LE_TRACK_STOPPED &&
+        !load_i32(&t->lanes[l].a_muted)) {
+      store_i32(&t->lanes[l].a_muted, 1);
+      t->gate_spared = 1;
+    } else {
+      le_lane_store_muted(t, l, 1);
+    }
+    t->tail_spare_next &= ~bit;
     le_plog_push(e, frame,
                  (le_command){.code = LE_CMD_SET_LANE_MUTE,
                               .lanef = {ch, l, 1.0f}});
@@ -1125,7 +1180,7 @@ static void le_apply_length_preset_tempo(le_engine* e, int32_t len,
  * frame, the very sum a render computes from the logged anchors. Returns 1
  * when it re-anchored, which the frame loop records for the chains that run
  * after it (le_fx_par). */
-static inline int le_fx_tempo_tick(le_engine* e, uint32_t clock,
+static inline LE_AUDIO_HOT_AT(0) int le_fx_tempo_tick(le_engine* e, uint32_t clock,
                                    uint64_t frame, int free_or_song) {
   const int32_t sr = e->sample_rate > 0 ? e->sample_rate : 48000;
   float bpm = load_f32(&e->a_tempo_bpm_bits);
@@ -1529,8 +1584,8 @@ static void le_seam_fold_dub_shadow(le_track* t, int32_t len, int32_t F) {
  * modulo `len`, on every active lane of pool slot `slot` (-1 = each lane's
  * live slot). Lanes whose slot is missing or shorter than `len` are skipped,
  * the same capacity rule as le_seam_fold. */
-static void le_lanes_fade_out_to(le_track* t, int32_t slot, int32_t last,
-                                 int32_t len, int32_t f) {
+static void le_lanes_fade_out_to(le_engine* e, le_track* t, int32_t slot,
+                                 int32_t last, int32_t len, int32_t f) {
   if (len <= 0 || f <= 0 || f > len || last < 0 || last >= len) return;
   const int32_t n = le_lanes_active(t);
   for (int32_t l = 0; l < n; ++l) {
@@ -1538,12 +1593,12 @@ static void le_lanes_fade_out_to(le_track* t, int32_t slot, int32_t last,
     const int32_t s = slot >= 0 ? slot : load_i32(&ln->a_live);
     float* b = ln->pool[s];
     if (b == NULL || ln->pool_cap[s] < len) continue;
-    for (int32_t i = 0; i < f; ++i) {
-      int32_t p = last - i;
-      if (p < 0) p += len;
-      b[p] *= (float)i / (float)f;
-    }
+    le_plane_fade_out_to(b, last, len, f);
   }
+  const int32_t s = slot >= 0 ? slot : load_i32(&t->lanes[0].a_live);
+  le_heard_op(e, t, (le_heard_rec){.kind = LE_HEARD_REC_FADE_OUT,
+                                   .slot = (int16_t)s, .slot2 = -1,
+                                   .a = last, .b = len, .c = f});
 }
 
 /* #730: the two joins a take that STOPPED EARLY leaves behind.
@@ -1641,14 +1696,13 @@ static int le_take_taper_ends(const le_engine* e, le_track* t, int32_t len,
     /* Same (pointer, cap) immutability argument as le_seam_fold: the live
      * slot cannot be resized under the audio thread. */
     if (b == NULL || ln->pool_cap[live] < len) continue;
-    for (int32_t i = 0; i < f; ++i) {
-      const float x = (float)i / (float)f; /* 0 .. 1 across the fade */
-      int32_t in = start + i;
-      if (in >= len) in -= len;
-      b[in] *= x; /* in, from the silence before it */
-    }
+    le_plane_fade_in_at(b, start, len, f); /* in, from the silence before it */
   }
-  if (fade_tail) le_lanes_fade_out_to(t, -1, last, len, f);
+  le_heard_op((le_engine*)e, t,
+              (le_heard_rec){.kind = LE_HEARD_REC_FADE_IN,
+                             .slot = (int16_t)load_i32(&t->lanes[0].a_live),
+                             .slot2 = -1, .a = start, .b = len, .c = f});
+  if (fade_tail) le_lanes_fade_out_to((le_engine*)e, t, -1, last, len, f);
   return 1;
 }
 
@@ -1656,15 +1710,17 @@ static int le_take_taper_ends(const le_engine* e, le_track* t, int32_t len,
  * shadow holds the take alone, followed by silence, so its tail gets the fade
  * the live slot skipped. Called as that shadow retires, on the slot it
  * retires, and by the reopen filer (engine_commands.c) for a frozen one. */
+#ifndef LE_MIX_HEARD_TU
 void le_dub_fade_image_tail(const le_engine* e, le_track* t, int32_t slot) {
   if (t->dub_tail_end <= 0) return;
   const int32_t len = t->dub_len;
   if (slot >= 0 && len > 0 && t->dub_tail_end <= len) {
-    le_lanes_fade_out_to(t, slot, t->dub_tail_end - 1, len,
+    le_lanes_fade_out_to((le_engine*)e, t, slot, t->dub_tail_end - 1, len,
                          seam_xfade_frames(e));
   }
   t->dub_tail_end = 0;
 }
+#endif /* LE_MIX_HEARD_TU */
 
 /* A stop that ends a rec/dub continuation within F frames of the take's end
  * (#730): the dub wrote only `k` < F frames past it and stops dead there
@@ -1685,7 +1741,8 @@ static void le_dub_stop_tail(const le_engine* e, le_track* t) {
   const int32_t k = t->dub_count > 0 ? t->dub_count : 0;
   if (k >= f) return;
   const int32_t end = t->dub_tail_end % len; /* first continuation position */
-  le_lanes_fade_out_to(t, -1, (t->dub_tail_end - 1 + k) % len, len, f);
+  le_lanes_fade_out_to((le_engine*)e, t, -1, (t->dub_tail_end - 1 + k) % len,
+                       len, f);
   const int32_t n = le_lanes_active(t);
   for (int32_t l = 0; l < n; ++l) {
     le_lane* ln = &t->lanes[l];
@@ -1696,12 +1753,13 @@ static void le_dub_stop_tail(const le_engine* e, le_track* t) {
         ln->pool_cap[t->dub_slot] < len) {
       continue;
     }
-    for (int32_t i = 0; i < k; ++i) {
-      int32_t p = end + i;
-      if (p >= len) p -= len;
-      sb[p] = b[p];
-    }
+    le_plane_copy_wrapped(sb, b, end, k, len);
   }
+  le_heard_op((le_engine*)e, t,
+              (le_heard_rec){.kind = LE_HEARD_REC_COPY,
+                             .slot = (int16_t)load_i32(&t->lanes[0].a_live),
+                             .slot2 = (int16_t)t->dub_slot, .a = end, .b = k,
+                             .c = len});
   t->dub_tail_end = 0;
 }
 
@@ -2249,6 +2307,17 @@ static void le_dub_boundary(le_engine* e, le_track* t, uint64_t frame) {
     le_dub_fade_image_tail(e, t, t->dub_retire_slot); /* #730 */
     le_file_pass_key(t);
     le_audio_rev_bump(t); /* [R1] a completed overdub pass retired */
+#ifdef LE_MIX_HEARD_TU
+    /* A layer with heard images (#1713) gets its last writes from this
+     * block's post-pass, so it is announced after that (le_heard_block_end),
+     * never before: control may read the layer once it is. */
+    if (le_heard_track_has(e, (int32_t)(t - e->tracks), t->dub_retire_slot)) {
+      e->heard_retire_frame[t - e->tracks] = frame;
+      e->heard_retire_slot[t - e->tracks] = t->dub_retire_slot;
+      e->heard_retire_gen[t - e->tracks] = t->dub_gen_audio;
+      e->heard_retire_mask |= 1u << (t - e->tracks);
+    } else
+#endif
     le_dub_try_retire(e, t, frame);
   }
   if (t->dub_slot < 0 && t->dub_spare >= 0) {
@@ -2268,9 +2337,10 @@ static void le_dub_boundary(le_engine* e, le_track* t, uint64_t frame) {
  * advances the cursor and returns the run length (>= 1). `shadow_to_live`
  * reverts (the reopen settle); the drain copies live -> shadow. The ONE
  * definition of the walk, so the drain and the revert cannot drift. */
-static int32_t le_dub_run_copy(le_track* t, int32_t base, int32_t k,
-                               int32_t off, int32_t* vpos, int32_t* vseg,
-                               int32_t max_run, int shadow_to_live) {
+static int32_t le_dub_run_copy(le_engine* e, le_track* t, int32_t base,
+                               int32_t k, int32_t off, int32_t* vpos,
+                               int32_t* vseg, int32_t max_run,
+                               int shadow_to_live) {
   int32_t run = base - *vpos;
   if (*vpos < off && off - *vpos < run) run = off - *vpos;
   if (run > max_run) run = max_run;
@@ -2287,6 +2357,10 @@ static int32_t le_dub_run_copy(le_track* t, int32_t base, int32_t k,
       memcpy(sb + w0, lb + w0, (size_t)run * sizeof(float));
     }
   }
+  /* The block start (the drain) or a closed device (the reopen revert):
+   * the images are up to date, so the same run is copied at once. */
+  le_heard_run_copy(e, t, load_i32(&t->lanes[0].a_live), t->dub_slot, w0, run,
+                    shadow_to_live);
   *vpos += run;
   if (*vpos >= base) {
     *vpos = 0;
@@ -2366,7 +2440,7 @@ static void le_dub_block_update(le_engine* e, uint64_t frame,
         if (max_run > t->dub_len - t->dub_count) {
           max_run = t->dub_len - t->dub_count;
         }
-        const int32_t run = le_dub_run_copy(t, base, k, off, &t->dub_vpos,
+        const int32_t run = le_dub_run_copy(e, t, base, k, off, &t->dub_vpos,
                                             &t->dub_vseg, max_run, 0);
         t->dub_count += run;
         budget -= run;
@@ -2432,6 +2506,7 @@ static void le_reopen_drop_track(le_engine* e, le_track* t) {
  * recording never resumes, a partial pass is discarded. Standing delivery
  * rules: keep recorded material, drop only the uncertain state — so a track
  * named in `drop_mask` goes, and only that track. */
+#ifndef LE_MIX_HEARD_TU
 void le_engine_reopen_settle(le_engine* e, uint32_t drop_mask) {
   if (e == NULL) return;
   const int32_t mode = load_i32(&e->a_looper_mode);
@@ -2467,7 +2542,7 @@ void le_engine_reopen_settle(le_engine* e, uint32_t drop_mask) {
         int32_t vseg = t->dub_start_vseg;
         int32_t left = t->dub_count;
         while (left > 0) {
-          left -= le_dub_run_copy(t, base, k, off, &vpos, &vseg, left, 1);
+          left -= le_dub_run_copy(e, t, base, k, off, &vpos, &vseg, left, 1);
         }
         le_audio_rev_bump(t); /* [R1] reopen: the partial pass is reverted */
       }
@@ -2479,7 +2554,7 @@ void le_engine_reopen_settle(le_engine* e, uint32_t drop_mask) {
       /* Only with a shadow: without one the dub's writes were never backed
        * up or reverted, and they continue the tail in live. */
       if (t->dub_slot >= 0 && t->dub_tail_end <= t->dub_len) {
-        le_lanes_fade_out_to(t, -1, t->dub_tail_end - 1, t->dub_len,
+        le_lanes_fade_out_to(e, t, -1, t->dub_tail_end - 1, t->dub_len,
                              seam_xfade_frames(e));
         le_audio_rev_bump(t);
       }
@@ -2546,6 +2621,7 @@ void le_engine_reopen_settle(le_engine* e, uint32_t drop_mask) {
    * dropped take uncrowns nothing a clear would not have. */
   le_primary_reconcile(e);
 }
+#endif /* LE_MIX_HEARD_TU */
 
 /* There is a single input stream, so only one track may capture at a time.
  * Closes any track (other than `except_ch`) that is currently RECORDING or
@@ -2593,6 +2669,10 @@ static void close_active_capture(le_engine* e, int32_t except_ch,
       }
     } else if (st == LE_TRACK_OVERDUBBING) {
       store_i32(&tr->a_state, LE_TRACK_PLAYING);
+      /* Its end: land any mute deferred during the dub, the one a Rec-mode
+       * Stop's park was waiting with included (#1782). */
+      tr->park = 0;
+      le_consume_pending_mutes(e, tr, LE_TRACK_PLAYING, 1, frame);
     }
   }
 }
@@ -2841,6 +2921,21 @@ static void handle_stop(le_engine* e, int32_t ch, uint64_t frame) {
     store_i32(&t->a_state, LE_TRACK_STOPPED);
     /* Stopping an overdub ends its capture: land any deferred mute. */
     le_consume_pending_mutes(e, t, LE_TRACK_STOPPED, 1, frame);
+  }
+}
+
+static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame);
+
+/* The Rec-mode Stop's park (#1782, le_engine_stop_record_park): every track
+ * stops through a Stop command, so an overdub on [ch] ends here. The mutes
+ * of [ch]'s lanes in [spare] spare its Post tail as they land: the ones that
+ * waited for the park, or the ones posted after it (le_apply_mute_cmd). */
+static void le_park(le_engine* e, int32_t ch, uint32_t spare, uint64_t frame) {
+  e->tracks[ch].tail_spare_next = spare;
+  e->tracks[ch].park = 0;
+  for (int32_t c = 0; c < e->track_count; ++c) {
+    const le_command stop = {.code = LE_CMD_STOP, .arg_i = c};
+    apply_command(e, &stop, frame);
   }
 }
 
@@ -3209,6 +3304,7 @@ static void handle_play(le_engine* e, int32_t ch, uint64_t frame) {
   if (load_i32(&t->a_state) == LE_TRACK_STOPPED) {
     le_restart_once(e, t);
     store_i32(&t->a_state, LE_TRACK_PLAYING);
+    le_track_gate_mutes(t);
     /* Playing anything from a held transport unparks the entire loop
      * (except in Song: le_unpark_stopped). */
     if (was_held) le_unpark_stopped(e, frame);
@@ -3308,6 +3404,7 @@ static void le_handoff_disarm(le_engine* e, int32_t ch) {
   t->pending_capture_shadow = 0;
   t->pending_record = 0;
   t->pending_trigger = 0;
+  t->park = 0;
   store_i32(&t->a_pending, 0);
 }
 
@@ -3375,6 +3472,7 @@ static void le_song_start(le_engine* e, int32_t ch, uint64_t frame) {
   t->free_iteration = 0;
   le_plog_push(e, frame, (le_command){.code = LE_CMD_PLAY, .arg_i = ch});
   store_i32(&t->a_state, LE_TRACK_PLAYING);
+  le_track_gate_mutes(t);
 }
 
 /* Starts stopped section [ch] now: alone and from its top in Song; in
@@ -3476,6 +3574,7 @@ static void handle_section_play(le_engine* e, int32_t ch, uint64_t frame) {
 static void le_handoff_set_arm(le_track* t, int32_t trigger) {
   t->pending_record = 1;
   t->pending_trigger = trigger;
+  t->park = 0;
   store_i32(&t->a_pending_trigger, trigger);
   atomic_store_explicit(&t->a_pending, 1, memory_order_release);
 }
@@ -3700,6 +3799,17 @@ static void le_apply_mute_cmd(le_engine* e, int32_t ch, int32_t lane,
   if (muting &&
       (st == LE_TRACK_RECORDING || st == LE_TRACK_OVERDUBBING)) {
     ln->pending_mute = 1;
+    t->tail_spare_next &= ~(1u << lane);
+    /* The Rec-mode Stop's own mute while its park waits for the overdub's
+     * grid end (#1782): the pass runs to that end, and the mute lands with
+     * the park. Any later mute of the lane punches out as usual. */
+    const uint32_t own = LE_PARK_ARMED | (1u << lane);
+    if ((t->park & own) == own && t->pending_record &&
+        t->pending_trigger == 0) {
+      t->park &= ~(1u << lane);
+      return;
+    }
+    t->park = 0;
     /* The punch-out supersedes any armed (quantized) action on this track —
      * exactly as apply_command's LE_CMD_RECORD case clears it for a real
      * press. A stale arm would re-fire at the next loop top on the now-
@@ -3718,7 +3828,21 @@ static void le_apply_mute_cmd(le_engine* e, int32_t ch, int32_t lane,
     return;
   }
   ln->pending_mute = 0;
-  store_i32(&ln->a_muted, muting ? 1 : 0);
+  /* The Rec-mode Stop's mute (#1773, LE_CMD_SPARE_TAIL): on a stopped,
+   * unmuted lane it leaves the gate open, so the tail its Stop set ringing
+   * drains. A lane already muted keeps the gate it has. */
+  const uint32_t bit = 1u << lane;
+  const int spare = (t->tail_spare_next & bit) && muting &&
+                    st == LE_TRACK_STOPPED && !load_i32(&ln->a_muted);
+  t->tail_spare_next &= ~bit;
+  if (spare) {
+    store_i32(&ln->a_muted, 1);
+    t->gate_spared = 1;
+  } else if (muting && load_i32(&ln->a_muted)) {
+    /* Already muted: nothing moves. */
+  } else {
+    le_lane_store_muted(t, lane, muting ? 1 : 0);
+  }
   le_plog_push(e, frame, *cmd);
 }
 
@@ -3818,8 +3942,10 @@ static void handle_clear(le_engine* e, int32_t ch, int freeze, uint64_t frame) {
   /* A cleared track comes back unmuted: the next recording is always audible
    * rather than silently muted by a leftover Stop (or a pending mid-capture
    * mute whose capture this clear just destroyed). */
+  t->tail_spare_next = 0;
+  t->gate_spared = 0;
   for (int l = 0; l < LE_MAX_LANES; ++l) {
-    store_i32(&t->lanes[l].a_muted, 0);
+    le_lane_store_muted(t, l, 0);
     t->lanes[l].pending_mute = 0;
   }
   /* If every track is now empty, reset the master so a new loop can be defined.
@@ -3898,6 +4024,7 @@ static void handle_clear(le_engine* e, int32_t ch, int freeze, uint64_t frame) {
 static void finalize_master_xfade(le_engine* e, le_track* t, uint64_t frame) {
   const int32_t len = t->xfade_len;
   le_seam_fold(t, len, seam_xfade_frames(e));
+  le_heard_seam_fold(e, t, len, seam_xfade_frames(e), 0);
   t->record_pos = len; /* finalize at the intended length, not len+F */
   t->xfade_capture = 0;
   finalize_master(e, t, t->xfade_end_state, frame);
@@ -3927,6 +4054,8 @@ static void le_apply_capture_image(le_engine* e, le_track* t, uint64_t frame) {
   const le_record_image image = t->pending_image;
   if (image.revision == 0) return;
   t->pending_image.revision = 0;
+  /* A track's job runs to here before its recipes change (#1729). */
+  le_trk_jobs_flush(e, 1u << (t - e->tracks));
   le_fx_recipe_apply(e, t->pending_fx, frame);
   t->pending_fx = NULL;
   const int ch = (int)(t - e->tracks);
@@ -3967,7 +4096,7 @@ static inline void le_store_pan(_Atomic uint32_t* pan_bits,
  * into a scratch frame instead of the output buffer when the All tracks chain
  * has something on it — the stage runs on the recorded mix per destination,
  * which is exactly this array. */
-static void le_fx_route_frame(float* o, int ch_out, uint32_t mask, float l,
+static LE_AUDIO_HOT_AT(0) void le_fx_route_frame(float* o, int ch_out, uint32_t mask, float l,
                               float r) {
   const float mid = 0.5f * (l + r);
   int n = 0;
@@ -4005,6 +4134,9 @@ static void le_truncate_capture_tail(le_engine* e, le_track* t, int32_t drop) {
   const int32_t known_len =
       (k >= 1 && e->clock.length > 0) ? k * e->clock.length : 0;
   const int32_t lanes = le_lanes_active(t);
+  /* A command's apply, at the block start: the images are up to date. */
+  le_heard_truncate(e, t, (int64_t)t->record_pos - drop, t->record_pos, offset,
+                    known_len);
   for (int32_t l = 0; l < lanes; ++l) {
     float* b = t->lanes[l].pool[load_i32(&t->lanes[l].a_live)];
     if (b == NULL) continue;
@@ -4106,8 +4238,12 @@ static int le_apply_routing(le_engine* e, const le_mix_settings* mix,
     }
   }
   for (int ch = 0; ch < e->track_count; ++ch)
-    if (mix->lane_count_mask & (1u << ch))
+    if (mix->lane_count_mask & (1u << ch)) {
       atomic_store_explicit(&e->tracks[ch].lane_count, mix->lane_count[ch], memory_order_release);
+      /* The lanes the track mixes from here (#1824, events.log 17). */
+      le_plog_push(e, frame, (le_command){.code = LE_CMD_SET_LANE_COUNT,
+        .lanei = {ch, 0, mix->lane_count[ch]}});
+    }
   return 1;
 }
 
@@ -4213,6 +4349,10 @@ static void le_length_apply(le_engine* e, le_track* t, const le_command* cmd,
   }
   t->transpose_eff = 0;
   store_i32(&t->a_transpose_eff, 0);
+  /* ...and so does a pitch bridge (#1675): the next buffer's
+   * le_transpose_select starts it again over the new take, logged. */
+  const int was_bridged = le_track_bridge_of(e, t)->on;
+  le_track_bridge_of(e, t)->on = 0;
   int32_t new_len;
   const int64_t new_pos = le_track_song_position(e, t, &new_len);
   t->head.origin = le_head_origin(&t->head, index, new_pos, len);
@@ -4222,7 +4362,8 @@ static void le_length_apply(le_engine* e, le_track* t, const le_command* cmd,
   le_audio_rev_bump(t); /* [R1] length edit: other audio */
   le_plog_push(e, frame, (le_command){.code = LE_PLOG_LENGTH,
       .length_log = {ch, cmd->length.pool_slot, len, cmd->length.image_id}});
-  if (was_transposed) le_transpose_log(e, t, frame, 0);
+  if (was_bridged) le_source_len_log(e, t, frame);
+  if (was_transposed || was_bridged) le_transpose_log(e, t, frame, 0);
   /* Off whole samples the exact index rides a Speed fact (#1179, E3). */
   if (!le_head_is_integral(&t->head)) le_speed_log(e, t, frame, index, 0);
 }
@@ -4245,6 +4386,8 @@ static int32_t le_turn_begin(le_engine* e, le_track* t, int32_t len) {
   t->turn_frames = turn;
   t->turn_left = turn;
   le_turn_sources(t, 0); /* the old head reads the source in force */
+  /* ...through the pitch bridge if it was (#1675) */
+  le_track_bridge_of(e, t)->turn = le_track_bridge_of(e, t)->on;
   return turn;
 }
 
@@ -4663,7 +4806,7 @@ static int32_t le_bounce_install(le_engine* e, le_bounce_bundle* b,
     const int32_t muted = (g->muted_mask >> l) & 1u;
     t->lanes[l].pending_mute = 0;
     if (load_i32(&t->lanes[l].a_muted) == muted) continue;
-    store_i32(&t->lanes[l].a_muted, muted);
+    le_lane_store_muted(t, l, muted);
     le_plog_push(e, frame, (le_command){.code = LE_CMD_SET_LANE_MUTE,
                                        .lanef = {ch, l, (float)muted}});
   }
@@ -4870,16 +5013,47 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       break;
     case LE_CMD_STOP_RECORD_CONTROL: {
       if (!valid_channel(e, cmd->arg_i)) break;
-      if (le_cancel_count_in(e, frame)) break;
+      /* arg_f: the finish (0 now, 1 at the grid end, 2 drop the armed end),
+       * plus 4 for the park (#1782), which follows a Count-in cancel. */
+      const int park = cmd->arg_f >= 4.0f;
+      const float action = park ? cmd->arg_f - 4.0f : cmd->arg_f;
+      if (park && action != 0.0f && action != 1.0f) break;
+      const int cancelled = le_cancel_count_in(e, frame);
+      if (cancelled && !park) break;
       le_track* t = &e->tracks[cmd->arg_i];
       const int state = load_i32(&t->a_state);
+      /* The park: a playing loop, or an overdub that ends at once, parks
+       * now. An overdub whose end waits for the grid keeps its arm (a second
+       * Stop's included), and parks when it fires; the mute of each lane
+       * that follows waits for it. */
+      if (park && (state == LE_TRACK_PLAYING ||
+                   (state == LE_TRACK_OVERDUBBING && action == 0.0f))) {
+        if (state == LE_TRACK_OVERDUBBING) {
+          /* As the finish it replaces (LE_CMD_RECORD) does. */
+          t->pending_record = 0;
+          store_i32(&t->a_pending, 0);
+        }
+        le_park(e, cmd->arg_i, ~0u, frame);
+        break;
+      }
+      if (park && state == LE_TRACK_OVERDUBBING) {
+        if (!t->pending_record || t->pending_trigger != 0) {
+          const le_command arm = {.code = LE_CMD_ARM, .arg_i = cmd->arg_i};
+          apply_command(e, &arm, frame);
+        }
+        if (t->pending_record && t->pending_trigger == 0)
+          t->park = LE_PARK_ARMED | ((1u << LE_MAX_LANES) - 1u);
+        break;
+      }
+      /* A Stop that cancelled a countdown never finishes a capture. */
+      if (cancelled) break;
       if (state != LE_TRACK_RECORDING && state != LE_TRACK_OVERDUBBING) break;
       /* Reuse the existing grid-end rounding/arming body, not a new scheduler.
        * Refused/stale end intents cannot turn a completed capture into a start. */
       le_command finish = {.code = LE_CMD_RECORD, .arg_i = cmd->arg_i};
-      if (cmd->arg_f == 1.0f) finish.code = LE_CMD_ARM;
-      else if (cmd->arg_f == 2.0f) finish.code = LE_CMD_DISARM;
-      else if (cmd->arg_f != 0.0f) break;
+      if (action == 1.0f) finish.code = LE_CMD_ARM;
+      else if (action == 2.0f) finish.code = LE_CMD_DISARM;
+      else if (action != 0.0f) break;
       apply_command(e, &finish, frame);
       break;
     }
@@ -5018,6 +5192,11 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
         le_handoff_disarm(e, cmd->arg_i);
       }
       break;
+    case LE_CMD_SPARE_TAIL:
+      if (valid_channel(e, cmd->arg_i)) {
+        e->tracks[cmd->arg_i].tail_spare_next = ~0u;
+      }
+      break;
     case LE_CMD_STOP:
       le_plog_push(e, frame, *cmd);
       handle_stop(e, cmd->arg_i, frame);
@@ -5095,6 +5274,9 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       atomic_fetch_add_explicit(&t->a_state_acks, 1, memory_order_release);
       break;
     }
+    case LE_CMD_HEARD_ATTACH: /* #1713: le_engine_heard_attach */
+      le_heard_attach_apply(e, cmd->lanei.channel, cmd->lanei.lane);
+      break;
     case LE_CMD_DUB_SHADOW: {
       /* A shadow slot for per-pass layer capture (buffers already allocated by
        * the control thread; visible via the ring's release/acquire). Arm it
@@ -6017,6 +6199,9 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       if (count < 0) count = 0;
       if (count > LE_FX_MAX) count = LE_FX_MAX;
       store_i32(&e->monitors[input].a_fx_count, count);
+      /* A chain set up entry by entry has no split: a take records all of
+       * it (#1741); a recipe carries one. */
+      store_i32(&e->heard_mon_pre[input], count);
       break;
     }
     /* ---- Track-stage + output bus chains ----
@@ -6248,6 +6433,7 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       }
       e->perf.armed = 1;
       atomic_store_explicit(&e->a_perf_armed, 1, memory_order_release);
+      le_heard_perf_armed(e); /* #1713: every lane's source is logged again */
       /* A performance arm ends a Library preview (#1178): the take starts
        * with the rig alone sounding. */
       le_audition_clear(e);
@@ -6281,6 +6467,10 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       }
       for (int t = 0; t < e->track_count; ++t) {
         le_fade_log(e, t, frame);
+        /* The lanes the track mixes at capture frame 0 (#1824, events.log
+         * 17); every change logs again (le_apply_routing). */
+        le_plog_push(e, frame, (le_command){.code = LE_CMD_SET_LANE_COUNT,
+          .lanei = {t, 0, le_lanes_active(&e->tracks[t])}});
         /* A track already reversed at arm logs its direction and the index
          * capture frame 0 reads (#1162); forward is the renderer's default. */
         le_track* tr = &e->tracks[t];
@@ -6291,9 +6481,13 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
         if (tr->head.rate != 1.0) {
           le_speed_log(e, tr, frame, le_track_read_index(e, tr), 0);
         }
-        if (tr->src_ent[0] != NULL) { /* sounding a render */
+        le_track_bridge* tb = le_track_bridge_of(e, tr);
+        if (tr->src_ent[0] != NULL || tb->on) { /* a render; the bridge */
           le_source_len_log(e, tr, frame);
           le_transpose_log(e, tr, frame, 0);
+          /* The renderer lays a bridge's grains on the head at capture
+           * frame 0; the callback lays them again here so the two agree. */
+          for (int l = 0; l < LE_MAX_LANES; ++l) tb->lane[l].live = 0;
         }
         /* ...and one playing its take over another span (#1179 Part 4a). */
         int32_t len;
@@ -6608,7 +6802,7 @@ static inline float le_one_pole_coeff(float seconds, float sr) {
  * bit-transparent below the ceiling), then output metering. Accumulates
  * *out_sumsq and tracks *frame_out_peak (both start at the caller's per-block /
  * per-frame seed). `lim_hold` is the hold window in frames (>= 1). */
-static inline void master_bus_frame(le_engine* e, float* out, uint32_t f,
+static inline LE_AUDIO_HOT_AT(4) void master_bus_frame(le_engine* e, float* out, uint32_t f,
                                     int ch_out, float master_gain, int limiter_on,
                                     float limiter_ceiling, int32_t lim_hold,
                                     float lim_attack, float lim_release,
@@ -6723,11 +6917,11 @@ static inline void master_bus_frame(le_engine* e, float* out, uint32_t f,
 }
 
 /* Performance-recording capture taps (le_perf_arm/disarm, segno_engine_api.h):
- * copy the post-limiter master output and each captured monitor input's
- * post-FX signal into their pre-published rings. Both are no-ops when not
- * armed (`e->perf.armed`, the audio-thread-local mirror of a_perf_armed);
- * neither ever blocks or allocates — a full ring just drops the frame and
- * bumps the shared overrun atomic. */
+ * copy the post-limiter master output, each captured monitor input's
+ * post-FX signal and each captured input's raw sample into their
+ * pre-published rings. All are no-ops when not armed (`e->perf.armed`, the
+ * audio-thread-local mirror of a_perf_armed); none ever blocks or allocates
+ * — a full ring just drops the frame and bumps the shared overrun atomic. */
 
 /* Tap for the master bus: [master_out_ch] selects the first enabled output
  * pair frozen at arm (mono when only one channel was captured). */
@@ -6736,6 +6930,49 @@ static inline void perf_tap_monitor_frame(le_engine* e, int input, float l,
   const float s[2] = {l, r};
   if (!le_audio_ring_push_frame(&e->perf.monitor_ring[input], s, 2)) {
     perf_note_drop(e);
+  }
+}
+
+/* Tap for each input's raw recording (#1805): every device input and active
+ * instrument frozen in perf_raw_mask at arm, monitored or not. Its clean
+ * mono sample (the device's, or an instrument source's), before the monitor's
+ * gate, chain, volume and pan, for every frame of the block. Once per block
+ * at its end, before the frames are counted, rather than in the frame loop:
+ * out of line and cold, so the mixer's hot code is the same with or without
+ * it (#1719), and nothing runs while not armed. Frames the latency harness
+ * took are recorded too: the raw input is the input whatever played. A
+ * block the device delivers no input buffer for records silence, which is
+ * what came in; a frame is never left out, so the drain's zero-fill (a
+ * glitch, #710) still means only a frame the ring could not take. */
+#if defined(_MSC_VER)
+__declspec(noinline)
+#else
+__attribute__((noinline, cold))
+#endif
+static void perf_tap_raw_block(le_engine* e, uint32_t frames) {
+  /* The block's input as le_engine_process left it in fx_par, and its first
+   * capture frame (the frames are counted after this), read here rather
+   * than passed, so the caller keeps nothing live past its frame loops. */
+  const float* in = e->fx_par.in;
+  const int ch_in = e->fx_par.ch_in;
+  const uint64_t perf_frame_base =
+      atomic_load_explicit(&e->a_perf_frames, memory_order_relaxed);
+  const uint64_t mask = e->perf_raw_mask;
+  for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
+    if (!(mask & (UINT64_C(1) << c))) continue;
+    const int instrument = c >= LE_INSTRUMENT_SOURCE_BASE;
+    /* le_perf_capture_sets holds device inputs to the configured count. */
+    const int device = !instrument && in != NULL && c < ch_in;
+    le_audio_ring* ring = &e->perf_raw_ring[c];
+    for (uint32_t f = 0; f < frames; ++f) {
+      const float x = instrument ? le_instrument_source_sample(e, c, f)
+                      : device   ? in[(size_t)f * (size_t)ch_in + (size_t)c]
+                                 : 0.0f;
+      if (!le_audio_ring_push_frame(ring, &x, 1)) {
+        e->perf.tap_frame = perf_frame_base + f;
+        perf_note_drop(e);
+      }
+    }
   }
 }
 
@@ -7248,7 +7485,7 @@ static void le_fire_section_arm(le_engine* e, int32_t ch, uint64_t frame) {
  * crosses its top, fires the loop-top (quantize) pending records on the grid;
  * with nothing active, holds the transport at the top. [st] is the frame's
  * per-track state snapshot. */
-static inline void advance_transport_frame(le_engine* e, int tc,
+static inline LE_AUDIO_HOT_AT(1) void advance_transport_frame(le_engine* e, int tc,
                                            const int32_t* st, uint64_t frame,
                                            int free_or_song) {
   for (int t = 0; t < tc; ++t) {
@@ -7307,6 +7544,7 @@ static inline void advance_transport_frame(le_engine* e, int tc,
       /* Which tracks' grid arms fire on this tick: read by the Once check
        * below, which runs after the arms so it sees what they did. */
       uint8_t fired[LE_MAX_TRACKS] = {0};
+      uint32_t parks = 0; /* #1782: tracks whose fired end parks */
       /* Grid-armed fire check. The loop top (wrap) is every division's
        * boundary AND the layer boundary, so it fires everything — the exact
        * pre-A3 behavior, and the whole behavior when the quantize division is
@@ -7362,7 +7600,13 @@ static inline void advance_transport_frame(le_engine* e, int tc,
           }
           pt->pending_record = 0;
           store_i32(&pt->a_pending, 0);
-          handle_record(e, qt, frame);
+          /* The Rec-mode Stop's park waited for this end (#1782): it lands
+           * below, after every arm this boundary fires. */
+          if (pt->park & LE_PARK_ARMED) {
+            parks |= 1u << qt;
+          } else {
+            handle_record(e, qt, frame);
+          }
           fired[qt] = 1;
         }
       }
@@ -7387,6 +7631,18 @@ static inline void advance_transport_frame(le_engine* e, int tc,
       /* Band's one-section handoff (#1323): on the primary's top after the
        * sounding section's lap end. */
       le_band_handoff_tick(e, wrapped, frame);
+      /* The parks armed ends wait for (#1782), after the arms above, so none
+       * of them restarts the parked transport. The mutes that waited spare
+       * the tail. */
+      for (int qt = 0; parks && qt < tc; ++qt) {
+        if (!(parks & (1u << qt))) continue;
+        le_track* pt = &e->tracks[qt];
+        uint32_t waited = 0;
+        for (int32_t l = 0; l < LE_MAX_LANES; ++l) {
+          if (pt->lanes[l].pending_mute) waited |= 1u << l;
+        }
+        le_park(e, qt, waited, frame);
+      }
       /* Once (slice 2b): a one-shot track whose own lap ended on this tick
        * stops here, after the arms above have done what they were queued
        * for. */
@@ -7452,7 +7708,7 @@ static inline void advance_transport_frame(le_engine* e, int tc,
  * is UNCHANGED by the enable flags: a lane with a disabled chain still enters
  * fx_apply_chain so in-flight enable ramps can settle — only settled slots
  * are skipped, inside the chain (D-BITEXACT). */
-static inline void snapshot_lane_fx(
+static inline LE_AUDIO_HOT_AT(0) void snapshot_lane_fx(
     le_engine* e, int tc, uint32_t track_mask, const int32_t* lane_n,
     int32_t fx_count[][LE_MAX_LANES], int32_t fx_pre_count[][LE_MAX_LANES],
     int32_t fx_type[][LE_MAX_LANES][LE_FX_MAX],
@@ -7543,7 +7799,7 @@ static inline void snapshot_lane_fx(
  * enable (gated by loopback exclusion) plus the chain's output mask / volume /
  * mute / effects — the monitor mirror of snapshot_lane_fx, one chain per input,
  * including the per-slot effective enable bits (D-EFFBITS). */
-static inline void snapshot_monitor_fx(
+static inline LE_AUDIO_HOT_AT(12) void snapshot_monitor_fx(
     le_engine* e, int ch_in, uint32_t excluded, int* mon_on, uint32_t* mon_out,
     float* mon_vol, int* mon_mut, int32_t* mon_fx_count,
     int32_t mon_fx_type[][LE_FX_MAX],
@@ -7613,7 +7869,7 @@ static inline void snapshot_monitor_fx(
  * keys routing off exactly this bit — an empty chain must leave the
  * legacy path untouched (bit-identical), while enabled-ness only ever toggles
  * DSP inside fx_apply_chain, never topology. */
-static inline void snapshot_bus_fx(le_engine* e, le_fx_bus* b,
+static inline LE_AUDIO_HOT_AT(1) void snapshot_bus_fx(le_engine* e, le_fx_bus* b,
                                    int32_t* bus_fx_count,
                                    int32_t* bus_fx_pre_count,
                                    int32_t bus_fx_type[LE_FX_MAX],
@@ -7722,18 +7978,50 @@ static inline void snapshot_track_fx(
   }
 }
 
+/* Fills pick[0 .. lanes) with each lane's render for the key {rev, take,
+ * semitones, out_len}; 0 (pick partly filled) unless every lane holds one. */
+static int le_src_pick(le_engine* e, int t, int32_t lanes, uint32_t rev,
+                       int32_t take, int32_t semitones, int32_t out_len,
+                       const le_wet_entry** pick) {
+  le_track* tr = &e->tracks[t];
+  for (int l = 0; l < lanes; ++l) {
+    pick[l] = NULL;
+    /* A lane playing its heard image (#1713) takes a render that carries
+     * the image first. Until one lands it takes the clean take's render,
+     * and the lane plays its clean take at the track's pitch
+     * (le_heard_lane_wet), never the image at its own. */
+    for (int need = le_heard_lane_plays(e, t, l);
+         need >= 0 && pick[l] == NULL; --need) {
+      for (int i = 0; i < LE_SRC_CANDIDATES && pick[l] == NULL; ++i) {
+        const le_wet_entry* c = atomic_load_explicit(&tr->lanes[l].a_src[i],
+                                                     memory_order_acquire);
+        if (c != NULL &&
+            le_src_entry_fits(c, rev, take, semitones, out_len, need)) {
+          pick[l] = c;
+        }
+      }
+    }
+    if (pick[l] == NULL) return 0;
+  }
+  return 1;
+}
+
 /* Selects each track's source for this buffer (#1179 Part 3a): its lanes'
  * renders when the track wants one — transposed and not bypassed, or
  * playing over another span with Pitch Unchanged (Part 4a-ii: a stretch to
  * the span, within the 0.5 % tolerance) — and EVERY active lane holds a
  * render for its current key (content, pitch, length), else the dry takes
  * through the varispeed head, so a track never plays two lanes at two
- * pitches and its timing is exact either way. A change of source starts the
- * turn window with the equal-power law at the same index — the old source
- * keeps reading, its render pinned (E4) — and logs what now sounds. A window
+ * pitches and its timing is exact either way. A track that wants a stretch
+ * it does not hold yet plays through the pitch bridge instead (#1675): its
+ * dry takes, or its plain Transpose renders, at their own pitch. A change of
+ * source, or of the bridge, starts the turn window with the equal-power law
+ * at the same index — the old source keeps reading, its render pinned (E4),
+ * through the bridge if it was bridged — and logs what now sounds. A window
  * that has ended releases its pins. */
 static void le_transpose_select(le_engine* e, int tc, const int32_t* lane_n,
                                 uint64_t frame) {
+  e->bridge_hop = le_bridge_hop(e->sample_rate);
   for (int t = 0; t < tc; ++t) {
     le_track* tr = &e->tracks[t];
     for (int l = 0; l < LE_MAX_LANES && tr->turn_left == 0; ++l) {
@@ -7745,27 +8033,27 @@ static void le_transpose_select(le_engine* e, int tc, const int32_t* lane_n,
     const int32_t take = load_i32(&tr->lanes[0].a_len);
     const int32_t want_out = le_track_want_out(e, tr);
     const le_wet_entry* pick[LE_MAX_LANES] = {NULL};
-    int engaged = (want != 0 || want_out != take) && lane_n[t] > 0;
-    if (engaged) {
-      const uint32_t rev =
-          atomic_load_explicit(&tr->a_src_key, memory_order_acquire);
-      for (int l = 0; l < lane_n[t] && engaged; ++l) {
-        pick[l] = NULL;
-        for (int i = 0; i < LE_SRC_CANDIDATES && pick[l] == NULL; ++i) {
-          const le_wet_entry* c = atomic_load_explicit(&tr->lanes[l].a_src[i],
-                                                       memory_order_acquire);
-          if (c != NULL && le_src_entry_fits(c, rev, take, want, want_out)) {
-            pick[l] = c;
-          }
-        }
-        engaged = pick[l] != NULL;
-      }
+    const uint32_t rev =
+        atomic_load_explicit(&tr->a_src_key, memory_order_acquire);
+    int engaged = (want != 0 || want_out != take) && lane_n[t] > 0 &&
+                  le_src_pick(e, t, lane_n[t], rev, take, want, want_out, pick);
+    /* Off its span with no stretch render yet (Pitch Unchanged pending, or
+     * refused by the cache cap): the pitch bridge plays the take at its own
+     * pitch (#1675), from the track's plain Transpose render when every
+     * lane holds one, so a transposed track keeps its pitch too. */
+    const int bridge = !engaged && want_out != take && lane_n[t] > 0;
+    if (bridge && want != 0) {
+      engaged = le_src_pick(e, t, lane_n[t], rev, take, want, take, pick);
     }
-    int changed = 0;
+    le_track_bridge* tb = &e->bridges[t];
+    int changed = bridge != tb->on;
     for (int l = 0; l < LE_MAX_LANES; ++l) {
       if (!engaged) pick[l] = NULL;
       changed |= pick[l] != tr->src_ent[l];
     }
+    /* A bridge sounds the span in force: a later retime while it bridges
+     * moves the span, not the source. */
+    if (!changed && bridge) store_i32(&tr->a_src_out, want_out);
     if (!changed) continue;
     int32_t len;
     (void)le_track_song_position(e, tr, &len);
@@ -7776,6 +8064,12 @@ static void le_transpose_select(le_engine* e, int tc, const int32_t* lane_n,
     tr->turn_frames = turn;
     tr->turn_left = turn;
     le_turn_sources(tr, 1);
+    tb->turn = tb->on;
+    /* A bridge that starts lays its grains on the head at its first frame. */
+    if (bridge && !tb->on) {
+      for (int l = 0; l < LE_MAX_LANES; ++l) tb->lane[l].live = 0;
+    }
+    tb->on = bridge;
     for (int l = 0; l < LE_MAX_LANES; ++l) {
       tr->src_ent[l] = pick[l];
       atomic_store_explicit(&tr->a_src_pin[l], (le_wet_entry*)pick[l],
@@ -7783,10 +8077,22 @@ static void le_transpose_select(le_engine* e, int tc, const int32_t* lane_n,
     }
     tr->transpose_eff = engaged ? want : 0;
     store_i32(&tr->a_transpose_eff, tr->transpose_eff);
-    store_i32(&tr->a_src_out, pick[0] != NULL ? pick[0]->out_len : 0);
+    /* The bridge sounds the pitch the span's render will: the snapshot's
+     * pitch_effective_cents reads 0 from the first frame. */
+    store_i32(&tr->a_src_out, bridge                ? want_out
+                              : pick[0] != NULL ? pick[0]->out_len
+                                                : 0);
     le_source_len_log(e, tr, frame);
     le_transpose_log(e, tr, frame, turn);
   }
+  /* on is set only above, so this is the whole buffer's answer; a turn's
+   * old head counts while its window mixes. */
+  int any = 0;
+  for (int t = 0; t < tc; ++t) {
+    any |= e->bridges[t].on |
+           (e->tracks[t].turn_left > 0 && e->bridges[t].turn);
+  }
+  e->bridge_any = any;
 }
 
 /* Whether a Pre slot [0, pre) of the chain [fx] runs ([a_type], [a_pre],
@@ -8007,6 +8313,7 @@ static inline void snapshot_track_cache(le_engine* e, int tc,
  * sample first — the contiguous chronological window the shifting FIFO used to
  * hand out directly. Returns 0, leaving `out` untouched, until the ring has
  * filled once. Audio thread; also the seam the ring's wrap is tested through. */
+#ifndef LE_MIX_HEARD_TU
 int le_tuner_raw_window(const le_engine* e, float* out) {
   if (e->tuner_raw_fill < LE_TUNER_RAW) return 0;
   /* Full, so the next write index is also the oldest sample. */
@@ -8017,6 +8324,7 @@ int le_tuner_raw_window(const le_engine* e, float* out) {
   }
   return 1;
 }
+#endif /* LE_MIX_HEARD_TU */
 
 static inline void tuner_publish(le_engine* e, float hz, float conf) {
   store_f32(&e->a_tuner_hz_bits, hz);
@@ -8350,7 +8658,10 @@ static inline int process_input_frame(le_engine* e, const float* in,
  * the block before this loop, as jobs (le_fx_monitor_job), so a chain's
  * output for block frame [i] is read from le_fx_par. [out_enabled] is the
  * structural output gate, intersected with the mask so a disabled output is
- * never a target. Live and independent of every track; never recorded. */
+ * never a target. Live and independent of every track, and never recorded
+ * into a loop. A performance capture taps each captured input here as
+ * heard, after its volume and pan; its raw recording (#1805) is taken once
+ * per block (perf_tap_raw_block). */
 static inline void mix_monitors_frame(
     le_engine* e, const float* in, float* out, uint32_t f, uint32_t i,
     int ch_in, int ch_out, uint32_t out_enabled, const int* mon_on,
@@ -8533,16 +8844,408 @@ static inline void le_chain_run_step(le_chain_run* run, const le_track* tr,
  * rendered from. */
 static inline int le_track_print_run_matches(
     le_track* tr, int32_t lanes, const le_wet_entry** lane_ent,
-    const int32_t* lane_fx_count) {
+    const int32_t* lane_fx_count
+#ifdef LE_MIX_HEARD_TU
+    , const le_heard* heard
+#endif
+    ) {
   if (!le_run_matches_print(tr, &tr->bus_run)) return 0;
   for (int32_t l = 0; l < lanes; ++l) {
     le_lane* ln = &tr->lanes[l];
     if (lane_fx_count[l] == 0) continue;
+#ifdef LE_MIX_HEARD_TU
+    /* A part playing its heard image runs no Pre run (#1713, #1741). */
+    if (heard[l].mix >= 1.0f) continue;
+#endif
     if (lane_ent[l] != NULL && load_i32(&ln->a_cache_active)) continue;
     if (!le_run_matches_print(tr, &ln->run)) return 0;
   }
   return 1;
 }
+
+/* Out of line and cold: GCC inlines a static function called once, which
+ * would pull the bridge's search (and its stack buffers) into the mixer's
+ * frame loop, and `cold` places the bridge's code away from the loop's
+ * (#1675; the arm64 bench gate on the 8 x 8 lane rig is sensitive to it).
+ * The bridged path is compiled for size, which costs it a few percent. */
+#if defined(_MSC_VER)
+#define LE_BRIDGE_NOINLINE __declspec(noinline)
+#else
+#define LE_BRIDGE_NOINLINE __attribute__((noinline, cold))
+#endif
+
+/* The pitch bridge's read for lane l of track t this frame (#1675): the
+ * grains step once over the bridged side's source and are read from each
+ * side that is bridged (`bridging`: LE_BRIDGE_NEW for the new head,
+ * LE_BRIDGE_OLD for a turn window's old one), the other side through its
+ * head, mixed by the window's weights. Kept out of mix_tracks_frame so a lane
+ * that does not bridge runs the plain read alone. */
+static LE_BRIDGE_NOINLINE float le_mix_bridge_lane(
+    le_engine* e, int t, int l, const float* lbuf, int32_t len, double index,
+    int64_t pos, int bridging, double turn_index, float turn_x, float turn_y,
+    uint32_t f, int sr) {
+  le_track* tr = &e->tracks[t];
+  const le_wet_entry* se = tr->src_ent[l];
+  const le_wet_entry* oe = tr->turn_ent[l];
+  const float* sb = se ? se->pcm : lbuf;
+  const float* ob = oe ? oe->pcm : lbuf;
+  const int on = (bridging & LE_BRIDGE_NEW) != 0;
+  const int old_on = (bridging & LE_BRIDGE_OLD) != 0;
+  const int32_t hop = e->bridge_hop;
+  float x = 0.0f, y = 0.0f;
+  le_bridge_frame(&e->bridges[t].lane[l], on, old_on, sb, ob, len, &tr->head,
+                  (double)e->speed_numer / (double)e->speed_denom, index, pos,
+                  e->fx_clock_base + f, le_bridge_offset(t, l, hop), hop, sr,
+                  &x, &y);
+  if (!on) {
+    x = le_head_read_scaled(sb, se ? se->out_len : len, len, &tr->head, index);
+  }
+  if (turn_index < 0.0) return x;
+  if (!old_on) {
+    y = le_head_read_scaled(ob, oe ? oe->out_len : len, len, &tr->prev_head,
+                            turn_index);
+  }
+  return x * turn_x + y * turn_y;
+}
+
+/* A bridged track's Stop fade for lane l (#1675): its grains read on from
+ * where the track stopped, at the tail's index. */
+static LE_BRIDGE_NOINLINE float le_mix_bridge_tail(le_engine* e, int t, int l,
+                                               const float* lbuf, int32_t len,
+                                               double tail_at, uint32_t f,
+                                               int sr) {
+  le_track* tr = &e->tracks[t];
+  const le_wet_entry* se = tr->src_ent[l];
+  const int32_t hop = e->bridge_hop;
+  float x = 0.0f, y = 0.0f;
+  le_bridge_frame(&e->bridges[t].lane[l], 1, 0, se ? se->pcm : lbuf, NULL, len,
+                  &tr->head, (double)e->speed_numer / (double)e->speed_denom,
+                  tail_at, 0, e->fx_clock_base + f, le_bridge_offset(t, l, hop),
+                  hop, sr, &x, &y);
+  return x;
+}
+
+#ifdef LE_MIX_HEARD_TU
+#ifdef LE_MIX_JOBS_TU
+/* #1729: whether any of [n] effective bits is still set: a print masking
+ * them changes what its track's job reads only the first time. */
+static inline int le_trk_bits_set(const int32_t* bits, int32_t n) {
+  for (int32_t s = 0; s < n; ++s) {
+    if (bits[s]) return 1;
+  }
+  return 0;
+}
+
+/* The same over a whole-track print's view: every part's chain and the
+ * track chain's Pre slots. */
+static inline int le_trk_view_set(int32_t lanes, const int32_t* lane_count,
+                                  int32_t (*lane_bits)[LE_FX_MAX],
+                                  int32_t trk_pre, const int32_t* trk_bits) {
+  for (int32_t l = 0; l < lanes; ++l) {
+    if (le_trk_bits_set(lane_bits[l], lane_count[l])) return 1;
+  }
+  return le_trk_bits_set(trk_bits, trk_pre);
+}
+#endif /* LE_MIX_JOBS_TU */
+
+/* What le_heard_lane_wet hands the mixer: the lane's pair before its pan,
+ * when it made it (done), else nothing (the plain path runs). Returned by
+ * value, so nothing on the plain path has its address taken. */
+typedef struct le_heard_pair {
+  float l, r;
+  int done;
+  /* The lane's Post entries are still to run over the pair (#1741): its
+   * track's job runs them (LE_MIX_JOBS_TU); 0 where they ran here. */
+  int chain;
+} le_heard_pair;
+
+/* One frame of a lane that holds a heard image (#1713), off the plain
+ * mixer path (cold and noinline like the bridge, so the 64-lane mixer is
+ * compiled as it was).
+ *
+ * Steps the lane's source crossfade toward its target (playing the image:
+ * its source is HEARD and its live slot holds one) by [od_step]: 1 plays the
+ * image alone, 0 the clean take through the chain, anything between both.
+ * The image stands for the chain's Pre run (#1741): leaving the image alone
+ * settles that run to bypass, so it comes back through its re-enable ramp
+ * (as a print's live fallback does) rather than resuming state from
+ * whenever it last ran, and the Post entries run live over whatever plays,
+ * the image alone included. A live slot with no image snaps
+ * to the clean take at once: there is nothing to fade from. Settled on the
+ * clean take it returns not done, and the mixer's own path plays the lane
+ * (its print, its run, its chain) exactly as for a lane with no image.
+ *
+ * Otherwise it makes the lane's pair: the image read the way the clean take
+ * is (mix_tracks_frame): the same index, the same head (Speed, Reverse, a
+ * relaunch origin), the turn window's old head, then the Stop's fade-out
+ * reading on from where the track stopped, at the same gains, at level.
+ * Played alone it stands in for the print and the Pre run, which do not
+ * run. During a crossfade the clean side is the lane's engaged print or its
+ * live Pre run over [loopsample], mixed at equal gain (the same performance
+ * either way) ahead of the Post entries. [chain_live] is the mixer's
+ * has_fx && !track_printed. */
+static LE_BRIDGE_NOINLINE le_heard_pair le_heard_lane_wet(
+    le_engine* e, le_track* tr, int t, int l, int32_t live, int sounding,
+    int32_t plain, double head_i, int32_t src_n, double turn_i, float turn_x,
+    float turn_y, float pg, int tail, int tail_head, int32_t tail_len,
+    double tail_at, float tg, float od_step, int audible, float vol,
+    float loopsample, const le_wet_entry* wce, int chain_live,
+    int track_printed, int32_t fx_n, int32_t fx_pre,
+    const int32_t* fx_type, const float (*fx_params)[LE_FX_PARAMS],
+    int32_t* fx_enabled, int sr, int fx_cap, int bridging, uint32_t f) {
+  le_heard_pair out = {0.0f, 0.0f, 0, 0};
+  le_heard* h = &e->heard[t][l];
+  le_lane* ln = &tr->lanes[l];
+  const float* pl = le_heard_plane(h, 0, live);
+  const float* pr = le_heard_plane(h, 1, live);
+  /* The source renders each head reads (#1713 part 2b). One made before the
+   * image was (le_src_pick's fallback) cannot play it at the track's pitch,
+   * so the lane fades to its clean take there, for the block
+   * (le_heard_block_begin, so the performance log can name it), until a
+   * render with the image lands; the fade reads the clean render on that
+   * head's image side. */
+  const le_wet_entry* se = tr->src_ent[l];
+  const le_wet_entry* oe = turn_i >= 0.0 ? tr->turn_ent[l] : NULL;
+  const int pitched = h->img_blk;
+  /* The image is the take's Pre run (#1741): the lane's Post entries run
+   * live over it, as over a print, so they ring out past a Stop. Only the
+   * Pre run idles while the image plays, and only it comes back through its
+   * re-enable ramp when the lane leaves the image. */
+  const int32_t post_from = chain_live && fx_pre < fx_n ? fx_pre : fx_n;
+  float m = h->mix;
+  int target = 0;
+  if (pl == NULL) {
+    /* Nothing to fade from: the clean take at once, its chain back through
+     * its re-enable ramp if the image was playing. */
+    if (m > 0.0f) {
+#ifdef LE_MIX_JOBS_TU
+      le_trk_lane_flush(e, t, l); /* the job runs to here first (#1729) */
+#endif
+      for (int32_t s = 0; s < post_from; ++s) {
+        le_fx_enable_force_bypass(&ln->fx, s);
+        le_fx_rack_reset(&ln->fx, s);
+      }
+    }
+    m = 0.0f;
+  } else {
+    target = pitched && h->src_blk; /* as the block started */
+    if (!target && m >= 1.0f) {
+#ifdef LE_MIX_JOBS_TU
+      le_trk_lane_flush(e, t, l);
+#endif
+      for (int32_t s = 0; s < post_from; ++s) {
+        le_fx_enable_force_bypass(&ln->fx, s);
+        le_fx_rack_reset(&ln->fx, s);
+      }
+    }
+    if (target) {
+      m += od_step;
+      if (m > 1.0f) m = 1.0f;
+    } else {
+      m -= od_step;
+      if (m < 0.0f) m = 0.0f;
+    }
+  }
+  h->mix = m;
+  if (m <= 0.0f) return out; /* settled on the clean take */
+  const int32_t cap = ln->pool_cap[live];
+  /* The planes each head reads (#1713 part 2b): its source render's when it
+   * has one (Transpose, a tempo stretch), else the live slot's own; through
+   * the pitch bridge, read by the grains the clean take stepped this frame
+   * (le_mix_bridge_lane), so both keep its timing. */
+  const float* nl = pl;
+  const float* nr = pr;
+  int32_t nlen = src_n;
+  if (se != NULL) {
+    nl = se->planes > 1 ? se->pcm + se->out_len : se->pcm;
+    nr = se->planes > 1 ? se->pcm + 2 * (size_t)se->out_len : se->pcm;
+    nlen = se->out_len;
+  }
+  const float* ol = pl;
+  const float* orr = pr;
+  int32_t olen = src_n;
+  if (oe != NULL) {
+    ol = oe->planes > 1 ? oe->pcm + oe->out_len : oe->pcm;
+    orr = oe->planes > 1 ? oe->pcm + 2 * (size_t)oe->out_len : oe->pcm;
+    olen = oe->out_len;
+  }
+  const int32_t hop = e->bridge_hop;
+  const uint32_t clock = e->fx_clock_base + f;
+  const int32_t phase =
+      hop > 0 ? (int32_t)((clock + le_bridge_offset(t, l, hop)) &
+                          (uint32_t)(hop - 1))
+              : 0;
+  const le_bridge* b = &e->bridges[t].lane[l];
+  float a = 0.0f;
+  float c = 0.0f;
+  if (sounding) {
+    if (bridging & LE_BRIDGE_NEW) {
+      a = le_bridge_read(b, nl, src_n, phase, hop);
+      c = le_bridge_read(b, nr, src_n, phase, hop);
+    } else if (head_i >= 0.0) {
+      a = le_head_read_scaled(nl, nlen, src_n, &tr->head, head_i);
+      c = le_head_read_scaled(nr, nlen, src_n, &tr->head, head_i);
+    } else if (plain >= 0 && plain < cap) {
+      a = pl[plain];
+      c = pr[plain];
+    }
+    if (turn_i >= 0.0) {
+      float y0;
+      float y1;
+      if (bridging & LE_BRIDGE_OLD) {
+        y0 = le_bridge_read(b, ol, src_n, phase, hop);
+        y1 = le_bridge_read(b, orr, src_n, phase, hop);
+      } else {
+        y0 = le_head_read_scaled(ol, olen, src_n, &tr->prev_head, turn_i);
+        y1 = le_head_read_scaled(orr, olen, src_n, &tr->prev_head, turn_i);
+      }
+      a = a * turn_x + y0 * turn_y;
+      c = c * turn_x + y1 * turn_y;
+    }
+  }
+  a *= pg;
+  c *= pg;
+  if (tail && tail_len > 0) {
+    if (e->bridge_any && e->bridges[t].on && !sounding && tail_len <= cap &&
+        b->live && b->last_clock == clock) {
+      /* The clean take's tail stepped the grains this frame. */
+      a += le_bridge_read(b, nl, tail_len, phase, hop) * tg;
+      c += le_bridge_read(b, nr, tail_len, phase, hop) * tg;
+    } else if (tail_head) {
+      if (tail_len <= cap) {
+        const int32_t n = se != NULL ? se->out_len : tail_len;
+        a += le_head_read_scaled(nl, n, tail_len, &tr->head, tail_at) * tg;
+        c += le_head_read_scaled(nr, n, tail_len, &tr->head, tail_at) * tg;
+      }
+    } else {
+      const int32_t i = (int32_t)tail_at;
+      if (i < cap) {
+        a += pl[i] * tg;
+        c += pr[i] * tg;
+      }
+    }
+  }
+  const float hv = audible ? vol : 0.0f;
+  out.l = a * hv;
+  out.r = c * hv;
+  out.done = 1;
+  const int32_t rp = plain;
+  if (ln->run.restart) le_chain_run_begin(&ln->run, tr, sounding, rp);
+  if (m >= 1.0f) {
+    /* The image alone: the print and the Pre run are idle; the Post entries
+     * play over it. */
+    if (load_i32(&ln->a_cache_active)) store_i32(&ln->a_cache_active, 0);
+    le_chain_run_step(&ln->run, tr, sounding, rp, 0);
+    if (post_from < fx_n) {
+#ifdef LE_MIX_JOBS_TU
+      /* The track's job runs the chain over the pair, its Pre run settled
+       * to bypass and masked off, as under a print (a bit-exact skip). */
+      int flushed = 0;
+      for (int32_t s = 0; s < post_from; ++s) {
+        if (le_fx_enable_settled_bypassed(&ln->fx, s)) continue;
+        if (!flushed) {
+          le_trk_lane_flush(e, t, l);
+          flushed = 1;
+        }
+        le_fx_enable_force_bypass(&ln->fx, s);
+        le_fx_rack_reset(&ln->fx, s);
+      }
+      if (!flushed && le_trk_bits_set(fx_enabled, post_from)) {
+        le_trk_lane_flush(e, t, l);
+      }
+      for (int32_t s = 0; s < post_from; ++s) fx_enabled[s] = 0;
+      out.chain = 1;
+#else
+      fx_apply_chain_from(&ln->fx, sr, fx_cap, &out.l, &out.r, post_from,
+                          fx_n, fx_type, fx_params, fx_enabled, 0);
+#endif
+    }
+    return out;
+  }
+  /* A crossfade: the clean side, its engaged print or its live chain. The
+   * lane twin of the mixer's lap-top grid check (#1620) first: a print whose
+   * lap no longer matches is not read. */
+  if (rp == 0 && wce != NULL &&
+      !le_wet_entry_lap_matches(wce, e->fx_clock_base + f)) {
+    wce = NULL;
+    if (load_i32(&ln->a_cache_active)) store_i32(&ln->a_cache_active, 0);
+  }
+  const int printed = wce != NULL && load_i32(&ln->a_cache_active);
+  le_chain_run_step(&ln->run, tr, sounding, rp, !printed && !track_printed);
+  float cl = 0.0f;
+  float cr = 0.0f;
+#ifdef LE_MIX_JOBS_TU
+  /* The clean side's chain runs here, on the callback: its frames the job
+   * has not run go first, and the rest of the track stays the job's. */
+  le_trk_lane_flush(e, t, l);
+#endif
+  if (printed) {
+    /* The print's Pre slots stay bypassed, as on the mixer's printed path. */
+    for (int32_t s = 0; s < fx_pre; ++s) fx_enabled[s] = 0;
+    if (audible && sounding && rp >= 0 && rp < wce->len) {
+      cl = wce->pcm[2 * rp] * pg;
+      cr = wce->pcm[2 * rp + 1] * pg;
+    }
+    const int32_t trp = (int32_t)tail_at;
+    if (audible && tail && trp >= 0 && trp < wce->len) {
+      cl += wce->pcm[2 * trp] * tg;
+      cr += wce->pcm[2 * trp + 1] * tg;
+    }
+  } else {
+    cl = audible ? loopsample * vol : 0.0f;
+    cr = cl;
+  }
+  if (post_from < fx_n) {
+    /* The clean side's Pre run, the two sides blended where the image
+     * stands for it, and the Post entries once over the blend. */
+    fx_apply_chain(&ln->fx, sr, fx_cap, &cl, &cr, post_from, fx_type,
+                   fx_params, fx_enabled);
+    out.l = m * out.l + (1.0f - m) * cl;
+    out.r = m * out.r + (1.0f - m) * cr;
+    fx_apply_chain_from(&ln->fx, sr, fx_cap, &out.l, &out.r, post_from, fx_n,
+                        fx_type, fx_params, fx_enabled, 1);
+    return out;
+  }
+  if (chain_live) {
+    fx_apply_chain(&ln->fx, sr, fx_cap, &cl, &cr, fx_n, fx_type, fx_params,
+                   fx_enabled);
+  }
+  out.l = m * out.l + (1.0f - m) * cl;
+  out.r = m * out.r + (1.0f - m) * cr;
+  return out;
+}
+#endif /* LE_MIX_HEARD_TU */
+
+
+/* The mixer's type, and its copy with the heard-image code compiled in
+ * (#1713, engine_mix_heard.c), which le_engine_process takes for a block
+ * where a lane holds a heard image. Declared in both units, so the heard
+ * copy's definition below is checked against it. */
+typedef void le_mix_fn(
+    le_engine* e, const float* in, float* out, uint32_t f, int ch_in,
+    int ch_out, int tc, int sr, int fx_cap, uint32_t excluded,
+    uint32_t out_enabled, float overdub_fb, int free_or_song,
+    float od_step, int32_t od_fade_frames, int32_t pos, const int32_t* lane_n,
+    const int* lane_fx_any,
+    int has_fx[][LE_MAX_LANES], int32_t fx_count[][LE_MAX_LANES],
+    int32_t fx_pre_count[][LE_MAX_LANES],
+    int32_t fx_type[][LE_MAX_LANES][LE_FX_MAX],
+    float fx_params[][LE_MAX_LANES][LE_FX_MAX][LE_FX_PARAMS],
+    int32_t fx_enabled[][LE_MAX_LANES][LE_FX_MAX], const int* trk_has_fx,
+    const int32_t* trk_fx_count, int32_t trk_fx_type[][LE_FX_MAX],
+    float trk_fx_params[][LE_FX_MAX][LE_FX_PARAMS],
+    int32_t trk_fx_enabled[][LE_FX_MAX], const int32_t* trk_fx_pre_count,
+    const le_wet_entry* track_cache_ent[], int at_has_fx, int32_t at_fx_count,
+    const int32_t* at_fx_type,
+    const float at_fx_params[LE_FX_MAX][LE_FX_PARAMS],
+    const int32_t* at_fx_enabled,
+    const le_wet_entry* cache_ent[][LE_MAX_LANES],
+    float lane_sumsq[][LE_MAX_LANES], float lane_peak[][LE_MAX_LANES],
+    int32_t* st, float* frame_trk_peak, float* trk_sumsq, float* trk_peak,
+    float* trk_lpeak, float* trk_rpeak, const float* in_trim, const int* solo,
+    int any_solo, uint64_t perf_frame_base);
+le_mix_fn mix_tracks_frame_heard;
+le_mix_fn mix_tracks_frame_jobs;
 
 /* Per-frame capture + additive playback mix: snapshots each track's per-lane
  * playback state, records / overdubs the live input into the lane buffers at the
@@ -8551,7 +9254,20 @@ static inline int le_track_print_run_matches(
  * transport advance reads) and accumulates [frame_trk_peak] (per-track) and the
  * [lane_sumsq] / [lane_peak] metering. [pos] is the playhead (read by the caller
  * before the transport advances). */
-static inline void mix_tracks_frame(
+#if defined(LE_MIX_JOBS_TU)
+/* The mixer with its heard-image code and its track chains as jobs (#1729,
+ * engine_mix_jobs.c), which le_engine_process calls for a block whose track
+ * chains run on the effects workers: it records what each track's frame
+ * needs after its lanes' chains (le_trk_job) instead of running them. */
+LE_AUDIO_HOT_AT(4) void mix_tracks_frame_jobs(
+#elif !defined(LE_MIX_HEARD_TU)
+static inline LE_AUDIO_HOT_AT(4) void mix_tracks_frame(
+#else
+/* The mixer with its heard-image code (#1713), which le_engine_process calls
+ * for a block where a lane holds a heard image (engine_mix_heard.c), pinned
+ * as the plain one is (#1718). */
+LE_AUDIO_HOT_AT(4) void mix_tracks_frame_heard(
+#endif
     le_engine* e, const float* in, float* out, uint32_t f, int ch_in,
     int ch_out, int tc, int sr, int fx_cap, uint32_t excluded,
     uint32_t out_enabled, float overdub_fb, int free_or_song,
@@ -8574,6 +9290,13 @@ static inline void mix_tracks_frame(
     int32_t* st, float* frame_trk_peak, float* trk_sumsq, float* trk_peak,
     float* trk_lpeak, float* trk_rpeak, const float* in_trim, const int* solo,
     int any_solo, uint64_t perf_frame_base) {
+#ifdef LE_MIX_HEARD_TU
+  e->heard_i = (int32_t)f; /* le_heard_op logs from here on (#1713) */
+#endif
+#ifdef LE_MIX_JOBS_TU
+  /* The block frame the records go to (#1729). */
+  const uint32_t ji = f - e->fx_par.f0;
+#endif
   /* The All tracks recorded-mix stage (slice 3e). While the chain has
    * something on it the tracks route HERE instead of straight to `out`, and
    * the loop after the track loop runs the chain once per output bus over
@@ -8584,9 +9307,11 @@ static inline void mix_tracks_frame(
    * The scratch is per FRAME, not per block: the stage runs inside this
    * frame, so nothing needs to outlive it. */
   float rec[LE_MAX_CHANNELS];
+#ifndef LE_MIX_JOBS_TU /* the jobs copy routes after the join (#1729) */
   if (at_has_fx) {
     for (int c = 0; c < ch_out && c < LE_MAX_CHANNELS; ++c) rec[c] = 0.0f;
   }
+#endif
 
   /* Capture the callback-owned live selection for this frame. Record/arm
    * and transport transitions can occur within a block; Undo publishes its
@@ -8698,6 +9423,9 @@ static inline void mix_tracks_frame(
         tg == 0.0f &&
         (tg_was > 0.0f || pg_was > 0.0f ||
          e->tracks[t].proc_prev_state != st[t])) {
+#ifdef LE_MIX_JOBS_TU
+      le_trk_jobs_flush(e, 1u << t); /* the job runs to here first */
+#endif
       for (int l = 0; l < lane_n[t]; ++l) {
         if (fx_pre_count[t][l] <= 0) continue;
         le_lane* pl = &e->tracks[t].lanes[l];
@@ -8746,7 +9474,7 @@ static inline void mix_tracks_frame(
       vol[t][l] = load_f32(&ln->a_vol_bits);
       pan_gl[t][l] = load_f32(&ln->a_pan_gl_bits);
       pan_gr[t][l] = load_f32(&ln->a_pan_gr_bits);
-      mut[t][l] = load_i32(&ln->a_muted);
+      mut[t][l] = load_i32(&ln->a_gate_muted);
       lane_in[t][l] = load_i32(&ln->a_input_channel);
       out_mask[t][l] =
           atomic_load_explicit(&ln->a_output_mask, memory_order_relaxed);
@@ -8830,14 +9558,32 @@ static inline void mix_tracks_frame(
   double turn_idx[LE_MAX_TRACKS];
   int32_t src_len[LE_MAX_TRACKS];
   float turn_x[LE_MAX_TRACKS], turn_y[LE_MAX_TRACKS];
+  /* The pitch bridge (#1675), all behind bridge_block (le_engine.bridge_any,
+   * set once a buffer), which is 0 unless a track bridges this buffer.
+   * bridging[t] is LE_BRIDGE_NEW when the new head reads through the grains,
+   * | LE_BRIDGE_OLD when a turn window's old head does, 0 for the plain read
+   * below; bridge_pos[t] is the song position the grains step at. Both are
+   * written only while bridge_block is set, so every reader tests it
+   * first. */
+  int bridging[LE_MAX_TRACKS];
+  int64_t bridge_pos[LE_MAX_TRACKS];
+  const int bridge_block = e->bridge_any;
   for (int t = 0; t < tc; ++t) {
     le_track* tr = &e->tracks[t];
     head_idx[t] = -1.0;
     turn_idx[t] = -1.0;
     turn_x[t] = 1.0f;
+    int track_bridged = 0;
+    if (bridge_block) {
+      const le_track_bridge* tb = &e->bridges[t];
+      bridging[t] = 0;
+      track_bridged = tb->on || (tr->turn_left > 0 && tb->turn);
+    }
     /* A stretch render (#1179 Part 4a-ii) is not the take's length, so its
-     * read always goes through the head, mapped (le_head_read_scaled). */
-    const int stretched = tr->src_ent[0] != NULL || tr->turn_ent[0] != NULL;
+     * read always goes through the head, mapped (le_head_read_scaled); a
+     * bridged track's too. */
+    const int stretched =
+        tr->src_ent[0] != NULL || tr->turn_ent[0] != NULL || track_bridged;
     if (trk_len[t] <= 0 ||
         (le_head_is_identity(&tr->head) && tr->turn_left == 0 && !stretched)) {
       continue;
@@ -8852,6 +9598,12 @@ static inline void mix_tracks_frame(
     trk_pos[t] = whole % trk_len[t];
     src_len[t] = len;
     if (!le_head_is_integral(&tr->head) || stretched) head_idx[t] = index;
+    if (track_bridged) {
+      const le_track_bridge* tb = &e->bridges[t];
+      bridge_pos[t] = song;
+      bridging[t] = (tb->on ? LE_BRIDGE_NEW : 0) |
+                    (tr->turn_left > 0 && tb->turn ? LE_BRIDGE_OLD : 0);
+    }
     if (tr->turn_left > 0) {
       turn_idx[t] = le_head_index(&tr->prev_head, song, len);
       turn_x[t] = le_head_turn_mix(tr->turn_frames - tr->turn_left,
@@ -9012,6 +9764,10 @@ static inline void mix_tracks_frame(
      * an old pass drains). The first backed-up write latches the pass's start
      * point for the drain walk. */
     le_track* tr = &e->tracks[t];
+#ifdef LE_MIX_JOBS_TU
+    le_trk_job* const tj = &e->trk_job[t];
+    for (int l = 0; l < lane_n[t]; ++l) tj->lane[l].flags[ji] = 0;
+#endif
 
     /* Recording write head for this frame, shared by every lane (or -1 when
      * nothing may be written). The defining track writes linearly. A new
@@ -9063,6 +9819,18 @@ static inline void mix_tracks_frame(
     const int32_t seam_f = seam_xfade_frames(e);
     const int32_t seam_w =
         tr->seam_capture > 0 ? tr->seam_len + (seam_f - tr->seam_capture) : -1;
+
+#ifdef LE_MIX_HEARD_TU
+    /* The heard image (#1713): where this frame writes the clean take, so
+     * the post-pass writes the input chain's output at the same places.
+     * hlanes is the block's lanes holding an image, 0 on every track
+     * recorded without one. */
+    const uint32_t hlanes = e->heard_lanes[t];
+    if (hlanes != 0u && (rec_w >= 0 || dub_writes || seam_w >= 0)) {
+      le_heard_log_write(e, t, live_idx[t], rec_w, dub_writes ? wdub : -1,
+                         od_gain, trk_fb, backing ? tr->dub_slot : -1, seam_w);
+    }
+#endif
 
     /* Audibility (#1400). `sounding` is the transport's own verdict, `pg`
      * the playing read's gain and `tg` the tail's, as the snapshot loop
@@ -9202,7 +9970,15 @@ static inline void mix_tracks_frame(
         le_head_is_integral(&tr->head) &&
         (tr->transpose_st == 0 || e->transpose_bypass) &&
         !load_i32(&tr->a_track_cache_active) && trk_rp == 0 &&
+#ifdef LE_MIX_HEARD_TU
+        le_track_print_run_matches(tr, lane_n[t], cache_ent[t], fx_count[t],
+                                   e->heard[t])) {
+#else
         le_track_print_run_matches(tr, lane_n[t], cache_ent[t], fx_count[t])) {
+#endif
+#ifdef LE_MIX_JOBS_TU
+      le_trk_jobs_flush(e, 1u << t); /* before the chains settle */
+#endif
       store_i32(&tr->a_track_cache_active, 1);
       for (int l = 0; l < lane_n[t]; ++l) {
         le_lane* el = &e->tracks[t].lanes[l];
@@ -9227,6 +10003,12 @@ static inline void mix_tracks_frame(
       /* The engage edge can land mid-buffer, so mask the printed slots'
        * effective bits for the rest of it too — a force-bypassed slot whose
        * bit is still 1 would ramp itself back in on the next sample. */
+#ifdef LE_MIX_JOBS_TU
+      if (le_trk_view_set(lane_n[t], fx_count[t], fx_enabled[t],
+                          trk_fx_pre_count[t], trk_fx_enabled[t])) {
+        le_trk_jobs_flush(e, 1u << t); /* frames before see the bits set */
+      }
+#endif
       for (int l = 0; l < lane_n[t]; ++l) {
         for (int sfx = 0; sfx < fx_count[t][l]; ++sfx) {
           fx_enabled[t][l][sfx] = 0;
@@ -9284,22 +10066,30 @@ static inline void mix_tracks_frame(
         /* The source this buffer selected: the lane's Transpose render, or
          * its dry take (le_transpose_select). Writes stay on lbuf. */
         const le_wet_entry* se = tr->src_ent[l];
-        loopsample =
-            head_idx[t] >= 0.0
-                ? le_head_read_scaled(se ? se->pcm : lbuf,
-                                      se ? se->out_len : src_len[t],
-                                      src_len[t], &tr->head, head_idx[t])
-                : lbuf[seg_base[t] + trk_pos[t]];
-        /* A turn (Reverse #1162, a Speed step or a source swap #1179): the
-         * pre-turn head fades out over the window as the new head fades in,
-         * over the source it read when the window started. */
-        if (turn_idx[t] >= 0.0) {
-          const le_wet_entry* oe = tr->turn_ent[l];
-          loopsample = loopsample * turn_x[t] +
-                       le_head_read_scaled(oe ? oe->pcm : lbuf,
-                                           oe ? oe->out_len : src_len[t],
-                                           src_len[t], &tr->prev_head,
-                                           turn_idx[t]) * turn_y[t];
+        if (bridge_block && bridging[t]) {
+          /* The pitch bridge (#1675), off the plain path below. */
+          loopsample = le_mix_bridge_lane(e, t, l, lbuf, src_len[t],
+                                          head_idx[t], bridge_pos[t],
+                                          bridging[t], turn_idx[t], turn_x[t],
+                                          turn_y[t], f, sr);
+        } else {
+          loopsample =
+              head_idx[t] >= 0.0
+                  ? le_head_read_scaled(se ? se->pcm : lbuf,
+                                        se ? se->out_len : src_len[t],
+                                        src_len[t], &tr->head, head_idx[t])
+                  : lbuf[seg_base[t] + trk_pos[t]];
+          /* A turn (Reverse #1162, a Speed step or a source swap #1179):
+           * the pre-turn head fades out over the window as the new head
+           * fades in, over the source it read when the window started. */
+          if (turn_idx[t] >= 0.0) {
+            const le_wet_entry* oe = tr->turn_ent[l];
+            loopsample = loopsample * turn_x[t] +
+                         le_head_read_scaled(oe ? oe->pcm : lbuf,
+                                             oe ? oe->out_len : src_len[t],
+                                             src_len[t], &tr->prev_head,
+                                             turn_idx[t]) * turn_y[t];
+          }
         }
         if (od_gain > 0.0f) {
           /* Backup-on-write: save the pre-value into the armed shadow first —
@@ -9323,7 +10113,15 @@ static inline void mix_tracks_frame(
         /* The Stop's fade-out (#1400): read on past the stop, never past
          * this lane's allocated slot. */
         float x = 0.0f;
-        if (tail_head) {
+        /* bridge_block covers `on`: le_transpose_select sets both. */
+        if (bridge_block && e->bridges[t].on && !sounding &&
+            tail_len <= cap[t][l] &&
+            le_bridge_continues(&e->bridges[t].lane[l],
+                                e->fx_clock_base + f)) {
+          /* A bridged track's Stop fades its grains out (#1675), so the
+           * fade keeps the pitch and the waveform it stopped on. */
+          x = le_mix_bridge_tail(e, t, l, lbuf, tail_len, tail_at, f, sr);
+        } else if (tail_head) {
           const le_wet_entry* se = tr->src_ent[l];
           if (tail_len <= cap[t][l]) {
             x = le_head_read_scaled(se ? se->pcm : lbuf,
@@ -9352,6 +10150,9 @@ static inline void mix_tracks_frame(
        * Stop or Clear cuts the feed and the lane's Post tail drains through
        * the same route, while a Mute (or another track's solo) gates the
        * lane entirely, tail included, and its player continues underneath.
+       * The Rec-mode Stop's mute gates only once the track runs again, so
+       * the tail its Stop set ringing drains (`mut` reads a_gate_muted,
+       * #1773).
        * EXCEPTION (part 2): while cached playback is engaged below, the live
        * chain is skipped entirely — its state was settled to bypass at the
        * engage edge, and a fallback re-enters through the clean re-enable
@@ -9411,6 +10212,23 @@ static inline void mix_tracks_frame(
        * Engagement additionally requires the track to be PLAYING: engaging a
        * STOPPED lane would force-bypass its silently-ticking chain (wiping
        * tail/LFO continuity) for playback nobody hears. */
+#ifdef LE_MIX_HEARD_TU
+      /* The heard image (#1713): a lane holding one, unless settled on its
+       * clean take, makes its pair in le_heard_lane_wet. */
+      le_heard_pair hp = {0.0f, 0.0f, 0};
+      if ((hlanes >> l) & 1u) {
+        hp = le_heard_lane_wet(
+            e, tr, t, l, live_idx[t], sounding, seg_base[t] + trk_pos[t],
+            head_idx[t], src_len[t], turn_idx[t], turn_x[t], turn_y[t], pg,
+            tail, tail_head, tail_len, tail_at, tg, od_step, audible,
+            vol[t][l], loopsample, cache_ent[t][l],
+            has_fx[t][l] && !track_printed, track_printed, fx_count[t][l],
+            fx_pre_count[t][l], fx_type[t][l],
+            (const float (*)[LE_FX_PARAMS])fx_params[t][l], fx_enabled[t][l],
+            sr, fx_cap, bridge_block ? bridging[t] : 0, f);
+        if (hp.done) goto lane_heard;
+      }
+#endif
       const le_wet_entry* wce = cache_ent[t][l];
       const int32_t rp = seg_base[t] + trk_pos[t];
       if (ln->run.restart) { /* a block-start key change (#939) */
@@ -9428,6 +10246,9 @@ static inline void mix_tracks_frame(
           (tr->transpose_st == 0 || e->transpose_bypass) &&
           !load_i32(&ln->a_cache_active) && rp == 0 &&
           le_run_matches_print(tr, &ln->run)) {
+#ifdef LE_MIX_JOBS_TU
+        le_trk_lane_flush(e, t, l); /* before the chain settles */
+#endif
         store_i32(&ln->a_cache_active, 1);
         for (int s = 0; s < fx_pre_count[t][l]; ++s) {
           le_fx_enable_force_bypass(&ln->fx, s);
@@ -9448,6 +10269,11 @@ static inline void mix_tracks_frame(
          * slot whose bit is still 1 would see want != target on the very
          * next sample and ramp itself back in, printing its Pre entry a
          * second time over audio that already carries it. */
+#ifdef LE_MIX_JOBS_TU
+        if (le_trk_bits_set(fx_enabled[t][l], fx_pre_count[t][l])) {
+          le_trk_lane_flush(e, t, l);
+        }
+#endif
         for (int s = 0; s < fx_pre_count[t][l]; ++s) {
           fx_enabled[t][l][s] = 0;
         }
@@ -9474,10 +10300,41 @@ static inline void mix_tracks_frame(
        * A whole-track print covers this part's chain entirely, so it is
        * skipped rather than walked: its state was settled to bypass at that
        * engage edge and a fallback re-enters through the clean path. */
+#ifndef LE_MIX_JOBS_TU
       if (has_fx[t][l] && !track_printed) {
         fx_apply_chain(&ln->fx, sr, fx_cap, &wl, &wr, fx_count[t][l],
                        fx_type[t][l], fx_params[t][l], fx_enabled[t][l]);
       }
+#endif
+#ifdef LE_MIX_HEARD_TU
+    lane_heard:
+      if (hp.done) {
+        wl = hp.l;
+        wr = hp.r;
+      }
+#endif
+#ifdef LE_MIX_JOBS_TU
+      /* The rest of the lane's frame is its track's job's (le_trk_job_run). */
+      {
+        le_trk_job_lane* const jl = &tj->lane[l];
+        jl->l[ji] = wl;
+        jl->r[ji] = wr;
+        jl->pan_l[ji] = pan_gl[t][l];
+        jl->pan_r[ji] = pan_gr[t][l];
+        jl->gain[ji] = load_f32(&tr->a_gain_bits) * tr->fade_sample * gate;
+        jl->mg[ji] = mg;
+        jl->mask[ji] = out_mask[t][l] & out_enabled;
+        jl->flags[ji] =
+            (uint8_t)(LE_TJ_PRESENT |
+                      (has_fx[t][l] && !track_printed &&
+                               (!hp.done || hp.chain)
+                           ? LE_TJ_CHAIN
+                           : 0u) |
+                      (routes ? LE_TJ_ROUTES : 0u) |
+                      (gate_ok ? LE_TJ_GATE_OK : 0u));
+        goto lane_meters;
+      }
+#endif
       /* Pan (slice 3): placement of the lane's pair, after the chain and
        * after the cache (the cache holds the unpanned render). The gains
        * were computed when the pan was set; centre is exact unity, so an
@@ -9529,6 +10386,10 @@ static inline void mix_tracks_frame(
         }
       }
 
+#ifdef LE_MIX_JOBS_TU
+    lane_meters:
+#endif
+      {
       const float la = fabsf(loopsample);
       if (la > lane_peak[t][l]) lane_peak[t][l] = la;
       if (la > frame_trk_peak[t]) frame_trk_peak[t] = la;
@@ -9543,6 +10404,7 @@ static inline void mix_tracks_frame(
        * of lane 0" fix and does not quietly introduce a new mute semantic
        * that nobody asked for. */
       trk_mix += loopsample;
+      }
     }
     {
       const float ma = fabsf(trk_mix);
@@ -9577,6 +10439,21 @@ static inline void mix_tracks_frame(
         bus_r += tce->pcm[2 * trp + 1] * tg;
       }
     }
+#ifdef LE_MIX_JOBS_TU
+    /* The track chain, its gates and the routing are the job's and the
+     * join's (le_trk_job_run, le_trk_jobs_end). */
+    tj->flags[ji] = (uint8_t)((trk_has_fx[t] ? LE_TJ_TRK_FX : 0u) |
+                              (track_printed ? LE_TJ_TRK_PRINTED : 0u));
+    tj->print_l[ji] = bus_l;
+    tj->print_r[ji] = bus_r;
+    tj->bus_gain[ji] = load_f32(&tr->a_gain_bits) * tr->fade_sample;
+    tj->sg[ji] = sg;
+    (void)bus_mask;
+    (void)bus_mg;
+    (void)trk_l;
+    (void)trk_r;
+    goto track_done;
+#endif
     if (trk_has_fx[t]) {
       fx_apply_chain_with_gain(&tr->bus.fx, sr, fx_cap, &bus_l, &bus_r,
                      trk_fx_count[t], trk_fx_type[t], trk_fx_params[t],
@@ -9603,6 +10480,9 @@ static inline void mix_tracks_frame(
       if (al > trk_lpeak[t]) trk_lpeak[t] = al;
       if (ar > trk_rpeak[t]) trk_rpeak[t] = ar;
     }
+#ifdef LE_MIX_JOBS_TU
+  track_done:
+#endif
 
     /* Advance the per-pass capture once per written frame (all lanes share the
      * one write head): count tracks the shadow's coverage, phase the pass
@@ -9626,6 +10506,9 @@ static inline void mix_tracks_frame(
      * leave a stale old head for a later Play to mix. */
     if (tr->turn_left > 0) --tr->turn_left;
     if (seam_w >= 0 && --tr->seam_capture == 0) {
+#ifdef LE_MIX_HEARD_TU
+      le_heard_seam_fold(e, tr, tr->seam_len, seam_f, 1);
+#endif
       le_seam_fold_dub_shadow(tr, tr->seam_len, seam_f);
       le_seam_fold(tr, tr->seam_len, seam_f);
       /* [R1] seam fold: an in-place content write, and the only one in the
@@ -9654,6 +10537,12 @@ static inline void mix_tracks_frame(
    *
    * A single-channel last bus processes its channel as l == r and writes only
    * that channel, exactly as output_bus_frame does. */
+#ifdef LE_MIX_JOBS_TU
+  /* After the join, with the tracks (le_trk_jobs_end). */
+  (void)rec;
+  e->trk_job_rec = ji + 1u;
+  return;
+#endif
   if (at_has_fx) {
     float* o = out + (size_t)f * (size_t)ch_out;
     const int bus_n = (ch_out + 1) / 2;
@@ -9672,11 +10561,291 @@ static inline void mix_tracks_frame(
   }
 }
 
+
+
+#ifdef LE_MIX_JOBS_TU
+/* ---- Track chains as jobs (#1729, le_trk_job in engine_private.h) ---- */
+
+/* Sets [time] to block frame [i]: its clock, and the tempo of the anchors
+ * the first loop set up to it, replayed from [*tev] on into [*tempo] (the
+ * cursor's own, so a caller running ahead of another leaves its tempo be). */
+static inline void le_trk_time_at(const le_fx_par* p, le_fx_time* time,
+                                  le_fx_tempo* tempo, int32_t* tev,
+                                  uint32_t i) {
+  while (*tev < p->tev_n && p->tev_at[*tev] <= (int32_t)i) {
+    *tempo = p->tev[(*tev)++];
+  }
+  time->tempo = *tempo;
+  atomic_store_explicit(&time->a_frame, p->clock + i, memory_order_relaxed);
+}
+
+void le_trk_job_run(le_engine* e, int t, uint32_t upto) {
+  const le_fx_par* p = &e->fx_par;
+  le_trk_job* j = &e->trk_job[t];
+  le_track* tr = &e->tracks[t];
+  const le_fx_snapshot* sn = &e->fx_snap;
+  for (uint32_t i = j->done; i < upto; ++i) {
+    if (p->owned[i]) continue; /* the latency harness's frame: no mixer */
+    le_trk_time_at(p, &j->time, &j->tempo, &j->tev, i);
+    const uint8_t tf = j->flags[i];
+    const int trk_fx = (tf & LE_TJ_TRK_FX) != 0u;
+    const int printed = (tf & LE_TJ_TRK_PRINTED) != 0u;
+    float bus_l = 0.0f;
+    float bus_r = 0.0f;
+    uint32_t bus_mask = 0u;
+    float bus_mg = 0.0f;
+    /* The mixer's lane tail, from the chain on (mix_tracks_frame). */
+    for (int32_t l = 0; l < j->lane_n; ++l) {
+      le_trk_job_lane* jl = &j->lane[l];
+      const uint8_t lf = jl->flags[i];
+      if (!(lf & LE_TJ_PRESENT)) continue;
+      float wl = jl->l[i];
+      float wr = jl->r[i];
+      if (lf & LE_TJ_CHAIN) {
+        fx_apply_chain(&tr->lanes[l].fx, p->sr, p->fx_cap, &wl, &wr,
+                       sn->lane_count[t][l], sn->lane_type[t][l],
+                       sn->lane_params[t][l], sn->lane_enabled[t][l]);
+      }
+      wl *= jl->pan_l[i];
+      wr *= jl->pan_r[i];
+      if (!trk_fx) {
+        const float gain = jl->gain[i];
+        wl *= gain;
+        wr *= gain;
+      } else {
+        const float mg = jl->mg[i];
+        if ((lf & LE_TJ_ROUTES) && !printed) {
+          bus_l += wl * mg;
+          bus_r += wr * mg;
+        }
+        if (lf & LE_TJ_GATE_OK) {
+          bus_mask |= jl->mask[i];
+          if (mg > bus_mg) bus_mg = mg;
+        }
+      }
+      jl->l[i] = wl;
+      jl->r[i] = wr;
+    }
+    if (printed) {
+      bus_l = j->print_l[i];
+      bus_r = j->print_r[i];
+    }
+    if (trk_fx) {
+      fx_apply_chain_with_gain(&tr->bus.fx, p->sr, p->fx_cap, &bus_l, &bus_r,
+                               sn->trk_count[t], sn->trk_type[t],
+                               sn->trk_params[t], sn->trk_enabled[t],
+                               sn->trk_pre_count[t], j->bus_gain[i]);
+      const float bus_gate = bus_mg * j->sg[i];
+      bus_l *= bus_gate;
+      bus_r *= bus_gate;
+    }
+    j->bus_l[i] = bus_l;
+    j->bus_r[i] = bus_r;
+    j->bus_mask[i] = bus_mask;
+  }
+  if (upto > j->done) j->done = upto;
+}
+
+/* Runs lane [l]'s chain alone, for the frames of the block its track's job
+ * has not run, up to the frame the mixer is at, before the callback runs it
+ * or settles it there itself (a heard lane's crossfade, a lane print): the
+ * track's other lanes and its own chain stay the job's. */
+void le_trk_lane_flush(le_engine* e, int t, int l) {
+  if (!(e->trk_jobs_live & (1u << t))) return;
+  const le_fx_par* p = &e->fx_par;
+  le_trk_job* j = &e->trk_job[t];
+  le_trk_job_lane* jl = &j->lane[l];
+  const le_fx_snapshot* sn = &e->fx_snap;
+  le_fx_state* fx = &e->tracks[t].lanes[l].fx;
+  const uint32_t upto = e->trk_job_rec;
+  uint32_t i = j->done > jl->chain_done ? j->done : jl->chain_done;
+  le_fx_tempo tempo = p->tempo0;
+  int32_t tev = 0;
+  for (; i < upto; ++i) {
+    if (p->owned[i]) continue;
+    if (!(jl->flags[i] & LE_TJ_PRESENT) || !(jl->flags[i] & LE_TJ_CHAIN)) {
+      continue;
+    }
+    le_trk_time_at(p, &j->time, &tempo, &tev, i);
+    fx_apply_chain(fx, p->sr, p->fx_cap, &jl->l[i], &jl->r[i],
+                   sn->lane_count[t][l], sn->lane_type[t][l],
+                   sn->lane_params[t][l], sn->lane_enabled[t][l]);
+    jl->flags[i] = (uint8_t)(jl->flags[i] & ~LE_TJ_CHAIN);
+  }
+  if (upto > jl->chain_done) jl->chain_done = upto;
+  atomic_store_explicit(
+      &j->time.a_frame,
+      atomic_load_explicit(&e->a_fx_frame, memory_order_relaxed),
+      memory_order_relaxed);
+  j->time.tempo = e->fx_tempo;
+}
+
+void le_trk_jobs_flush(le_engine* e, uint32_t tracks) {
+  tracks &= e->trk_jobs_live;
+  for (int t = 0; tracks != 0u; ++t, tracks >>= 1) {
+    if (!(tracks & 1u)) continue;
+    le_trk_job* j = &e->trk_job[t];
+    le_trk_job_run(e, t, e->trk_job_rec);
+    /* What runs next on the callback reads the frame and tempo the engine is
+     * at, as it would have without the job; the job sets its own again. */
+    atomic_store_explicit(
+        &j->time.a_frame,
+        atomic_load_explicit(&e->a_fx_frame, memory_order_relaxed),
+        memory_order_relaxed);
+    j->time.tempo = e->fx_tempo;
+  }
+}
+
+/* Points a chain's clock and tempo at [time], or back at the engine's. */
+static inline void le_trk_time_bind(le_fx_state* fx, le_engine* e,
+                                    le_fx_time* time) {
+  fx->clock_src = time != NULL ? &time->a_frame : &e->a_fx_frame;
+  fx->tempo = time != NULL ? &time->tempo : &e->fx_tempo;
+}
+
+uint32_t le_trk_jobs_begin(le_engine* e, int tc, const int32_t* lane_n,
+                           const int* lane_fx_any) {
+  le_fx_par* p = &e->fx_par;
+  const le_fx_snapshot* sn = &e->fx_snap;
+  e->trk_job_mon_n = p->jobs; /* every job queued so far is a monitor's */
+  int force = 0;
+#ifdef LE_NATIVE_TESTS
+  force = le_test_trk_jobs_force;
+#endif
+  if (!force &&
+      atomic_load_explicit(&p->a_workers, memory_order_relaxed) <= 0) {
+    return 0u;
+  }
+  uint32_t chained = 0u;
+  int n = 0;
+  for (int t = 0; t < tc; ++t) {
+    if (lane_fx_any[t] || sn->trk_has[t]) {
+      chained |= 1u << t;
+      ++n;
+    }
+  }
+  /* One job alone gains nothing: the callback would wait for it. */
+  if (n == 0 || (!force && p->jobs + n < 2)) return 0u;
+  for (int t = 0; t < tc; ++t) {
+    if (chained & (1u << t)) {
+      e->trk_job_t[p->jobs++ - e->trk_job_mon_n] = t;
+    }
+    le_trk_job* j = &e->trk_job[t];
+    j->lane_n = lane_n[t];
+    j->done = 0u;
+    j->tev = 0;
+    j->tempo = p->tempo0;
+    j->time.tempo = p->tempo0;
+    for (int l = 0; l < LE_MAX_LANES; ++l) j->lane[l].chain_done = 0u;
+    atomic_store_explicit(&j->time.a_frame, p->clock, memory_order_relaxed);
+    le_track* tr = &e->tracks[t];
+    for (int l = 0; l < LE_MAX_LANES; ++l) {
+      le_trk_time_bind(&tr->lanes[l].fx, e, &j->time);
+    }
+    le_trk_time_bind(&tr->bus.fx, e, &j->time);
+  }
+  e->at_time.tempo = p->tempo0;
+  atomic_store_explicit(&e->at_time.a_frame, p->clock, memory_order_relaxed);
+  e->trk_job_at_tev = 0;
+  for (int k = 0; k < LE_MAX_OUTPUT_BUSES; ++k) {
+    le_trk_time_bind(&e->all_tracks_fx[k], e, &e->at_time);
+  }
+  e->trk_job_rec = 0u;
+  e->trk_job_tc = tc;
+  e->trk_jobs_live = (uint32_t)((1u << tc) - 1u);
+#ifdef LE_NATIVE_TESTS
+  ++le_test_trk_jobs_blocks;
+#endif
+  return chained;
+}
+
+void le_trk_jobs_end(le_engine* e, float* out, int ch_out,
+                     uint32_t out_enabled, float* trk_lpeak,
+                     float* trk_rpeak) {
+  const le_fx_par* p = &e->fx_par;
+  const le_fx_snapshot* sn = &e->fx_snap;
+  const int tc = e->trk_job_tc;
+  /* The tracks with no chain, and anything a job left: on the callback. */
+  for (int t = 0; t < tc; ++t) le_trk_job_run(e, t, p->n);
+  const int at_has = sn->at_has;
+  const int bus_n = (ch_out + 1) / 2;
+  le_fx_tempo at_tempo = p->tempo0;
+  /* Every track onto the outputs, frame by frame, in the mixer's order; then
+   * the All tracks stage, as at the end of mix_tracks_frame. */
+  for (uint32_t i = 0; i < p->n; ++i) {
+    if (p->owned[i]) continue;
+    float* o = out + (size_t)(p->f0 + i) * (size_t)ch_out;
+    float rec[LE_MAX_CHANNELS];
+    if (at_has) {
+      for (int c = 0; c < ch_out && c < LE_MAX_CHANNELS; ++c) rec[c] = 0.0f;
+    }
+    float* const dst = at_has ? rec : o;
+    for (int t = 0; t < tc; ++t) {
+      const le_trk_job* j = &e->trk_job[t];
+      float trk_l = 0.0f;
+      float trk_r = 0.0f;
+      if (!(j->flags[i] & LE_TJ_TRK_FX)) {
+        for (int32_t l = 0; l < j->lane_n; ++l) {
+          const le_trk_job_lane* jl = &j->lane[l];
+          const uint8_t lf = jl->flags[i];
+          if (!(lf & LE_TJ_PRESENT) || !(lf & LE_TJ_ROUTES)) continue;
+          const uint32_t routed = jl->mask[i];
+          le_fx_route_frame(dst, ch_out, routed, jl->l[i], jl->r[i]);
+          if (routed) {
+            trk_l += jl->l[i];
+            trk_r += jl->r[i];
+          }
+        }
+      } else {
+        le_fx_route_frame(dst, ch_out, j->bus_mask[i], j->bus_l[i],
+                          j->bus_r[i]);
+        if (j->bus_mask[i]) {
+          trk_l = j->bus_l[i];
+          trk_r = j->bus_r[i];
+        }
+      }
+      const float al = fabsf(trk_l);
+      const float ar = fabsf(trk_r);
+      if (al > trk_lpeak[t]) trk_lpeak[t] = al;
+      if (ar > trk_rpeak[t]) trk_rpeak[t] = ar;
+    }
+    if (at_has) {
+      le_trk_time_at(p, &e->at_time, &at_tempo, &e->trk_job_at_tev, i);
+      for (int k = 0; k < bus_n && k < LE_MAX_OUTPUT_BUSES; ++k) {
+        const int c0 = 2 * k;
+        const int c1 = c0 + 1 < ch_out ? c0 + 1 : -1;
+        float l = rec[c0];
+        float r = c1 >= 0 ? rec[c1] : l;
+        fx_apply_chain(&e->all_tracks_fx[k], p->sr, p->fx_cap, &l, &r,
+                       sn->at_count, sn->at_type, sn->at_params,
+                       sn->at_enabled);
+        if (out_enabled & (1u << c0)) o[c0] += l;
+        if (c1 >= 0 && (out_enabled & (1u << c1))) o[c1] += r;
+      }
+    }
+  }
+  /* The chains read the engine's clock and tempo again. */
+  for (int t = 0; t < tc; ++t) {
+    le_track* tr = &e->tracks[t];
+    for (int l = 0; l < LE_MAX_LANES; ++l) {
+      le_trk_time_bind(&tr->lanes[l].fx, e, NULL);
+    }
+    le_trk_time_bind(&tr->bus.fx, e, NULL);
+  }
+  for (int k = 0; k < LE_MAX_OUTPUT_BUSES; ++k) {
+    le_trk_time_bind(&e->all_tracks_fx[k], e, NULL);
+  }
+  e->trk_jobs_live = 0u;
+  e->heard_i = -1; /* the mixer's frame loop is over (le_heard_op) */
+}
+#endif /* LE_MIX_JOBS_TU */
+
 /* Test seam: drive one output frame through master_bus_frame (master gain ->
  * feed-forward limiter -> metering) with explicit params, so the limiter dynamics
  * (transparent below the ceiling, peak hold, smoothed attack with a brickwall
  * backstop above it, smooth release) can be exercised in isolation. Mirrors
  * what le_engine_process calls per frame. Not part of the FFI surface. */
+#ifndef LE_MIX_HEARD_TU
 void le_engine_master_bus_frame_for_test(le_engine* e, float* out, uint32_t f,
                                          int ch_out, float master_gain,
                                          int limiter_on, float limiter_ceiling,
@@ -9689,6 +10858,7 @@ void le_engine_master_bus_frame_for_test(le_engine* e, float* out, uint32_t f,
                    out_sumsq, frame_out_peak, out_peak_ch);
   atomic_fetch_add_explicit(&e->a_fx_frame, 1u, memory_order_relaxed);
 }
+#endif /* LE_MIX_HEARD_TU */
 
 /* ---- the real-time DSP core ---- */
 
@@ -9989,7 +11159,42 @@ static void le_midi_ports_drain(le_engine* e) {
   }
 }
 
-void le_engine_process(le_engine* e, float* output, const float* input,
+#ifndef LE_MIX_HEARD_TU
+/* The end of a heard block's first loop (#1713): the post-pass writes the
+ * logged clean-take writes' input chain output and replays the content
+ * operations, then a layer that retired in the block, complete now
+ * (le_dub_boundary), is announced. A full event ring parks it, as at the
+ * boundary: the next block's start retries. */
+static LE_BRIDGE_NOINLINE void le_heard_block_end(
+    le_engine* e, const le_fx_par* par, uint32_t b0, const float* in,
+    int ch_in, const float* in_trim, uint32_t excluded, int tc) {
+  e->heard_i = -1;
+  le_heard_post(e, par, b0, in, ch_in, in_trim, excluded);
+  const uint32_t retired = e->heard_retire_mask;
+  e->heard_retire_mask = 0u;
+  for (int t = 0; retired != 0u && t < tc; ++t) {
+    if (!(retired & (1u << t))) continue;
+    le_track* tr = &e->tracks[t];
+    if (tr->dub_retire_slot == e->heard_retire_slot[t]) {
+      le_dub_try_retire(e, tr, e->heard_retire_frame[t]);
+      continue;
+    }
+    /* Cleared from the track since (le_dub_drop_armed): announced as the
+     * plain path would already have, at the boundary. */
+    const le_command evt = {.code = LE_EVT_LAYER_RETIRED,
+                            .evt = {t, e->heard_retire_slot[t],
+                                    e->heard_retire_gen[t]}};
+    if (le_ring_push(&e->evt_ring, evt)) {
+      le_plog_push(e, e->heard_retire_frame[t],
+                   (le_command){.code = LE_PLOG_LAYER_RETIRED,
+                                .evt = evt.evt});
+    }
+  }
+}
+#endif
+
+#ifndef LE_MIX_HEARD_TU
+LE_AUDIO_HOT_AT(0) void le_engine_process(le_engine* e, float* output, const float* input,
                        uint32_t frames) {
   le_flush_denormals(); /* per-thread; cheap to reassert every callback */
 
@@ -10028,6 +11233,18 @@ void le_engine_process(le_engine* e, float* output, const float* input,
     e->commands_applied++; /* rejected and no-op commands settle too */
   }
   le_head_land(e, perf_frame_base);
+  /* A track that runs again gates by its mutes (#1773). The starts the
+   * commands make close a spared gate as they land; this closes it for a
+   * start made any other way (a Bounce or Undo installing a playing take, a
+   * Redo from empty, a quantized fire) before the frames below mix it. */
+  for (int32_t c = 0; c < e->track_count; ++c) {
+    le_track* t = &e->tracks[c];
+    if (!t->gate_spared) continue;
+    const int32_t st = load_i32(&t->a_state);
+    if (st == LE_TRACK_PLAYING || st == LE_TRACK_OVERDUBBING) {
+      le_track_gate_mutes(t);
+    }
+  }
 
   /* Instruments (#1197): parameter changes and the note rings in posting
    * order before the MIDI drain, so a MIDI note meets a patch posted ahead
@@ -10359,11 +11576,20 @@ void le_engine_process(le_engine* e, float* output, const float* input,
     if (!instrument && (in == NULL || c >= ch_in)) continue;
     if (mon_on[c] && !mon_mut[c] && mon_has_fx[c]) par->job_mon[par->jobs++] = c;
   }
+  /* The heard image (#1713): which lanes hold one, and the inputs a lane
+   * that may capture this block records, whose chains run here whether or
+   * not they are monitored (the take records their output). A block where
+   * no lane holds one picks the plain mixer and skips every step below. */
+  const int heard_block = le_heard_block_begin(e, tc, lane_n, par, in, ch_in,
+                                              excluded, mon_has_fx,
+                                              mon_fx_count, perf_frame_base);
   par->in = in;
   par->ch_in = ch_in;
   par->sr = sr;
   par->fx_cap = fx_cap;
   const uint32_t click_route = click_mask & out_enabled;
+  /* The monitor jobs; each block adds its tracks' (#1729). */
+  const int32_t mon_jobs = par->jobs;
 
   /* Command-drain publications are already included above. Deferred sound,
    * grid and count-in starts can publish another image inside this block. */
@@ -10386,6 +11612,13 @@ void le_engine_process(le_engine* e, float* output, const float* input,
     par->clock = e->fx_clock_base + b0;
     par->tempo0 = e->fx_tempo;
     par->tev_n = 0;
+    /* The tracks' chains as jobs (#1729): the block's mixer then records
+     * each track's frame for its job, and the join sums the tracks. */
+    par->jobs = mon_jobs;
+    le_mix_fn* const mix_other =
+        le_trk_jobs_begin(e, tc, lane_n, lane_fx_any) != 0u
+            ? mix_tracks_frame_jobs
+            : heard_block ? mix_tracks_frame_heard : NULL;
     for (uint32_t f = b0; f < b1; ++f) {
       const uint32_t i = f - b0;
       e->perf.tap_frame = perf_frame_base + f;
@@ -10427,6 +11660,7 @@ void le_engine_process(le_engine* e, float* output, const float* input,
       if (e->capture_image_dirty) {
         const uint32_t dirty = e->capture_image_dirty;
         e->capture_image_dirty = 0;
+        le_trk_jobs_flush(e, dirty); /* before their chains' view changes */
         snapshot_lane_fx(e, tc, dirty, lane_n, fx_count, fx_pre_count, fx_type,
                          fx_params, fx_enabled, has_fx, perf_frame_base + f);
         for (int t = 0; t < tc; ++t) {
@@ -10447,7 +11681,22 @@ void le_engine_process(le_engine* e, float* output, const float* input,
         }
       }
 
-      /* Per-lane capture + additive playback mix (see mix_tracks_frame). */
+      /* Per-lane capture + additive playback mix (see mix_tracks_frame). A
+       * block with a heard image (#1713) takes the copy with it compiled in,
+       * one whose track chains run as jobs (#1729) the copy that records
+       * (mix_other, chosen for the block). */
+      if (mix_other != NULL) {
+        mix_other(
+            e, in, out, f, ch_in, ch_out, tc, sr, fx_cap, excluded,
+            out_enabled, overdub_fb, free_or_song, od_step, od_fade_frames,
+            pos, lane_n, lane_fx_any, has_fx, fx_count, fx_pre_count, fx_type,
+            fx_params, fx_enabled, trk_has_fx, trk_fx_count, trk_fx_type,
+            trk_fx_params, trk_fx_enabled, trk_fx_pre_count, track_cache_ent,
+            at_has_fx, at_fx_count, at_fx_type, at_fx_params, at_fx_enabled,
+            cache_ent, lane_sumsq, lane_peak, st, frame_trk_peak, trk_sumsq,
+            trk_peak, trk_lpeak, trk_rpeak, in_trim, solo, any_solo,
+            perf_frame_base);
+      } else {
       mix_tracks_frame(e, in, out, f, ch_in, ch_out, tc, sr, fx_cap, excluded,
                        out_enabled, overdub_fb, free_or_song, od_step,
                        od_fade_frames, pos,
@@ -10460,6 +11709,7 @@ void le_engine_process(le_engine* e, float* output, const float* input,
                        lane_peak, st,
                        frame_trk_peak, trk_sumsq, trk_peak, trk_lpeak, trk_rpeak,
                        in_trim, solo, any_solo, perf_frame_base);
+      }
 
       /* The click's schedule and voice (its sample sums in during the
        * second loop), the loop viz cursor, the track viz taps, then the
@@ -10487,6 +11737,15 @@ void le_engine_process(le_engine* e, float* output, const float* input,
     /* The monitor chains over the block: on the workers and the callback,
      * or on the callback alone (le_fx_jobs_run). */
     if (par->jobs > 0) le_fx_jobs_run(e);
+    /* The tracks onto the outputs, now that their chains have run. */
+    if (e->trk_jobs_live) {
+      le_trk_jobs_end(e, out, ch_out, out_enabled, trk_lpeak, trk_rpeak);
+    }
+
+    /* The heard images (#1713), now that the chains' output exists. */
+    if (heard_block) {
+      le_heard_block_end(e, par, b0, in, ch_in, in_trim, excluded, tc);
+    }
 
     /* The output buses' chains run here, at the frame each one processes:
      * their clock and tempo follow the block as a lane's did in the first
@@ -10682,6 +11941,7 @@ void le_engine_process(le_engine* e, float* output, const float* input,
    * synchronize-with this add, so everything sequenced before it — every
    * tail store — is visible to the pops that follow. */
   if (e->perf.armed) {
+    perf_tap_raw_block(e, frames);
     atomic_fetch_add_explicit(&e->a_perf_frames, (uint64_t)frames,
                               memory_order_release);
   }
@@ -10748,4 +12008,8 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   for (int t = 0; t < tc; ++t) le_fade_publish(e, &e->tracks[t]);
   atomic_store_explicit(&e->a_commands_published, e->commands_applied,
                          memory_order_release);
+#ifdef LE_NATIVE_TESTS
+  if (le_test_heard_check) le_test_heard_check(e);
+#endif
 }
+#endif /* LE_MIX_HEARD_TU */

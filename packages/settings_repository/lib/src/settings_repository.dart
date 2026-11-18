@@ -17,7 +17,7 @@ typedef RecordTimingCheckpoint = ({
 /// A pedal setup Save that did not complete durably.
 final class PedalSetupSaveException implements Exception {
   /// Keeps the original storage failure and any checkpoint-restore failure.
-  const PedalSetupSaveException({
+  const new({
     required this.cause,
     required this.checkpointRestored,
     this.restoreFailure,
@@ -42,7 +42,7 @@ final class PedalSetupSaveException implements Exception {
 /// A MIDI configuration Save that was not confirmed durable.
 final class MidiSettingsSaveException implements Exception {
   /// Preserves the original refusal and exact-checkpoint recovery result.
-  const MidiSettingsSaveException({
+  const new({
     required this.cause,
     required this.checkpointRestored,
     this.restoreFailure,
@@ -68,7 +68,7 @@ final class MidiSettingsSaveException implements Exception {
 @immutable
 class StoredAudioConfig {
   /// Creates a [StoredAudioConfig].
-  const StoredAudioConfig({
+  const new({
     required this.sampleRate,
     required this.bufferFrames,
     this.inputChannels = 0,
@@ -169,15 +169,13 @@ typedef StoredOutputSetup = ({
 /// device configuration (so the engine can auto-start on launch), per-track
 /// display names, and big-picture view preferences.
 class SettingsRepository {
-  /// Creates a [SettingsRepository] backed by [store].
+  /// Creates a [SettingsRepository] backed by [_store].
   ///
-  /// [alsaPeriods] is the effective ALSA period count the engine runs with,
+  /// [_alsaPeriods] is the effective ALSA period count the engine runs with,
   /// or `null` where that knob is not engaged (any non-Linux platform, or
   /// Linux without `SEGNO_ALSA_PERIODS` set). Derive it with
   /// [alsaPeriodsFromEnvironment]; the composition root passes it in.
-  SettingsRepository({required KeyValueStore store, int? alsaPeriods})
-    : _store = store,
-      _alsaPeriods = alsaPeriods;
+  new({required this._store, this._alsaPeriods});
 
   final KeyValueStore _store;
   Future<void> _serializedWrite = Future<void>.value();
@@ -460,10 +458,7 @@ class SettingsRepository {
     await _store.setInt(_audioInputChannelsKey, config.inputChannels);
     await _store.setInt(_audioOutputChannelsKey, config.outputChannels);
     await _store.setInt(_audioMaxLoopMinutesKey, config.maxLoopMinutes);
-    await _store.setString(
-      _audioPlaybackDeviceIdKey,
-      config.playbackDeviceId,
-    );
+    await _store.setString(_audioPlaybackDeviceIdKey, config.playbackDeviceId);
     await _store.setString(_audioCaptureDeviceIdKey, config.captureDeviceId);
   }
 
@@ -510,7 +505,7 @@ class SettingsRepository {
   /// One atomic opaque envelope for Remote enable and all mappings.
   Future<String?> loadMidiConfiguration() async {
     await _serializedWrite;
-    return _store.getString(_midiConfigurationKey);
+    return await _store.getString(_midiConfigurationKey);
   }
 
   /// Confirms exact saved bytes; on refusal restores and verifies the
@@ -521,10 +516,7 @@ class SettingsRepository {
       checkpoint = await _store.getString(_midiConfigurationKey);
     } on Object catch (error, trace) {
       Error.throwWithStackTrace(
-        MidiSettingsSaveException(
-          cause: error,
-          checkpointRestored: false,
-        ),
+        MidiSettingsSaveException(cause: error, checkpointRestored: false),
         trace,
       );
     }
@@ -554,10 +546,7 @@ class SettingsRepository {
         );
       }
       Error.throwWithStackTrace(
-        MidiSettingsSaveException(
-          cause: error,
-          checkpointRestored: true,
-        ),
+        MidiSettingsSaveException(cause: error, checkpointRestored: true),
         trace,
       );
     }
@@ -632,7 +621,7 @@ class SettingsRepository {
   /// second place able to decide what a footswitch means.
   Future<String?> loadPedalSetup() async {
     await _serializedWrite;
-    return _store.getString(_pedalSetupKey);
+    return await _store.getString(_pedalSetupKey);
   }
 
   /// Saves the built-in footswitch setup blob, restoring the exact prior value
@@ -643,10 +632,7 @@ class SettingsRepository {
       checkpoint = await _store.getString(_pedalSetupKey);
     } on Object catch (readError, readStackTrace) {
       Error.throwWithStackTrace(
-        PedalSetupSaveException(
-          cause: readError,
-          checkpointRestored: false,
-        ),
+        PedalSetupSaveException(cause: readError, checkpointRestored: false),
         readStackTrace,
       );
     }
@@ -1028,7 +1014,7 @@ class SettingsRepository {
   /// Reads the exact Click scalar, preserving absence for rollback.
   Future<double?> readClickVolumeCheckpoint() async {
     await _serializedWrite;
-    return _store.getDouble(_clickVolumeKey);
+    return await _store.getDouble(_clickVolumeKey);
   }
 
   /// Writes and verifies the exact scalar, including an absent preference.
@@ -1046,7 +1032,7 @@ class SettingsRepository {
   /// Reads the exact click pan scalar (#1200), preserving absence.
   Future<double?> readClickPanCheckpoint() async {
     await _serializedWrite;
-    return _store.getDouble(_clickPanKey);
+    return await _store.getDouble(_clickPanKey);
   }
 
   /// Writes and verifies the exact click pan, including an absent one.
@@ -1504,7 +1490,7 @@ class SettingsRepository {
   /// Reads the exact durable mix value before a coordinated edit.
   Future<String?> readMixSettingsCheckpoint() async {
     await _serializedWrite;
-    return _store.getString(_mixSettingsKey);
+    return await _store.getString(_mixSettingsKey);
   }
 
   /// Restores an exact previously read durable mix value in one operation.
@@ -1683,7 +1669,7 @@ class SettingsRepository {
       // repairs it.
       try {
         await _serialize(
-          () async => _writeMixSettings(await _readMixSettings()),
+          () async => await _writeMixSettings(await _readMixSettings()),
         );
       } on Object {
         // Retried implicitly by the next mix write.
@@ -1894,10 +1880,8 @@ class SettingsRepository {
   String _inputNameKey(String device, int input) => 'input_name.$device.$input';
 
   /// Loads the given name for [input] on [device], or `null` if it has none.
-  Future<String?> loadInputName({
-    required String device,
-    required int input,
-  }) => _store.getString(_inputNameKey(device, input));
+  Future<String?> loadInputName({required String device, required int input}) =>
+      _store.getString(_inputNameKey(device, input));
 
   /// Saves the given [name] for [input] on [device].
   Future<void> saveInputName({
@@ -1912,18 +1896,13 @@ class SettingsRepository {
   /// Removed rather than stored as an empty string: an input's fallback is not
   /// a name it was given, and a stored `''` would be a name the next reader has
   /// to know to ignore. A track has no equivalent — its fallback IS a name.
-  Future<void> clearInputName({
-    required String device,
-    required int input,
-  }) => _store.remove(_inputNameKey(device, input));
+  Future<void> clearInputName({required String device, required int input}) =>
+      _store.remove(_inputNameKey(device, input));
 
   // Every control shares the single durable mix value. _serialize keeps rapid
   // read/modify/write gestures from overwriting one another.
-  StoredInputSetup _emptyInputSetup() => (
-    trimDb: <int, double>{},
-    pan: <int, double>{},
-    pairs: <int, double>{},
-  );
+  StoredInputSetup _emptyInputSetup() =>
+      (trimDb: <int, double>{}, pan: <int, double>{}, pairs: <int, double>{});
 
   /// Keyed per DEVICE and DESTINATION, the pair-shaped twin of
   /// [_inputNameKey].
@@ -1937,10 +1916,8 @@ class SettingsRepository {
 
   /// Loads the given name for destination [bus] on [device], or `null` if it
   /// has none.
-  Future<String?> loadOutputName({
-    required String device,
-    required int bus,
-  }) => _store.getString(_outputNameKey(device, bus));
+  Future<String?> loadOutputName({required String device, required int bus}) =>
+      _store.getString(_outputNameKey(device, bus));
 
   /// Saves the given [name] for destination [bus] on [device].
   Future<void> saveOutputName({
@@ -1951,10 +1928,8 @@ class SettingsRepository {
 
   /// Forgets [bus]'s given name on [device], handing the destination back its
   /// jack numbers.
-  Future<void> clearOutputName({
-    required String device,
-    required int bus,
-  }) => _store.remove(_outputNameKey(device, bus));
+  Future<void> clearOutputName({required String device, required int bus}) =>
+      _store.remove(_outputNameKey(device, bus));
 
   StoredOutputSetup _emptyOutputSetup() => (
     level: <int, double>{},
@@ -2060,7 +2035,7 @@ class SettingsRepository {
   /// be repaired without the others.
   Future<bool?> readRecordTimingGateCheckpoint() async {
     await _serializedWrite;
-    return _store.getBool(_quantizeKey);
+    return await _store.getBool(_quantizeKey);
   }
 
   /// The stored Record timing division alone; see
@@ -2181,7 +2156,7 @@ class SettingsRepository {
   Future<bool?> readOneShotCheckpoint({required int? channel}) async {
     final key = _oneShotKey(channel);
     await _serializedWrite;
-    return _store.getBool(key);
+    return await _store.getBool(key);
   }
 
   /// Saves/removes and verifies one exact playback scalar.
@@ -2209,7 +2184,7 @@ class SettingsRepository {
   Future<bool?> readFollowTempoCheckpoint({required int? channel}) async {
     final key = _audioTempoKey('follow_tempo', channel);
     await _serializedWrite;
-    return _store.getBool(key);
+    return await _store.getBool(key);
   }
 
   /// Saves/removes and verifies one exact Follow tempo scalar.
@@ -2227,7 +2202,7 @@ class SettingsRepository {
   Future<bool?> readPitchFollowsSpeedCheckpoint({required int? channel}) async {
     final key = _audioTempoKey('pitch_follows_speed', channel);
     await _serializedWrite;
-    return _store.getBool(key);
+    return await _store.getBool(key);
   }
 
   /// Saves/removes and verifies one exact Pitch scalar.
@@ -2248,7 +2223,7 @@ class SettingsRepository {
   /// Loads lane [lane] of track [channel]'s mute state, or `null` if unset.
   Future<bool?> loadLaneMute(int channel, int lane) async {
     await _serializedWrite;
-    return _store.getBool(_laneMuteKey(channel, lane));
+    return await _store.getBool(_laneMuteKey(channel, lane));
   }
 
   /// Saves lane [lane] of track [channel]'s [muted] state.
@@ -2390,11 +2365,8 @@ class SettingsRepository {
 
   /// Saves the set of dismissed update semantic versions (sorted,
   /// comma-separated).
-  Future<void> saveDismissedUpdateVersions(Set<Version> versions) =>
-      _store.setString(
-        _updateDismissedKey,
-        (versions.toList()..sort()).join(','),
-      );
+  Future<void> saveDismissedUpdateVersions(Set<Version> versions) => _store
+      .setString(_updateDismissedKey, (versions.toList()..sort()).join(','));
 
   /// Loads the update that rolled back and has not been dismissed: the
   /// version that did not start and the one the console went back to, or
@@ -2430,7 +2402,7 @@ class SettingsRepository {
 }
 
 class _SavedMixSettings {
-  _SavedMixSettings({
+  new({
     Map<int, double>? trackLevels,
     Map<int, double>? pans,
     Map<(int, int), double>? levels,

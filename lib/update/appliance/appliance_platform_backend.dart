@@ -21,7 +21,7 @@ import 'package:update_repository/update_repository.dart';
 class AppliancePlatformBackend implements PlatformUpdateBackend {
   /// Creates an [AppliancePlatformBackend]. All paths and the base URL are
   /// overridable for tests; [env] defaults to the real [SystemApplianceEnv].
-  AppliancePlatformBackend({
+  new({
     ApplianceEnv? env,
     this.baseUrl = 'https://segno.aquiles.dev/updates/appliance',
     this.versionFile = '/etc/segno/build-version',

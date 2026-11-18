@@ -19,7 +19,7 @@ enum PluginFormat {
 /// erase the rest of the scan (see [isAvailable]).
 class PluginDescriptor extends Equatable {
   /// Creates a [PluginDescriptor].
-  const PluginDescriptor({
+  const new({
     required this.id,
     required this.name,
     required this.vendor,
@@ -64,7 +64,7 @@ class PluginDescriptor extends Equatable {
 /// plain-valued fields. Domain mirror of the engine's `PluginParamInfo`.
 class PluginParamInfo extends Equatable {
   /// Creates a [PluginParamInfo].
-  const PluginParamInfo({
+  const new({
     required this.id,
     required this.name,
     required this.unit,

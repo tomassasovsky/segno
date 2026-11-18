@@ -4,7 +4,7 @@ part of 'console_leds_cubit.dart';
 /// sensor last said.
 class ConsoleLedsState extends Equatable {
   /// Creates a [ConsoleLedsState].
-  const ConsoleLedsState({
+  const new({
     this.settings = const ConsoleLedSettings(),
     this.draft,
     this.light,

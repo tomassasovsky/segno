@@ -14,7 +14,7 @@ abstract class BrightnessClient {
 /// No-op client used on desktop / when the helper is absent.
 class UnsupportedBrightnessClient implements BrightnessClient {
   /// Creates an [UnsupportedBrightnessClient].
-  const UnsupportedBrightnessClient();
+  const new();
 
   @override
   Future<bool> isSupported(String connector) async => false;

@@ -1,8 +1,8 @@
-import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart' show LooperModeGate;
+import 'package:material_ui/material_ui.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:segno/common/top_bar_layout.dart';
 import 'package:segno/control/model/foot_length.dart';
@@ -290,8 +290,29 @@ final _messages = <_Copy>[
       (l) => l.perfArmRefused,
       body: (l) => l.operationBusy(kind.name),
     ),
-  _copy('not recovered', (l) => l.perfTakesNotRecovered(3)),
+  _copy(
+    'not recovered',
+    (l) => l.perfTakesNotRecovered(3),
+    body: (l) => l.perfTakesNotRecoveredBody(3),
+    action: (l) => l.consoleTryAgain,
+  ),
+  _copy(
+    'recovering',
+    (l) => l.perfTakesRecovering(3),
+    tone: NoticeTone.neutral,
+  ),
+  _copy('recovered', (l) => l.perfTakesRecovered(3), tone: NoticeTone.success),
   _copy('discarded', (l) => l.perfDiscarded, tone: NoticeTone.neutral),
+  _copy(
+    'stopped idle',
+    (l) => l.perfStoppedIdle(20),
+    body: (l) => l.perfStoppedKept,
+  ),
+  _copy(
+    'stopped at the longest length',
+    (l) => l.perfStoppedLengthLimit,
+    body: (l) => l.perfStoppedKept,
+  ),
   for (final gate in [
     LooperModeGate.capturing,
     LooperModeGate.queued,
@@ -323,7 +344,7 @@ final _messages = <_Copy>[
 /// wide, which leaves the centre 1128 (the room on every other screen is
 /// wider).
 class _StageBar extends StatelessWidget {
-  const _StageBar();
+  const new();
 
   @override
   Widget build(BuildContext context) => const Scaffold(
@@ -365,7 +386,7 @@ void main() {
         MaterialApp(
           locale: locale,
           theme: AppTheme.neon,
-          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          localizationsDelegates: appLocalizationsDelegates,
           supportedLocales: AppLocalizations.supportedLocales,
           home: BlocProvider.value(value: notices, child: const _StageBar()),
         ),

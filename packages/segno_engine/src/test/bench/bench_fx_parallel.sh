@@ -29,20 +29,15 @@ case "$(uname -s)" in
   *) LIBS="-lpthread -lstdc++ -lm -ldl" ;;   # Linux: miniaudio dlopen()s its backends
 esac
 
-ENGINE_SRC="src/core/engine*.c src/core/lockfree_ring.c src/core/loop_clock.c \
-  src/core/tempo_grid.c \
-  src/core/halfband.c \
-  src/core/synth_voice.c src/core/synth_patch.c \
-  src/core/audio_ring.c src/core/rt_alloc.c src/core/perf_drain.c src/core/perf_checkpoint.c src/core/perf_log_ring.c \
-  src/core/layer_staging_ring.c src/core/json_read.c src/core/perf_render.c \
-  src/core/plugin_disabled.c \
-  src/platform/engine_*.c src/miniaudio/miniaudio_impl.c src/midi/le_midi_clock.c src/midi/le_clock_follow.c"
+. src/test/engine_build.sh   # ENGINE_SRC, engine_objects, queue_compile
 
 echo "== building the stretch shim ==" >&2
-$CXX -std=c++17 -O2 -DNDEBUG -c src/stretch/le_stretch.cpp -o "$OUT_DIR/le_stretch.o"
+queue_compile "$OUT_DIR/le_stretch.o" $CXX -std=c++17 -O2 -DNDEBUG src/stretch/le_stretch.cpp
 echo "== building bench_fx_parallel ==" >&2
+engine_objects ENGINE_OBJS "$OUT_DIR/obj/bench_fx_parallel" $CC $STD ${EXTRA_CFLAGS:-}
+run_queue
 # shellcheck disable=SC2086
-$CC $STD ${EXTRA_CFLAGS:-} src/test/bench/bench_fx_parallel.c $ENGINE_SRC "$OUT_DIR/le_stretch.o" \
+$CC $STD ${EXTRA_CFLAGS:-} src/test/bench/bench_fx_parallel.c $ENGINE_OBJS "$OUT_DIR/le_stretch.o" \
   $LIBS ${STATIC:+-static} -o "$OUT_DIR/bench_fx_parallel"
 case "$OUT_DIR" in
   /*) BIN="$OUT_DIR/bench_fx_parallel" ;;

@@ -1,13 +1,13 @@
-import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/model/fx_art.dart';
 import 'package:segno/looper/model/fx_destination.dart';
+import 'package:segno/looper/model/fx_names.dart';
 import 'package:segno/looper/view/fx/fx_art_view.dart';
 import 'package:segno/looper/view/fx/fx_chain_power.dart';
 import 'package:segno/looper/view/fx/fx_editor_parts.dart';
-import 'package:segno/looper/view/fx_editor/fx_block_chip.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
@@ -43,7 +43,7 @@ const double _kTitleRight = _kSoloFromRight + 24 + 300;
 /// pedals than fit.
 class FxRackEditor extends StatelessWidget {
   /// Creates an [FxRackEditor].
-  const FxRackEditor({
+  const new({
     required this.group,
     required this.destination,
     required this.destinationLabel,
@@ -94,6 +94,9 @@ class FxRackEditor extends StatelessWidget {
     // dimmed, keep the rest: their own switches still work, so a sound can be
     // prepared before the chain goes back on.
     final band = chainOn ? 0.0 : FxChainOffNotice.height + 12;
+    // A rack switched off as a whole (#1711) dims its pedals the same way:
+    // each keeps its own switch, and the rack's brings them back as they are.
+    final heard = chainOn && !(group.rack?.bypassed ?? false);
     final pedalHeight = kFxPedalHeight - band;
     return Material(
       type: MaterialType.transparency,
@@ -132,11 +135,9 @@ class FxRackEditor extends StatelessWidget {
                 LoopSettingsFrame.contentWidthOf(context) - _kActionsFromRight,
             top: 32,
             child: _RackActions(
-              enabled: group.anyEnabled,
-              onToggle: () => edits.setGroupEnabled(
-                fxGroupId(group),
-                enabled: !group.anyEnabled,
-              ),
+              enabled: group.isOn,
+              onToggle: () =>
+                  edits.setGroupEnabled(fxGroupId(group), enabled: !group.isOn),
               onOptions: onOptions,
               onSavePreset: onSavePreset,
               onAddEffect: onAddEffect,
@@ -159,7 +160,7 @@ class FxRackEditor extends StatelessWidget {
             height: pedalHeight,
             child: Opacity(
               key: const Key('fx_pedal_strip'),
-              opacity: chainOn ? 1 : context.surface.disabledOpacity,
+              opacity: heard ? 1 : context.surface.disabledOpacity,
               child: SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: Row(
@@ -175,7 +176,7 @@ class FxRackEditor extends StatelessWidget {
                         key: Key('fx_pedal_${entries[i].slotId ?? i}'),
                         height: pedalHeight,
                         effect: entries[i],
-                        chainOn: chainOn,
+                        chainOn: heard,
                         onTogglePower: () {
                           final id = entries[i].slotId;
                           if (id != null) {
@@ -216,7 +217,7 @@ class FxRackEditor extends StatelessWidget {
 /// The plain line between two pedals. No arrowhead: the order of the columns
 /// is what says which way the signal goes.
 class _Cable extends StatelessWidget {
-  const _Cable({required this.height, super.key});
+  const new({required this.height, super.key});
 
   final double height;
 
@@ -234,7 +235,7 @@ class _Cable extends StatelessWidget {
 /// The titlebar's own row: the rack's bypass, its options, Save preset and
 /// Add effect.
 class _RackActions extends StatelessWidget {
-  const _RackActions({
+  const new({
     required this.enabled,
     required this.onToggle,
     required this.onOptions,
@@ -297,7 +298,7 @@ class _RackActions extends StatelessWidget {
 /// controls beneath.
 class FxPedalColumn extends StatefulWidget {
   /// Creates an [FxPedalColumn].
-  const FxPedalColumn({
+  const new({
     required this.effect,
     required this.onTogglePower,
     required this.onParam,
@@ -306,8 +307,8 @@ class FxPedalColumn extends StatefulWidget {
     super.key,
   });
 
-  /// Whether the rack's chain is switched on: the pedal's LED is dark while
-  /// it is off, as nothing passes through it.
+  /// Whether the pedal's chain and its rack are switched on: the pedal's LED
+  /// is dark while either is off, as nothing passes through it.
   final bool chainOn;
 
   /// How tall the column is: the pen's strip, less the chain-off band when
@@ -345,7 +346,7 @@ class _FxPedalColumnState extends State<FxPedalColumn> {
     final surface = context.surface;
     final effect = widget.effect;
     final built = effect is BuiltInEffect ? effect : null;
-    final name = fxPedalName(l10n, effect);
+    final name = fxBlockName(l10n, effect);
     final art = fxEntryArt(effect, live: true, chainOn: widget.chainOn);
     final params = built?.type.params ?? const <FxParamInfo>[];
     // A rack variant shows the controls its rack shows, under its names; any
@@ -363,7 +364,10 @@ class _FxPedalColumnState extends State<FxPedalColumn> {
         children: [
           const SizedBox(height: 10),
           _PedalTitle(
-            key: Key('fx_pedal_power_${effect.slotId ?? name}'),
+            // Keyed by identity, never by the localized name.
+            key: Key(
+              'fx_pedal_power_${effect.slotId ?? effect.module ?? name}',
+            ),
             name: name,
             enabled: effect.enabled,
             onTap: widget.onTogglePower,
@@ -374,10 +378,10 @@ class _FxPedalColumnState extends State<FxPedalColumn> {
             child: Opacity(
               opacity: effect.enabled ? 1 : surface.disabledOpacity,
               child: art == null
-                  ? _mark(surface, lit: effect.enabled)
+                  ? _PedalMark(lit: effect.enabled)
                   : FxArtView(
                       art: art,
-                      fallback: _mark(surface, lit: effect.enabled),
+                      fallback: _PedalMark(lit: effect.enabled),
                     ),
             ),
           ),
@@ -436,25 +440,32 @@ class _FxPedalColumnState extends State<FxPedalColumn> {
       ),
     );
   }
-
-  Widget _mark(SurfaceTheme surface, {required bool lit}) => Center(
-    child: Icon(
-      LucideIcons.audioWaveform,
-      size: 48,
-      color: lit ? surface.accent : surface.textTertiary,
-    ),
-  );
 }
 
-/// What a pedal is called: the catalogue's own name for the module, falling
-/// back to the effect this engine built for it.
-String fxPedalName(AppLocalizations l10n, TrackEffect effect) =>
-    effect.module ?? fxBlockName(l10n, effect);
+/// The app's own mark, drawn where a pedal has no artwork.
+class _PedalMark extends StatelessWidget {
+  const new({required this.lit});
+
+  /// Whether the pedal is on.
+  final bool lit;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    return Center(
+      child: Icon(
+        LucideIcons.audioWaveform,
+        size: 48,
+        color: lit ? surface.accent : surface.textTertiary,
+      ),
+    );
+  }
+}
 
 /// The pedal's title and power in one control, as the accepted design puts it:
 /// power belongs to the title button and nowhere else.
 class _PedalTitle extends StatelessWidget {
-  const _PedalTitle({
+  const new({
     required this.name,
     required this.enabled,
     required this.onTap,

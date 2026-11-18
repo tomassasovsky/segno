@@ -139,43 +139,40 @@ void main() {
     },
   );
 
-  test(
-    'an unconfirmed startup mode is owed without a stop, keeps the saved '
-    'choice, and Retry lands it',
-    () async {
-      engine.nextSnapshot = const le.EngineSnapshot.initial();
-      unawaited(record.setLooperMode(LooperMode.band));
-      await pumpEventQueue();
-      expect(await settings.loadLooperMode(), LooperMode.band.code);
-      engine
-        ..nextSnapshot = _stopped(LooperMode.multi)
-        ..commandsAreSettled = false
-        ..publishModeCommands = false;
-      expect(repository.startEngine(const EngineConfig()), EngineResult.ok);
-      expect(engine.lastLooperMode, LooperMode.band);
-      await poll(2);
-      expect(repository.settledLooperMode, isNull);
-      expect(await settings.loadLooperMode(), LooperMode.band.code);
+  test('an unconfirmed startup mode is owed without a stop, keeps the saved '
+      'choice, and Retry lands it', () async {
+    engine.nextSnapshot = const le.EngineSnapshot.initial();
+    unawaited(record.setLooperMode(LooperMode.band));
+    await pumpEventQueue();
+    expect(await settings.loadLooperMode(), LooperMode.band.code);
+    engine
+      ..nextSnapshot = _stopped(LooperMode.multi)
+      ..commandsAreSettled = false
+      ..publishModeCommands = false;
+    expect(repository.startEngine(const EngineConfig()), EngineResult.ok);
+    expect(engine.lastLooperMode, LooperMode.band);
+    await poll(2);
+    expect(repository.settledLooperMode, isNull);
+    expect(await settings.loadLooperMode(), LooperMode.band.code);
 
-      final failure = repository.lengthSettingsFailures.first;
-      engine.commandsAreSettled = true;
-      expect(await repository.settleLengthSettings(), EngineResult.invalid);
-      expect(await failure, EngineResult.invalid);
-      await poll();
-      // The replay owes the mode; audio keeps running.
-      expect(repository.sessionTransport.deviceRunning, isTrue);
-      expect(repository.lengthRecoveryRequired, isTrue);
-      expect(repository.lengthRestartIntent.mode, LooperMode.band);
-      expect(await settings.loadLooperMode(), LooperMode.band.code);
+    final failure = repository.lengthSettingsFailures.first;
+    engine.commandsAreSettled = true;
+    expect(await repository.settleLengthSettings(), EngineResult.invalid);
+    expect(await failure, EngineResult.invalid);
+    await poll();
+    // The replay owes the mode; audio keeps running.
+    expect(repository.sessionTransport.deviceRunning, isTrue);
+    expect(repository.lengthRecoveryRequired, isTrue);
+    expect(repository.lengthRestartIntent.mode, LooperMode.band);
+    expect(await settings.loadLooperMode(), LooperMode.band.code);
 
-      engine.publishModeCommands = true;
-      expect((await record.owner.recover()).isOk, isTrue);
-      expect(repository.lengthRecoveryRequired, isFalse);
-      await poll();
-      expect(repository.sessionTransport.deviceRunning, isTrue);
-      expect(engine.lastLooperMode, LooperMode.band);
-      expect(bloc.state.transport.looperMode, LooperMode.band);
-      expect(await settings.loadLooperMode(), LooperMode.band.code);
-    },
-  );
+    engine.publishModeCommands = true;
+    expect((await record.owner.recover()).isOk, isTrue);
+    expect(repository.lengthRecoveryRequired, isFalse);
+    await poll();
+    expect(repository.sessionTransport.deviceRunning, isTrue);
+    expect(engine.lastLooperMode, LooperMode.band);
+    expect(bloc.state.transport.looperMode, LooperMode.band);
+    expect(await settings.loadLooperMode(), LooperMode.band.code);
+  });
 }

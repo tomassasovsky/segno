@@ -1,7 +1,7 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/looper/view/live_meter.dart';
 import 'package:segno/looper/view/live_playhead.dart';
 import 'package:segno/theme/theme.dart';
@@ -23,7 +23,7 @@ import 'package:segno/theme/theme.dart';
 /// a function of the [Track] handed in — see `TrackColumn.track`.
 class TrackPeakMeter extends StatelessWidget {
   /// Creates a [TrackPeakMeter].
-  const TrackPeakMeter({
+  const new({
     required this.channel,
     required this.color,
     required this.hasContent,
@@ -74,7 +74,7 @@ class TrackPeakMeter extends StatelessWidget {
 /// meaningful over it.
 class TrackStereoMeter extends StatelessWidget {
   /// Creates a [TrackStereoMeter].
-  const TrackStereoMeter({
+  const new({
     required this.channel,
     required this.color,
     required this.hasContent,
@@ -148,11 +148,7 @@ class TrackStereoMeter extends StatelessWidget {
 /// not the tile.
 class TrackProgressBar extends StatelessWidget {
   /// Creates a [TrackProgressBar].
-  const TrackProgressBar({
-    required this.channel,
-    required this.color,
-    super.key,
-  });
+  const new({required this.channel, required this.color, super.key});
 
   /// The channel whose playhead this bar follows.
   final int channel;
@@ -220,7 +216,7 @@ Track? trackOf(LooperState state, int channel) {
 /// cap on a silent track would be a lie.
 class PeakMeterBar extends StatefulWidget {
   /// Creates a [PeakMeterBar].
-  const PeakMeterBar({
+  const new({
     required this.peak,
     required this.color,
     required this.hasContent,

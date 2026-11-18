@@ -52,9 +52,9 @@ Future<void> loadScreenshotFonts() async {
   final roboto = FontLoader('Roboto');
   for (final face in const ['Regular', 'Medium', 'Bold']) {
     roboto.addFont(
-      File(
-        '$materialFontDir/Roboto-$face.ttf',
-      ).readAsBytes().then(ByteData.sublistView),
+      File('$materialFontDir/Roboto-$face.ttf')
+          .readAsBytes()
+          .then(ByteData.sublistView),
     );
   }
   await roboto.load();

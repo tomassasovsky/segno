@@ -6,7 +6,7 @@ import 'package:pedal_repository/pedal_repository.dart';
 /// Translates the current UART CTRL coordinates without losing raw precision.
 /// Configuration and action dispatch belong to ControlCubit.
 class ConsoleCtrlSource implements ControllerSource {
-  ConsoleCtrlSource(PedalRepository pedal) {
+  new(PedalRepository pedal) {
     _sub = pedal.events.listen(_onEvent);
     _statusSub = pedal.statusChanges.listen((status) {
       if (status == PedalLinkStatus.connected) return;

@@ -15,6 +15,7 @@
 
 #include "engine_core.h"    /* le_lanes_active */
 #include "engine_fx.h"      /* le_octaver_latency */
+#include "engine_heard.h"   /* the heard image (#1713) */
 #include "engine_internal.h" /* le_perf_drain_self_stopped */
 #include "engine_private.h" /* le_engine, le_track, le_lane, load/store helpers */
 #include "segno_engine_api.h"
@@ -102,6 +103,11 @@ static void le_fill_track_snapshot(le_engine* engine, int32_t ch,
   out->clear_restore = load_i32(&tr->a_clear_restore);
   out->redo_depth = load_i32(&tr->a_redo_depth);
   out->peel_depth = load_i32(&tr->a_peel_depth);
+  /* #1707: control-thread state, read like the stacks the drain above just
+   * settled; nothing on the audio side writes it. */
+  out->history_seq = active && tr->undo_count > 0
+                         ? tr->undo_stack[tr->undo_count - 1].seq
+                         : 0;
   /* The TRACK's level, summed across its lanes -- NOT lane 0's, which is what
    * this reported until #655 and which under-read any track playing more than
    * one layer. Per-lane figures are still published on the lane snapshots
@@ -335,6 +341,13 @@ int le_track_pre_printable(le_engine* engine, int32_t channel) {
     if (pre < 0) pre = 0;
     if (pre > count) pre = count;
     if (count > pre) return 0; /* a Post entry on a part */
+    /* A part that plays its heard image (#1713) runs no Pre run: its image
+     * is its printed material. Its Post entries run over it (#1741), as
+     * any part's do. */
+    if (le_heard_any(engine, channel, l) &&
+        le_heard_lane_plays(engine, channel, l)) {
+      continue;
+    }
     for (int slot = 0; slot < count; ++slot)
       if (load_i32(&ln->a_fx_type[slot]) == LE_FX_PLUGIN) return 0;
   }
@@ -376,10 +389,15 @@ uint64_t le_track_pre_fingerprint(le_engine* engine, int32_t channel) {
   h = le_fx_fp_u32(h, (uint32_t)n);
   for (int32_t l = 0; l < n; ++l) {
     le_lane* ln = &t->lanes[l];
-    const uint64_t lane_fp = le_lane_pre_fx_fingerprint(engine, channel, l);
+    /* A part playing its heard image (#1713) contributes the image: its
+     * chain, which does not run, is not part of what the print covers. */
+    const int heard = le_heard_any(engine, channel, l) &&
+                      le_heard_lane_plays(engine, channel, l);
+    const uint64_t lane_fp =
+        heard ? 0u : le_lane_pre_fx_fingerprint(engine, channel, l);
     h = le_fx_fp_u32(h, (uint32_t)lane_fp);
     h = le_fx_fp_u32(h, (uint32_t)(lane_fp >> 32));
-    h = le_fx_fp_u32(h, (uint32_t)load_i32(&ln->a_fx_count));
+    h = le_fx_fp_u32(h, heard ? 0u : (uint32_t)load_i32(&ln->a_fx_count));
     h = le_fx_fp_u32(
         h, atomic_load_explicit(&ln->a_vol_bits, memory_order_relaxed));
     h = le_fx_fp_u32(
@@ -387,6 +405,8 @@ uint64_t le_track_pre_fingerprint(le_engine* engine, int32_t channel) {
     h = le_fx_fp_u32(
         h, atomic_load_explicit(&ln->a_pan_gr_bits, memory_order_relaxed));
     h = le_fx_fp_u32(h, load_i32(&ln->a_muted) ? 1u : 0u);
+    /* Whether the part's material is its heard image (#1713). */
+    h = le_fx_fp_u32(h, heard ? 1u : 0u);
   }
   return h;
 }
@@ -422,6 +442,23 @@ static int32_t le_tempo_follow_now(le_engine* e) {
   }
   if (!follower) return LE_TEMPO_FOLLOW_NO_FOLLOWER;
   return busy ? LE_TEMPO_FOLLOW_BUSY : LE_TEMPO_FOLLOW_RETIMES;
+}
+
+/* The slots of [fx]'s first [count] that still drain a tail (#1733), bit s
+ * for slot s. Read here, on the control thread, so the callback publishes
+ * nothing: each flag is one aligned 32-bit word the chain's thread writes
+ * on its own edges, read whole with a relaxed builtin load. A flag read a
+ * block early or late moves the charge by one poll. */
+_Static_assert(LE_FX_MAX <= 64, "fx_draining_* is one bit per slot");
+static uint64_t le_fx_draining_of(const le_fx_state* fx, int32_t count) {
+  if (count > LE_FX_MAX) count = LE_FX_MAX;
+  uint64_t mask = 0u;
+  for (int s = 0; s < count; ++s) {
+    if (__atomic_load_n(&fx->enable_drain[s], __ATOMIC_RELAXED) > 0) {
+      mask |= 1ull << s;
+    }
+  }
+  return mask;
 }
 
 void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
@@ -506,40 +543,34 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   out->perf_overs =
       atomic_load_explicit(&engine->a_perf_overs, memory_order_relaxed);
   {
+    /* What the armed take captures, or the next arm would
+     * (le_perf_capture_sets): the master, each input as heard (stereo) and
+     * raw (mono, #1805). */
     int32_t streams = 0;
     uint32_t frame_bytes = 0;
+    int32_t master = 0;
+    uint64_t heard = 0;
+    uint64_t raw = 0;
     if (atomic_load_explicit(&engine->a_perf_armed, memory_order_acquire)) {
+      master = engine->perf.master_channels;
+      heard = engine->perf.input_mask;
+      raw = engine->perf_raw_mask;
+    } else {
+      int32_t out_ch[2];
+      master = le_perf_first_enabled_pair(engine, out_ch);
+      if (master > 0) le_perf_capture_sets(engine, &heard, &raw);
+    }
+    if (master > 0) {
       streams = 1;
-      frame_bytes = (uint32_t)engine->perf.master_channels * 4u;
+      frame_bytes = (uint32_t)master * 4u;
       for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
-        if (engine->perf.input_mask & (UINT64_C(1) << c)) {
+        if (heard & (UINT64_C(1) << c)) {
           streams++;
           frame_bytes += 8u;
         }
-      }
-    } else {
-      int32_t out_ch[2];
-      const int found = le_perf_first_enabled_pair(engine, out_ch);
-      if (found > 0) {
-        streams = 1;
-        frame_bytes = (uint32_t)found * 4u;
-        /* The sources le_perf_arm would capture: monitored, and present on
-         * the device, or an instrument slot with a patch (#1197). */
-        const int32_t in_ch = load_i32(&engine->a_in_channels);
-        const int32_t limit = in_ch > 0 && in_ch < LE_MAX_CHANNELS
-                                  ? in_ch
-                                  : LE_MAX_CHANNELS;
-        for (int32_t c = 0; c < LE_MAX_SOURCES; ++c) {
-          if (c < LE_INSTRUMENT_SOURCE_BASE
-                  ? c >= limit
-                  : engine->inst_patch_requested
-                            [c - LE_INSTRUMENT_SOURCE_BASE] < 0) {
-            continue;
-          }
-          if (load_i32(&engine->monitors[c].a_enabled)) {
-            streams++;
-            frame_bytes += 8u;
-          }
+        if (raw & (UINT64_C(1) << c)) {
+          streams++;
+          frame_bytes += 4u;
         }
       }
     }
@@ -656,6 +687,31 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   out->song_queue_record = (int32_t)((song >> 7) & 1u);
   out->song_queue_progress = (float)(song >> 8) / 16777215.0f;
   out->song_last_section = load_i32(&engine->a_song_last);
+  /* #1733: the tails still draining, by chain. */
+  for (int k = 0; k < LE_MAX_MONITORED_INPUTS; ++k) {
+    out->fx_draining_monitor[k] = le_fx_draining_of(
+        &engine->monitors[k].fx, load_i32(&engine->monitors[k].a_fx_count));
+  }
+  for (int t = 0; t < LE_MAX_TRACKS; ++t) {
+    const int live = t < engine->track_count;
+    for (int l = 0; l < LE_MAX_LANES; ++l) {
+      le_lane* ln = &engine->tracks[t].lanes[l];
+      out->fx_draining_lane[t][l] =
+          live ? le_fx_draining_of(&ln->fx, load_i32(&ln->a_fx_count)) : 0u;
+    }
+    le_fx_bus* bus = &engine->tracks[t].bus;
+    out->fx_draining_track[t] =
+        live ? le_fx_draining_of(&bus->fx, load_i32(&bus->a_fx_count)) : 0u;
+  }
+  out->fx_draining_all_tracks = 0u;
+  const int all_count = load_i32(&engine->all_tracks.a_fx_count);
+  for (int b = 0; b < LE_MAX_OUTPUT_BUSES; ++b) {
+    out->fx_draining_all_tracks |=
+        le_fx_draining_of(&engine->all_tracks_fx[b], all_count);
+    le_fx_bus* bus = &engine->outputs[b].fx;
+    out->fx_draining_output[b] =
+        le_fx_draining_of(&bus->fx, load_i32(&bus->a_fx_count));
+  }
   out->tail_reset_rev =
       atomic_load_explicit(&engine->a_tail_reset_rev, memory_order_relaxed);
   const int perf_armed =
@@ -726,6 +782,7 @@ void le_engine_get_track(le_engine* engine, int32_t channel,
     out->clear_restore = 0;
     out->redo_depth = 0;
     out->peel_depth = 0;
+    out->history_seq = 0;
     out->length_history_refusals = 0;
     out->rms = 0.0f;
     out->peak = 0.0f;
@@ -768,6 +825,8 @@ void le_engine_get_lane(le_engine* engine, int32_t channel, int32_t lane,
     out->peak = 0.0f;
     out->recoverable = 0;
     out->pan = 0.0f;
+    out->heard = 0;
+    out->source = LE_LANE_SOURCE_HEARD;
     return;
   }
   le_lane* ln = &engine->tracks[channel].lanes[lane];
@@ -781,6 +840,21 @@ void le_engine_get_lane(le_engine* engine, int32_t channel, int32_t lane,
   out->peak = load_f32(&ln->a_peak_bits);
   out->recoverable = load_i32(&ln->a_recoverable); /* #595 */
   out->pan = load_f32(&ln->a_pan_bits);
+  {
+    /* #1713. An attach the callback has not handled yet is the one entry it
+     * may be writing, so it is reported from what was posted. */
+    const le_heard* h = &engine->heard[channel][lane];
+    const int32_t live = load_i32(&ln->a_live);
+    const int attaching =
+        h->attach[0] != NULL && h->attach_slot == live &&
+        h->attach_posted !=
+            atomic_load_explicit(&h->a_attach_done, memory_order_acquire);
+    out->heard = attaching || le_heard_has(engine, channel, lane, live);
+    out->source = atomic_load_explicit(&h->a_source, memory_order_relaxed) ==
+                          LE_HEARD_SOURCE_CLEAN
+                      ? LE_LANE_SOURCE_CLEAN
+                      : LE_LANE_SOURCE_HEARD;
+  }
 }
 
 int32_t le_engine_read_visual(le_engine* engine, float* out,

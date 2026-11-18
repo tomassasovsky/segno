@@ -2,19 +2,18 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:bloc_test/bloc_test.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/common/console_surface.dart'
     show ConsoleBanner, ConsoleBannerTone;
 import 'package:segno/l10n/gen/app_localizations.dart';
-import 'package:segno/library/application/removable_volumes.dart';
 import 'package:segno/library/cubit/library_cubit.dart';
 import 'package:segno/library/view/library_page.dart';
 import 'package:segno/library/view/library_preview_card.dart';
@@ -25,22 +24,24 @@ import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:session_repository/session_repository.dart';
+import 'package:storage_repository/storage_repository.dart';
 
 import '../../helpers/helpers.dart';
 
-class _MockSessionCubit extends MockCubit<SessionState>
-    implements SessionCubit {}
+import '../helpers/fake_drive.dart';
 
-class _MockSessionRepository extends Mock implements SessionRepository {}
+class _MockSessionCubit extends MockCubit<SessionState> implements SessionCubit;
 
-class _MockPedalRepository extends Mock implements PedalRepository {}
+class _MockSessionRepository extends Mock implements SessionRepository;
+
+class _MockPedalRepository extends Mock implements PedalRepository;
 
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+    implements LooperBloc;
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
-class _MockTracksCubit extends MockCubit<TracksState> implements TracksCubit {}
+class _MockTracksCubit extends MockCubit<TracksState> implements TracksCubit;
 
 final _saved = DateTime(2026, 9, 7, 10);
 
@@ -151,12 +152,8 @@ void main() {
     when(() => repository.auditionState()).thenReturn(
       const AuditionState(frames: 480000, position: 96000, outputs: 0x3),
     );
-    when(
-      () => repository.readPeaks(
-        any(),
-        any(),
-      ),
-    ).thenAnswer((_) async => null);
+    when(() => repository.readPeaks(any(), any()))
+        .thenAnswer((_) async => null);
     pedalEvents = StreamController<PedalEvent>.broadcast();
     pedal = _MockPedalRepository();
     when(() => pedal.events).thenAnswer((_) => pedalEvents.stream);
@@ -177,7 +174,7 @@ void main() {
     WidgetTester tester, {
     SessionState? state,
     Stream<SessionState> states = const Stream.empty(),
-    RemovableVolumes volumes = const InternalOnlyVolumes(),
+    StorageRepository? volumes,
     LooperState looperState = const LooperState(),
     Stream<LooperState> looperStates = const Stream.empty(),
     List<String>? trackNames,
@@ -215,8 +212,8 @@ void main() {
           RepositoryProvider<PedalRepository>.value(value: pedal),
           RepositoryProvider<LooperRepository>.value(value: looperRepository),
           RepositoryProvider<GuardRegistry>.value(value: GuardRegistry()),
-          RepositoryProvider<RemovableVolumes>.value(
-            value: volumes,
+          RepositoryProvider<StorageRepository>.value(
+            value: volumes ?? NoDrive(),
           ),
         ],
         child: MultiBlocProvider(
@@ -828,9 +825,9 @@ void main() {
     testWidgets('a session saved by a newer build shows the refusal', (
       tester,
     ) async {
-      when(() => repository.readPreview('s-gig')).thenThrow(
-        const SessionUnsupportedVersion(version: 99, supported: 11),
-      );
+      when(
+        () => repository.readPreview('s-gig'),
+      ).thenThrow(const SessionUnsupportedVersion(version: 99, supported: 11));
       await openLibrary(tester);
       await tester.tap(row('s-gig'));
       await tester.pumpAndSettle();
@@ -859,9 +856,8 @@ void main() {
     testWidgets('a session that does not decode says it cannot be read', (
       tester,
     ) async {
-      when(
-        () => repository.readPreview('s-gig'),
-      ).thenThrow(const FormatException('bad'));
+      when(() => repository.readPreview('s-gig'))
+          .thenThrow(const FormatException('bad'));
       await openLibrary(tester);
       await tester.tap(row('s-gig'));
       await tester.pumpAndSettle();
@@ -998,13 +994,11 @@ void main() {
       states = StreamController<SessionState>.broadcast();
       when(session.save).thenAnswer((_) async {});
       when(() => session.saveAs(any())).thenAnswer((_) async {});
-      when(
-        () => session.duplicateSession(any(), any()),
-      ).thenAnswer((_) async {});
+      when(() => session.duplicateSession(any(), any()))
+          .thenAnswer((_) async {});
       when(() => session.renameSession(any(), any())).thenAnswer((_) async {});
-      when(
-        () => session.moveSession(any(), folder: any(named: 'folder')),
-      ).thenAnswer((_) async {});
+      when(() => session.moveSession(any(), folder: any(named: 'folder')))
+          .thenAnswer((_) async {});
       when(() => session.deleteSession(any())).thenAnswer((_) async {});
       when(() => session.createFolder(any())).thenAnswer((_) async {});
     });
@@ -1131,9 +1125,8 @@ void main() {
       await choose(tester, 'duplicate');
       await type(tester, 'Night set copy');
 
-      verify(
-        () => session.duplicateSession('s-gig', 'Night set copy'),
-      ).called(1);
+      verify(() => session.duplicateSession('s-gig', 'Night set copy'))
+          .called(1);
     });
 
     testWidgets('Rename renames the selected session and may keep its own '
@@ -1215,9 +1208,8 @@ void main() {
     testWidgets('Manage is there for a session whose preview cannot be read', (
       tester,
     ) async {
-      when(
-        () => repository.readPreview('s-gig'),
-      ).thenThrow(const FormatException('bad'));
+      when(() => repository.readPreview('s-gig'))
+          .thenThrow(const FormatException('bad'));
       await open(tester);
       await manage(tester, select: 's-gig');
       await choose(tester, 'delete');
@@ -1416,9 +1408,7 @@ void main() {
       expect(find.text(l10n.libraryFolderNotEmpty), findsOneWidget);
     });
 
-    testWidgets('any other failed action says it did not work', (
-      tester,
-    ) async {
+    testWidgets('any other failed action says it did not work', (tester) async {
       await failWith(tester, SessionError.unknown);
       expect(find.text(l10n.libraryActionFailed), findsOneWidget);
     });
@@ -1527,9 +1517,7 @@ void main() {
     }
 
     for (final state in [TrackState.playing, TrackState.recording]) {
-      testWidgets('a ${state.name} track is asked about first', (
-        tester,
-      ) async {
+      testWidgets('a ${state.name} track is asked about first', (tester) async {
         await tapOpen(tester, withTrack(state));
 
         expect(
@@ -1546,10 +1534,7 @@ void main() {
 
     for (final (what, armed) in const [
       ('armed to record', Track(pending: true)),
-      (
-        'waiting on Count-in',
-        Track(pendingLaunch: PendingLaunchAction.record),
-      ),
+      ('waiting on Count-in', Track(pendingLaunch: PendingLaunchAction.record)),
     ]) {
       testWidgets('a track $what is asked about first (review D-1)', (
         tester,
@@ -1631,9 +1616,8 @@ void main() {
       List<String>? trackNames,
       AssetBundle? assets,
     }) async {
-      when(
-        () => session.newLoop(template: any(named: 'template')),
-      ).thenAnswer((_) async {});
+      when(() => session.newLoop(template: any(named: 'template')))
+          .thenAnswer((_) async {});
       await openLibrary(
         tester,
         state: state,
@@ -1665,10 +1649,7 @@ void main() {
 
       expect(find.byKey(const Key('new_loop_sheet')), findsOneWidget);
       expect(
-        find.text(
-          l10n.libraryNewLoopStays('Evening loop'),
-          findRichText: true,
-        ),
+        find.text(l10n.libraryNewLoopStays('Evening loop'), findRichText: true),
         findsOneWidget,
       );
       expect(find.text(l10n.libraryNewLoopKeeps), findsOneWidget);
@@ -1682,16 +1663,11 @@ void main() {
       for (var c = 0; c < 8; c++) {
         expect(slot('new_loop_after', c, 'empty'), findsOneWidget);
       }
-      verifyNever(
-        () => session.newLoop(template: any(named: 'template')),
-      );
+      verifyNever(() => session.newLoop(template: any(named: 'template')));
     });
 
     testWidgets('a loop with no name yet is the current loop', (tester) async {
-      await tapNewLoop(
-        tester,
-        state: SessionState(sessions: _catalog),
-      );
+      await tapNewLoop(tester, state: SessionState(sessions: _catalog));
 
       expect(find.text(l10n.libraryNewLoopStaysUnnamed), findsOneWidget);
     });
@@ -1704,9 +1680,7 @@ void main() {
 
       expect(find.byKey(const Key('new_loop_sheet')), findsNothing);
       expect(find.byKey(const Key('library_page')), findsOneWidget);
-      verifyNever(
-        () => session.newLoop(template: any(named: 'template')),
-      );
+      verifyNever(() => session.newLoop(template: any(named: 'template')));
     });
 
     testWidgets('Start new loop starts it', (tester) async {
@@ -1824,9 +1798,7 @@ void main() {
         await tester.tap(find.byKey(const Key('new_loop_start')));
         await tester.pump();
         expect(find.byKey(const Key('new_loop_sheet')), findsOneWidget);
-        verifyNever(
-          () => session.newLoop(template: any(named: 'template')),
-        );
+        verifyNever(() => session.newLoop(template: any(named: 'template')));
       });
 
       testWidgets('over the effects budget it says so and cannot start, '
@@ -1840,9 +1812,7 @@ void main() {
         await tester.tap(find.byKey(const Key('new_loop_start')));
         await tester.pumpAndSettle();
         expect(find.byKey(const Key('new_loop_sheet')), findsOneWidget);
-        verifyNever(
-          () => session.newLoop(template: any(named: 'template')),
-        );
+        verifyNever(() => session.newLoop(template: any(named: 'template')));
 
         await tester.tap(find.byKey(const Key('new_loop_template_empty')));
         await tester.pumpAndSettle();
@@ -1859,9 +1829,7 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(find.byKey(const Key('new_loop_sheet')), findsNothing);
-        verifyNever(
-          () => session.newLoop(template: any(named: 'template')),
-        );
+        verifyNever(() => session.newLoop(template: any(named: 'template')));
       });
     });
 
@@ -2046,9 +2014,8 @@ void main() {
     });
 
     testWidgets('New loop stops it', (tester) async {
-      when(
-        () => session.newLoop(template: any(named: 'template')),
-      ).thenAnswer((_) async {});
+      when(() => session.newLoop(template: any(named: 'template')))
+          .thenAnswer((_) async {});
       await openLibrary(tester);
       await listen(tester);
 
@@ -2057,10 +2024,7 @@ void main() {
       await tester.tap(find.byKey(const Key('new_loop_start')));
       await tester.pump();
 
-      verifyInOrder([
-        () => repository.stopAudition(),
-        () => session.newLoop(),
-      ]);
+      verifyInOrder([() => repository.stopAudition(), () => session.newLoop()]);
     });
 
     testWidgets('a track that starts recording stops it', (tester) async {
@@ -2149,12 +2113,7 @@ void main() {
 
   group('lane peaks (plan D11)', () {
     testWidgets('a lane draws its peaks when they were read', (tester) async {
-      when(
-        () => repository.readPeaks(
-          any(),
-          any(),
-        ),
-      ).thenAnswer((call) async {
+      when(() => repository.readPeaks(any(), any())).thenAnswer((call) async {
         final track = call.positionalArguments[1] as SessionPreviewTrack;
         return track.channel == 1 ? Float32List.fromList([0.25, 1]) : null;
       });
@@ -2226,10 +2185,7 @@ void main() {
     });
 
     testWidgets('an empty folder is deleted after asking', (tester) async {
-      await openLibrary(
-        tester,
-        state: withFolders(const ['Gigs', 'Spare']),
-      );
+      await openLibrary(tester, state: withFolders(const ['Gigs', 'Spare']));
       await longPressChip(tester, 'Spare');
       await tester.tap(find.byKey(const Key('fx_option_delete')));
       await tester.pumpAndSettle();
@@ -2326,9 +2282,9 @@ void main() {
   });
 }
 
-/// A port reporting one drive, as the storage service would.
-class _OneDrive implements RemovableVolumes {
-  _OneDrive(this.drive);
+/// Storage reporting one drive.
+class _OneDrive extends Fake implements StorageRepository {
+  new(this.drive);
 
   final RemovableVolume drive;
 
@@ -2337,22 +2293,4 @@ class _OneDrive implements RemovableVolumes {
 
   @override
   Stream<List<RemovableVolume>> get volumes => const Stream.empty();
-
-  @override
-  Future<VolumeSpace?> space(StorageDestination destination) async => null;
-
-  @override
-  Future<T> withWriteLease<T>(
-    StorageDestination target,
-    String purpose,
-    Future<T> Function(String mountPoint) body,
-  ) => throw UnimplementedError();
-
-  @override
-  Future<String> copyFile(
-    String sourcePath,
-    StorageDestination destination,
-    String relativePath, {
-    required ConflictPolicy onConflict,
-  }) => throw UnimplementedError();
 }

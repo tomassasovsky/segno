@@ -1,10 +1,10 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/app_notices.dart';
@@ -30,7 +30,7 @@ import 'package:session_repository/session_repository.dart'
 /// so `M` here and the pedal's MODE footswitch move the same system state.
 class TracksCommands {
   /// Creates commands bound to [context].
-  const TracksCommands(this.context);
+  const new(this.context);
 
   /// The host view's build context (blocs, l10n, and semantics are read here).
   final BuildContext context;
@@ -557,8 +557,15 @@ void onPerformanceRecorderState(
     NoticeText title, {
     NoticeTone tone = NoticeTone.warning,
     NoticeText? body,
+    NoticeAction? action,
   }) => context.read<NoticesCubit>().show(
-    Notice(id: AppNoticeId.performance, tone: tone, title: title, body: body),
+    Notice(
+      id: AppNoticeId.performance,
+      tone: tone,
+      title: title,
+      body: body,
+      action: action,
+    ),
   );
   // A refused arm has to say so. Silently doing nothing is indistinguishable
   // from a dead control, and the operator would simply press again (#640).
@@ -603,26 +610,73 @@ void onPerformanceRecorderState(
     return;
   }
   // A take the boot salvage could not recover must not just vanish from
-  // view: say so; its files are kept (#1198).
+  // view: say so; its files are kept (#1198). Said at every start while it
+  // stays so, with Try again: a salvage the app did not survive is not
+  // started again on its own (#1747).
   if (state is PerformanceRecorderIdle && state.notRecovered > 0) {
     final count = state.notRecovered;
-    say((l10n) => l10n.perfTakesNotRecovered(count));
+    final recorder = context.read<PerformanceRecorderCubit>();
+    final notices = context.read<NoticesCubit>();
+    say(
+      (l10n) => l10n.perfTakesNotRecovered(count),
+      body: (l10n) => l10n.perfTakesNotRecoveredBody(count),
+      action: NoticeAction(
+        label: (l10n) => l10n.consoleTryAgain,
+        onPressed: () =>
+            unawaited(retryRecoveryWithNotices(recorder, notices, count)),
+      ),
+    );
     return;
   }
   // Entering Rendering opens the dialog on its rendering face; entering
   // Completed opens it for a capture the operator hid (or one whose render
   // was instant). While it is already up it morphs in place — the show
   // function refuses to stack a second copy.
+  // A take that stopped on its own (#1767) stopped with nobody there: no
+  // dialog waits for them; PerformanceAutoStopNotice tells them when they
+  // come back.
   if (state is PerformanceRecorderRendering) {
-    unawaited(showPerformanceCompletionSheet(context));
+    if (!state.stoppedOnItsOwn) {
+      unawaited(showPerformanceCompletionSheet(context));
+    }
     return;
   }
   if (state is PerformanceRecorderCompleted) {
     if (state.discarded) {
       say((l10n) => l10n.perfDiscarded, tone: NoticeTone.neutral);
-    } else {
+    } else if (!perfStoppedOnItsOwn(state.result)) {
       unawaited(showPerformanceCompletionSheet(context));
     }
+  }
+}
+
+/// Try again on the notice that says [count] takes could not be recovered
+/// (#1747): says the salvage has started, in the failure's place, and that
+/// the takes were recovered when none is left. A take still not recovered
+/// is said again by the recorder's settled state.
+Future<void> retryRecoveryWithNotices(
+  PerformanceRecorderCubit recorder,
+  NoticesCubit notices,
+  int count,
+) async {
+  notices.show(
+    Notice(
+      id: AppNoticeId.performance,
+      title: (l10n) => l10n.perfTakesRecovering(count),
+    ),
+  );
+  await recorder.retryRecovery();
+  final settled = recorder.state;
+  if (settled is PerformanceRecorderIdle &&
+      !settled.recovering &&
+      settled.notRecovered == 0) {
+    notices.show(
+      Notice(
+        id: AppNoticeId.performance,
+        tone: NoticeTone.success,
+        title: (l10n) => l10n.perfTakesRecovered(count),
+      ),
+    );
   }
 }
 

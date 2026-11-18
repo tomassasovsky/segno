@@ -24,17 +24,13 @@ typedef PortAliasSnapshot = ({
 /// The publication callback only adapts confirmed state into presentation.
 class PortAliases {
   /// Follows the currently opened device and loads its persisted names.
-  PortAliases({
-    required SettingsRepository settings,
-    required LooperRepository repository,
-    required PortAliasKind kind,
-    required int probeCeiling,
-    required void Function(PortAliasSnapshot) onChanged,
-  }) : _settings = settings,
-       _repository = repository,
-       _kind = kind,
-       _probeCeiling = probeCeiling,
-       _onChanged = onChanged {
+  new({
+    required this._settings,
+    required this._repository,
+    required this._kind,
+    required this._probeCeiling,
+    required this._onChanged,
+  }) {
     _subscription = _repository.looperState.listen(
       (looper) => unawaited(_followDevice(looper)),
     );

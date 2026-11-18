@@ -42,10 +42,7 @@ void main() {
       act: (cubit) => cubit.choose(NewLoopStart.edsSetup),
       expect: () => const [
         NewLoopState(start: NewLoopStart.edsSetup),
-        NewLoopState(
-          start: NewLoopStart.edsSetup,
-          eds: EdsSetupStatus.loading,
-        ),
+        NewLoopState(start: NewLoopStart.edsSetup, eds: EdsSetupStatus.loading),
         NewLoopState(
           start: NewLoopStart.edsSetup,
           eds: EdsSetupStatus.ready,

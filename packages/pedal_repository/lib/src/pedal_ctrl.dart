@@ -50,7 +50,7 @@ enum PedalCtrlKind {
 /// two controls, bound separately.
 class PedalCtrlInput extends Equatable {
   /// Creates a [PedalCtrlInput].
-  const PedalCtrlInput(this.jack, this.contact);
+  const new(this.jack, this.contact);
 
   /// The jack.
   final PedalCtrlJack jack;

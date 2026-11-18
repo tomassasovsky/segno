@@ -3,13 +3,13 @@ import 'package:equatable/equatable.dart';
 
 /// A qualified console input reaching the application's one dispatcher.
 sealed class ControllerDispatchEvent extends Equatable {
-  const ControllerDispatchEvent();
+  const new();
 }
 
 /// An exact console sample or source-lifetime boundary.
 final class ControllerConsoleEvent extends ControllerDispatchEvent {
   /// Carries a console event without interpreting its configuration.
-  const ControllerConsoleEvent(this.input);
+  const new(this.input);
 
   /// The physical sample or unavailable identity.
   final ControllerSourceEvent input;

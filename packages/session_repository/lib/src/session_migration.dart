@@ -29,7 +29,7 @@ enum SessionConversionChange {
 /// every field it filled in, moved or changed.
 class SessionMigrationContext {
   /// Creates a context that fills formerly global settings from [live].
-  SessionMigrationContext({this.live = const SessionSettings()});
+  new({this.live = const SessionSettings()});
 
   /// The player's settings at the moment of opening. A schema-7 session never
   /// carried the settings that master kept as global preferences (sync, rec
@@ -55,11 +55,10 @@ class SessionMigrationContext {
 
 /// One schema bump: rewrites a decoded `vN` manifest in place into `vN+1`,
 /// except for the `version` key, which the driver advances.
-typedef SessionMigrationStep =
-    void Function(
-      Map<String, dynamic> manifest,
-      SessionMigrationContext context,
-    );
+typedef SessionMigrationStep = void Function(
+  Map<String, dynamic> manifest,
+  SessionMigrationContext context,
+);
 
 /// One step per schema bump, keyed by the version it reads. Each later bump
 /// adds its own entry here; the chain from [oldestConvertibleSessionVersion]
@@ -88,6 +87,8 @@ const Map<int, SessionMigrationStep> sessionMigrationSteps = {
   // #1179's Audio & tempo; landed after #1168's 14 and #1200's 15.
   15: _addAudioTempo,
   16: _addAnchors,
+  17: _addRecordedInputs,
+  18: _addHeardImages,
 };
 
 /// A manifest written by an older schema, converted in memory: the exact
@@ -96,7 +97,7 @@ const Map<int, SessionMigrationStep> sessionMigrationSteps = {
 @immutable
 class SessionConversion {
   /// Creates a [SessionConversion].
-  const SessionConversion({
+  const new({
     required this.fromVersion,
     required this.original,
     required this.manifest,
@@ -472,6 +473,26 @@ void _addAnchors(Map<String, dynamic> m, SessionMigrationContext c) {
     c.note('tracks[${track['channel']}].anchorLap', 'played from lap 0');
   }
 }
+
+/// 17 → 18: the input each lane's take was captured from (#1678). Earlier
+/// schemas never stored it; the lane's input setting at save time is the
+/// closest record of it, so the take takes that.
+void _addRecordedInputs(Map<String, dynamic> m, SessionMigrationContext c) {
+  for (final track in _list(m, 'tracks').cast<Map<String, dynamic>>()) {
+    for (final lane in _list(track, 'lanes').cast<Map<String, dynamic>>()) {
+      lane['recordedInput'] = lane['inputChannel'];
+      c.note(
+        'tracks[${track['channel']}].lanes[${lane['lane']}].recordedInput',
+        'taken from inputChannel',
+      );
+    }
+  }
+}
+
+/// 18 → 19: each layer's heard image (#1713). Earlier schemas recorded none,
+/// and a layer without one plays its clean take through its lane's chain, as
+/// every take played before, so there is nothing to fill in.
+void _addHeardImages(Map<String, dynamic> m, SessionMigrationContext c) {}
 
 // ---- shared pieces ----
 

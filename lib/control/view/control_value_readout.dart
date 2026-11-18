@@ -28,10 +28,7 @@ String controlValueReadout(
   ClickVolumeTarget() => l10n.loopClickVolumeReadout(
     (target.toDomain(normalized) * 100).round(),
   ),
-  ClickModeValueTarget() => clickModeReadout(
-    l10n,
-    target.toDomain(normalized),
-  ),
+  ClickModeValueTarget() => clickModeReadout(l10n, target.toDomain(normalized)),
   CountInValueTarget() => countInLabels(l10n)[target.toDomain(normalized)]!,
   DecayValueTarget() => _decayReadout(l10n, target.toDomain(normalized)),
   OneShotValueTarget() =>

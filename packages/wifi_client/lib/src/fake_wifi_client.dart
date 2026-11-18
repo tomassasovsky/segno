@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:wifi_client/src/wifi_client.dart';
 import 'package:wifi_client/src/wifi_exception.dart';
 import 'package:wifi_client/src/wifi_models.dart';
@@ -12,10 +14,12 @@ import 'package:wifi_client/src/wifi_models.dart';
 /// of range, a secured one to join, and an open one. Delays are deliberate —
 /// a scan that resolves between frames never shows its spinner. Failure is
 /// reachable on purpose: [workingPassphrase] is the only one that succeeds,
-/// and anything else fails the way the supplicant does.
+/// anything else fails as a wrong password, and a network out of range fails
+/// as not found. Every change it makes is announced on [changes], as the
+/// helper's monitor does.
 class FakeWifiClient implements WifiClient {
   /// Creates a [FakeWifiClient].
-  FakeWifiClient();
+  new();
 
   /// The one passphrase that joins a secured network.
   static const workingPassphrase = 'segno123';
@@ -23,6 +27,8 @@ class FakeWifiClient implements WifiClient {
   static const _scanDelay = Duration(milliseconds: 900);
   static const _actionDelay = Duration(milliseconds: 500);
   static const _joinDelay = Duration(milliseconds: 1600);
+
+  final _changes = StreamController<void>.broadcast();
 
   bool _enabled = true;
   String _connected = 'MyHouseWTF_es';
@@ -82,35 +88,41 @@ class FakeWifiClient implements WifiClient {
   }
 
   @override
+  Stream<void> changes() => _changes.stream;
+
+  @override
   Future<void> connect(String ssid, {String? psk}) async {
     await Future<void>.delayed(_joinDelay);
     final network = _networks.where((n) => n.ssid == ssid).firstOrNull;
-    if (network == null) throw StateError('No such network.');
     // A failed join leaves the network that was up where it was, the way the
     // helper brings it back (#1270 D13).
     final restored = _enabled && _connected.isNotEmpty ? _connected : null;
-    if (!network.inRange) {
+    if (network == null || !network.inRange) {
       throw WifiHelperException(
-        'segno-wifi-ctl: timed out waiting for association',
+        'segno-wifi-ctl: join failed: not-found',
         restored: restored,
+        join: WifiJoinError.notFound,
       );
     }
     if (network.secured && !network.saved && psk != workingPassphrase) {
       throw WifiHelperException(
-        'segno-wifi-ctl: authentication failed',
+        'segno-wifi-ctl: join failed: wrong-password',
         restored: restored,
+        join: WifiJoinError.wrongPassword,
       );
     }
     _connected = ssid;
     _last = ssid;
     _autoConnect.putIfAbsent(ssid, () => true);
     _markSaved(ssid);
+    _changes.add(null);
   }
 
   @override
   Future<void> disconnect() async {
     await Future<void>.delayed(_actionDelay);
     _connected = '';
+    _changes.add(null);
   }
 
   @override
@@ -119,6 +131,7 @@ class FakeWifiClient implements WifiClient {
     if (_connected == ssid) _connected = '';
     _autoConnect.remove(ssid);
     _networks.removeWhere((n) => n.ssid == ssid && !n.inRange);
+    _changes.add(null);
     final index = _networks.indexWhere((n) => n.ssid == ssid);
     if (index < 0) return;
     final network = _networks[index];
@@ -135,6 +148,7 @@ class FakeWifiClient implements WifiClient {
     await Future<void>.delayed(_actionDelay);
     _enabled = enabled;
     if (!enabled) _connected = '';
+    _changes.add(null);
   }
 
   @override

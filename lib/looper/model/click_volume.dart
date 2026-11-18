@@ -9,7 +9,7 @@ enum ClickVolumeStatus { applied, rejected, superseded, recoveryRequired }
 /// A durable Click transaction's result, distinct from command enqueue.
 final class ClickVolumeOutcome {
   /// Creates a transaction outcome.
-  const ClickVolumeOutcome(
+  const new(
     this.status, {
     this.deferred = false,
     this.engineResult,

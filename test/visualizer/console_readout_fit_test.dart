@@ -1,5 +1,5 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/notices/notices.dart';
 import 'package:segno/theme/theme.dart';
@@ -27,7 +27,7 @@ void main() {
       MaterialApp(
         locale: locale,
         theme: AppTheme.neon,
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        localizationsDelegates: appLocalizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         builder: (context, child) =>
             AppTextDefaults(child: child ?? const SizedBox.shrink()),
@@ -67,9 +67,8 @@ void main() {
             activeBank: 3,
             // The longest must-act line the band carries.
             notice: ReadoutNotice(
-              title: lookupAppLocalizations(
-                locale,
-              ).deviceLostNamedBanner('Scarlett 18i20 4th Gen'),
+              title: lookupAppLocalizations(locale)
+                  .deviceLostNamedBanner('Scarlett 18i20 4th Gen'),
               tone: NoticeTone.critical,
             ),
           ),

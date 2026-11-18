@@ -38,7 +38,7 @@ enum PowerPhase {
 /// State of [PowerCubit].
 class PowerState extends Equatable {
   /// Creates a [PowerState].
-  const PowerState({
+  const new({
     this.phase = PowerPhase.idle,
     this.action,
     this.refusal,

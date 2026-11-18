@@ -254,57 +254,54 @@ void main() {
   });
 
   for (final uncertain in [false, true]) {
-    check(
-      'failed replacement keeps prior live; uncertain=$uncertain',
-      (
-        clock,
-        engine,
-        repository,
-      ) {
-        expect(
-          repository.setRecordStartSettings(
-            countInBars: 2,
-            soundStart: false,
-            editKind: RecordStartEditKind.countIn,
-            releasedSettings: (countInBars: 0, soundStart: false),
-          ),
-          EngineResult.ok,
-        );
-        unawaited(repository.settleRecordStartSettings());
-        clock.flushMicrotasks();
-        engine.publishRecordStartCommands = false;
-        final revision = engine.nextSnapshot.recordStartRevision;
-        expect(
-          repository.setRecordStartSettings(
-            countInBars: 4,
-            soundStart: false,
-            editKind: RecordStartEditKind.countIn,
-            releasedSettings: (countInBars: 1, soundStart: false),
-          ),
-          EngineResult.ok,
-        );
-        if (!uncertain) {
-          engine.nextSnapshot = engine.nextSnapshot.copyWith(
-            recordStartRevision: revision + 1,
-            recordStartResult: -1,
-          );
-        }
-        clock.elapse(const Duration(milliseconds: 510));
-        expect(repository.recordStartRecoveryRequired, uncertain);
-        expect(repository.recordStartSettings, (
+    check('failed replacement keeps prior live; uncertain=$uncertain', (
+      clock,
+      engine,
+      repository,
+    ) {
+      expect(
+        repository.setRecordStartSettings(
           countInBars: 2,
           soundStart: false,
-        ));
-        // A refusal keeps the prior Released pair; uncertainty owes the
-        // requested one, which Retry and a restart replay.
-        expect(
-          repository.recordStartRestartIntent,
-          uncertain
-              ? (countInBars: 1, soundStart: false)
-              : (countInBars: 0, soundStart: false),
+          editKind: RecordStartEditKind.countIn,
+          releasedSettings: (countInBars: 0, soundStart: false),
+        ),
+        EngineResult.ok,
+      );
+      unawaited(repository.settleRecordStartSettings());
+      clock.flushMicrotasks();
+      engine.publishRecordStartCommands = false;
+      final revision = engine.nextSnapshot.recordStartRevision;
+      expect(
+        repository.setRecordStartSettings(
+          countInBars: 4,
+          soundStart: false,
+          editKind: RecordStartEditKind.countIn,
+          releasedSettings: (countInBars: 1, soundStart: false),
+        ),
+        EngineResult.ok,
+      );
+      if (!uncertain) {
+        engine.nextSnapshot = engine.nextSnapshot.copyWith(
+          recordStartRevision: revision + 1,
+          recordStartResult: -1,
         );
-      },
-    );
+      }
+      clock.elapse(const Duration(milliseconds: 510));
+      expect(repository.recordStartRecoveryRequired, uncertain);
+      expect(repository.recordStartSettings, (
+        countInBars: 2,
+        soundStart: false,
+      ));
+      // A refusal keeps the prior Released pair; uncertainty owes the
+      // requested one, which Retry and a restart replay.
+      expect(
+        repository.recordStartRestartIntent,
+        uncertain
+            ? (countInBars: 1, soundStart: false)
+            : (countInBars: 0, soundStart: false),
+      );
+    });
   }
 
   check('invalid Released pair is refused before either intent changes', (

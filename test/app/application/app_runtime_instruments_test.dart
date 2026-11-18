@@ -18,7 +18,7 @@ import 'package:usb_storage_client/usb_storage_client.dart';
 
 import '../../helpers/helpers.dart';
 
-class _Sessions extends Mock implements SessionRepository {}
+class _Sessions extends Mock implements SessionRepository;
 
 /// The instruments family joins the runtime's owners when the app has an
 /// instrument repository, and loads and closes with them (#1197).

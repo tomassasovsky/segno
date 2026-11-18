@@ -43,10 +43,7 @@ void main() {
           recordedTempoBpm: 20,
           recordedLengthFrames: 16000,
         ),
-        const SessionRig(
-          recordedTempoBpm: 120,
-          recordedLengthFrames: 16000,
-        ),
+        const SessionRig(recordedTempoBpm: 120, recordedLengthFrames: 16000),
         const SessionRig(trackFollowTempoOverrides: {8: true}),
         const SessionRig(trackPitchModeOverrides: {-1: PitchMode.unchanged}),
       ]) {
@@ -92,10 +89,7 @@ void main() {
       ]);
       expect(await repository.settlePitchMode(), EngineResult.ok);
       expect(repository.state.defaultPitchMode, PitchMode.followsSpeed);
-      expect(
-        repository.state.tracks[1].pitchModeOverride,
-        PitchMode.unchanged,
-      );
+      expect(repository.state.tracks[1].pitchModeOverride, PitchMode.unchanged);
     });
 
     test('an admission refusal sends nothing more; a failed receipt leaves '

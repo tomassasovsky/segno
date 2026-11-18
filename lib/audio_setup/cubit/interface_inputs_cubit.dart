@@ -20,14 +20,12 @@ part 'interface_inputs_state.dart';
 /// Nothing here turns 48 V on by itself: [setPhantomPower] runs only when the
 /// player asks, after the page's confirmation.
 class InterfaceInputsCubit extends Cubit<InterfaceInputsState> {
-  /// Creates an [InterfaceInputsCubit] that follows [repository]'s open
+  /// Creates an [InterfaceInputsCubit] that follows [_repository]'s open
   /// device.
-  InterfaceInputsCubit({
-    required LooperRepository repository,
-    Duration watchInterval = const Duration(milliseconds: 500),
-  }) : _repository = repository,
-       _watchInterval = watchInterval,
-       super(const InterfaceInputsState()) {
+  new({
+    required this._repository,
+    this._watchInterval = const Duration(milliseconds: 500),
+  }) : super(const InterfaceInputsState()) {
     _subscription = _repository.looperState.listen(_followDevice);
     _followDevice(_repository.state);
   }
@@ -146,10 +144,7 @@ class InterfaceInputsCubit extends Cubit<InterfaceInputsState> {
   /// Queues [write], counts a refusal, then reads what the interface holds,
   /// refused or not. A write that finds the engine stopped is not the
   /// interface refusing.
-  void _change(
-    InterfaceSwitch which,
-    Future<EngineResult> Function() write,
-  ) {
+  void _change(InterfaceSwitch which, Future<EngineResult> Function() write) {
     final device = _device;
     if (device == null) return;
     _enqueue(() async {
@@ -173,6 +168,6 @@ class InterfaceInputsCubit extends Cubit<InterfaceInputsState> {
   Future<void> close() async {
     stopWatching();
     await _subscription.cancel();
-    return super.close();
+    return await super.close();
   }
 }

@@ -65,11 +65,11 @@ enum TrackHold {
 /// data it reads.
 class ControlGesturePair extends Equatable {
   /// Creates a [ControlGesturePair].
-  const ControlGesturePair({this.press, this.hold});
+  const new({this.press, this.hold});
 
   /// Rebuilds a pair from its [toJson] map. Unknown action keys retain their
   /// exact identity as unavailable actions; malformed types are rejected.
-  factory ControlGesturePair.fromJson(Map<String, dynamic> json) {
+  factory fromJson(Map<String, dynamic> json) {
     final press = json['press'];
     final hold = json['hold'];
     if (json.containsKey('press') && (press is! String || press.isEmpty)) {
@@ -142,7 +142,7 @@ class PedalSetup extends Equatable {
   ///
   /// The defaults are the accepted ones: MODE presses to Mute, and its hold
   /// opens the Custom controls.
-  const PedalSetup({
+  const new({
     this.modePress = InteractionMode.mute,
     this.modeHold = InteractionMode.custom,
     this.recordHold = RecordHold.undoRecording,
@@ -151,7 +151,7 @@ class PedalSetup extends Equatable {
     this.external = ExternalPedalSetup.empty,
   }) : custom = const <PedalBindingKey, ControlGesturePair>{};
 
-  const PedalSetup._({
+  const new _({
     required this.modePress,
     required this.modeHold,
     required this.recordHold,
@@ -163,7 +163,7 @@ class PedalSetup extends Equatable {
 
   /// Rebuilds a setup from its [encode] string. Only an absent blob means a
   /// fresh setup; malformed explicit choices reject the whole stored setup.
-  factory PedalSetup.decode(String encoded) {
+  factory decode(String encoded) {
     if (encoded.isEmpty) {
       throw const FormatException('Empty pedal setup');
     }

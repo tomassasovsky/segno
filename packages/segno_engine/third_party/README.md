@@ -41,8 +41,7 @@
   the C ABI shim (`src/stretch/le_stretch.h`) the C engine, the offline
   renderer, the bench and the tests call. It includes the header relatively
   (`../../third_party/signalsmith-stretch/signalsmith-stretch.h`), so no
-  include path is added to CMake, the podspec, `Package.swift` or
-  `run_native_tests.sh`; those list the shim TU (CMake, compiled as C++17) or
+  include path is added to CMake or `run_native_tests.sh`; those list the shim TU (CMake, compiled as C++17) or
   compile it with `$CXX` and link the C++ runtime. On Linux CMake compiles the
   shim with `-fvisibility=hidden`: Signalsmith is a common plugin dependency,
   so default-visibility exports could be interposed by a dlopen'd plugin's
@@ -67,10 +66,10 @@ combined binary stays GPLv3 regardless of platform; MIT inputs are compatible
 with that and do not change it.)
 
 The vendored VST3/CLAP SDKs are compiled into the engine only when
-`SEGNO_ENABLE_PLUGINS` is defined: on for the macOS SPM and CocoaPods builds,
-off for the Linux CMake build that the appliance uses. Third-party plugins are
-rarely built for aarch64 Linux, so the appliance does not host them. The
-`SEGNO_ENABLE_PLUGINS` environment variable overrides the CMake option.
+`SEGNO_ENABLE_PLUGINS` is defined. The build hook (`hook/build.dart`) turns the
+CMake option on for macOS and off for Linux, which the appliance uses.
+Third-party plugins are rarely built for aarch64 Linux, so the appliance does
+not host them.
 
 Do not edit the vendored sources in place — they are upstream drops. To
 upgrade, replace the folder(s) with a newer release and update the version(s)

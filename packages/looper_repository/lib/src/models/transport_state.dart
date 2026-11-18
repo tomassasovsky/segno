@@ -9,7 +9,7 @@ import 'package:segno_engine/segno_engine.dart';
 /// additive, direct projections of [EngineSnapshot]'s tempo-grid fields.
 class TransportState extends Equatable {
   /// Creates a [TransportState].
-  const TransportState({
+  const new({
     this.deviceRunning = false,
     this.masterLengthFrames = 0,
     this.tempoBpm = 0,

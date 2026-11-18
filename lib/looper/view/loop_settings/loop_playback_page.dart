@@ -1,9 +1,9 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/playback_options_cubit.dart';
@@ -26,11 +26,7 @@ import 'package:segno/theme/theme.dart';
 /// and capture.
 class LoopPlaybackPage extends StatefulWidget {
   /// Creates a [LoopPlaybackPage] showing [track]'s fields.
-  const LoopPlaybackPage({
-    required this.track,
-    required this.onTrack,
-    super.key,
-  });
+  const new({required this.track, required this.onTrack, super.key});
 
   /// The selected channel, or `null` for the defaults; shared with the
   /// Recording tab for the visit.
@@ -40,7 +36,7 @@ class LoopPlaybackPage extends StatefulWidget {
   final ValueChanged<int?> onTrack;
 
   /// The track selector, under the title row.
-  static const double selectorTop = 124;
+  static const double selectorTop = kLoopTabContentTop;
 
   /// The Loop/Once row.
   static const double playbackTop = selectorTop + 64 + 32;
@@ -219,7 +215,6 @@ class _LoopPlaybackPageState extends State<LoopPlaybackPage> {
                 alignment: Alignment.centerLeft,
                 child: LoopFieldLabel(
                   title: l10n.loopPlaybackLabel,
-                  fontSize: 32,
                   origin: scopedOrigin(
                     scoped: scope != null,
                     custom: onceCustom,
@@ -273,7 +268,6 @@ class _LoopPlaybackPageState extends State<LoopPlaybackPage> {
                 alignment: Alignment.centerLeft,
                 child: LoopFieldLabel(
                   title: l10n.loopDecayLabel,
-                  fontSize: 32,
                   origin: scopedOrigin(
                     scoped: scope != null,
                     custom: decayCustom,
@@ -356,7 +350,6 @@ class _LoopPlaybackPageState extends State<LoopPlaybackPage> {
                 alignment: Alignment.centerLeft,
                 child: LoopFieldLabel(
                   title: l10n.loopAudioFollowLabel,
-                  fontSize: 32,
                   originBeside: true,
                   origin: scopedOrigin(
                     scoped: scope != null,
@@ -411,7 +404,6 @@ class _LoopPlaybackPageState extends State<LoopPlaybackPage> {
                 alignment: Alignment.centerLeft,
                 child: LoopFieldLabel(
                   title: l10n.loopAudioPitchLabel,
-                  fontSize: 32,
                   originBeside: true,
                   origin: follows
                       ? scopedOrigin(scoped: scope != null, custom: pitchCustom)

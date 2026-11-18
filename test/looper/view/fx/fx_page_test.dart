@@ -1,12 +1,12 @@
 import 'dart:async';
 
 import 'package:bloc_test/bloc_test.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:routing_graph/routing_graph.dart';
@@ -28,6 +28,9 @@ import 'package:segno/looper/view/fx/fx_effect_editor.dart';
 import 'package:segno/looper/view/fx/fx_page.dart';
 import 'package:segno/looper/view/fx/fx_pedal_assignments_page.dart';
 import 'package:segno/looper/view/fx/fx_rack_editor.dart';
+import 'package:segno/looper/view/fx/stomp/fx_stomp_face.dart';
+import 'package:segno/looper/view/fx/stomp/fx_stomp_pedal.dart';
+import 'package:segno/looper/view/fx/stomp/fx_stomp_spec.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/notices/notices.dart';
 import 'package:segno/theme/theme.dart';
@@ -36,12 +39,11 @@ import 'package:settings_repository/settings_repository.dart';
 import '../../../helpers/helpers.dart';
 
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+    implements LooperBloc;
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
-class _MockControlCubit extends MockCubit<ControlState>
-    implements ControlCubit {}
+class _MockControlCubit extends MockCubit<ControlState> implements ControlCubit;
 
 BuiltInEffect _fx(
   String slot,
@@ -144,6 +146,8 @@ final _rig = LooperState(
     ),
     const Track(channel: 1, lanes: [Lane(inputChannel: 2, outputMask: 0xC)]),
   ],
+  laneCounts: const {0: 2},
+  laneInputs: const {(0, 0): 0, (0, 1): 1, (1, 0): 2},
   outputChains: {
     0: FxChainEnvelope(entries: [_fx('o1', TrackEffectType.reverb)]),
   },
@@ -278,46 +282,45 @@ void main() {
       _fx('m1', TrackEffectType.delay, placement: FxPlacement.pre),
       _fx('m2', TrackEffectType.reverb),
     ];
-    when(() => repository.clickModeFailures).thenAnswer(
-      (_) => const Stream<EngineResult>.empty(),
-    );
-    when(() => repository.clickVolumeFailures).thenAnswer(
-      (_) => const Stream<EngineResult>.empty(),
-    );
+    when(() => repository.clickModeFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
+    when(() => repository.clickVolumeFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
     when(() => repository.clickModeCaptureLocked).thenReturn(false);
     when(() => repository.clickModeSettled).thenReturn(true);
     // These pages do not initialize or edit recording-start preferences. The
     // repository still exposes its coherent, stopped native-safe pair.
-    when(() => repository.recordStartSettingsFailures).thenAnswer(
-      (_) => const Stream<EngineResult>.empty(),
-    );
+    when(() => repository.recordStartSettingsFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
     when(() => repository.recordStartSettingsSettled).thenReturn(true);
     when(() => repository.recordStartRecoveryRequired).thenReturn(false);
     when(() => repository.recordStartCaptureLocked).thenReturn(false);
-    when(() => repository.recordStartSettings).thenReturn(
-      (countInBars: 0, soundStart: false),
-    );
-    when(() => repository.recordStartRestartIntent).thenReturn(
-      (countInBars: 0, soundStart: false),
-    );
+    when(() => repository.recordStartSettings)
+        .thenReturn((countInBars: 0, soundStart: false));
+    when(() => repository.recordStartRestartIntent)
+        .thenReturn((countInBars: 0, soundStart: false));
     settings = SettingsRepository(store: FakeKeyValueStore());
     monitorChanges = StreamController<int>.broadcast();
     monitorParams = StreamController<int>.broadcast();
     addTearDown(monitorChanges.close);
     addTearDown(monitorParams.close);
-    when(
-      () => repository.looperState,
-    ).thenAnswer((_) => const Stream<LooperState>.empty());
-    when(
-      () => repository.mixSettingsFailures,
-    ).thenAnswer((_) => const Stream.empty());
+    when(() => repository.looperState)
+        .thenAnswer((_) => const Stream<LooperState>.empty());
+    when(() => repository.mixSettingsFailures)
+        .thenAnswer((_) => const Stream.empty());
     when(() => repository.state).thenReturn(_rig);
     when(() => repository.sessionRevision).thenReturn(0);
     when(() => repository.mixGeneration).thenReturn(0);
     when(() => repository.fxRoomNs).thenReturn(1 << 40);
     when(() => repository.fxChainHeld(any())).thenReturn(false);
     when(() => repository.fxHeldChainFits(any())).thenReturn(true);
-    when(() => repository.fxGrowthNs(any())).thenAnswer(
+    registerFallbackValue(<FxAddress, bool>{});
+    when(
+      () => repository.fxGrowthNs(
+        any(),
+        chainSwitches: any(named: 'chainSwitches'),
+      ),
+    ).thenAnswer(
       (call) => fxChainCostNs(
         (call.positionalArguments[0] as Map<FxAddress, List<TrackEffect>>)
             .values
@@ -336,9 +339,8 @@ void main() {
         cancelled: any(named: 'cancelled'),
       ),
     ).thenAnswer((_) async => EngineResult.ok);
-    when(
-      () => repository.monitorEffects(any()),
-    ).thenAnswer((_) => monitorEntries);
+    when(() => repository.monitorEffects(any()))
+        .thenAnswer((_) => monitorEntries);
     when(() => repository.monitorChainEnabled(any())).thenReturn(true);
     when(
       () => repository.setMonitorEffects(
@@ -346,16 +348,14 @@ void main() {
         effects: any(named: 'effects'),
       ),
     ).thenReturn(EngineResult.ok);
-    when(
-      () => repository.monitorChanges,
-    ).thenAnswer((_) => monitorChanges.stream);
-    when(
-      () => repository.monitorParamChanges,
-    ).thenAnswer((_) => monitorParams.stream);
+    when(() => repository.monitorChanges)
+        .thenAnswer((_) => monitorChanges.stream);
+    when(() => repository.monitorParamChanges)
+        .thenAnswer((_) => monitorParams.stream);
     when(() => repository.pluginCatalog).thenReturn(catalog);
-    when(() => repository.allMonitors()).thenAnswer(
-      (_) => {0: InputMonitor(input: 0, effects: monitorEntries)},
-    );
+    when(
+      () => repository.allMonitors(),
+    ).thenAnswer((_) => {0: InputMonitor(input: 0, effects: monitorEntries)});
     when(() => repository.monitorMode(any())).thenReturn(MonitorMode.off);
     when(() => repository.monitorOutput(any())).thenReturn(0x3);
     when(() => repository.monitorVolume(any())).thenReturn(1);
@@ -383,6 +383,9 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     final rig = state ?? _rig;
+    when(() => repository.laneCount(any())).thenAnswer(
+      (call) => rig.laneCounts[call.positionalArguments.single as int] ?? 1,
+    );
     final ownUpdates = StreamController<LooperState>.broadcast();
     addTearDown(ownUpdates.close);
     final trackEntries = <int, List<TrackEffect>>{
@@ -419,6 +422,8 @@ void main() {
                           rig.tracks[channel].lanes[lane].inputChannel,
                       lengthFrames:
                           rig.tracks[channel].lanes[lane].lengthFrames,
+                      recordedInput:
+                          rig.tracks[channel].lanes[lane].recordedInput,
                       effects: laneEntries[(channel, lane)] ?? const [],
                     ),
                 ],
@@ -427,6 +432,8 @@ void main() {
           ],
           status: rig.status,
           outputBusCount: rig.outputBusCount,
+          laneInputs: rig.laneInputs,
+          laneCounts: rig.laneCounts,
           outputChains: {
             for (final entry in outputEntries.entries)
               entry.key: FxChainEnvelope(entries: entry.value),
@@ -459,9 +466,8 @@ void main() {
       return laneEntries[(channel, lane)] ?? const [];
     });
     when(() => repository.laneChainEnabled(any(), any())).thenReturn(true);
-    when(
-      () => repository.laneChainInheritedFrom(any(), any()),
-    ).thenReturn(const []);
+    when(() => repository.laneChainInheritedFrom(any(), any()))
+        .thenReturn(const []);
     when(() => repository.outputEffects(any())).thenAnswer(
       (call) =>
           outputEntries[call.positionalArguments.single as int] ?? const [],
@@ -506,15 +512,12 @@ void main() {
       publish();
       return EngineResult.ok;
     });
-    when(
-      () => repository.setAllTracksEffects(
-        effects: any(named: 'effects'),
-      ),
-    ).thenAnswer((call) {
-      allEntries = call.namedArguments[#effects]! as List<TrackEffect>;
-      publish();
-      return EngineResult.ok;
-    });
+    when(() => repository.setAllTracksEffects(effects: any(named: 'effects')))
+        .thenAnswer((call) {
+          allEntries = call.namedArguments[#effects]! as List<TrackEffect>;
+          publish();
+          return EngineResult.ok;
+        });
     when(
       () => repository.setMonitorEffects(
         input: 0,
@@ -538,6 +541,23 @@ void main() {
         ..[index] = (trackEntries[0]![index] as BuiltInEffect).copyWith(
           enabled: enabled,
         );
+      publish();
+      return EngineResult.ok;
+    });
+    when(
+      () => repository.setRackEnabled(
+        address: const FxAddress(stage: FxStage.track),
+        rackId: any(named: 'rackId'),
+        enabled: any(named: 'enabled'),
+      ),
+    ).thenAnswer((call) {
+      final next = fxWithRackEnabled(
+        trackEntries[0]!,
+        call.namedArguments[#rackId]! as String,
+        enabled: call.namedArguments[#enabled]! as bool,
+      );
+      if (next == null) return EngineResult.invalid;
+      trackEntries[0] = next;
       publish();
       return EngineResult.ok;
     });
@@ -573,11 +593,7 @@ void main() {
       return EngineResult.ok;
     });
     when(() => bloc.state).thenReturn(rig);
-    whenListen(
-      bloc,
-      updates ?? ownUpdates.stream,
-      initialState: rig,
-    );
+    whenListen(bloc, updates ?? ownUpdates.stream, initialState: rig);
     final inputs = InputsCubit(repository: repository, settings: settings);
     final outputs = OutputsCubit(repository: repository, settings: settings);
     final fxPersistence = FxChainPersistence(looper: repository);
@@ -609,7 +625,11 @@ void main() {
     control = _MockControlCubit();
     when(() => control.state).thenReturn(controlState);
     when(
-      () => control.removeFxAssignments(any(), any()),
+      () => control.removeFxAssignments(
+        any(),
+        any(),
+        rackIds: any(named: 'rackIds'),
+      ),
     ).thenAnswer((_) async => true);
 
     await tester.pumpWidget(
@@ -623,9 +643,7 @@ void main() {
           providers: [
             RepositoryProvider<LooperRepository>.value(value: repository),
             RepositoryProvider<SettingsRepository>.value(value: settings),
-            RepositoryProvider<FxChainPersistence>.value(
-              value: fxPersistence,
-            ),
+            RepositoryProvider<FxChainPersistence>.value(value: fxPersistence),
           ],
           child: MultiBlocProvider(
             providers: [
@@ -639,7 +657,7 @@ void main() {
             ],
             child: MaterialApp(
               navigatorKey: segnoNavigatorKey,
-              localizationsDelegates: AppLocalizations.localizationsDelegates,
+              localizationsDelegates: appLocalizationsDelegates,
               supportedLocales: AppLocalizations.supportedLocales,
               theme: ThemeData(
                 fontFamily: SurfaceTheme.displayFont,
@@ -727,9 +745,8 @@ void main() {
       expect(find.text('Muted in Mixer'), findsNothing);
       await tapKey(tester, 'fx_kind_liveInput');
       expect(find.text('Muted in Mixer').hitTestable(), findsOneWidget);
-      when(repository.allMonitors).thenReturn({
-        0: const InputMonitor(input: 0, mode: MonitorMode.on),
-      });
+      when(repository.allMonitors)
+          .thenReturn({0: const InputMonitor(input: 0, mode: MonitorMode.on)});
       when(() => repository.monitorMuted(0)).thenReturn(false);
       monitors.projectFromRepository();
       await tester.pumpAndSettle();
@@ -787,6 +804,74 @@ void main() {
       expect(find.byKey(const Key('fx_track_strip')), findsOneWidget);
     });
 
+    testWidgets("a single effect's card names the switch assigned to it "
+        '(#1757)', (tester) async {
+      await pump(
+        tester,
+        destination: const FxDestination.recordedTrack(0),
+        controlState: ControlState(
+          globalBindings: PedalBindingSet([
+            PedalBinding(
+              key: const PedalBindingKey(button: PedalButton.track2, bank: 0),
+              target: const FxSlotTarget(
+                address: FxAddress(stage: FxStage.track),
+                slotId: 't3',
+              ).canonicalString(),
+            ),
+          ]),
+        ),
+      );
+
+      final card = find.byKey(const Key('fx_card_t3'));
+      expect(
+        find.descendant(
+          of: card,
+          matching: find.text(l10nOf(tester).controlTrackSwitchName(2)),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: card,
+          matching: find.text(l10nOf(tester).fxUnassigned),
+        ),
+        findsNothing,
+      );
+    });
+
+    testWidgets('a rack card names the switch bound to the rack (#1760)', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        destination: const FxDestination.recordedTrack(0),
+        state: _rackRig,
+        controlState: ControlState(
+          globalBindings: PedalBindingSet([
+            PedalBinding(
+              key: const PedalBindingKey(button: PedalButton.track4, bank: 0),
+              target: const FxRackTarget(
+                address: FxAddress(stage: FxStage.track),
+                rackId: 'R1',
+              ).canonicalString(),
+            ),
+          ]),
+        ),
+      );
+
+      final l10n = l10nOf(tester);
+      final card = find.byKey(const Key('fx_card_R1'));
+      for (final text in [
+        l10n.controlTrackSwitchName(4),
+        l10n.fxModuleCount(3),
+      ]) {
+        expect(
+          find.descendant(of: card, matching: find.text(text)),
+          findsOneWidget,
+        );
+      }
+    });
+
     testWidgets('All tracks has no part picker and no placement tag — its '
         'stage is fixed after the recorded mix', (tester) async {
       await pump(tester, destination: const FxDestination.allTracks());
@@ -794,8 +879,184 @@ void main() {
       expect(find.byKey(const Key('fx_part_picker')), findsNothing);
       expect(find.text(l10nOf(tester).fxPlacementPre), findsNothing);
       expect(find.text(l10nOf(tester).fxPlacementPost), findsNothing);
-      // And it is the All tracks chain that is showing, not a track's.
-      expect(find.text(l10nOf(tester).effectEcho), findsOneWidget);
+      // And it is the All tracks chain that is showing, not a track's: its
+      // single card carries the effect's name for a screen reader (#1754).
+      final name = l10nOf(tester).effectEcho;
+      expect(
+        find.byWidgetPredicate(
+          (w) => w is Semantics && w.properties.label == name,
+        ),
+        findsOneWidget,
+      );
+    });
+
+    group('the part picker lists the inputs the track records', () {
+      /// The track [lanes] on channel 0, recorded or not, set to record
+      /// [inputs] lane by lane.
+      LooperState rigWith(List<Lane> lanes, List<int> inputs) => LooperState(
+        tracks: [Track(state: TrackState.playing, lanes: lanes)],
+        laneCounts: {0: inputs.length},
+        laneInputs: {
+          for (final (lane, input) in inputs.indexed) (0, lane): input,
+        },
+        status: _rig.status,
+        outputBusCount: _rig.outputBusCount,
+      );
+
+      Future<List<String>> parts(WidgetTester tester) async {
+        await tapKey(tester, 'fx_part_picker');
+        final labels = [
+          for (var lane = 0; lane < 8; lane++)
+            if (find.byKey(Key('fx_part_$lane')).evaluate().isNotEmpty)
+              tester
+                  .widget<Text>(
+                    find
+                        .descendant(
+                          of: find.byKey(Key('fx_part_$lane')),
+                          matching: find.byType(Text),
+                        )
+                        .first,
+                  )
+                  .data!,
+        ];
+        expect(find.byKey(const Key('fx_part_whole')), findsWidgets);
+        return labels;
+      }
+
+      testWidgets('an empty track lists both of its inputs', (tester) async {
+        await pump(
+          tester,
+          destination: const FxDestination.recordedTrack(0),
+          state: rigWith(
+            const [Lane(inputChannel: 0), Lane(inputChannel: 1)],
+            [0, 1],
+          ),
+        );
+        expect(await parts(tester), [
+          'Acoustic guitar',
+          'Lead vocal microphone',
+        ]);
+      });
+
+      testWidgets('a recorded track lists both of its inputs', (tester) async {
+        await pump(
+          tester,
+          destination: const FxDestination.recordedTrack(0),
+          state: rigWith(
+            const [
+              Lane(inputChannel: 0, lengthFrames: 48000),
+              Lane(inputChannel: 1, lengthFrames: 48000),
+            ],
+            [0, 1],
+          ),
+        );
+        expect(await parts(tester), [
+          'Acoustic guitar',
+          'Lead vocal microphone',
+        ]);
+      });
+
+      testWidgets('a lane taken off the track keeps its row while it holds '
+          'audio, and drops it once empty', (tester) async {
+        await pump(
+          tester,
+          destination: const FxDestination.recordedTrack(0),
+          state: rigWith(
+            const [
+              Lane(inputChannel: 0, lengthFrames: 48000),
+              Lane(lengthFrames: 48000),
+              Lane(),
+            ],
+            [0, -1, -1],
+          ),
+        );
+        expect(await parts(tester), [
+          'Acoustic guitar',
+          l10nOf(tester).fxPartOrdinal(2),
+        ]);
+      });
+
+      testWidgets('an empty lane taken off the track is dropped even while '
+          'the engine still reports its input', (tester) async {
+        await pump(
+          tester,
+          destination: const FxDestination.recordedTrack(0),
+          state: rigWith(
+            const [Lane(inputChannel: 0), Lane(inputChannel: 1)],
+            [0, -1],
+          ),
+        );
+        expect(await parts(tester), ['Acoustic guitar']);
+      });
+
+      testWidgets('the part being edited keeps its row and its input name', (
+        tester,
+      ) async {
+        await pump(
+          tester,
+          destination: FxDestination.recordedTrack(
+            0,
+            part: FxTrackPart.part(1),
+          ),
+          state: rigWith(
+            const [Lane(inputChannel: 0), Lane(inputChannel: 1)],
+            [0, -1],
+          ),
+        );
+        expect(await parts(tester), [
+          'Acoustic guitar',
+          'Lead vocal microphone',
+        ]);
+      });
+
+      testWidgets('a recorded part keeps the name of the input it was '
+          'captured from after the lane input changes', (tester) async {
+        await pump(
+          tester,
+          destination: const FxDestination.recordedTrack(0),
+          state: rigWith(
+            const [
+              Lane(inputChannel: 2, lengthFrames: 48000, recordedInput: 0),
+              Lane(inputChannel: 1),
+            ],
+            [2, 1],
+          ),
+        );
+        expect(await parts(tester), [
+          'Acoustic guitar',
+          'Lead vocal microphone',
+        ]);
+      });
+
+      testWidgets('two parts on one input say which part they are', (
+        tester,
+      ) async {
+        await pump(
+          tester,
+          destination: const FxDestination.recordedTrack(0),
+          state: rigWith(
+            const [
+              Lane(inputChannel: 1, lengthFrames: 48000, recordedInput: 0),
+              Lane(),
+            ],
+            [1, 0],
+          ),
+        );
+        final l10n = l10nOf(tester);
+        expect(await parts(tester), [
+          l10n.fxPartNamedOrdinal('Acoustic guitar', 1),
+          l10n.fxPartNamedOrdinal('Acoustic guitar', 2),
+        ]);
+      });
+
+      testWidgets('a single-input track lists that input only', (tester) async {
+        await pump(
+          tester,
+          destination: const FxDestination.recordedTrack(0),
+          state: rigWith(const [Lane(inputChannel: 2)], [2]),
+        );
+        expect(await parts(tester), ['Keyboard left']);
+      });
     });
 
     testWidgets('switching tracks returns the part picker to Whole track', (
@@ -897,20 +1158,14 @@ void main() {
       await tapKey(tester, 'fx_all_tracks');
       await tapKey(tester, 'fx_power_a1');
       verify(
-        () => repository.setAllTracksEffectEnabled(
-          index: 0,
-          enabled: false,
-        ),
+        () => repository.setAllTracksEffectEnabled(index: 0, enabled: false),
       ).called(1);
 
       await tapKey(tester, 'fx_kind_output');
       await tapKey(tester, 'fx_power_o1');
       verify(
-        () => repository.setOutputEffectEnabled(
-          bus: 0,
-          index: 0,
-          enabled: false,
-        ),
+        () =>
+            repository.setOutputEffectEnabled(bus: 0, index: 0, enabled: false),
       ).called(1);
     });
 
@@ -919,7 +1174,13 @@ void main() {
       await pump(tester, destination: const FxDestination.liveInput(0));
 
       // Read: the two entries the monitor cubit carries, not the projection's.
-      expect(find.text(l10nOf(tester).effectDelay), findsOneWidget);
+      final name = l10nOf(tester).effectDelay;
+      expect(
+        find.byWidgetPredicate(
+          (w) => w is Semantics && w.properties.label == name,
+        ),
+        findsOneWidget,
+      );
 
       await tapKey(tester, 'fx_power_m1');
 
@@ -1121,15 +1382,12 @@ void main() {
       // One write, not one per pedal: a half-built rack must not be heard on
       // the way in.
       expect(appended.entries, hasLength(3));
-      expect(
-        appended.entries.map((e) => (e as BuiltInEffect).type),
-        [
-          // Ed's Rack's measured order, with Reverb before Delay.
-          TrackEffectType.compressor,
-          TrackEffectType.roomVerb,
-          TrackEffectType.modeDelay,
-        ],
-      );
+      expect(appended.entries.map((e) => (e as BuiltInEffect).type), [
+        // Ed's Rack's measured order, with Reverb before Delay.
+        TrackEffectType.compressor,
+        TrackEffectType.roomVerb,
+        TrackEffectType.modeDelay,
+      ]);
       // The preset's own values reach the parameters they feed.
       final delay = appended.entries[2] as BuiltInEffect;
       expect(delay.params[0], closeTo(0.42, 1e-9));
@@ -1156,10 +1414,11 @@ void main() {
       expect(racks.single!.art, 'edsguitar');
       // And the catalogue's own name for each pedal, kept whatever this
       // engine could build for it.
-      expect(
-        appended.entries.map((e) => e.module),
-        ['Compressor', 'Reverb', 'Delay'],
-      );
+      expect(appended.entries.map((e) => e.module), [
+        'Compressor',
+        'Reverb',
+        'Delay',
+      ]);
     });
 
     testWidgets(
@@ -1324,9 +1583,7 @@ void main() {
 
       // Three modules into one free slot: shown, with the reason.
       expect(
-        find.text(
-          l10nOf(tester).fxRackTooLong('Acoustic Rhythm 1', 3, 1),
-        ),
+        find.text(l10nOf(tester).fxRackTooLong('Acoustic Rhythm 1', 3, 1)),
         findsOneWidget,
       );
       await tapKey(tester, 'fx_preset_ed53e7b8');
@@ -1402,6 +1659,27 @@ void main() {
       expect(find.byKey(const Key('fx_param_1')), findsOneWidget);
     });
 
+    testWidgets("draws the effect's own pedal beside its controls (#1730)", (
+      tester,
+    ) async {
+      await pump(tester, destination: const FxDestination.recordedTrack(0));
+      await tapKey(tester, 'fx_card_t1');
+
+      final pedal = find.descendant(
+        of: find.byKey(const Key('fx_effect_pedal')),
+        matching: find.byType(FxStompPedal),
+      );
+      expect(pedal, findsOneWidget);
+      final face = tester.widget<FxStompPedal>(pedal).face;
+      // t1 is a filter, which wears the Low-pass filter's look, its LED on.
+      expect(face.spec, kFxStompSpecs['Low-pass filter']);
+      expect(face.led, FxStompLed.on);
+      expect(
+        tester.getRect(pedal).right,
+        lessThan(tester.getRect(find.byKey(const Key('fx_param_0'))).left),
+      );
+    });
+
     testWidgets("carries the track's Solo too", (tester) async {
       await pump(tester, destination: const FxDestination.recordedTrack(0));
       await tapKey(tester, 'fx_card_t1');
@@ -1424,8 +1702,7 @@ void main() {
       expect(find.byKey(const Key('fx_param_2')), findsOneWidget);
     });
 
-    testWidgets('a plain built-in reads in its own units, without the '
-        'unverified note', (tester) async {
+    testWidgets('a plain built-in reads in its own units', (tester) async {
       await pump(tester, destination: const FxDestination.recordedTrack(0));
       await tapKey(tester, 'fx_card_t1');
 
@@ -1449,7 +1726,6 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('0.50'), findsNothing);
-      expect(find.text(l10nOf(tester).fxScaleUnverified), findsNothing);
     });
 
     group('the Pre/Post switch', () {
@@ -1460,10 +1736,7 @@ void main() {
 
         expect(find.byKey(const Key('fx_placement_pre')), findsOneWidget);
         // t1 is Pre, so the line says what Pre means.
-        expect(
-          find.text(l10nOf(tester).fxPlacementPreHint),
-          findsOneWidget,
-        );
+        expect(find.text(l10nOf(tester).fxPlacementPreHint), findsOneWidget);
       });
 
       testWidgets('moves the instance to the END of the other stage, through '
@@ -1618,19 +1891,35 @@ void main() {
         expect(find.text(l10nOf(tester).fxModuleCount(3)), findsOneWidget);
       });
 
-      testWidgets("the card's power writes every pedal, because a rack is one "
-          'thing to the player', (tester) async {
+      testWidgets("the card's power switches the rack as one thing and keeps "
+          "each pedal's own switch (#1711)", (tester) async {
         await pumpRack(tester);
         await tapKey(tester, 'fx_power_R1');
 
-        final written = verify(
-          () => repository.setTrackEffectEnabled(
-            channel: 0,
-            index: captureAny(named: 'index'),
+        verify(
+          () => repository.setRackEnabled(
+            address: const FxAddress(stage: FxStage.track),
+            rackId: 'R1',
             enabled: false,
           ),
-        ).captured.cast<int>();
-        expect(written, [1, 2, 3]);
+        ).called(1);
+        verifyNever(
+          () => repository.setTrackEffectEnabled(
+            channel: any(named: 'channel'),
+            index: any(named: 'index'),
+            enabled: any(named: 'enabled'),
+          ),
+        );
+        // The card reads the rack's switch, so the same switch turns it back
+        // on.
+        await tapKey(tester, 'fx_power_R1');
+        verify(
+          () => repository.setRackEnabled(
+            address: const FxAddress(stage: FxStage.track),
+            rackId: 'R1',
+            enabled: true,
+          ),
+        ).called(1);
       });
 
       testWidgets('opens into one column per pedal, each with its own power '
@@ -1647,28 +1936,20 @@ void main() {
         expect(find.byKey(const Key('fx_pedal_cable_2')), findsOneWidget);
       });
 
-      testWidgets('a factory module keeps the raw setting and says its scale '
-          'was never recovered', (tester) async {
+      testWidgets("a factory module on a built-in reads in the built-in's "
+          'units, which are what it plays', (tester) async {
         await pumpRack(tester);
         await tapKey(tester, 'fx_card_R1');
 
-        // r1a is the rack's Delay module at its defaults (0.35 each). Its
-        // preset values were written against the Looper X's own scales, so
-        // it does not read in this build's milliseconds and percent.
+        // r1a is the rack's Delay module at its defaults (0.35 each), on the
+        // built-in delay, which plays 0.35 as 350 ms.
         final pedal = find.byKey(const Key('fx_pedal_r1a'));
         expect(
-          find.descendant(of: pedal, matching: find.text('0.35')),
-          findsNWidgets(3),
-        );
-        expect(
-          find.descendant(
-            of: pedal,
-            matching: find.text(l10nOf(tester).fxScaleUnverified),
-          ),
-          findsNWidgets(3),
-        );
-        expect(
           find.descendant(of: pedal, matching: find.text('350 ms')),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(of: pedal, matching: find.text('0.35')),
           findsNothing,
         );
       });
@@ -1680,10 +1961,7 @@ void main() {
         await tapKey(tester, 'fx_card_R1');
 
         expect(find.text('Pumper'), findsOneWidget);
-        expect(
-          find.text(l10nOf(tester).fxModuleUnavailable),
-          findsOneWidget,
-        );
+        expect(find.text(l10nOf(tester).fxModuleUnavailable), findsOneWidget);
       });
 
       testWidgets("a pedal's own power is its own, not the rack's", (
@@ -1766,13 +2044,7 @@ void main() {
         expect(rack.every((fx) => fx.rack!.name == 'Funk Wahv'), isTrue);
         // The rack's identity survives its name changing, and the standalone
         // effects on either side are untouched.
-        expect(chain.map((fx) => fx.slotId), [
-          'p1',
-          'r1a',
-          'r1b',
-          'r1c',
-          's1',
-        ]);
+        expect(chain.map((fx) => fx.slotId), ['p1', 'r1a', 'r1b', 'r1c', 's1']);
       });
 
       testWidgets('Remove rack asks first, saying what it leaves alone, then '
@@ -1788,19 +2060,14 @@ void main() {
         await tester.tap(find.text(l10nOf(tester).fxRemoveRack));
         await tester.pumpAndSettle();
 
-        expect(
-          lastChain().map((fx) => fx.slotId),
-          ['p1', 's1'],
-        );
+        expect(lastChain().map((fx) => fx.slotId), ['p1', 's1']);
         await tester.pump(const Duration(seconds: 4));
         await tester.pumpAndSettle();
       });
 
       testWidgets(
         'a refused rack removal keeps the editor and reports failure',
-        (
-          tester,
-        ) async {
+        (tester) async {
           await pumpRack(tester);
           when(
             () => repository.setTrackEffects(
@@ -1845,10 +2112,13 @@ void main() {
         await tapKey(tester, 'fx_move_right');
         await tapKey(tester, 'fx_reorder_done');
 
-        expect(
-          lastChain().map((fx) => fx.slotId),
-          ['p1', 'r1b', 'r1a', 'r1c', 's1'],
-        );
+        expect(lastChain().map((fx) => fx.slotId), [
+          'p1',
+          'r1b',
+          'r1a',
+          'r1c',
+          's1',
+        ]);
       });
 
       testWidgets('Reorder is cancellable: Cancel after several moves writes '
@@ -2048,10 +2318,7 @@ void main() {
         await tapKey(tester, 'fx_library_saved');
         await tapKey(tester, 'fx_saved_delete_${presets.state.single.id}');
 
-        expect(
-          find.text(l10nOf(tester).fxPresetDeleteBody),
-          findsOneWidget,
-        );
+        expect(find.text(l10nOf(tester).fxPresetDeleteBody), findsOneWidget);
         await tester.tap(find.text(l10nOf(tester).fxPresetDelete).last);
         await tester.pumpAndSettle();
 
@@ -2126,10 +2393,13 @@ void main() {
         await tapKey(tester, 'fx_move_right');
         await tapKey(tester, 'fx_reorder_done');
 
-        expect(
-          lastTrackWrite().map((fx) => fx.slotId),
-          ['p1', 's1', 'r1a', 'r1b', 'r1c'],
-        );
+        expect(lastTrackWrite().map((fx) => fx.slotId), [
+          'p1',
+          's1',
+          'r1a',
+          'r1b',
+          'r1c',
+        ]);
       });
 
       testWidgets('a pedal edit while Reorder is open survives Done', (
@@ -2154,9 +2424,8 @@ void main() {
             else
               effect,
         ];
-        when(() => repository.allTrackChains()).thenReturn({
-          0: FxChainEnvelope(entries: changed),
-        });
+        when(() => repository.allTrackChains())
+            .thenReturn({0: FxChainEnvelope(entries: changed)});
         when(() => repository.trackEffects(0)).thenReturn(changed);
         updates.add(
           LooperState(
@@ -2290,6 +2559,44 @@ void main() {
       await tapKey(tester, 'fx_preset_ed53e7b8');
     }
 
+    testWidgets('a switch bound to the rack itself is asked about in the same '
+        'question, and removed with the pedals (#1711)', (tester) async {
+      await pump(
+        tester,
+        destination: const FxDestination.recordedTrack(0),
+        state: withRack,
+        controlState: ControlState(
+          globalBindings: PedalBindingSet([
+            ...bound.globalBindings.bindings,
+            PedalBinding(
+              key: const PedalBindingKey(button: PedalButton.track2, bank: 0),
+              target: const FxRackTarget(
+                address: FxAddress(stage: FxStage.track),
+                rackId: 'old-rack',
+              ).canonicalString(),
+            ),
+          ]),
+        ),
+      );
+      await chooseTheSameRack(tester);
+
+      final l10n = l10nOf(tester);
+      // One question, counting the rack's binding with its pedal's.
+      expect(find.text(l10n.fxReAddRackBody(2)), findsOneWidget);
+      await tapKey(tester, 'console_confirm_confirm');
+
+      final racks = verify(
+        () => control.removeFxAssignments(
+          const FxAddress(stage: FxStage.track),
+          {'old-0', 'old-1', 'old-2'},
+          rackIds: captureAny(named: 'rackIds'),
+        ),
+      ).captured;
+      expect(racks, [
+        {'old-rack'},
+      ]);
+    });
+
     testWidgets('asks first when assignments point at it, and says how many', (
       tester,
     ) async {
@@ -2313,7 +2620,13 @@ void main() {
           effects: any(named: 'effects'),
         ),
       );
-      verifyNever(() => control.removeFxAssignments(any(), any()));
+      verifyNever(
+        () => control.removeFxAssignments(
+          any(),
+          any(),
+          rackIds: any(named: 'rackIds'),
+        ),
+      );
     });
 
     testWidgets('confirmed, it replaces the rack in place with new pedals', (
@@ -2350,6 +2663,7 @@ void main() {
         () => control.removeFxAssignments(
           const FxAddress(stage: FxStage.track),
           {'old-0', 'old-1', 'old-2'},
+          rackIds: captureAny(named: 'rackIds'),
         ),
       ).called(1);
     });
@@ -2363,7 +2677,11 @@ void main() {
         controlState: bound,
       );
       when(
-        () => control.removeFxAssignments(any(), any()),
+        () => control.removeFxAssignments(
+          any(),
+          any(),
+          rackIds: any(named: 'rackIds'),
+        ),
       ).thenAnswer((_) async => false);
       await chooseTheSameRack(tester);
       await tapKey(tester, 'console_confirm_confirm');
@@ -2386,7 +2704,13 @@ void main() {
       final written = lastTrackWrite();
       expect(written, hasLength(withRack.tracks.first.effects.length));
       expect(fxChainGroups(written).last.rack!.id, isNot('old-rack'));
-      verifyNever(() => control.removeFxAssignments(any(), any()));
+      verifyNever(
+        () => control.removeFxAssignments(
+          any(),
+          any(),
+          rackIds: any(named: 'rackIds'),
+        ),
+      );
     });
   });
 
@@ -2475,9 +2799,8 @@ void main() {
 
       await tapKey(tester, 'fx_chain_turn_on');
 
-      verify(
-        () => repository.setMonitorChainEnabled(input: 0, enabled: true),
-      ).called(1);
+      verify(() => repository.setMonitorChainEnabled(input: 0, enabled: true))
+          .called(1);
       expect(find.byKey(const Key('fx_chain_off_notice')), findsNothing);
       expect(selected(tester, 'fx_chain_power_on'), isTrue);
     });
@@ -2490,15 +2813,13 @@ void main() {
 
       expect(find.byKey(const Key('fx_chain_off_notice')), findsNothing);
       await tapKey(tester, 'fx_chain_power_off');
-      verify(
-        () => repository.setMonitorChainEnabled(input: 0, enabled: false),
-      ).called(1);
+      verify(() => repository.setMonitorChainEnabled(input: 0, enabled: false))
+          .called(1);
       expect(find.byKey(const Key('fx_chain_off_notice')), findsOneWidget);
 
       await tapKey(tester, 'fx_chain_power_on');
-      verify(
-        () => repository.setMonitorChainEnabled(input: 0, enabled: true),
-      ).called(1);
+      verify(() => repository.setMonitorChainEnabled(input: 0, enabled: true))
+          .called(1);
       expect(find.byKey(const Key('fx_chain_off_notice')), findsNothing);
     });
 
@@ -2520,14 +2841,7 @@ void main() {
     });
 
     for (final (label, destination, off, card)
-        in <
-          (
-            String,
-            FxDestination,
-            LooperState Function(LooperState),
-            String,
-          )
-        >[
+        in <(String, FxDestination, LooperState Function(LooperState), String)>[
           (
             'a track',
             const FxDestination.recordedTrack(0),
@@ -2679,9 +2993,8 @@ void main() {
         ).called(1);
 
         await tapKey(tester, 'fx_chain_turn_on');
-        verify(
-          () => repository.setTrackChainEnabled(channel: 0, enabled: true),
-        ).called(1);
+        verify(() => repository.setTrackChainEnabled(channel: 0, enabled: true))
+            .called(1);
         updates.add(_rackRig);
         await tester.pumpAndSettle();
         expect(find.text(l10n.fxChainOffHere), findsNothing);
@@ -2708,9 +3021,8 @@ void main() {
         );
 
         await tapKey(tester, 'fx_chain_power_on');
-        verify(
-          () => repository.setTrackChainEnabled(channel: 0, enabled: true),
-        ).called(1);
+        verify(() => repository.setTrackChainEnabled(channel: 0, enabled: true))
+            .called(1);
         updates.add(_rig);
         await tester.pumpAndSettle();
         expect(find.text(l10n.fxChainOffHere), findsNothing);

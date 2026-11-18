@@ -25,7 +25,7 @@ import '../helpers/helpers.dart';
 
 /// Turns tracks around and publishes the direction like the callback does.
 class _Engine extends FakeAudioEngine {
-  _Engine(this.recorded);
+  new(this.recorded);
 
   final Set<int> recorded;
   final reversedTracks = <int>{};
@@ -95,7 +95,7 @@ class _Engine extends FakeAudioEngine {
 /// A repository whose Session revision a test can move mid-toggle, the way
 /// a Session load does.
 class _Looper extends LooperRepository {
-  _Looper({required super.engine, required super.ticker});
+  new({required super.engine, required super.ticker});
 
   int? revision;
 
@@ -104,7 +104,7 @@ class _Looper extends LooperRepository {
 }
 
 class _Midi extends MidiDeviceRepository {
-  _Midi(SettingsRepository settings)
+  new(SettingsRepository settings)
     : super(captures: null, settings: settings, pollInterval: Duration.zero);
   final inputs = StreamController<MidiInputMessage>.broadcast();
   MidiInputSession get session => const MidiInputSession('test-midi', 1);
@@ -130,7 +130,7 @@ class _Midi extends MidiDeviceRepository {
 }
 
 class _Rig {
-  _Rig({Set<int> recorded = const {0, 1, 4}, ExternalJackSetup? jack})
+  new({Set<int> recorded = const {0, 1, 4}, ExternalJackSetup? jack})
     : engine = _Engine(recorded) {
     engine.publish();
     if (jack != null) {
@@ -691,11 +691,9 @@ void main() {
         expect(rig.engine.toggles.take(2), [1, 4]);
         expect(rig.engine.toggles.skip(2).toSet(), {0, 1, 4});
         await rig.poll();
-        expect(
-          rig.engine.reversedTracks,
-          {0},
-          reason: '1 and 4 were turned twice',
-        );
+        expect(rig.engine.reversedTracks, {
+          0,
+        }, reason: '1 and 4 were turned twice');
         bool lit(PedalButton button) =>
             rig.link.lastFrame!.activeButtonMask & (1 << button.index) != 0;
         // The all-tracks assignment reads active only once every recorded

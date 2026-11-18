@@ -26,10 +26,10 @@ enum ControllerFactsSource {
 /// firmware this image ships: shipping it is not having put it there.
 class ControllerFacts extends Equatable {
   /// Creates a [ControllerFacts].
-  const ControllerFacts({required this.source, this.firmware, this.protocol});
+  const new({required this.source, this.firmware, this.protocol});
 
   /// Reads the facts from the live link first, then the flash record.
-  factory ControllerFacts.read({
+  factory read({
     required PedalState pedal,
     required ConsoleBoardFlash? lastFlashed,
   }) {

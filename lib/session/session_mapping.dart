@@ -160,6 +160,7 @@ SessionSettings settingsFromLooper(
                 track.lanes[lane].volume,
             imagePan: track.lanes[lane].imagePan,
             balance: track.lanes[lane].balance,
+            recordedInput: track.lanes[lane].recordedInput,
           ),
     },
     inputSetup: SessionInputSetup(
@@ -390,7 +391,11 @@ SessionRig rigForNewLoop(Session live, {NewLoopTemplate? template}) {
               if (!channels.contains(chain.channel)) chain,
           ],
         );
-  return rigFromBundle((session: session, laneStems: const {}));
+  return rigFromBundle((
+    session: session,
+    laneStems: const {},
+    heardStems: const {},
+  ));
 }
 
 /// Projects one manifest monitor + its decoded chain into the rig's Input-stage
@@ -439,7 +444,9 @@ List<SessionRigTrack> _rigTracks(SessionBundle bundle) {
           inputChannel: lane.inputChannel,
           pan: lane.pan,
           balance: lane.balance,
+          recordedInput: lane.recordedInput,
           history: lane.history,
+          heard: bundle.heardStems[(track.channel, lane.lane)] ?? const [],
         ),
       );
     }

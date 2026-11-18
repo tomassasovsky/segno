@@ -175,17 +175,87 @@ void main() {
       expect(groups.map((g) => g.start), [0, 1, 2]);
     });
 
-    test('a rack is bypassed only when every module is', () {
+    test('a rack is drawn bypassed only when every module is', () {
       final chain = [
         _fx('a', rackId: 'r1', enabled: false),
         _fx('b', rackId: 'r1', enabled: false),
       ];
 
-      expect(fxChainGroups(chain).single.anyEnabled, isFalse);
+      expect(fxChainGroups(chain).single.audible, isFalse);
+      // Its own switch is still on: the modules are off on their own.
+      expect(fxChainGroups(chain).single.isOn, isTrue);
       expect(
-        fxChainGroups([chain.first, _fx('b', rackId: 'r1')]).single.anyEnabled,
+        fxChainGroups([chain.first, _fx('b', rackId: 'r1')]).single.audible,
         isTrue,
       );
+    });
+  });
+
+  group('the rack switch (#1711)', () {
+    List<TrackEffect> chain() => [
+      _fx('a', rackId: 'r1'),
+      _fx('b', rackId: 'r1', enabled: false),
+      _fx('c', rackId: 'r2'),
+      _fx('d'),
+    ];
+
+    test('a bypassed rack is off whatever its modules say', () {
+      final off = fxWithRackEnabled(chain(), 'r1', enabled: false)!;
+
+      final groups = fxChainGroups(off);
+      expect(groups.map((g) => g.isOn), [false, true, true]);
+      expect(groups.map((g) => g.audible), [false, true, true]);
+      expect(off.map((fx) => fx.enabled), [true, false, true, true]);
+      expect(off.map((fx) => fx.rack?.bypassed), [true, true, false, null]);
+    });
+
+    test('on restores the modules as they were', () {
+      final off = fxWithRackEnabled(chain(), 'r1', enabled: false)!;
+
+      expect(fxWithRackEnabled(off, 'r1', enabled: true), chain());
+    });
+
+    test('on and off touch only the rack switch, so a round trip is '
+        'exact even with every module off', () {
+      final silent = [
+        _fx('a', rackId: 'r1', enabled: false),
+        _fx('b', rackId: 'r1', enabled: false),
+      ];
+
+      final off = fxWithRackEnabled(silent, 'r1', enabled: false)!;
+      expect(off.map((fx) => fx.enabled), [false, false]);
+      expect(fxWithRackEnabled(off, 'r1', enabled: true), silent);
+    });
+
+    test('names no rack it does not hold', () {
+      expect(fxWithRackEnabled(chain(), 'gone', enabled: false), isNull);
+      // A standalone effect's slot id is not a rack id.
+      expect(fxWithRackEnabled(chain(), 'd', enabled: false), isNull);
+    });
+
+    test('a rename keeps the switch', () {
+      final off = fxWithRackEnabled(chain(), 'r1', enabled: false)!;
+
+      expect(fxRenameRack(off, 'r1', 'Wah').first.rack?.bypassed, isTrue);
+    });
+  });
+
+  group('fxSoleRack', () {
+    test('is the rack a chain is end to end', () {
+      expect(
+        fxSoleRack([_fx('a', rackId: 'r1'), _fx('b', rackId: 'r1')])?.id,
+        'r1',
+      );
+    });
+
+    test('is null for none, several, or a standalone effect', () {
+      expect(fxSoleRack(const []), isNull);
+      expect(fxSoleRack([_fx('a')]), isNull);
+      expect(
+        fxSoleRack([_fx('a', rackId: 'r1'), _fx('b', rackId: 'r2')]),
+        isNull,
+      );
+      expect(fxSoleRack([_fx('a', rackId: 'r1'), _fx('b')]), isNull);
     });
   });
 
@@ -302,10 +372,9 @@ void main() {
         ).keys,
         [0],
       );
-      expect(
-        fxGroupChannelWrites(group, const FxChannels(level: 0.5)).keys,
-        [2],
-      );
+      expect(fxGroupChannelWrites(group, const FxChannels(level: 0.5)).keys, [
+        2,
+      ]);
     });
 
     test('applying fxGroupChannelWrites matches fxSetGroupChannels on a rack '
@@ -346,10 +415,7 @@ void main() {
         placement: 0.75,
         level: 0.4,
       );
-      final chain = [
-        _fx('a', rackId: 'r1'),
-        _fx('b', rackId: 'r1'),
-      ];
+      final chain = [_fx('a', rackId: 'r1'), _fx('b', rackId: 'r1')];
 
       final written = fxSetGroupChannels(chain, 0, 2, channels);
 
@@ -359,11 +425,7 @@ void main() {
 
   group('fxOrderGroups', () {
     test('puts the groups in the order the ids name', () {
-      final chain = [
-        _fx('a', rackId: 'r1'),
-        _fx('b', rackId: 'r1'),
-        _fx('c'),
-      ];
+      final chain = [_fx('a', rackId: 'r1'), _fx('b', rackId: 'r1'), _fx('c')];
 
       expect(_slots(fxOrderGroups(chain, ['c', 'r1'])), ['c', 'a', 'b']);
     });
@@ -380,10 +442,7 @@ void main() {
 
     test('refuses an order that would carry a group across the stage '
         'boundary', () {
-      final chain = [
-        _fx('a', placement: FxPlacement.pre),
-        _fx('b'),
-      ];
+      final chain = [_fx('a', placement: FxPlacement.pre), _fx('b')];
 
       expect(fxOrderGroups(chain, ['b', 'a']), same(chain));
     });
@@ -399,17 +458,17 @@ void main() {
         _fx('z'),
       ];
 
-      expect(
-        _slots(fxOrderRackModules(chain, 'r1', ['c', 'a', 'b'])),
-        ['x', 'c', 'a', 'b', 'z'],
-      );
+      expect(_slots(fxOrderRackModules(chain, 'r1', ['c', 'a', 'b'])), [
+        'x',
+        'c',
+        'a',
+        'b',
+        'z',
+      ]);
     });
 
     test("refuses a list that does not name exactly that rack's modules", () {
-      final chain = [
-        _fx('a', rackId: 'r1'),
-        _fx('b', rackId: 'r1'),
-      ];
+      final chain = [_fx('a', rackId: 'r1'), _fx('b', rackId: 'r1')];
 
       expect(fxOrderRackModules(chain, 'r1', ['a']), same(chain));
       expect(fxOrderRackModules(chain, 'r1', ['a', 'z']), same(chain));
@@ -428,10 +487,7 @@ void main() {
 
   group('fxRenameRack', () {
     test('renames every module of the rack and leaves its id alone', () {
-      final chain = [
-        _fx('a', rackId: 'r1'),
-        _fx('b', rackId: 'r1'),
-      ];
+      final chain = [_fx('a', rackId: 'r1'), _fx('b', rackId: 'r1')];
 
       final renamed = fxRenameRack(chain, 'r1', 'Verse');
 
@@ -489,11 +545,7 @@ void main() {
 
   group('fxMoveGroup', () {
     test('moves a whole rack, modules and all', () {
-      final chain = [
-        _fx('a', rackId: 'r1'),
-        _fx('b', rackId: 'r1'),
-        _fx('c'),
-      ];
+      final chain = [_fx('a', rackId: 'r1'), _fx('b', rackId: 'r1'), _fx('c')];
 
       expect(_slots(fxMoveGroup(chain, 0, 1)), ['c', 'a', 'b']);
     });
@@ -502,10 +554,7 @@ void main() {
       // The accepted design says reorder moves an effect within its stage and
       // the explicit switch is what moves it between them. A reorder that
       // silently re-staged an effect would change whether it is recorded.
-      final chain = [
-        _fx('a', placement: FxPlacement.pre),
-        _fx('b'),
-      ];
+      final chain = [_fx('a', placement: FxPlacement.pre), _fx('b')];
 
       expect(fxMoveGroup(chain, 0, 1), same(chain));
     });
@@ -563,9 +612,8 @@ void main() {
       // Doubler, Dub delay, Dub reverb, Ambience, Compressor, Parametric EQ.
       final preset = FxPreset.tryParse(
         'Dub Rack',
-        File(
-          '../fx_catalogue/assets/presets/Dub Rack/Dub FX 1.fxpreset',
-        ).readAsStringSync(),
+        File('../fx_catalogue/assets/presets/Dub Rack/Dub FX 1.fxpreset')
+            .readAsStringSync(),
       )!;
       final chain = [
         for (final (i, e) in fxRackEntries(preset).indexed)
@@ -602,9 +650,8 @@ void main() {
     test('a Dub Rack added into a Dub Rack joins its paths', () {
       final preset = FxPreset.tryParse(
         'Dub Rack',
-        File(
-          '../fx_catalogue/assets/presets/Dub Rack/Dub FX 1.fxpreset',
-        ).readAsStringSync(),
+        File('../fx_catalogue/assets/presets/Dub Rack/Dub FX 1.fxpreset')
+            .readAsStringSync(),
       )!;
       List<BuiltInEffect> rack(String prefix) => [
         for (final (i, e) in fxRackEntries(preset).indexed)
@@ -619,10 +666,12 @@ void main() {
         'a4', 'a5', 'b4', 'b5',
       ]);
       // The joined rack still reorders: its Compressor and EQ swap.
-      expect(
-        _slots(fxMoveWithinRack(joined, 'dub', 8, 9)).sublist(8),
-        ['a5', 'a4', 'b4', 'b5'],
-      );
+      expect(_slots(fxMoveWithinRack(joined, 'dub', 8, 9)).sublist(8), [
+        'a5',
+        'a4',
+        'b4',
+        'b5',
+      ]);
     });
   });
 
@@ -630,17 +679,11 @@ void main() {
     test('moves every module of the rack, never half of it', () {
       // Half a rack on either side of the loop player is not a state any
       // accepted surface can draw, let alone one the player asked for.
-      final chain = [
-        _fx('a', rackId: 'r1'),
-        _fx('b', rackId: 'r1'),
-      ];
+      final chain = [_fx('a', rackId: 'r1'), _fx('b', rackId: 'r1')];
 
       final moved = fxSetGroupPlacement(chain, 0, 2, FxPlacement.pre);
 
-      expect(
-        moved.every((fx) => fx.placement == FxPlacement.pre),
-        isTrue,
-      );
+      expect(moved.every((fx) => fx.placement == FxPlacement.pre), isTrue);
     });
 
     test('lands the moved rack at the END of its new stage, not where it '
@@ -680,11 +723,7 @@ void main() {
 
   group('persistence', () {
     test('a rack survives encode and decode', () {
-      final chain = [
-        _fx('a', rackId: 'r1'),
-        _fx('b', rackId: 'r1'),
-        _fx('c'),
-      ];
+      final chain = [_fx('a', rackId: 'r1'), _fx('b', rackId: 'r1'), _fx('c')];
 
       final back = decodeTrackEffects(encodeTrackEffects(chain));
 

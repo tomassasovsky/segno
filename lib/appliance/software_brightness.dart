@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 /// The dimmest a panel can be SET to (`0..1`): 20%, the accepted range's
@@ -65,11 +65,7 @@ ColorFilter softwareBrightnessFilter(double brightness) {
 /// navigator and every open page) is never remounted by a brightness change.
 class SoftwareBrightness extends StatefulWidget {
   /// Creates a [SoftwareBrightness] wrapper.
-  const SoftwareBrightness({
-    required this.brightness,
-    required this.child,
-    super.key,
-  });
+  const new({required this.brightness, required this.child, super.key});
 
   /// Dim level in `kMinShownBrightness..1` (`1` = no filter).
   final double brightness;

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/control/view/console_pedal_layout.dart';
 
@@ -10,7 +10,7 @@ import 'package:segno/control/view/console_pedal_layout.dart';
 /// Fills the foot view's frame; `pedal` builds each pedal's face and caption.
 class FootPedalRows extends StatelessWidget {
   /// Creates a [FootPedalRows].
-  const FootPedalRows({required this.pedal, super.key});
+  const new({required this.pedal, super.key});
 
   /// Builds the pedal drawn for a button.
   final Widget Function(PedalButton button) pedal;
@@ -26,25 +26,24 @@ class FootPedalRows extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
-    builder: (context, constraints) {
-      Widget place(PedalButton button, double top) => Positioned(
-        left: ConsolePedalLayout.left(
-          button,
-          constraints.maxWidth,
-          pedalWidth,
-        ),
-        top: top,
-        width: pedalWidth,
-        child: pedal(button),
-      );
-      return Stack(
-        children: [
-          for (final button in ConsolePedalLayout.rearRow)
-            place(button, _rearTop),
-          for (final button in ConsolePedalLayout.frontRow)
-            place(button, _frontTop),
-        ],
-      );
-    },
+    builder: (context, constraints) => Stack(
+      children: [
+        for (final (row, top) in [
+          (ConsolePedalLayout.rearRow, _rearTop),
+          (ConsolePedalLayout.frontRow, _frontTop),
+        ])
+          for (final button in row)
+            Positioned(
+              left: ConsolePedalLayout.left(
+                button,
+                constraints.maxWidth,
+                pedalWidth,
+              ),
+              top: top,
+              width: pedalWidth,
+              child: pedal(button),
+            ),
+      ],
+    ),
   );
 }

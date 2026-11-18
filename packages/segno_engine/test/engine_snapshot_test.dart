@@ -7,6 +7,48 @@ import 'package:segno_engine/segno_engine.dart';
 import 'package:segno_engine/src/generated/segno_engine_bindings.dart';
 
 void main() {
+  group('draining tails (#1733)', () {
+    test('the native masks read by owner, channel and lane', () {
+      final snap = calloc<le_snapshot>();
+      addTearDown(() => calloc.free(snap));
+      snap.ref.fx_draining_monitor[2] = 5;
+      snap.ref.fx_draining_lane[1][3] = 1 << 63;
+      snap.ref.fx_draining_track[7] = 2;
+      snap.ref.fx_draining_all_tracks = 8;
+      snap.ref.fx_draining_output[15] = 16;
+      final draining = EngineSnapshot.fromNative(snap.ref, const []).fxDraining;
+      expect(draining.mask(FxOwner.monitor, channel: 2), 5);
+      expect(draining.mask(FxOwner.lane, channel: 1, lane: 3), 1 << 63);
+      expect(draining.mask(FxOwner.lane, channel: 1), 0);
+      expect(draining.mask(FxOwner.track, channel: 7), 2);
+      expect(draining.mask(FxOwner.allTracks), 8);
+      expect(draining.mask(FxOwner.output, channel: 15), 16);
+      expect(draining.mask(FxOwner.monitor), 0);
+    });
+
+    test('a snapshot with nothing draining reads none, and equal masks are '
+        'equal', () {
+      final snap = calloc<le_snapshot>();
+      addTearDown(() => calloc.free(snap));
+      expect(
+        EngineSnapshot.fromNative(snap.ref, const []).fxDraining,
+        FxDraining.none,
+      );
+      final a = FxDraining(const {(FxOwner.track, 0, 0): 1});
+      final b = FxDraining(const {
+        (FxOwner.track, 0, 0): 1,
+        (FxOwner.output, 0, 0): 0,
+      });
+      expect(a, b);
+      expect(a.hashCode, b.hashCode);
+      expect(a, isNot(FxDraining.none));
+      expect(
+        const EngineSnapshot.initial().copyWith(fxDraining: a).fxDraining,
+        a,
+      );
+    });
+  });
+
   test('lifecycle copy keeps confirmed mix meters and capture arm facts', () {
     final original = const EngineSnapshot.initial().copyWith(
       mixRevision: 73,
@@ -109,6 +151,19 @@ void main() {
     test('falls back to none for unknown codes', () {
       expect(TempoSource.fromCode(99), TempoSource.none);
       expect(TempoSource.fromCode(-1), TempoSource.none);
+    });
+  });
+
+  group('LaneSource', () {
+    test('maps the native source codes (#1713)', () {
+      expect(LaneSource.fromCode(0), LaneSource.heard);
+      expect(LaneSource.fromCode(1), LaneSource.clean);
+      expect(LaneSource.heard.code, 0);
+      expect(LaneSource.clean.code, 1);
+    });
+
+    test('reads an unknown code as the default, heard', () {
+      expect(LaneSource.fromCode(7), LaneSource.heard);
     });
   });
 
@@ -367,10 +422,10 @@ void main() {
       expect(landed.hashCode, isNot(pending.hashCode));
       track.ref.transpose_st = -12;
       track.ref.transpose_effective_st = -12;
-      expect(
-        TrackSnapshot.fromNative(track.ref).transpose,
-        (stored: -12, effective: -12),
-      );
+      expect(TrackSnapshot.fromNative(track.ref).transpose, (
+        stored: -12,
+        effective: -12,
+      ));
     });
 
     test('sync divisor is projected from the native field and compared', () {
@@ -467,10 +522,7 @@ void main() {
         base.copyWith(pitchMode: PitchMode.followsSpeed).pitchMode,
         PitchMode.followsSpeed,
       );
-      expect(
-        base.copyWith(recordedLengthFrames: 8000),
-        isNot(base),
-      );
+      expect(base.copyWith(recordedLengthFrames: 8000), isNot(base));
       for (final (code, state) in [
         (0, TempoFollowState.free),
         (2, TempoFollowState.noGrid),
@@ -1290,9 +1342,8 @@ void main() {
         'lib/src/engine_snapshot.dart',
         'EngineSnapshot',
       );
-      final source = _packageFile(
-        'lib/src/engine_snapshot.dart',
-      ).readAsStringSync();
+      final source = _packageFile('lib/src/engine_snapshot.dart')
+          .readAsStringSync();
       final start = source.indexOf('  EngineSnapshot copyWith({');
       expect(start, isNot(-1), reason: 'copyWith not found');
       final end = source.indexOf('  }) => EngineSnapshot(', start);
@@ -1809,6 +1860,7 @@ void main() {
         'songQueueProgress',
         'songLastSection', // moves when a section starts, not per callback
         'songQueueRecord', // moves with the request, not per callback
+        'fxDraining', // moves when a tail starts or ends, not per callback
         'followTempo',
         'tempoFollow',
         'pitchMode',

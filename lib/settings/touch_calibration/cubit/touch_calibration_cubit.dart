@@ -44,7 +44,7 @@ enum TouchCalibrationPhase {
 /// A touch calibration's progress.
 class TouchCalibrationState extends Equatable {
   /// Creates a [TouchCalibrationState].
-  const TouchCalibrationState({
+  const new({
     this.phase = TouchCalibrationPhase.loading,
     this.step = 0,
     this.steps = 0,
@@ -108,24 +108,19 @@ class TouchCalibrationState extends Equatable {
 /// restart cancel one): what was only tried is gone after the reboot. One
 /// that the guard table refuses starts nothing and says what is running.
 class TouchCalibrationCubit extends Cubit<TouchCalibrationState> {
-  /// Creates a [TouchCalibrationCubit] for [screen].
-  TouchCalibrationCubit({
-    required TouchCalibrationClient client,
-    required GuardRegistry guards,
-    required TouchScreen screen,
+  /// Creates a [TouchCalibrationCubit] for [_screen].
+  new({
+    required this._client,
+    required this._guards,
+    required this._screen,
     required List<TouchPoint> captureTargets,
     required List<TouchPoint> testTargets,
-    Duration testDuration = const Duration(seconds: 30),
-    double hitTolerance = 0.04,
+    this._testDuration = const Duration(seconds: 30),
+    this._hitTolerance = 0.04,
   }) : assert(captureTargets.length >= 3, 'a fit needs three points'),
        assert(testTargets.isNotEmpty, 'the test needs a target'),
-       _client = client,
-       _guards = guards,
-       _screen = screen,
        _captureTargets = captureTargets,
        _testTargets = testTargets,
-       _testDuration = testDuration,
-       _hitTolerance = hitTolerance,
        super(const TouchCalibrationState());
 
   final TouchCalibrationClient _client;
@@ -413,6 +408,6 @@ class TouchCalibrationCubit extends Cubit<TouchCalibrationState> {
     }
     // Only now is nothing untried in force.
     _releaseGuard();
-    return super.close();
+    return await super.close();
   }
 }

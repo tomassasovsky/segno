@@ -3,383 +3,861 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:daw_export/src/daw_project.dart';
+import 'package:daw_export/src/device_chain.dart';
+import 'package:daw_export/src/live_device_template.dart';
+import 'package:daw_export/src/live_group_track_template.dart';
+import 'package:daw_export/src/live_set_template.dart';
+import 'package:daw_export/src/segno_vst3_plugins.dart';
+import 'package:xml/xml.dart';
 
-/// The fixed pointee id Ableton Live conventionally assigns to the main
-/// track's tempo automation target — the main track's `Tempo` element wires
-/// its `AutomationTarget` to this id, and the single `AutomationEnvelope`
-/// this builder emits targets it right back (`EnvelopeTarget/PointeeId`).
-/// Reserved (never handed out by [_IdAllocator]) so the two can never
-/// collide with a track/clip/slot id.
-///
-/// This is a single hardcoded reserved constant because tempo is the only
-/// fixed automation target part 9 needs. Part 10 adds per-clip
-/// `AutomationLane`s with their own fixed pointee targets (volume/mute/FX
-/// params) — when that lands, generalize this into a reserved-id set (or
-/// have [_IdAllocator] hand out and track every fixed target itself) rather
-/// than adding a second hand-maintained constant that could drift out of
-/// sync with this one.
-const int _kTempoPointeeId = 8;
+/// The time of the event Live writes first in every envelope: it holds the
+/// parameter's value before the song starts.
+const double _kBeforeSongTime = -63072000;
 
-/// Nominal sample rate used only for `AudioClip`'s informational
-/// `DefaultSampleRate`/`DefaultDuration` fields — cosmetic metadata Ableton
-/// re-reads from the actual file on load, not authoritative here since
-/// [DawClip]/[DawSessionClip] only carry lengths in seconds.
-const int _kNominalSampleRate = 48000;
+/// Where Live's Arrangement lane chooser finds a track's volume envelope,
+/// as Live 12.2.7 numbers it for an audio track with no sends: after
+/// "None" (0), every device in order, a rack followed by each chain's
+/// devices and the chain's mixer, then the track's Mixer
+/// ([_laneMixerDevice]), whose envelope 2 is the volume (0 is the
+/// activator, "Speaker On").
+const int _kLaneMixerVolume = 2;
 
-/// Allocates unique, monotonically increasing element ids, starting past
-/// every reserved id ([_kTempoPointeeId]) so a track/clip/slot id can never
-/// collide with one Ableton itself expects at a fixed value.
-class _IdAllocator {
-  int _next = _kTempoPointeeId + 1;
+/// The lane chooser's number for the Mixer of a track holding [devices].
+int _laneMixerDevice(List<DawDevice> devices) => 1 + _chooserEntries(devices);
 
-  int next() => _next++;
+/// The entries [devices] take in the lane chooser.
+int _chooserEntries(List<DawDevice> devices) => devices.fold(
+  0,
+  (n, d) =>
+      n +
+      switch (d) {
+        DawPluginDevice() => 1,
+        DawRackDevice(:final chains) =>
+          1 + chains.fold(0, (m, c) => m + _chooserEntries(c.devices) + 1),
+      },
+);
 
-  /// The value Ableton's `NextPointeeId` element should carry: one past the
-  /// highest id this allocator has handed out.
-  int get nextPointeeId => _next;
-}
+/// Live's `WarpMode` number for Re-Pitch, which at the clip's own tempo plays
+/// the file's samples unchanged.
+const int _kWarpModeRePitch = 3;
+
+/// The folder beside a set that makes its folder a Live Project (#1837).
+/// Without it, Live refuses to save the set in place and asks for Save As.
+/// Live 12 creates it empty, so an empty folder is all a set needs.
+const String liveProjectInfoFolder = 'Ableton Project Info';
 
 /// Builds an Ableton Live 12 `.als` set (gzipped XML) from [project].
 ///
-/// Structural guarantees this builder enforces (see `als_builder_test.dart`
-/// for the corresponding assertions):
-/// - every `Id`/`PointeeId` pair is internally consistent — the tempo
-///   envelope's `PointeeId` always matches the main track's
-///   `AutomationTarget` id, and `NextPointeeId` is always one past the
-///   highest id actually used;
-/// - every `FileRef` is a relative path — an absolute [DawClip.fileRef] or
-///   [DawSessionClip.fileRef] throws [ArgumentError] rather than silently
-///   emitting a bundle that would break once moved (D-ALS);
-/// - every clip has `WarpMode`/`IsWarped` off (D-TEMPO: a captured
-///   performance is already sample-accurate at its own tempo, not meant to
-///   stretch to the project's);
-/// - an empty [DawTrack] (no arrangement clip and no session clips) is
-///   never expected here — the caller (a fixture, or `DawManifestReader`)
-///   already excludes empty tracks, so this builder does not re-filter
-///   [DawProject.tracks].
+/// The set is [liveSetTemplate], a set Live 12 saved, with its one audio
+/// track used as the prototype for every track in [project]: the template
+/// supplies every element and default Live writes, and this function only
+/// fills in names, clips, automation and tempo. Each copy of the prototype
+/// gets fresh automation and modulation target ids, numbered on from the
+/// template's `NextPointeeId`.
 ///
-/// The exact Ableton Live XML schema below is built from documented/public
-/// knowledge of the Live Set format, not verified against a real
-/// Live-12-saved corpus (`test/corpus/README.md` tracks this as a follow-up
-/// requiring an actual Ableton Live install) — every acceptance criterion
-/// this part's own test suite can enforce (Id/Pointee consistency, relative
-/// paths, warp-off, beat math, track/clip counts) is verified regardless of
-/// that pending real-world fidelity check.
+/// - Arrangement clips are unwarped: each plays its file at its own speed
+///   whatever the set's tempo, so a capture sounds as it was played.
+/// - A track's loop is a Session clip in the first scene that loops its
+///   whole file, warped in Re-Pitch with warp markers at the file's own
+///   length in beats at the set's tempo, so at that tempo it too plays the
+///   file unchanged. Live only loops a warped clip.
+/// - The tracks of a [DawGroup] sit in a Group track, [liveGroupTrackTemplate]
+///   copied once per group and placed before them, and play into it. They
+///   must be consecutive: a group that comes back after another track
+///   throws [ArgumentError].
+/// - Every `FileRef` is relative to the set's folder, so the capture folder
+///   can be moved or copied anywhere. An absolute path throws
+///   [ArgumentError].
+/// - The set opens in the Arrangement.
+///
+/// Throws [ArgumentError] for a project with no tracks, which Live cannot
+/// open.
 Uint8List buildAls(DawProject project) {
-  final allocator = _IdAllocator();
-  final buffer = StringBuffer()
-    ..writeln('<?xml version="1.0" encoding="UTF-8"?>')
-    ..writeln(
-      '<Ableton MajorVersion="5" MinorVersion="12.0_12120" '
-      'SchemaChangeCount="3" Creator="Ableton Live 12.0" '
-      'Revision="segno-daw-export">',
-    )
-    ..writeln('<LiveSet>')
-    ..writeln('<Tracks>');
+  if (project.tracks.isEmpty) {
+    // Live refuses such a set: "Set has no player tracks".
+    throw ArgumentError.value(project, 'project', 'has no tracks');
+  }
+  final document = XmlDocument.parse(liveSetTemplate);
+  final liveSet = document.rootElement.getElement('LiveSet')!;
+  final prototype = _TrackPrototype.take(liveSet);
+  final nextPointeeId = liveSet.getElement('NextPointeeId')!;
+  final ids = _PointeeIds(_intValue(nextPointeeId));
+  final devices = _DevicePrototypes(ids);
 
+  final tracks = liveSet.getElement('Tracks')!;
+  var trackId = prototype.trackId;
+  DawGroup? group;
+  var groupId = -1;
+  final closed = <DawGroup>{};
   for (final track in project.tracks) {
-    _writeAudioTrack(buffer, track, project.tempoBpm, allocator);
-  }
-
-  buffer
-    ..writeln('</Tracks>')
-    ..writeln(_mainTrack(project.tempoBpm, allocator))
-    ..writeln('<NextPointeeId Value="${allocator.nextPointeeId}"/>')
-    ..writeln('</LiveSet>')
-    ..writeln('</Ableton>');
-
-  final xmlBytes = utf8.encode(buffer.toString());
-  return Uint8List.fromList(GZipCodec().encode(xmlBytes));
-}
-
-void _writeAudioTrack(
-  StringBuffer buffer,
-  DawTrack track,
-  double tempoBpm,
-  _IdAllocator allocator,
-) {
-  final trackId = allocator.next();
-  final volumeLane = _laneFor(track, AutomationTarget.volume);
-  final activatorLane = _laneFor(track, AutomationTarget.activator);
-
-  buffer
-    ..writeln('<AudioTrack Id="$trackId">')
-    ..writeln('<Name>')
-    ..writeln('<EffectiveName Value="${_xmlEscape(track.name)}"/>')
-    ..writeln('<UserName Value="${_xmlEscape(track.name)}"/>')
-    ..writeln('</Name>')
-    ..writeln('<DeviceChain>');
-
-  int? volumeTargetId;
-  int? activatorTargetId;
-  if (volumeLane != null || activatorLane != null) {
-    buffer.writeln('<Mixer>');
-    if (volumeLane != null) {
-      volumeTargetId = allocator.next();
-      buffer.writeln('''
-<Volume>
-<Manual Value="1.0"/>
-<AutomationTarget Id="$volumeTargetId">
-<LockEnvelope Value="0"/>
-</AutomationTarget>
-</Volume>''');
+    if (!identical(track.group, group)) {
+      if (group != null) closed.add(group);
+      group = track.group;
+      if (group != null) {
+        if (closed.contains(group)) {
+          throw ArgumentError.value(
+            project,
+            'project',
+            'has the tracks of group ${group.name} apart',
+          );
+        }
+        groupId = trackId++;
+        tracks.children.add(
+          _groupTrack(group, trackId: groupId, ids: ids, devices: devices),
+        );
+      }
     }
-    if (activatorLane != null) {
-      activatorTargetId = allocator.next();
-      buffer.writeln('''
-<TrackActivator>
-<Manual Value="true"/>
-<AutomationTarget Id="$activatorTargetId">
-<LockEnvelope Value="0"/>
-</AutomationTarget>
-</TrackActivator>''');
-    }
-    buffer.writeln('</Mixer>');
-  }
-
-  buffer
-    ..writeln('<MainSequencer>')
-    ..writeln('<ClipSlotList>');
-
-  for (final session in track.sessionClips) {
-    final slotId = allocator.next();
-    final clipId = allocator.next();
-    buffer
-      ..writeln('<ClipSlot Id="$slotId">')
-      ..writeln('<ClipSlot>')
-      ..writeln('<Value>')
-      ..writeln(
-        _audioClip(
-          id: clipId,
-          time: 0,
-          name: 'Lane ${session.laneIndex}',
-          fileRef: session.fileRef,
-          lengthSeconds: session.lengthSeconds,
-          tempoBpm: tempoBpm,
-        ),
-      )
-      ..writeln('</Value>')
-      ..writeln('</ClipSlot>')
-      ..writeln('</ClipSlot>');
-  }
-
-  buffer
-    ..writeln('</ClipSlotList>')
-    ..writeln('<Arranger>')
-    ..writeln('<Events>');
-  final arrangement = track.arrangementClip;
-  if (arrangement != null) {
-    final clipId = allocator.next();
-    final startBeats = secondsToBeats(arrangement.startSeconds, tempoBpm);
-    buffer.writeln(
-      _audioClip(
-        id: clipId,
-        time: startBeats,
-        name: track.name,
-        fileRef: arrangement.fileRef,
-        lengthSeconds: arrangement.lengthSeconds,
-        tempoBpm: tempoBpm,
-        startBeatsOverride: startBeats,
+    tracks.children.add(
+      prototype.build(
+        track,
+        trackId: trackId++,
+        groupId: group == null ? -1 : groupId,
+        tempoBpm: project.tempoBpm,
+        ids: ids,
+        devices: devices,
       ),
     );
   }
-  buffer
-    ..writeln('</Events>')
-    ..writeln('</Arranger>')
-    ..writeln('</MainSequencer>')
-    ..writeln('</DeviceChain>');
 
-  if (volumeLane != null || activatorLane != null) {
-    buffer
-      ..writeln('<AutomationEnvelopes>')
-      ..writeln('<Envelopes>');
-    if (volumeLane != null) {
-      buffer.writeln(
-        _floatEnvelope(allocator.next(), volumeTargetId!, volumeLane),
-      );
-    }
-    if (activatorLane != null) {
-      buffer.writeln(
-        _boolEnvelope(allocator.next(), activatorTargetId!, activatorLane),
-      );
-    }
-    buffer
-      ..writeln('</Envelopes>')
-      ..writeln('</AutomationEnvelopes>');
-  }
+  _setTempo(liveSet, project.tempoBpm);
+  _setValue(nextPointeeId, '${ids.next}');
+  _setValue(liveSet.getElement('SelectedDocumentViewInMainWindow')!, '0');
+  _zoomToFit(liveSet, project);
+  // Automation Mode draws each track's envelopes over its clips.
+  final automated = project.tracks.any(
+    (t) => t.volume != null || _automates(t.devices),
+  );
+  _setValue(liveSet.getElement('AutomationMode')!, '$automated');
 
-  buffer.writeln('</AudioTrack>');
+  final xml = document.toXmlString();
+  return Uint8List.fromList(GZipCodec().encode(utf8.encode(xml)));
 }
 
-/// Finds [track]'s automation lane for [target], or `null` if it has none.
-/// Enforces the "at most one lane per target" invariant [DawTrack.
-/// automationLanes] documents rather than silently picking one of several —
-/// a caller that violates it gets a loud [ArgumentError], not a
-/// hard-to-notice dropped envelope.
-AutomationLane? _laneFor(DawTrack track, AutomationTarget target) {
-  final matches = track.automationLanes
-      .where((l) => l.target == target)
-      .toList();
-  if (matches.length > 1) {
-    throw ArgumentError.value(
-      track.name,
-      'track',
-      'has ${matches.length} automation lanes for $target — at most one is '
-          'allowed per track per target',
-    );
-  }
-  return matches.isEmpty ? null : matches.single;
-}
-
-/// A continuous (ramp-interpolated) automation envelope — used for
-/// [AutomationTarget.volume]. Every breakpoint becomes a `FloatEvent`;
-/// Ableton linearly interpolates between consecutive `FloatEvent`s by
-/// default, matching [AutomationLane]'s own documented continuous-ramp
-/// semantics.
-String _floatEnvelope(int envelopeId, int pointeeId, AutomationLane lane) {
-  final events = lane.breakpoints
-      .map((b) => '<FloatEvent Time="${b.beat}" Value="${b.value}"/>')
-      .join();
-  return '''
-<AutomationEnvelope Id="$envelopeId">
-<EnvelopeTarget>
-<PointeeId Value="$pointeeId"/>
-</EnvelopeTarget>
-<Automation>
-<Events>
-$events
-</Events>
-</Automation>
-</AutomationEnvelope>''';
-}
-
-/// A step-shaped automation envelope — used for [AutomationTarget.activator]
-/// (D-MUTE). Every breakpoint becomes a `BoolEvent`, which Ableton holds at
-/// its value until the next event rather than interpolating — the correct
-/// semantics for a mute toggle, which is a discrete state change, not a
-/// ramp.
-String _boolEnvelope(int envelopeId, int pointeeId, AutomationLane lane) {
-  final events = lane.breakpoints
-      .map(
-        (b) =>
-            '<BoolEvent Time="${b.beat}" '
-            'Value="${b.value != 0.0}"/>',
-      )
-      .join();
-  return '''
-<AutomationEnvelope Id="$envelopeId">
-<EnvelopeTarget>
-<PointeeId Value="$pointeeId"/>
-</EnvelopeTarget>
-<Automation>
-<Events>
-$events
-</Events>
-</Automation>
-</AutomationEnvelope>''';
-}
-
-String _audioClip({
-  required int id,
-  required double time,
-  required String name,
-  required String fileRef,
-  required double lengthSeconds,
-  required double tempoBpm,
-  double? startBeatsOverride,
+/// A Group track named after [group], with fresh pointee ids and
+/// [group]'s devices. It has one
+/// slot per scene of the set's template, as the template's audio track has
+/// one clip slot per scene.
+XmlElement _groupTrack(
+  DawGroup group, {
+  required int trackId,
+  required _PointeeIds ids,
+  required _DevicePrototypes devices,
 }) {
-  if (_looksAbsolute(fileRef)) {
-    throw ArgumentError.value(
-      fileRef,
-      'fileRef',
-      'must be a relative path (D-ALS) — an absolute FileRef would break '
-          'the moment the bundle is moved',
+  final track = XmlDocument.parse(liveGroupTrackTemplate).rootElement.copy()
+    ..setAttribute('Id', '$trackId');
+  for (final element in track.descendantElements) {
+    if (_isPointee(element.name.local)) {
+      element.setAttribute('Id', '${ids.take()}');
+    }
+  }
+  final name = track.getElement('Name')!;
+  _setValue(name.getElement('EffectiveName')!, group.name);
+  _setValue(name.getElement('UserName')!, group.name);
+  _setValue(name.getElement('Annotation')!, group.info);
+  track
+      .getElement('DeviceChain')!
+      .getElement('DeviceChain')!
+      .getElement('Devices')!
+      .children
+      .addAll(devices.build(group.devices, []));
+  return track;
+}
+
+/// Converts [seconds] to beats at [bpm].
+double secondsToBeats(double seconds, double bpm) => seconds * bpm / 60;
+
+/// Hands out pointee ids (automation and modulation targets), each one
+/// higher than the last.
+class _PointeeIds {
+  new(this.next);
+
+  int next;
+
+  int take() => next++;
+}
+
+/// The template's audio track with its clips and envelopes taken out, plus
+/// one of each as the prototype for the clips and envelopes a track gets.
+class _TrackPrototype {
+  new _(this.track, this.clip, this.envelope, this.lane, this.trackId);
+
+  /// Removes the template's only audio track from [liveSet] and splits it
+  /// into an empty track, its Arrangement clip and its first envelope.
+  factory take(XmlElement liveSet) {
+    final track =
+        liveSet.getElement('Tracks')!.findElements('AudioTrack').single
+          ..remove();
+    final events = _arrangerEvents(track);
+    final clip = events.findElements('AudioClip').first.copy();
+    events.children.clear();
+    for (final slot in _clipSlotValues(track)) {
+      slot.children.clear();
+    }
+    final envelopes = _envelopes(track);
+    final envelope = envelopes.findElements('AutomationEnvelope').first.copy();
+    envelopes.children.clear();
+    final lane = _automationLanes(track)
+        .findElements('AutomationLane')
+        .first
+        .copy();
+    return _TrackPrototype._(
+      track,
+      clip,
+      envelope,
+      lane,
+      int.parse(track.getAttribute('Id')!),
     );
   }
-  final startBeats = startBeatsOverride ?? 0.0;
-  final lengthBeats = secondsToBeats(lengthSeconds, tempoBpm);
-  final endBeats = startBeats + lengthBeats;
-  final escapedName = _xmlEscape(name);
-  final escapedRef = _xmlEscape(fileRef);
-  final frames = (lengthSeconds * _kNominalSampleRate).round();
-  return '''
-<AudioClip Id="$id" Time="$time">
-<LomId Value="0"/>
-<Name Value="$escapedName"/>
-<CurrentStart Value="$startBeats"/>
-<CurrentEnd Value="$endBeats"/>
-<Loop>
-<LoopStart Value="0"/>
-<LoopEnd Value="$lengthBeats"/>
-<StartRelative Value="0"/>
-<LoopOn Value="false"/>
-<OutMarker Value="$lengthBeats"/>
-<HiddenLoopStart Value="0"/>
-<HiddenLoopEnd Value="$lengthBeats"/>
-</Loop>
-<Disabled Value="false"/>
-<SampleRef>
-<FileRef>
-<RelativePathType Value="1"/>
-<RelativePath Value="$escapedRef"/>
-<Path Value="$escapedRef"/>
-<Type Value="1"/>
-</FileRef>
-<LastModDate Value="0"/>
-<SourceContext/>
-<SampleUsageHint Value="0"/>
-<DefaultDuration Value="$frames"/>
-<DefaultSampleRate Value="$_kNominalSampleRate"/>
-</SampleRef>
-<WarpMode Value="0"/>
-<IsWarped Value="false"/>
-</AudioClip>''';
+
+  final XmlElement track;
+  final XmlElement clip;
+  final XmlElement envelope;
+  final XmlElement lane;
+  final int trackId;
+
+  /// Shows envelope [envelope] of lane chooser entry [device] as the
+  /// track's lane, so it is visible when the set opens. A track with no
+  /// automation keeps the template's lane.
+  void _showLane(XmlElement track, int device, int envelope) {
+    _automationLanes(track).children
+      ..clear()
+      ..add(
+        (lane.copy()..setAttribute('Id', '0'))
+          ..getElement('SelectedDevice')!.setAttribute('Value', '$device')
+          ..getElement('SelectedEnvelope')!.setAttribute('Value', '$envelope'),
+      );
+  }
+
+  XmlElement build(
+    DawTrack source, {
+    required int trackId,
+    required int groupId,
+    required double tempoBpm,
+    required _PointeeIds ids,
+    required _DevicePrototypes devices,
+  }) {
+    final track = this.track.copy()..setAttribute('Id', '$trackId');
+    for (final element in track.descendantElements) {
+      if (_isPointee(element.name.local)) {
+        element.setAttribute('Id', '${ids.take()}');
+      }
+    }
+
+    final name = track.getElement('Name')!;
+    _setValue(name.getElement('EffectiveName')!, source.name);
+    _setValue(name.getElement('UserName')!, source.name);
+    _setValue(name.getElement('Annotation')!, source.info);
+
+    final deviceChain = track.getElement('DeviceChain')!;
+    if (groupId >= 0) {
+      // A member of a group plays into it, as Live routes one.
+      _setValue(track.getElement('TrackGroupId')!, '$groupId');
+      final output = deviceChain.getElement('AudioOutputRouting')!;
+      _setValue(output.getElement('Target')!, 'AudioOut/GroupTrack');
+      _setValue(output.getElement('UpperDisplayString')!, 'Group');
+      _setValue(output.getElement('LowerDisplayString')!, '');
+    }
+    final automated = <_DeviceEnvelope>[];
+    deviceChain
+        .getElement('DeviceChain')!
+        .getElement('Devices')!
+        .children
+        .addAll(devices.build(source.devices, automated));
+    final clips = source.arrangementClips;
+    _arrangerEvents(track).children.addAll([
+      for (var i = 0; i < clips.length; i++)
+        _clip(
+          id: i,
+          startBeats: secondsToBeats(clips[i].startSeconds, tempoBpm),
+          audio: clips[i].audio,
+          name: source.name,
+          tempoBpm: tempoBpm,
+          loop: false,
+        ),
+    ]);
+
+    final loop = source.loop;
+    if (loop != null) {
+      _clipSlotValues(track).first.children.add(
+        _clip(
+          id: 0,
+          startBeats: 0,
+          audio: loop,
+          name: source.name,
+          tempoBpm: tempoBpm,
+          loop: true,
+        ),
+      );
+    }
+
+    final mixer = deviceChain.getElement('Mixer')!;
+    _setValue(
+      mixer.getElement('Speaker')!.getElement('Manual')!,
+      '${source.active}',
+    );
+    final volume = source.volume;
+    if (volume != null) {
+      final parameter = mixer.getElement('Volume')!;
+      automated.insert(
+        0,
+        _DeviceEnvelope(
+          pointeeId: parameter
+              .getElement('AutomationTarget')!
+              .getAttribute('Id')!,
+          lane: volume,
+          range: _range(parameter),
+          chooser: (_laneMixerDevice(source.devices), _kLaneMixerVolume),
+        ),
+      );
+    }
+    // The volume lane, or the first device envelope's.
+    if (automated.firstOrNull?.chooser case (final device, final envelope)) {
+      _showLane(track, device, envelope);
+    }
+    // Every envelope of the track, its devices' and those of the devices
+    // in its racks included, sits on the track, numbered in its list.
+    _envelopes(track).children.addAll([
+      for (var i = 0; i < automated.length; i++)
+        if (automated[i].toggle)
+          _toggleEnvelope(automated[i], i)
+        else
+          _envelope(automated[i], i),
+    ]);
+    return track;
+  }
+
+  /// Envelope [id] of a track: [automation]'s lane on the parameter whose
+  /// automation target it names, opening with the value before the song
+  /// starts, as every envelope Live writes does. Values are clamped to the
+  /// parameter's range (the Volume's lowest is Live's silence).
+  XmlElement _envelope(_DeviceEnvelope automation, int id) {
+    final lane = automation.lane;
+    String value(double v) {
+      final (min, max) = automation.range;
+      return _number(v < min ? min : (v > max ? max : v));
+    }
+
+    // Live ramps between consecutive events, the one before the song
+    // included, so the value at arm is held to the song's start with an
+    // event at 0, as Live's own sets do.
+    final points = [
+      (_kBeforeSongTime, lane.initialValue),
+      if (lane.breakpoints.first.beat > 0) (0.0, lane.initialValue),
+      for (final b in lane.breakpoints) (b.beat, b.value),
+    ];
+    final envelope = this.envelope.copy()..setAttribute('Id', '$id');
+    _setValue(
+      envelope.getElement('EnvelopeTarget')!.getElement('PointeeId')!,
+      automation.pointeeId,
+    );
+    envelope.getElement('Automation')!.getElement('Events')!.children
+      ..clear()
+      ..addAll([
+        for (var i = 0; i < points.length; i++)
+          _element('FloatEvent', {
+            'Id': '$i',
+            'Time': _number(points[i].$1),
+            'Value': value(points[i].$2),
+          }),
+      ]);
+    return envelope;
+  }
+
+  /// Envelope [id] of a track: [automation]'s lane on a switch (a device's
+  /// On), as Live writes one: a `BoolEvent` before the song starts with the
+  /// value then, and one at each beat the switch changes at.
+  XmlElement _toggleEnvelope(_DeviceEnvelope automation, int id) {
+    final lane = automation.lane;
+    final events = [(_kBeforeSongTime, lane.initialValue != 0)];
+    for (final b in lane.breakpoints) {
+      if ((b.value != 0) != events.last.$2) events.add((b.beat, b.value != 0));
+    }
+    final envelope = this.envelope.copy()..setAttribute('Id', '$id');
+    _setValue(
+      envelope.getElement('EnvelopeTarget')!.getElement('PointeeId')!,
+      automation.pointeeId,
+    );
+    envelope.getElement('Automation')!.getElement('Events')!.children
+      ..clear()
+      ..addAll([
+        for (var i = 0; i < events.length; i++)
+          _element('BoolEvent', {
+            'Id': '$i',
+            'Time': _number(events[i].$1),
+            'Value': '${events[i].$2}',
+          }),
+      ]);
+    return envelope;
+  }
+
+  XmlElement _clip({
+    required int id,
+    required double startBeats,
+    required DawAudioFile audio,
+    required String name,
+    required double tempoBpm,
+    required bool loop,
+  }) {
+    if (_looksAbsolute(audio.fileRef)) {
+      throw ArgumentError.value(
+        audio.fileRef,
+        'fileRef',
+        'must be relative to the set, so the capture folder can move',
+      );
+    }
+    final seconds = audio.seconds;
+    final beats = secondsToBeats(seconds, tempoBpm);
+    // An unwarped clip's markers are in seconds of the file, a warped
+    // clip's in beats.
+    final end = loop ? beats : seconds;
+    final clip = this.clip.copy()
+      ..setAttribute('Id', '$id')
+      ..setAttribute('Time', _number(startBeats));
+    _setValue(clip.getElement('CurrentStart')!, _number(startBeats));
+    _setValue(clip.getElement('CurrentEnd')!, _number(startBeats + beats));
+    final markers = clip.getElement('Loop')!;
+    _setValue(markers.getElement('LoopStart')!, '0');
+    _setValue(markers.getElement('LoopEnd')!, _number(end));
+    _setValue(markers.getElement('StartRelative')!, '0');
+    _setValue(markers.getElement('LoopOn')!, '$loop');
+    _setValue(markers.getElement('OutMarker')!, _number(end));
+    _setValue(markers.getElement('HiddenLoopStart')!, '0');
+    _setValue(markers.getElement('HiddenLoopEnd')!, _number(end));
+    _setValue(clip.getElement('Name')!, name);
+    _setValue(clip.getElement('IsWarped')!, '$loop');
+    if (loop) _setValue(clip.getElement('WarpMode')!, '$_kWarpModeRePitch');
+
+    final sample = clip.getElement('SampleRef')!;
+    final fileRef = sample.getElement('FileRef')!;
+    _setValue(fileRef.getElement('RelativePathType')!, '1');
+    _setValue(fileRef.getElement('RelativePath')!, audio.fileRef);
+    _setValue(fileRef.getElement('Path')!, audio.fileRef);
+    _setValue(fileRef.getElement('Type')!, '2');
+    // Live writes these for a file it has read; they would describe the
+    // template's file, not this one, and Live fills them in on its next
+    // save.
+    for (final stale in ['LivePackName', 'LivePackId', 'OriginalFileSize']) {
+      fileRef.getElement(stale)?.remove();
+    }
+    fileRef.getElement('OriginalCrc')?.remove();
+    _setValue(sample.getElement('LastModDate')!, '0');
+    _setValue(sample.getElement('DefaultDuration')!, '${audio.frames}');
+    _setValue(sample.getElement('DefaultSampleRate')!, '${audio.sampleRate}');
+
+    final warpMarkers = clip.getElement('WarpMarkers')!;
+    warpMarkers.children
+      ..clear()
+      ..add(_warpMarker(0, 0, 0))
+      ..add(_warpMarker(1, seconds, beats));
+    return clip;
+  }
 }
 
-String _mainTrack(double tempoBpm, _IdAllocator allocator) {
-  final envelopeId = allocator.next();
-  return '''
-<MainTrack>
-<DeviceChain>
-<Mixer>
-<Tempo>
-<LomId Value="0"/>
-<Manual Value="$tempoBpm"/>
-<AutomationTarget Id="$_kTempoPointeeId">
-<LockEnvelope Value="0"/>
-</AutomationTarget>
-</Tempo>
-</Mixer>
-</DeviceChain>
-<AutomationEnvelopes>
-<Envelopes>
-<AutomationEnvelope Id="$envelopeId">
-<EnvelopeTarget>
-<PointeeId Value="$_kTempoPointeeId"/>
-</EnvelopeTarget>
-<Automation>
-<Events>
-<FloatEvent Time="-63072000" Value="$tempoBpm"/>
-</Events>
-</Automation>
-</AutomationEnvelope>
-</Envelopes>
-</AutomationEnvelopes>
-</MainTrack>''';
+/// The device prototypes Live saved (`live_device_template.dart`): a Segno
+/// plugin, and an Audio Effect Rack with its chain held apart.
+class _DevicePrototypes {
+  new(this.ids);
+
+  final _PointeeIds ids;
+
+  /// Parsed on the first device a set holds: most takes have none.
+  late final XmlElement plugin = XmlDocument.parse(livePluginDeviceTemplate)
+      .rootElement;
+  late final (XmlElement, XmlElement) _rackParts = () {
+    final rack = XmlDocument.parse(liveRackDeviceTemplate).rootElement;
+    final branch = rack.getElement('Branches')!.childElements.single..remove();
+    return (rack, branch);
+  }();
+
+  /// The rack, with no chains.
+  XmlElement get rack => _rackParts.$1;
+
+  /// One chain of it.
+  XmlElement get branch => _rackParts.$2;
+
+  /// [devices] as a device list's members, numbered in order. The envelopes
+  /// their automation needs go into [automated], for the track to hold.
+  ///
+  /// [chooser] counts the devices' entries in the track's lane chooser
+  /// ([_chooserEntries]), from the track's first.
+  List<XmlElement> build(
+    List<DawDevice> devices,
+    List<_DeviceEnvelope> automated, [
+    _Chooser? chooser,
+  ]) {
+    final entries = chooser ?? _Chooser();
+    return [
+      for (var i = 0; i < devices.length; i++)
+        switch (devices[i]) {
+          final DawPluginDevice d => _plugin(d, i, automated, entries),
+          final DawRackDevice r => _rack(r, i, automated, entries),
+        },
+    ];
+  }
+
+  /// A copy of [prototype] as member [id] of its list, with fresh pointee
+  /// ids.
+  XmlElement _copy(XmlElement prototype, int id) =>
+      _renumbered(prototype.copy()..setAttribute('Id', '$id'));
+
+  /// [element] with a fresh id on every pointee in it.
+  XmlElement _renumbered(XmlElement element) {
+    for (final e in [element, ...element.descendantElements]) {
+      if (_isPointee(e.name.local)) e.setAttribute('Id', '${ids.take()}');
+    }
+    return element;
+  }
+
+  XmlElement _plugin(
+    DawPluginDevice device,
+    int id,
+    List<_DeviceEnvelope> automated,
+    _Chooser chooser,
+  ) {
+    // The device stays on: the plugin's Enabled parameter is the entry's
+    // switch, so it ramps and drains as the engine's does (#1806 D4). Live's
+    // Device On stops the plugin instead, cutting its tail.
+    final element = _withParameters(
+      _copy(plugin, id),
+      device,
+      automated,
+      chooser.next++,
+    );
+    final info = element
+        .getElement('PluginDesc')!
+        .getElement('Vst3PluginInfo')!;
+    _setValue(info.getElement('Name')!, device.plugin.name);
+    final preset = info.getElement('Preset')!.getElement('Vst3Preset')!;
+    for (final uid in [info.getElement('Uid')!, preset.getElement('Uid')!]) {
+      final fields = device.plugin.liveUidFields;
+      for (var i = 0; i < 4; i++) {
+        _setValue(uid.getElement('Fields.$i')!, '${fields[i]}');
+      }
+    }
+    preset.getElement('ProcessorState')!.innerText = _hex(
+      device.state.encode(),
+    );
+    preset.getElement('ControllerState')!.innerText = '';
+    return element;
+  }
+
+  /// [element] with its parameter list as Live writes it for [device]'s
+  /// plugin when it loads one fresh: the kind's settings, then the channel
+  /// handling, each in the slot of its place, at the state's values; the
+  /// rest of the 128 slots unassigned. Live shows these parameters on the
+  /// device and offers them for automation; a stepped one's value is in
+  /// steps.
+  XmlElement _withParameters(
+    XmlElement element,
+    DawPluginDevice device,
+    List<_DeviceEnvelope> automated,
+    int chooserEntry,
+  ) {
+    final list = element.getElement('ParameterList')!;
+    final slots = list.childElements.toList();
+    // The template's plugin has its parameters in its first slots and the
+    // rest unassigned; one of each is the pattern for the others.
+    final assigned = slots.first;
+    final unassigned = slots.last;
+    final state = device.state;
+    final parameters = [
+      // Every setting the plugin has, at the state's value or, past what
+      // the state holds, at the default the plugin runs it at.
+      for (var p = 0; p < device.plugin.parameters.length; p++)
+        (
+          p,
+          device.plugin.parameters[p],
+          p < state.params.length
+              ? state.params[p]
+              : device.plugin.parameters[p].defaultValue,
+        ),
+      for (final MapEntry(key: pid, value: parameter)
+          in segnoChannelParameters.entries)
+        (
+          pid,
+          parameter,
+          switch (pid) {
+            1000 => state.input / 3,
+            1001 => state.output.toDouble(),
+            1002 => (state.placement + 1) / 2,
+            1003 => state.level / 4,
+            _ => state.enabled ? 1.0 : 0.0,
+          },
+        ),
+    ];
+    list.children.clear();
+    for (var i = 0; i < slots.length; i++) {
+      if (i >= parameters.length) {
+        list.children.add(
+          _renumbered(unassigned.copy()..setAttribute('Id', '$i')),
+        );
+        continue;
+      }
+      final (pid, parameter, normalized) = parameters[i];
+      final steps = parameter.list ? parameter.steps : 0;
+      final max = steps > 0 ? steps : 1;
+      // Live holds a list's value in steps, every other one normalized.
+      double value(double v) =>
+          steps > 0 ? (v.clamp(0.0, 1.0) * steps).roundToDouble() : v;
+      final slot = _renumbered(assigned.copy()..setAttribute('Id', '$i'));
+      _setValue(slot.getElement('ParameterName')!, parameter.name);
+      _setValue(slot.getElement('ParameterId')!, '$pid');
+      _setValue(slot.getElement('VisualIndex')!, '$i');
+      final held = slot.getElement('ParameterValue')!;
+      _setValue(held.getElement('Manual')!, _number(value(normalized)));
+      final lane = pid == kSegnoEnabledParameter
+          ? device.switching
+          : device.parameters[pid];
+      if (lane != null) {
+        automated.add(
+          _DeviceEnvelope(
+            pointeeId: held.getElement('AutomationTarget')!.getAttribute('Id')!,
+            lane: AutomationLane(
+              initialValue: value(lane.initialValue),
+              breakpoints: [
+                for (final b in lane.breakpoints)
+                  AutomationBreakpoint(beat: b.beat, value: value(b.value)),
+              ],
+            ),
+            range: (0, max.toDouble()),
+            // In the lane chooser, after the device's On.
+            chooser: (chooserEntry, 1 + i),
+          ),
+        );
+      }
+      final range = held.getElement('MidiControllerRange')!;
+      _setValue(range.getElement('Min')!, '0');
+      _setValue(range.getElement('Max')!, '$max');
+      final user = slot.getElement('LastUserRange')!;
+      _setValue(user.getElement('First')!, '0');
+      _setValue(user.getElement('Last')!, '$max');
+      list.children.add(slot);
+    }
+    return element;
+  }
+
+  XmlElement _rack(
+    DawRackDevice device,
+    int id,
+    List<_DeviceEnvelope> automated,
+    _Chooser chooser,
+  ) {
+    final entry = chooser.next++;
+    final element = _copy(rack, id);
+    final on = element.getElement('On')!;
+    _setValue(on.getElement('Manual')!, '${device.on}');
+    final switching = device.switching;
+    if (switching != null) {
+      automated.add(
+        _DeviceEnvelope(
+          pointeeId: on.getElement('AutomationTarget')!.getAttribute('Id')!,
+          lane: switching,
+          range: (0, 1),
+          toggle: true,
+          chooser: (entry, 0),
+        ),
+      );
+    }
+    _setValue(element.getElement('UserName')!, device.name);
+    final branches = element.getElement('Branches')!;
+    for (var i = 0; i < device.chains.length; i++) {
+      final chain = device.chains[i];
+      // One chain selected, as Live has it for a rack it made, so the rack
+      // opens showing that chain's devices rather than "2 of 2 Chains
+      // Selected".
+      final b = _copy(branch, i);
+      _setValue(b.getElement('IsSelected')!, '${i == 0}');
+      final name = b.getElement('Name')!;
+      _setValue(name.getElement('EffectiveName')!, chain.name);
+      _setValue(name.getElement('UserName')!, chain.name);
+      b
+          .getElement('DeviceChain')!
+          .getElement('AudioToAudioDeviceChain')!
+          .getElement('Devices')!
+          .children
+          .addAll(build(chain.devices, automated, chooser));
+      chooser.next++; // the chain's mixer
+      final volume = b.getElement('MixerDevice')!.getElement('Volume')!;
+      final (min, max) = _range(volume);
+      final v = chain.volume;
+      _setValue(
+        volume.getElement('Manual')!,
+        _number(v < min ? min : (v > max ? max : v)),
+      );
+      branches.children.add(b);
+    }
+    return element;
+  }
 }
 
-/// Converts a duration in seconds to Ableton's beat-time unit at [bpm].
-/// Exposed for the test suite's own independent beat-math assertions.
-double secondsToBeats(double seconds, double bpm) => seconds * (bpm / 60.0);
+/// Whether any of [devices], or a device in their racks, is automated.
+bool _automates(List<DawDevice> devices) => devices.any(
+  (d) => switch (d) {
+    DawPluginDevice(:final switching, :final parameters) =>
+      switching != null || parameters.isNotEmpty,
+    DawRackDevice(:final switching, :final chains) =>
+      switching != null || chains.any((c) => _automates(c.devices)),
+  },
+);
+
+/// An envelope a track holds: [lane] on the parameter whose automation
+/// target is [pointeeId], its values in that parameter's own units and
+/// [range]; a switch's ([toggle]) as Live writes a device's On.
+class _DeviceEnvelope {
+  const new({
+    required this.pointeeId,
+    required this.lane,
+    required this.range,
+    required this.chooser,
+    this.toggle = false,
+  });
+
+  final String pointeeId;
+  final AutomationLane lane;
+  final (double, double) range;
+
+  /// Where the lane chooser offers it: the entry and the envelope in it.
+  final (int, int) chooser;
+  final bool toggle;
+}
+
+/// The next entry of a track's Arrangement lane chooser: after "None" (0),
+/// each device in order, a rack before its chains' devices and each
+/// chain's mixer after them.
+class _Chooser {
+  int next = 1;
+}
+
+/// [bytes] as Live writes a plugin's state: uppercase hex, 80 digits a
+/// line.
+String _hex(List<int> bytes) {
+  final digits = [
+    for (final b in bytes) b.toRadixString(16).padLeft(2, '0').toUpperCase(),
+  ].join();
+  final lines = [
+    for (var i = 0; i < digits.length; i += 80)
+      digits.substring(i, i + 80 > digits.length ? digits.length : i + 80),
+  ];
+  return '\n${lines.join('\n')}\n';
+}
+
+XmlElement _warpMarker(int id, double seconds, double beats) => _element(
+  'WarpMarker',
+  {'Id': '$id', 'SecTime': _number(seconds), 'BeatTime': _number(beats)},
+);
+
+/// An element named [name] with [attributes] and no children.
+XmlElement _element(String name, Map<String, String> attributes) =>
+    XmlElement(XmlName.qualified(name), [
+      for (final MapEntry(:key, :value) in attributes.entries)
+        XmlAttribute(XmlName.qualified(key), value),
+    ]);
+
+/// The lowest and highest value [parameter] takes, from its
+/// `MidiControllerRange`.
+(double, double) _range(XmlElement parameter) {
+  final range = parameter.getElement('MidiControllerRange')!;
+  return (
+    double.parse(range.getElement('Min')!.getAttribute('Value')!),
+    double.parse(range.getElement('Max')!.getAttribute('Value')!),
+  );
+}
+
+void _setTempo(XmlElement liveSet, double tempoBpm) {
+  final mainTrack = liveSet.getElement('MainTrack')!;
+  final tempo = mainTrack
+      .getElement('DeviceChain')!
+      .getElement('Mixer')!
+      .getElement('Tempo')!;
+  _setValue(tempo.getElement('Manual')!, _number(tempoBpm));
+  final target = tempo.getElement('AutomationTarget')!.getAttribute('Id');
+  for (final envelope in _envelopes(mainTrack).childElements) {
+    final pointee = envelope
+        .getElement('EnvelopeTarget')!
+        .getElement('PointeeId')!
+        .getAttribute('Value');
+    if (pointee != target) continue;
+    for (final event
+        in envelope
+            .getElement('Automation')!
+            .getElement('Events')!
+            .childElements) {
+      event.setAttribute('Value', _number(tempoBpm));
+    }
+  }
+}
+
+/// The Arrangement width, in pixels, the opening zoom fits the capture
+/// into: narrower than Live's Arrangement with the browser open, so the
+/// whole capture shows either way.
+const double _kFitWidthPixels = 500;
+
+/// Zooms the Arrangement so the longest clip fits [_kFitWidthPixels]. Live
+/// keeps the zoom as beats per pixel.
+void _zoomToFit(XmlElement liveSet, DawProject project) {
+  var beats = 0.0;
+  for (final track in project.tracks) {
+    for (final clip in track.arrangementClips) {
+      final end = secondsToBeats(
+        clip.startSeconds + clip.audio.seconds,
+        project.tempoBpm,
+      );
+      if (end > beats) beats = end;
+    }
+  }
+  if (beats <= 0) return;
+  _setValue(
+    liveSet
+        .getElement('SequencerNavigator')!
+        .getElement('BeatTimeHelper')!
+        .getElement('CurrentZoom')!,
+    _number(beats / _kFitWidthPixels),
+  );
+}
+
+XmlElement _arrangerEvents(XmlElement track) => track
+    .getElement('DeviceChain')!
+    .getElement('MainSequencer')!
+    .getElement('Sample')!
+    .getElement('ArrangerAutomation')!
+    .getElement('Events')!;
+
+Iterable<XmlElement> _clipSlotValues(XmlElement track) => track
+    .getElement('DeviceChain')!
+    .getElement('MainSequencer')!
+    .getElement('ClipSlotList')!
+    .findElements('ClipSlot')
+    .map((slot) => slot.getElement('ClipSlot')!.getElement('Value')!);
+
+XmlElement _automationLanes(XmlElement track) => track
+    .getElement('DeviceChain')!
+    .getElement('AutomationLanes')!
+    .getElement('AutomationLanes')!;
+
+XmlElement _envelopes(XmlElement track) =>
+    track.getElement('AutomationEnvelopes')!.getElement('Envelopes')!;
+
+/// Whether an element with this name is a pointee: its `Id` is unique
+/// across the whole set, below `NextPointeeId`, rather than a position in
+/// its list.
+bool _isPointee(String name) =>
+    name == 'AutomationTarget' ||
+    name == 'Pointee' ||
+    name.endsWith('ModulationTarget') ||
+    name.startsWith('ControllerTargets.');
+
+int _intValue(XmlElement element) => int.parse(element.getAttribute('Value')!);
+
+void _setValue(XmlElement element, String value) =>
+    element.setAttribute('Value', value);
+
+/// [value] the way Live writes numbers: integers without a fraction.
+String _number(double value) =>
+    value == value.truncateToDouble() && value.abs() < 1e15
+    ? value.toInt().toString()
+    : value.toString();
 
 bool _looksAbsolute(String path) {
   if (path.startsWith('/') || path.startsWith(r'\')) return true;
   return RegExp(r'^[A-Za-z]:[\\/]').hasMatch(path);
 }
-
-String _xmlEscape(String s) => s
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&apos;');

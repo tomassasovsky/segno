@@ -20,7 +20,7 @@ part 'outputs_state.dart';
 /// which of them to show.
 class OutputsCubit extends Cubit<OutputsState> {
   /// Creates an [OutputsCubit] that follows [repository]'s open device.
-  OutputsCubit({
+  new({
     required SettingsRepository settings,
     required LooperRepository repository,
   }) : super(const OutputsState()) {

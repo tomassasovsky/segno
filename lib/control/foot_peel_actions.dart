@@ -5,7 +5,7 @@ import 'package:segno/control/model/foot_peel.dart';
 /// Control owns contacts; this component caches nothing.
 class FootPeelActions {
   /// Connects the shared repository without introducing a new lifetime.
-  const FootPeelActions({required this.repository});
+  const new({required this.repository});
 
   /// Owner of the tracks and their history.
   final LooperRepository repository;

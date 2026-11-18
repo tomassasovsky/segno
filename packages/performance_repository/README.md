@@ -36,8 +36,9 @@ final takes = await performance.listCaptures();
 
 - The capture directory is the final bundle from the moment of `arm`. The
   native drain thread writes ordered float WAV parts (`master-001.wav`,
-  `input-<n>-001.wav`, ...) and the `performance.json` sidecar straight into
-  it; finalize copies no audio.
+  `input-<n>-001.wav` for each input as heard, `input-raw-<n>-001.wav` for
+  it raw, ...) and the `performance.json` sidecar straight into it; finalize
+  copies no audio.
 - `arm` and both disarm calls are idempotent. `disarm` (the toggle gesture)
   ignores a second press inside `disarmGuardWindow`; programmatic callers,
   such as a session load, use `disarmAndFinalize`.

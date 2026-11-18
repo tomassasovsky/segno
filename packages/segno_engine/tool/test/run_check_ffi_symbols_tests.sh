@@ -46,8 +46,11 @@ make_nm() {
 # Every symbol the real bindings look up -- the "matched bundle" baseline.
 all_symbols() {
   perl -0777 -ne '
-    my @m = /_lookup<(?:(?!_lookup<).)*?>\(\s*'"'"'([A-Za-z_][A-Za-z0-9_]*)'"'"'/gs;
-    print "$_\n" for @m;
+    for my $b (split /(?=\@ffi\.Native<)/) {
+      next unless $b =~ /^\@ffi\.Native</;
+      if ($b =~ /^\@ffi\.Native<.*?>\(\s*[^)]*?symbol:\s*'"'"'([A-Za-z_][A-Za-z0-9_]*)'"'"'/s) { print "$1\n"; }
+      elsif ($b =~ /\bexternal\b[^;(]*?([A-Za-z_][A-Za-z0-9_]*)\s*[(;]/s) { print "$1\n"; }
+    }
   ' "$BINDINGS"
 }
 
@@ -99,11 +102,11 @@ fi
 
 # --- 5. Fail closed: extractor drift is fatal --------------------------------
 # If ffigen's emitted shape changes so the pattern stops matching some bindings,
-# the gate would quietly check a subset. Simulate by adding a _lookup< site the
-# pattern cannot resolve to a name.
+# the gate would quietly check a subset. Simulate by adding an @ffi.Native<
+# site the pattern cannot resolve to a name.
 drifted="$tmp/drifted.dart"
 cp "$BINDINGS" "$drifted"
-printf '\n// synthetic drift\nlate final x = _lookup<ffi.NativeFunction<ffi.Void Function()>>(someName);\n' >> "$drifted"
+printf '\n// synthetic drift\n@ffi.Native<ffi.Void Function()>()\n' >> "$drifted"
 out="$(NM="$nm_all" "$CHECK" "$FAKE_SO" "$drifted" 2>&1)"; rc=$?
 if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q 'extractor drift'; then
   pass "extractor drift fails closed"
@@ -111,24 +114,23 @@ else
   fail "extractor drift must be fatal; rc=$rc"
 fi
 
-# --- 6. Both ffigen call shapes are extracted --------------------------------
-# `dart format` wraps long generic lists, so the lookup tail appears both as
-# >('le_foo') and as >(\n  'le_foo',\n). Missing the second shape would skip
-# real bindings while still reporting a clean run.
+# --- 6. Both ffigen binding shapes are extracted -----------------------------
+# A plain external is named by its Dart name; one ffigen renamed carries the C
+# name in `symbol:`. Reading the Dart name there would check the wrong symbol.
 shapes="$tmp/shapes.dart"
 cat > "$shapes" <<'DART'
-late final _aPtr = _lookup<ffi.NativeFunction<ffi.Void Function()>>('le_inline');
-late final _bPtr =
-    _lookup<ffi.NativeFunction<ffi.Void Function()>>(
-      'le_wrapped',
-    );
+@ffi.Native<ffi.Void Function()>()
+external void le_inline();
+
+@ffi.Native<ffi.Void Function()>(symbol: 'le_renamed')
+external void le_renamed$1();
 DART
 nm_one="$(make_nm nm_one le_inline)"
 out="$(NM="$nm_one" "$CHECK" "$FAKE_SO" "$shapes" 2>&1)"; rc=$?
-if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q 'le_wrapped'; then
-  pass "wrapped (trailing-comma) lookup shape is checked too"
+if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q 'le_renamed$' ; then
+  pass "a renamed binding is checked by its symbol"
 else
-  fail "wrapped lookup shape must be extracted; rc=$rc"
+  fail "the symbol: name must be extracted; rc=$rc out=[$out]"
 fi
 
 # --- 7. A bindings file with no lookups says so ------------------------------
@@ -138,7 +140,7 @@ fi
 nolookups="$tmp/nolookups.dart"
 echo "class Foo {}" > "$nolookups"
 out="$(NM="$nm_all" "$CHECK" "$FAKE_SO" "$nolookups" 2>&1)"; rc=$?
-if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q 'no _lookup< sites'; then
+if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q 'no @ffi.Native< sites'; then
   pass "bindings file with no lookups explains itself"
 else
   fail "zero-lookup bindings must fail *with* a diagnostic; rc=$rc out=[$out]"

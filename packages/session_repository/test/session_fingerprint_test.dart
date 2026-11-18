@@ -15,10 +15,7 @@ void main() {
     setUp(() {
       engine = FakeSessionEngine()
         ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]));
-      repository = SessionRepository(
-        engine: engine,
-        guards: GuardRegistry(),
-      );
+      repository = SessionRepository(engine: engine, guards: GuardRegistry());
     });
 
     String fingerprint({

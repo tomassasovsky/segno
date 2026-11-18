@@ -1,15 +1,15 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/l10n/l10n.dart';
-import 'package:segno/library/application/removable_volumes.dart';
 import 'package:segno/library/cubit/library_audio_cubit.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
+import 'package:storage_repository/storage_repository.dart';
 
 /// One button of a [LibraryAudioDialog].
 class LibraryDialogAction {
   /// Creates an action labelled [label] that closes the dialog with [value].
-  const LibraryDialogAction({
+  const new({
     required this.key,
     required this.role,
     required this.label,
@@ -53,11 +53,7 @@ enum LibraryDialogRole {
   /// A chooser row, the panel's full inner width.
   choice(width: 878, tone: LoopButtonTone.outlined);
 
-  const LibraryDialogRole({
-    required this.width,
-    required this.tone,
-    this.destructive = false,
-  });
+  new({required this.width, required this.tone, this.destructive = false});
 
   /// The button's width.
   final double width;
@@ -78,7 +74,7 @@ enum LibraryDialogPanel {
   /// Pen 34 `Matching backup name` and `Retry an interrupted copy`.
   backup(width: 900);
 
-  const LibraryDialogPanel({required this.width});
+  new({required this.width});
 
   /// The panel's width.
   final double width;
@@ -89,7 +85,7 @@ enum LibraryDialogPanel {
 /// under the title (the package chooser).
 class LibraryAudioDialog extends StatelessWidget {
   /// Creates a dialog.
-  const LibraryAudioDialog({
+  const new({
     required this.title,
     required this.actions,
     this.body,
@@ -116,14 +112,6 @@ class LibraryAudioDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
-    Widget button(LibraryDialogAction a) => LoopOutlinedButton(
-      key: a.key,
-      width: a.role.width,
-      label: a.label,
-      tone: a.role.tone,
-      borderColor: a.role.destructive ? surface.rec : null,
-      onTap: () => Navigator.of(context).pop(a.value),
-    );
     return Center(
       child: Material(
         color: Colors.transparent,
@@ -162,7 +150,7 @@ class LibraryAudioDialog extends StatelessWidget {
                 ],
                 for (final c in choices) ...[
                   const SizedBox(height: 16),
-                  button(c),
+                  _DialogButton(action: c),
                 ],
                 const SizedBox(height: 24),
                 Row(
@@ -170,7 +158,7 @@ class LibraryAudioDialog extends StatelessWidget {
                   children: [
                     for (final (i, a) in actions.indexed) ...[
                       if (i > 0) const SizedBox(width: 16),
-                      button(a),
+                      _DialogButton(action: a),
                     ],
                   ],
                 ),
@@ -181,6 +169,24 @@ class LibraryAudioDialog extends StatelessWidget {
       ),
     );
   }
+}
+
+/// One of [LibraryAudioDialog]'s answers, which closes the dialog with its
+/// value.
+class _DialogButton extends StatelessWidget {
+  const new({required this.action});
+
+  final LibraryDialogAction action;
+
+  @override
+  Widget build(BuildContext context) => LoopOutlinedButton(
+    key: action.key,
+    width: action.role.width,
+    label: action.label,
+    tone: action.role.tone,
+    borderColor: action.role.destructive ? context.surface.rec : null,
+    onTap: () => Navigator.of(context).pop(action.value),
+  );
 }
 
 /// Asks what a recording's `Export to USB` writes: the recording alone, or

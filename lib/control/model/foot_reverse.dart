@@ -27,7 +27,7 @@ enum FootReverseAction {
 /// the mode has no holds.
 class FootReversePedal {
   /// Creates one static role in the accepted ten-pedal layout.
-  const FootReversePedal(this.press, {this.slot});
+  const new(this.press, {this.slot});
 
   /// The action at contact.
   final FootReverseAction press;
@@ -39,7 +39,7 @@ class FootReversePedal {
 /// One track's published direction.
 class FootReverseTrack extends Equatable {
   /// Creates a read of current repository facts.
-  const FootReverseTrack({
+  const new({
     required this.channel,
     required this.recorded,
     required this.busy,
@@ -67,7 +67,7 @@ class FootReverseTrack extends Equatable {
 /// Shared semantic read model for captions, touch and physical feedback.
 class FootReverseProjection extends Equatable {
   /// Creates a complete projection.
-  const FootReverseProjection({required this.bank, required this.tracks});
+  const new({required this.bank, required this.tracks});
 
   /// Shared rig bank (0 = tracks 1–4, 1 = tracks 5–8).
   final int bank;

@@ -5,31 +5,30 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:bloc_test/bloc_test.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
-import 'package:segno/library/application/removable_volumes.dart';
 import 'package:segno/library/view/library_page.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/session/session.dart';
 import 'package:session_repository/session_repository.dart';
+import 'package:storage_repository/storage_repository.dart';
 
 import '../helpers/helpers.dart';
 import '../library/helpers/fake_drive.dart';
 
-class _MockSessionCubit extends MockCubit<SessionState>
-    implements SessionCubit {}
+class _MockSessionCubit extends MockCubit<SessionState> implements SessionCubit;
 
-class _MockSessionRepository extends Mock implements SessionRepository {}
+class _MockSessionRepository extends Mock implements SessionRepository;
 
-class _MockPedalRepository extends Mock implements PedalRepository {}
+class _MockPedalRepository extends Mock implements PedalRepository;
 
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+    implements LooperBloc;
 
 const _id = 's-cur';
 
@@ -92,9 +91,8 @@ void main() {
       ),
     );
     when(() => sessions.bundlePathOf(_id)).thenAnswer((_) async => bundle);
-    when(
-      () => sessions.bundleFiles(_id),
-    ).thenAnswer((_) async => ['track0_lane0_L0.wav', 'session.json']);
+    when(() => sessions.bundleFiles(_id))
+        .thenAnswer((_) async => ['track0_lane0_L0.wav', 'session.json']);
     when(() => sessions.listBackups(any())).thenReturn([
       _current,
       const SessionSummary(id: 's-other', name: 'Acoustic set'),
@@ -129,7 +127,7 @@ void main() {
           RepositoryProvider<SessionRepository>.value(value: sessions),
           RepositoryProvider<PedalRepository>.value(value: pedal),
           RepositoryProvider<GuardRegistry>.value(value: GuardRegistry()),
-          RepositoryProvider<RemovableVolumes>.value(value: drive),
+          RepositoryProvider<StorageRepository>.value(value: drive),
         ],
         child: MultiBlocProvider(
           providers: [

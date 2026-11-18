@@ -2,13 +2,13 @@
 ///
 /// A zoom/pan `GraphCanvas`, bezier wires (`GraphEdge` + `GraphEdgePainter`),
 /// hardware-port `ChannelChip`s, and the geometry helpers
-/// (`cardColumnXs`, `chainEdges`, `fanEdges`, `positionedNode`) that lay them
-/// out. Neutral structural colours come from `RoutingGraphTheme` (read via
+/// (`cardColumnXs`, `chainEdges`, `fanEdges`) that lay them out. Neutral
+/// structural colours come from `RoutingGraphTheme` (read via
 /// `context.routingGraph`); caller-specific semantic colours stay constructor
 /// parameters.
 library;
 
-export 'package:flutter/material.dart';
+export 'package:material_ui/material_ui.dart';
 
 export 'src/theme/routing_graph_theme.dart';
 export 'src/widgets/channel_chip.dart';

@@ -35,10 +35,7 @@ const int kTrackEffectParams = 32;
 /// that sound the same compare equal however their lists were built, and a
 /// list saved by a narrower build (or trimmed by [BuiltInEffect.toJson])
 /// decodes to the same entry.
-List<double> canonicalEffectParams(
-  TrackEffectType type,
-  List<double>? params,
-) {
+List<double> canonicalEffectParams(TrackEffectType type, List<double>? params) {
   assert(
     params == null || params.length <= kTrackEffectParams,
     'an entry holds at most $kTrackEffectParams parameter cells',
@@ -118,7 +115,7 @@ enum FxChannelOutput {
 @immutable
 final class FxChannels {
   /// Creates an [FxChannels].
-  const FxChannels({
+  const new({
     this.input = FxChannelInput.stereo,
     this.output = FxChannelOutput.stereo,
     this.placement = 0,
@@ -127,7 +124,7 @@ final class FxChannels {
 
   /// Rebuilds an [FxChannels] from its [toJson] map. Omitted fields use their
   /// defaults; invalid explicit fields reject the saved chain.
-  factory FxChannels.fromJson(Map<String, dynamic> json) {
+  factory fromJson(Map<String, dynamic> json) {
     final placement = json['placement'];
     final level = json['level'];
     if ((json.containsKey('input') && json['input'] == null) ||
@@ -224,7 +221,12 @@ final class FxChannels {
 @immutable
 final class FxRack {
   /// Creates an [FxRack].
-  const FxRack({required this.id, required this.name, this.art});
+  const new({
+    required this.id,
+    required this.name,
+    this.art,
+    this.bypassed = false,
+  });
 
   /// Rebuilds an [FxRack] from [toJson] output, or `null` when the map does
   /// not carry the two fields that make a rack addressable.
@@ -234,7 +236,12 @@ final class FxRack {
     final name = json['name'];
     if (id is! String || id.isEmpty || name is! String) return null;
     final art = json['art'];
-    return FxRack(id: id, name: name, art: art is String ? art : null);
+    return FxRack(
+      id: id,
+      name: name,
+      art: art is String ? art : null,
+      bypassed: json['bypassed'] == true,
+    );
   }
 
   /// The rack's identity, shared by every module in it and unique within its
@@ -253,15 +260,30 @@ final class FxRack {
   /// draws nothing.
   final String? art;
 
+  /// Whether the rack is switched off as a whole (#1711).
+  ///
+  /// A bypassed rack passes its input through untouched, and each of its
+  /// modules keeps its own `enabled` bit, so switching the rack back on
+  /// restores every pedal as it was. The engine never sees this flag: the
+  /// repository hands it each module's effective state, its own bit with the
+  /// rack's switch applied.
+  final bool bypassed;
+
   /// Returns a copy with the given fields replaced.
-  FxRack copyWith({String? id, String? name, String? art}) =>
-      FxRack(id: id ?? this.id, name: name ?? this.name, art: art ?? this.art);
+  FxRack copyWith({String? id, String? name, String? art, bool? bypassed}) =>
+      FxRack(
+        id: id ?? this.id,
+        name: name ?? this.name,
+        art: art ?? this.art,
+        bypassed: bypassed ?? this.bypassed,
+      );
 
   /// A JSON-friendly map for persistence.
   Map<String, dynamic> toJson() => {
     'id': id,
     'name': name,
     if (art != null) 'art': art,
+    if (bypassed) 'bypassed': true,
   };
 
   @override
@@ -269,10 +291,11 @@ final class FxRack {
       other is FxRack &&
       other.id == id &&
       other.name == name &&
-      other.art == art;
+      other.art == art &&
+      other.bypassed == bypassed;
 
   @override
-  int get hashCode => Object.hash(id, name, art);
+  int get hashCode => Object.hash(id, name, art, bypassed);
 }
 
 /// Which of the Dub Rack's two parallel paths a rack entry runs on (#1430),
@@ -292,7 +315,7 @@ enum FxRackPath {
   /// The Amb path (the Amb-Verb).
   amb(8);
 
-  const FxRackPath(this.bits);
+  new(this.bits);
 
   /// The native bits.
   final int bits;
@@ -416,9 +439,10 @@ enum TrackEffectType {
   /// Rack's OvDrive.
   overdrive(16, 'Overdrive'),
 
-  /// The Looper X's amp simulator at its defaults, which the Studio Rack
-  /// labels Dist (#887 part 7): an asymmetric curve, then the 4x12"
-  /// cabinet; fit to the Phase 0 amp captures.
+  /// An amp simulator (#887 part 7): an asymmetric curve, then the 4x12"
+  /// cabinet; fit to the Phase 0 amp captures. No factory rack builds it
+  /// since #1737 and #1743 (the Lo-Fi Distort is the Overdrive, the Studio
+  /// Dist the Amp); chains saved with it keep it.
   distortion(17, 'Distortion'),
 
   /// The Looper X's vinyl (#887 part 7): a high-pass, a roll-off, soft
@@ -486,7 +510,7 @@ enum TrackEffectType {
   /// retuned to the nearest note of a scale, gliding there at its speed.
   smartTune(32, 'Smart Tune');
 
-  const TrackEffectType(this.code, this.label);
+  new(this.code, this.label);
 
   /// The native `le_fx_type` integer.
   final int code;
@@ -844,7 +868,10 @@ enum TrackEffectType {
     ],
     // The corner the high-pass applies, half the Looper X's display, and off
     // at its lowest, which the Looper X shows as 1 Hz (#891). The Vocal
-    // Rack's defaults: the high-pass off, the gate at -120 dB.
+    // Rack's defaults: the high-pass off, the gate at -120 dB. The release
+    // and detector are segno's (#1644), each at its lowest the Looper X's
+    // measured gate: a 3.2 ms close, keyed on each sample's peak (the
+    // detector off).
     TrackEffectType.hpGate => const [
       FxParamInfo(
         key: 'highpass',
@@ -861,6 +888,23 @@ enum TrackEffectType {
         atMin: -120,
         atMax: 0,
         defaultValue: 0,
+      ),
+      FxParamInfo(
+        key: 'gate_release',
+        unit: FxParamUnit.ms,
+        atMin: 3.2,
+        atMax: 2000,
+        curve: FxParamCurve.exponential,
+        defaultValue: 0,
+      ),
+      FxParamInfo(
+        key: 'gate_detector',
+        unit: FxParamUnit.ms,
+        atMin: 0.5,
+        atMax: 100,
+        curve: FxParamCurve.exponential,
+        defaultValue: 0,
+        off: FxParamOff.atMin,
       ),
     ],
     // Shown as the Looper X shows them; what each percent does is measured
@@ -951,7 +995,9 @@ enum TrackEffectType {
       ),
     ],
     // Fit to the Guitar Rack's OvDrive (#891, #1663): the drive's and the
-    // tone's laws are measured. Ed's Rack's defaults.
+    // tone's laws are measured. The level is a gain after it, 0 dB at
+    // setting 0; the Lo-Fi Rack's Distort is this at +4.08 dB (#1737). Ed's
+    // Rack's defaults.
     TrackEffectType.overdrive => const [
       FxParamInfo(
         key: 'drive',
@@ -967,10 +1013,17 @@ enum TrackEffectType {
         atMax: 100,
         defaultValue: 0.5,
       ),
+      FxParamInfo(
+        key: 'level',
+        unit: FxParamUnit.db,
+        atMin: 0,
+        atMax: 12,
+        defaultValue: 0,
+      ),
     ],
-    // Fit to the amp captures (#891), the Studio Rack's Dist; the Lo-Fi
-    // Rack's is taken to be the same module, so both carry the flag. The
-    // Lo-Fi Rack's defaults.
+    // Drive and tone 0 to 100 %; the drive's law is fit to the amp captures
+    // and was checked against the Studio Rack's Dist (#1731), the tone is a
+    // 2 kHz shelf. Drive 20 % by default.
     TrackEffectType.distortion => const [
       FxParamInfo(
         key: 'drive',
@@ -978,7 +1031,6 @@ enum TrackEffectType {
         atMin: 0,
         atMax: 100,
         defaultValue: 0.2,
-        taperUnverified: true,
       ),
       FxParamInfo(
         key: 'tone',
@@ -986,7 +1038,6 @@ enum TrackEffectType {
         atMin: 0,
         atMax: 100,
         defaultValue: 0.5,
-        taperUnverified: true,
       ),
     ],
     // The Looper X's ranges and tapers, fit to its captures (#1445). The
@@ -1323,8 +1374,8 @@ enum TrackEffectType {
       ),
     ],
     // Ed's Rack's Dual Octaver (#891): high mode (off, on), Octave 1's
-    // level (its taper unmeasured), the mix, Octave 2's level (linear,
-    // measured at 50 and 100 %).
+    // level (linear, measured at 11 to 100 %, #1731), the mix, Octave 2's
+    // level (linear, measured at 50 and 100 %).
     TrackEffectType.dualOctaver => const [
       FxParamInfo(
         key: 'oct_high_mode',
@@ -1340,7 +1391,6 @@ enum TrackEffectType {
         atMin: 0,
         atMax: 100,
         defaultValue: 1,
-        taperUnverified: true,
       ),
       FxParamInfo(
         key: 'mix',
@@ -1538,7 +1588,7 @@ enum FxParamUnit {
   /// Seconds (`LE_FX_UNIT_SECONDS`).
   seconds(9);
 
-  const FxParamUnit(this.code);
+  new(this.code);
 
   /// The native `le_fx_param_unit` value.
   final int code;
@@ -1561,7 +1611,7 @@ enum FxParamCurve {
   /// reverb time display (`LE_FX_CURVE_REVERB_TIME`).
   reverbTime(3);
 
-  const FxParamCurve(this.code);
+  new(this.code);
 
   /// The native `le_fx_param_curve` value.
   final int code;
@@ -1591,7 +1641,7 @@ enum FxParamOff {
 @immutable
 class FxParamInfo {
   /// Creates an [FxParamInfo].
-  const FxParamInfo({
+  const new({
     required this.key,
     required this.unit,
     required this.atMin,
@@ -1599,7 +1649,6 @@ class FxParamInfo {
     required this.defaultValue,
     this.steps = 0,
     this.curve = FxParamCurve.linear,
-    this.taperUnverified = false,
     this.off = FxParamOff.none,
   });
 
@@ -1627,10 +1676,6 @@ class FxParamInfo {
 
   /// The setting a freshly engaged effect starts at.
   final double defaultValue;
-
-  /// Whether the mapping was chosen rather than measured against the effect
-  /// it reproduces (the native `LE_FX_PARAM_TAPER_UNVERIFIED` flag).
-  final bool taperUnverified;
 
   /// Where the parameter turns its effect off (the native
   /// `LE_FX_PARAM_OFF_AT_*` flags).
@@ -1696,27 +1741,16 @@ class FxParamInfo {
       other.atMax == atMax &&
       other.curve == curve &&
       other.defaultValue == defaultValue &&
-      other.taperUnverified == taperUnverified &&
       other.off == off;
 
   @override
-  int get hashCode => Object.hash(
-    key,
-    unit,
-    steps,
-    atMin,
-    atMax,
-    curve,
-    defaultValue,
-    taperUnverified,
-    off,
-  );
+  int get hashCode =>
+      Object.hash(key, unit, steps, atMin, atMax, curve, defaultValue, off);
 
   @override
   String toString() =>
       'FxParamInfo($key, ${unit.name}, steps: $steps, '
-      '$atMin..$atMax ${curve.name}, default: $defaultValue'
-      '${taperUnverified ? ', taper unverified' : ''})';
+      '$atMin..$atMax ${curve.name}, default: $defaultValue)';
 }
 
 /// The identity of a hosted plugin in a chain entry: its [format], stable [id]
@@ -1727,14 +1761,10 @@ class FxParamInfo {
 @immutable
 final class PluginRef {
   /// Creates a [PluginRef].
-  const PluginRef({
-    required this.format,
-    required this.id,
-    this.version = 0,
-  });
+  const new({required this.format, required this.id, this.version = 0});
 
   /// Rebuilds a [PluginRef] from its [toJson] map.
-  factory PluginRef.fromJson(Map<String, dynamic> json) => PluginRef(
+  factory fromJson(Map<String, dynamic> json) => PluginRef(
     format: PluginFormat.fromCode((json['format'] as num?)?.toInt() ?? 0),
     id: (json['id'] as String?) ?? '',
     version: (json['version'] as num?)?.toInt() ?? 0,
@@ -1777,14 +1807,14 @@ final class PluginRef {
 /// [FxPlacement.post] one.
 sealed class TrackEffect {
   /// Const base constructor for the sealed subtypes.
-  const TrackEffect();
+  const new();
 
   /// Rebuilds a [TrackEffect] from a persisted entry, dual-decoding by shape: a
   /// `LE_FX_PLUGIN` ([kPluginFxCode]) entry carrying a `plugin` key is a
   /// [PluginEffect]; everything else is a [BuiltInEffect]. There is no envelope
   /// — a pre-plugin chain (an array of bare `{type, params}` entries) decodes
   /// unchanged. A plugin entry is NEVER silently dropped to `none`.
-  factory TrackEffect.fromJson(Map<String, dynamic> json) {
+  factory fromJson(Map<String, dynamic> json) {
     final code = (json['type'] as num?)?.toInt() ?? 0;
     if (code == kPluginFxCode && json['plugin'] is Map<String, dynamic>) {
       return PluginEffect.fromJson(json);
@@ -1824,7 +1854,7 @@ sealed class TrackEffect {
 final class BuiltInEffect extends TrackEffect {
   /// Creates a [BuiltInEffect]. [params] defaults to the [type]'s musical
   /// defaults.
-  BuiltInEffect({
+  new({
     required this.type,
     List<double>? params,
     this.enabled = true,
@@ -1850,7 +1880,7 @@ final class BuiltInEffect extends TrackEffect {
   /// missing `enabled` decodes `true` (every pre-FX-v3 entry was audible —
   /// R15's "migration defaults every level to enabled"); a missing `slotId`
   /// stays null for the repository write boundary to mint (A9).
-  factory BuiltInEffect.fromJson(Map<String, dynamic> json) {
+  factory fromJson(Map<String, dynamic> json) {
     final type = TrackEffectType.fromCode((json['type'] as num?)?.toInt() ?? 0);
     // `is`-checks, not casts: a wrong-typed field in a corrupt persisted
     // chain must decode to the default, never throw a TypeError past
@@ -2055,7 +2085,7 @@ final class BuiltInEffect extends TrackEffect {
 final class PluginEffect extends TrackEffect {
   /// Creates a [PluginEffect] for [ref], optionally seeded with persisted
   /// [paramValues] / [state] and live [params] metadata.
-  const PluginEffect({
+  const new({
     required this.ref,
     this.paramValues = const {},
     this.params = const [],
@@ -2074,7 +2104,7 @@ final class PluginEffect extends TrackEffect {
   /// `{type, plugin}` entry stays readable). A missing `enabled` decodes
   /// `true` (R15); a missing `slotId` stays null for the repository write
   /// boundary to mint (A9).
-  factory PluginEffect.fromJson(Map<String, dynamic> json) {
+  factory fromJson(Map<String, dynamic> json) {
     final raw = json['paramValues'];
     final values = <int, double>{};
     if (raw is Map) {
@@ -2160,9 +2190,7 @@ final class PluginEffect extends TrackEffect {
     'type': kPluginFxCode,
     'plugin': ref.toJson(),
     if (paramValues.isNotEmpty)
-      'paramValues': {
-        for (final e in paramValues.entries) '${e.key}': e.value,
-      },
+      'paramValues': {for (final e in paramValues.entries) '${e.key}': e.value},
     if (state.isNotEmpty) 'state': state,
     if (name.isNotEmpty) 'name': name,
     // Omitted when default so a pre-FX-v3 chain's encoding is byte-unchanged.

@@ -14,14 +14,11 @@ part 'recording_destination_state.dart';
 /// Internal, so a take never arms onto a drive that is no longer there; a
 /// take already recording on it is ended by the recorder's lease, not here.
 class RecordingDestinationCubit extends Cubit<RecordingDestinationState> {
-  /// Creates a [RecordingDestinationCubit]. [sampleRate] reads the applied
+  /// Creates a [RecordingDestinationCubit]. [_sampleRate] reads the applied
   /// engine rate the remaining-time estimate is made at.
-  RecordingDestinationCubit({
-    required StorageRepository repository,
-    required int Function() sampleRate,
-  }) : _repository = repository,
-       _sampleRate = sampleRate,
-       super(RecordingDestinationState(volumes: repository.current)) {
+  new({required StorageRepository repository, required this._sampleRate})
+    : _repository = repository,
+      super(RecordingDestinationState(volumes: repository.current)) {
     _volumes = repository.volumes.listen(_onVolumes);
     unawaited(refresh());
   }
@@ -144,6 +141,6 @@ class RecordingDestinationCubit extends Cubit<RecordingDestinationState> {
   @override
   Future<void> close() async {
     await _volumes.cancel();
-    return super.close();
+    return await super.close();
   }
 }

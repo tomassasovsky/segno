@@ -55,6 +55,14 @@ le_perf_drain* le_perf_drain_start(le_engine* engine,
                                    const le_perf_target* target,
                                    int32_t ring_seconds);
 
+/* The longest take, in frames, at `rate` (#1767): `max_seconds` long (0: no
+ * limit, UINT64_MAX), and never past what the take's longest rendered file,
+ * its master stem `master_channels` wide, can hold in one file
+ * (le_wav_max_frames: FAT32's largest file, #1794). A stereo master stops
+ * there at 3 h 6 min at 48 kHz and at 93 min at 96 kHz. */
+uint64_t le_perf_longest_take_frames(int32_t max_seconds, uint64_t rate,
+                                     int32_t master_channels);
+
 /* Signals the drain thread to run one final drain-and-flush pass — which
  * also seals every open part — and stop, then joins it and frees `drain`. `reason` is recorded in the final sidecar
  * flush's `stopped_early` field UNLESS the thread already self-stopped for

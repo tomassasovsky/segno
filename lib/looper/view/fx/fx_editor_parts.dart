@@ -1,6 +1,8 @@
-import 'package:flutter/material.dart';
+import 'dart:math' as math;
+
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/model/fx_destination.dart';
@@ -19,42 +21,22 @@ typedef FxEdits = ({
   void Function(String groupId, FxPlacement placement) setPlacement,
 });
 
-/// What a built-in parameter's row reads: the value text beside its name and
-/// the note under its slider.
-///
-/// An entry built from a factory rack module onto one of the seven built-ins
-/// (`effect.module != null`) keeps the raw two-decimal setting and the "Scale
-/// unverified" note: its preset values were written against the Looper X's
-/// own scales, which the built-in does not share, so printing them in its
-/// units would state numbers nobody verified. A Looper X kind
-/// ([TrackEffectType.isRackKind]) or a rack variant ([fxEntryBuild], the
-/// Pitch Shift on the octaver) carries the module's own scales, and like a
-/// plain built-in reads in its descriptor's units with no note, unless the
-/// descriptor itself is marked [FxParamInfo.taperUnverified], in which case
-/// it reads like a module's.
-({String valueText, String? note}) fxParamReading(
-  AppLocalizations l10n,
-  TrackEffect effect,
-  FxParamInfo param,
-  double setting,
-) {
-  final rackKind =
-      effect is BuiltInEffect &&
-      (effect.type.isRackKind || fxEntryBuild(effect) != null);
-  if ((effect.module != null && !rackKind) || param.taperUnverified) {
-    return (
-      valueText: setting.toStringAsFixed(2),
-      note: l10n.fxScaleUnverified,
-    );
-  }
-  return (valueText: l10n.fxParamValueText(param, setting), note: null);
-}
+/// Whether [param] is a choice: a few named positions ([FxParamUnit.choice],
+/// stepped), which its control offers by name rather than as a slider.
+bool fxParamIsChoice(FxParamInfo param) =>
+    param.unit == FxParamUnit.choice && param.isStepped;
 
-/// Built-in parameter [index] of [effect] as an [FxParamControl]: its
-/// localized name, and the value text and note [fxParamReading] gives it.
+/// Built-in parameter [index] of [effect] as a control: its localized name,
+/// and, for a continuous parameter, an [FxParamControl] with its value in its
+/// descriptor's units; for a choice ([fxParamIsChoice]), its named positions
+/// to pick from (#1730).
+///
+/// A choice writes the setting of the position picked, which is where the
+/// engine reads every setting of that position, so the parameter does what
+/// it did under the slider.
 class FxBuiltInParamControl extends StatelessWidget {
   /// Creates an [FxBuiltInParamControl].
-  const FxBuiltInParamControl({
+  const new({
     required this.effect,
     required this.index,
     required this.width,
@@ -86,29 +68,43 @@ class FxBuiltInParamControl extends StatelessWidget {
     // control works in that range and reports the kind's setting.
     final param = fxEntryParam(effect, index);
     final setting = fxEntryShownSetting(effect, index);
-    final reading = fxParamReading(l10n, effect, param, setting);
+    final label = l10n.fxParamKeyName(labelKey ?? param.key);
+    if (fxParamIsChoice(param)) {
+      final last = param.steps - 1;
+      return SizedBox(
+        width: width,
+        child: _ChoiceParamControl(
+          label: label,
+          paramKey: param.key,
+          choices: [
+            for (var k = 0; k <= last; k++)
+              l10n.fxParamValueText(param, k / last),
+          ],
+          selected: param.positionOf(setting),
+          onSelected: (k) =>
+              onChanged(fxEntryKindSetting(effect, index, k / last)),
+        ),
+      );
+    }
     return FxParamControl(
-      label: l10n.fxParamKeyName(labelKey ?? param.key),
+      label: label,
       value: setting,
-      valueText: reading.valueText,
+      valueText: l10n.fxParamValueText(param, setting),
       width: width,
-      note: reading.note,
       onChanged: (v) => onChanged(fxEntryKindSetting(effect, index, v)),
     );
   }
 }
 
-/// One parameter: its name, its value text, the slider, and an optional note
-/// under it.
+/// One parameter: its name, its value text and the slider.
 class FxParamControl extends StatelessWidget {
   /// Creates an [FxParamControl].
-  const FxParamControl({
+  const new({
     required this.label,
     required this.value,
     required this.valueText,
     required this.width,
     required this.onChanged,
-    this.note,
     super.key,
   });
 
@@ -126,14 +122,6 @@ class FxParamControl extends StatelessWidget {
 
   /// Reports a new value.
   final ValueChanged<double> onChanged;
-
-  /// The line under the slider, or `null` for a control that needs none.
-  ///
-  /// A preset parameter carries the accepted "Scale unverified" note when its
-  /// real-world mapping was never recovered (see [fxParamReading]). The rack's
-  /// own level is not one of those: it is a plain gain this build defines, so
-  /// a note saying its scale is unknown would be false.
-  final String? note;
 
   @override
   Widget build(BuildContext context) {
@@ -175,18 +163,123 @@ class FxParamControl extends StatelessWidget {
             semanticLabel: label,
             onChanged: onChanged,
           ),
-          if (note case final note?) ...[
-            const SizedBox(height: 14),
-            AppText(
-              note,
-              style: TextStyle(
-                color: surface.textTertiary,
-                fontSize: 16,
-                height: 1,
+        ],
+      ),
+    );
+  }
+}
+
+/// A choice parameter: its name over its named positions, across the width
+/// its parent gives it.
+///
+/// A row of [LoopChoiceButton]s, the way Loop settings shows its choices,
+/// while every name fits its button at full size; a [LoopSelect], as the
+/// footer's input choice is, when one would have to shrink to fit, as the
+/// Guitar Rack Mod's three modes would in a rack pedal's column.
+class _ChoiceParamControl extends StatelessWidget {
+  const new({
+    required this.label,
+    required this.paramKey,
+    required this.choices,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  /// The parameter's own name.
+  final String label;
+
+  /// The parameter's stable key, which names each position's widget key.
+  final String paramKey;
+
+  /// Each position's name, in order.
+  final List<String> choices;
+
+  /// The current position.
+  final int selected;
+
+  /// Reports the position picked.
+  final ValueChanged<int> onSelected;
+
+  /// The size the position names are set in.
+  static const double _choiceFontSize = 22;
+
+  /// The room a [LoopChoiceButton] keeps either side of its label.
+  static const double _choiceLabelPadding = 24;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    final positions = [for (var k = 0; k < choices.length; k++) k];
+    Key keyOf(int k) => Key('fx_choice_${paramKey}_$k');
+    final gap = context.spacing.sm;
+    // Measured as the button sets it: its Material's body style.
+    final nameStyle =
+        (Theme.of(context).textTheme.bodyMedium ?? const TextStyle()).merge(
+          const TextStyle(fontSize: _choiceFontSize, height: 1),
+        );
+    final scaler = MediaQuery.textScalerOf(context);
+    double nameWidth(String name) {
+      final painter = TextPainter(
+        text: TextSpan(text: name, style: nameStyle),
+        textDirection: TextDirection.ltr,
+        textScaler: scaler,
+      )..layout();
+      final width = painter.width;
+      painter.dispose();
+      return width;
+    }
+
+    final widest = choices.map(nameWidth).reduce(math.max);
+    return LayoutBuilder(
+      builder: (context, constraints) => Semantics(
+        container: true,
+        label: label,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Named once, by the container: the title is its visible copy.
+            ExcludeSemantics(
+              child: AppText(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: surface.textPrimary,
+                  fontSize: 22,
+                  height: 1,
+                ),
               ),
             ),
+            const SizedBox(height: 14),
+            // LoopChoiceRow's equal buttons, less their label padding.
+            if ((constraints.maxWidth - gap * (choices.length - 1)) /
+                        choices.length -
+                    _choiceLabelPadding >=
+                widest)
+              LoopChoiceRow<int>(
+                values: positions,
+                labelOf: (k) => choices[k],
+                keyOf: keyOf,
+                selected: selected,
+                onSelected: onSelected,
+                width: constraints.maxWidth,
+                height: 64,
+                gap: gap,
+                fontSize: _choiceFontSize,
+              )
+            else
+              LoopSelect<int>(
+                key: Key('fx_choice_$paramKey'),
+                value: selected,
+                onSelected: onSelected,
+                width: constraints.maxWidth,
+                items: [
+                  for (final k in positions)
+                    LoopSelectItem(key: keyOf(k), value: k, label: choices[k]),
+                ],
+              ),
           ],
-        ],
+        ),
       ),
     );
   }
@@ -201,7 +294,7 @@ class FxParamControl extends StatelessWidget {
 /// one statement of that rule.
 class FxChannelFooter extends StatelessWidget {
   /// Creates an [FxChannelFooter].
-  const FxChannelFooter({
+  const new({
     required this.group,
     required this.destination,
     required this.onPlacement,
@@ -268,7 +361,7 @@ class FxChannelFooter extends StatelessWidget {
         ],
         FxBlock(
           caption: isRack ? l10n.fxRackInput : l10n.fxEffectInput,
-          child: _InputChoice(
+          child: FxInputChoice(
             value: channels.input,
             onChanged: (input) => onChannels(channels.copyWith(input: input)),
           ),
@@ -276,39 +369,17 @@ class FxChannelFooter extends StatelessWidget {
         const SizedBox(width: 24),
         FxBlock(
           caption: isRack ? l10n.fxRackOutput : l10n.fxEffectOutput,
-          child: Row(
-            children: [
-              LoopChoiceButton(
-                key: const Key('fx_output_stereo'),
-                label: l10n.fxChannelStereo,
-                selected: !mono,
-                onTap: () => onChannels(
-                  channels.copyWith(output: FxChannelOutput.stereo),
-                ),
-                width: 109,
-                height: 64,
-                fontSize: 22,
-              ),
-              SizedBox(width: context.spacing.sm),
-              LoopChoiceButton(
-                key: const Key('fx_output_mono'),
-                label: l10n.fxChannelMono,
-                selected: mono,
-                onTap: () => onChannels(
-                  channels.copyWith(output: FxChannelOutput.mono),
-                ),
-                width: 99,
-                height: 64,
-                fontSize: 22,
-              ),
-            ],
+          child: FxOutputChoice(
+            value: channels.output,
+            onChanged: (output) =>
+                onChannels(channels.copyWith(output: output)),
           ),
         ),
         const SizedBox(width: 24),
         // Balance on a stereo output, Pan on a mono one — the same control
         // doing two different jobs, so it is named for the job it is doing.
         Expanded(
-          child: _BalanceControl(
+          child: FxBalanceControl(
             label: mono ? l10n.fxPan : l10n.fxBalance,
             value: channels.placement,
             onChanged: (value) =>
@@ -343,12 +414,7 @@ class FxChannelFooter extends StatelessWidget {
 /// One captioned control of the footer, with an optional consequence line.
 class FxBlock extends StatelessWidget {
   /// Creates an [FxBlock].
-  const FxBlock({
-    required this.caption,
-    required this.child,
-    this.hint,
-    super.key,
-  });
+  const new({required this.caption, required this.child, this.hint, super.key});
 
   /// What the control is called.
   final String caption;
@@ -395,11 +461,16 @@ class FxBlock extends StatelessWidget {
   }
 }
 
-/// The instance's input channel handling, as the pen's dropdown.
-class _InputChoice extends StatelessWidget {
-  const _InputChoice({required this.value, required this.onChanged});
+/// Which of the input's channels an effect takes, picked from the pen's
+/// dropdown.
+class FxInputChoice extends StatelessWidget {
+  /// Creates an [FxInputChoice].
+  const new({required this.value, required this.onChanged, super.key});
 
+  /// The input it takes.
   final FxChannelInput value;
+
+  /// Reports the input picked.
   final ValueChanged<FxChannelInput> onChanged;
 
   @override
@@ -428,12 +499,63 @@ class _InputChoice extends StatelessWidget {
   }
 }
 
-/// The balance or pan slider, with its ends named.
-class _BalanceControl extends StatelessWidget {
-  const _BalanceControl({
+/// Whether an effect's output is stereo or mono, as two buttons.
+class FxOutputChoice extends StatelessWidget {
+  /// Creates an [FxOutputChoice].
+  const new({required this.value, required this.onChanged, super.key});
+
+  /// The output it gives.
+  final FxChannelOutput value;
+
+  /// Reports the output picked.
+  final ValueChanged<FxChannelOutput> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final mono = value == FxChannelOutput.mono;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        LoopChoiceButton(
+          key: const Key('fx_output_stereo'),
+          label: l10n.fxChannelStereo,
+          selected: !mono,
+          onTap: () => onChanged(FxChannelOutput.stereo),
+          width: 109,
+          height: 64,
+          fontSize: 22,
+        ),
+        SizedBox(width: context.spacing.sm),
+        LoopChoiceButton(
+          key: const Key('fx_output_mono'),
+          label: l10n.fxChannelMono,
+          selected: mono,
+          onTap: () => onChanged(FxChannelOutput.mono),
+          width: 99,
+          height: 64,
+          fontSize: 22,
+        ),
+      ],
+    );
+  }
+}
+
+/// How the balance or pan control reads [placement] (`-1..1`): Centre, or
+/// the placement to two decimals.
+String fxBalanceText(AppLocalizations l10n, double placement) =>
+    placement == 0 ? l10n.fxCentre : placement.toStringAsFixed(2);
+
+/// The balance or pan slider, with its ends named: where an effect's output
+/// sits between left and right, its balance on a stereo output and its pan
+/// on a mono one ([label]).
+class FxBalanceControl extends StatelessWidget {
+  /// Creates an [FxBalanceControl].
+  const new({
     required this.label,
     required this.value,
     required this.onChanged,
+    super.key,
   });
 
   /// What this control is doing right now: Balance on stereo, Pan on mono.
@@ -442,6 +564,7 @@ class _BalanceControl extends StatelessWidget {
   /// The placement, `-1` (left) .. `1` (right).
   final double value;
 
+  /// Reports a new placement.
   final ValueChanged<double> onChanged;
 
   @override
@@ -467,7 +590,7 @@ class _BalanceControl extends StatelessWidget {
                   ),
                 ),
                 AppText(
-                  value == 0 ? l10n.fxCentre : value.toStringAsFixed(2),
+                  fxBalanceText(l10n, value),
                   key: const Key('fx_balance_readout'),
                   style: TextStyle(
                     color: surface.textSecondary,
@@ -519,7 +642,7 @@ class _BalanceControl extends StatelessWidget {
 /// input, All tracks, an output), since only a track has a Solo.
 class FxTrackSolo extends StatelessWidget {
   /// Creates an [FxTrackSolo] for [destination].
-  const FxTrackSolo({required this.destination, super.key});
+  const new({required this.destination, super.key});
 
   /// What the editor is editing.
   final FxDestination destination;

@@ -5,7 +5,6 @@ import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
 import 'package:meta/meta.dart';
 import 'package:segno_engine/src/audio_engine.dart';
-import 'package:segno_engine/src/engine_library.dart';
 import 'package:segno_engine/src/generated/segno_engine_bindings.dart';
 
 /// The outcome of digesting a file range ([StorageIo.digestFile]).
@@ -13,7 +12,7 @@ import 'package:segno_engine/src/generated/segno_engine_bindings.dart';
 /// Recovery tells a missing recording from a damaged one by this, not by a
 /// separate existence check the file could change under.
 sealed class FileDigest {
-  const FileDigest();
+  const new();
 }
 
 /// The range was read whole: [sha256] is its digest, 64 lower-case hex
@@ -21,7 +20,7 @@ sealed class FileDigest {
 @immutable
 final class FileDigested extends FileDigest {
   /// Creates a [FileDigested].
-  const FileDigested(this.sha256);
+  const new(this.sha256);
 
   /// The digest.
   final String sha256;
@@ -40,20 +39,20 @@ final class FileDigested extends FileDigest {
 /// Nothing exists at the path (or a directory on it is missing).
 final class FileMissing extends FileDigest {
   /// Creates a [FileMissing].
-  const FileMissing();
+  const new();
 }
 
 /// The file exists but is shorter than the range it must hold: damaged.
 final class FileTruncated extends FileDigest {
   /// Creates a [FileTruncated].
-  const FileTruncated();
+  const new();
 }
 
 /// The file could not be read: not a regular file, no permission, or an I/O
 /// error (a failing drive).
 final class FileUnreadable extends FileDigest {
   /// Creates a [FileUnreadable].
-  const FileUnreadable();
+  const new();
 }
 
 /// Recorded-audio identity and durable publication, without an engine.
@@ -92,6 +91,18 @@ abstract interface class StorageIo {
   /// a publication as durable when it is not.
   void syncDirectory(String path);
 
+  /// Makes everything written to the volume that holds the directory at
+  /// [path] durable, and flushes the device's cache: `syncfs(2)`, then an
+  /// fsync of [path]. That is on Linux, the appliance; on macOS it is
+  /// `F_FULLFSYNC` of [path] only.
+  ///
+  /// What a removable FAT volume needs before a write is reported done: a
+  /// rename there writes the new entry with size 0, and the file's size
+  /// reaches it only when its inode is written back, which [syncDirectory]
+  /// does not do (#1797). Throws a [FileSystemException], carrying the OS
+  /// error, when the directory cannot be opened or the sync fails.
+  void syncVolume(String path);
+
   /// Renames [from] to [to] only if nothing is at [to], as one atomic step.
   ///
   /// A copy publishes its part this way, so a name another writer took
@@ -117,12 +128,9 @@ enum RenameOutcome {
 
 /// The [StorageIo] backed by the native engine library.
 class NativeStorageIo implements StorageIo {
-  /// Creates a [NativeStorageIo], opening the native library in the current
-  /// isolate unless [bindings] are injected.
-  NativeStorageIo({SegnoEngineBindings? bindings})
-    : _bindings = bindings ?? SegnoEngineBindings(openSegnoEngineLibrary());
-
-  final SegnoEngineBindings _bindings;
+  /// Creates a [NativeStorageIo]. It works in any isolate: the calls bind to
+  /// the package's code asset.
+  const new();
 
   static const int _digestBytes = 32;
 
@@ -142,17 +150,15 @@ class NativeStorageIo implements StorageIo {
     );
     final out = calloc<Uint8>(_digestBytes);
     try {
-      _check(_bindings.le_digest_begin(state.cast(), LE_DIGEST_STATE_BYTES));
+      _check(le_digest_begin(state.cast(), LE_DIGEST_STATE_BYTES));
       for (var at = 0; at < bytes.length; at += windowBytes) {
         final end = at + windowBytes < bytes.length
             ? at + windowBytes
             : bytes.length;
         window.asTypedList(end - at).setRange(0, end - at, bytes, at);
-        _check(
-          _bindings.le_digest_update(state.cast(), window.cast(), end - at),
-        );
+        _check(le_digest_update(state.cast(), window.cast(), end - at));
       }
-      _check(_bindings.le_digest_end(state.cast(), out));
+      _check(le_digest_end(state.cast(), out));
       return _hex(out);
     } finally {
       calloc
@@ -178,7 +184,7 @@ class NativeStorageIo implements StorageIo {
     final pathPtr = path.toNativeUtf8();
     final out = calloc<Uint8>(_digestBytes);
     try {
-      final code = _bindings.le_digest_file(
+      final code = le_digest_file(
         pathPtr.cast(),
         offset,
         length ?? _toEnd,
@@ -202,11 +208,31 @@ class NativeStorageIo implements StorageIo {
     final pathPtr = path.toNativeUtf8();
     final errorPtr = calloc<Int32>();
     try {
-      final code = _bindings.le_fs_sync_dir_errno(pathPtr.cast(), errorPtr);
+      final code = le_fs_sync_dir_errno(pathPtr.cast(), errorPtr);
       if (!EngineResult.fromCode(code).isOk) {
         final errno = errorPtr.value;
         throw FileSystemException(
           'could not sync the directory',
+          path,
+          errno == 0 ? null : OSError('sync failed', errno),
+        );
+      }
+    } finally {
+      calloc.free(errorPtr);
+      malloc.free(pathPtr);
+    }
+  }
+
+  @override
+  void syncVolume(String path) {
+    final pathPtr = path.toNativeUtf8();
+    final errorPtr = calloc<Int32>();
+    try {
+      final code = le_fs_sync_volume_errno(pathPtr.cast(), errorPtr);
+      if (!EngineResult.fromCode(code).isOk) {
+        final errno = errorPtr.value;
+        throw FileSystemException(
+          'could not sync the volume',
           path,
           errno == 0 ? null : OSError('sync failed', errno),
         );
@@ -223,7 +249,7 @@ class NativeStorageIo implements StorageIo {
     final toPtr = to.toNativeUtf8();
     final errorPtr = calloc<Int32>();
     try {
-      final code = _bindings.le_fs_rename_noreplace(
+      final code = le_fs_rename_noreplace(
         fromPtr.cast(),
         toPtr.cast(),
         errorPtr,

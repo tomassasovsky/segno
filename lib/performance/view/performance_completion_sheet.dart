@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/common/console_rename_sheet.dart';
@@ -64,7 +64,7 @@ Future<void> showPerformanceCompletionSheet(BuildContext context) async {
 /// Provides [PerformanceCompletionCubit] for the capture dialog route.
 class PerformanceCompletionPage extends StatelessWidget {
   /// Creates the capture dialog page.
-  const PerformanceCompletionPage({super.key});
+  const new({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -91,7 +91,7 @@ class PerformanceCompletionPage extends StatelessWidget {
 /// pen draws as two frames of one dialog.
 class PerformanceCompletionSheet extends StatefulWidget {
   /// Creates a [PerformanceCompletionSheet].
-  const PerformanceCompletionSheet({super.key});
+  const new({super.key});
 
   /// Whether the dialog route is currently up — see
   /// [showPerformanceCompletionSheet]'s double-open refusal.
@@ -102,6 +102,10 @@ class PerformanceCompletionSheet extends StatefulWidget {
       _PerformanceCompletionSheetState();
 }
 
+/// The last segment of [path], the capture's name.
+String _basename(String path) =>
+    path.split(RegExp(r'[/\\]')).where((s) => s.isNotEmpty).last;
+
 class _PerformanceCompletionSheetState
     extends State<PerformanceCompletionSheet> {
   @override
@@ -109,27 +113,6 @@ class _PerformanceCompletionSheetState
     PerformanceCompletionSheet._open = false;
     super.dispose();
   }
-
-  static String _basename(String path) =>
-      path.split(RegExp(r'[/\\]')).where((s) => s.isNotEmpty).last;
-
-  static String _revealLabel(AppLocalizations l10n) {
-    if (Platform.isMacOS) return l10n.perfRevealMacos;
-    return l10n.perfRevealOther;
-  }
-
-  /// `2:14` for the pen's subtitle — minutes unpadded, seconds padded — and
-  /// `1:15:04` past the hour, so a long set does not read as 75 minutes.
-  static String _mmss(Duration d) {
-    final s = (d.inSeconds % 60).toString().padLeft(2, '0');
-    if (d.inHours > 0) {
-      final m = (d.inMinutes % 60).toString().padLeft(2, '0');
-      return '${d.inHours}:$m:$s';
-    }
-    return '${d.inMinutes}:$s';
-  }
-
-  Future<void> _reveal(String path) => launchUrl(Uri.directory(path));
 
   Future<void> _rename(BuildContext context, String path) async {
     final cubit = context.read<PerformanceRecorderCubit>();
@@ -210,17 +193,53 @@ class _PerformanceCompletionSheetState
         listener: _popIfForeign,
         // Centered: the dialog route offers the full screen, and a shell
         // that is not wrapped takes that height as a tight max.
-        child: Center(child: _face(context, state)),
+        child: Center(
+          child: _Face(
+            state: state,
+            onRename: (path) => unawaited(_rename(context, path)),
+          ),
+        ),
       ),
     );
   }
+}
 
-  Widget _face(BuildContext context, PerformanceRecorderState state) {
+/// The face for [state]: the render in progress, the capture's outcome, or
+/// nothing while the dialog closes on a state it cannot draw.
+class _Face extends StatelessWidget {
+  const new({required this.state, required this.onRename});
+
+  final PerformanceRecorderState state;
+
+  /// Opens the rename sheet for the capture at the path.
+  final ValueChanged<String> onRename;
+
+  static String _revealLabel(AppLocalizations l10n) {
+    if (Platform.isMacOS) return l10n.perfRevealMacos;
+    return l10n.perfRevealOther;
+  }
+
+  /// `2:14` for the pen's subtitle — minutes unpadded, seconds padded — and
+  /// `1:15:04` past the hour, so a long set does not read as 75 minutes.
+  static String _mmss(Duration d) {
+    final s = (d.inSeconds % 60).toString().padLeft(2, '0');
+    if (d.inHours > 0) {
+      final m = (d.inMinutes % 60).toString().padLeft(2, '0');
+      return '${d.inHours}:$m:$s';
+    }
+    return '${d.inMinutes}:$s';
+  }
+
+  Future<void> _reveal(String path) => launchUrl(Uri.directory(path));
+
+  @override
+  Widget build(BuildContext context) {
+    final state = this.state;
     // The rendering face: percent in the title, Hide as the only action.
     // Hiding is safe — the render carries on, the completion listener reopens
     // this dialog when it lands, and arming another capture is refused by the
     // CUBIT until then (`c/capture-rendering`). The pedal does not go through
-    // the cubit — see [_popIfForeign].
+    // the cubit — see the sheet's `_popIfForeign`.
     if (state is PerformanceRecorderRendering) {
       return _RenderingDialog(state: state);
     }
@@ -243,15 +262,14 @@ class _PerformanceCompletionSheetState
     // stopped flowing through this sheet (#679) no live path produces null,
     // but the sheet must not gamble on that).
     final duration = state.duration;
+    // The looper tracks recorded, one Group of lanes each in the Live set
+    // (#1824): its inputs and master are not counted (#1799).
+    final recorded = {for (final t in state.tracks) ?t.group}.length;
     final subtitle = duration == null
         ? l10n.perfSavedSubtitlePlain(name)
-        : state.tracks.isEmpty
+        : recorded == 0
         ? l10n.perfSavedSubtitleTimed(name, _mmss(duration))
-        : l10n.perfSavedSubtitle(
-            name,
-            state.tracks.length,
-            _mmss(duration),
-          );
+        : l10n.perfSavedSubtitle(name, recorded, _mmss(duration));
     // What went wrong on the way, if anything — the pen draws each as a
     // banner between the subtitle and the action row. Stopped-early outranks
     // a glitch: a capture that ended early with dropped frames has the
@@ -264,8 +282,15 @@ class _PerformanceCompletionSheetState
           PerformanceStopReason.volumeLost => l10n.perfStoppedVolumeLost,
           PerformanceStopReason.reserveReached => l10n.perfStoppedReserve,
           PerformanceStopReason.slowStorage => l10n.perfStoppedSlowStorage,
+          PerformanceStopReason.idle || PerformanceStopReason.lengthLimit =>
+            '${perfAutoStopTitle(l10n, reason)!} '
+                '${l10n.perfStoppedKept}',
         },
-        ConsoleBannerTone.failure,
+        // Stopped on its own (#1767): nothing failed.
+        reason == PerformanceStopReason.idle ||
+                reason == PerformanceStopReason.lengthLimit
+            ? ConsoleBannerTone.warning
+            : ConsoleBannerTone.failure,
       ),
       PerformanceRecordPartial() => (
         l10n.perfPartial,
@@ -325,7 +350,7 @@ class _PerformanceCompletionSheetState
               ConsoleSmallButton(
                 key: const Key('perfCompletion_rename'),
                 label: l10n.perfRenameButton,
-                onPressed: () => unawaited(_rename(context, path)),
+                onPressed: () => onRename(path),
               ),
               ConsoleDialogButton(
                 key: const Key('perfCompletion_close'),
@@ -344,7 +369,7 @@ class _PerformanceCompletionSheetState
 /// `SESSION & CAPTURE / capture-rendering`: the percent, what is being
 /// written, and Hide.
 class _RenderingDialog extends StatelessWidget {
-  const _RenderingDialog({required this.state});
+  const new({required this.state});
 
   final PerformanceRecorderRendering state;
 
@@ -392,7 +417,7 @@ class _RenderingDialog extends StatelessWidget {
 
 /// The 19/650 dialog title both faces share.
 class _DialogTitle extends StatelessWidget {
-  const _DialogTitle(this.text);
+  const new(this.text);
 
   final String text;
 
@@ -408,3 +433,18 @@ class _DialogTitle extends StatelessWidget {
     ),
   );
 }
+
+/// What a take that stopped on its own (#1767) says, idle or at its longest
+/// length; null for any other [reason]. The completion banner and the
+/// notice said when the player comes back follow it with
+/// `perfStoppedKept`.
+String? perfAutoStopTitle(
+  AppLocalizations l10n,
+  PerformanceStopReason reason,
+) => switch (reason) {
+  PerformanceStopReason.idle => l10n.perfStoppedIdle(
+    PerformanceRepository.idleStopAfter.inMinutes,
+  ),
+  PerformanceStopReason.lengthLimit => l10n.perfStoppedLengthLimit,
+  _ => null,
+};

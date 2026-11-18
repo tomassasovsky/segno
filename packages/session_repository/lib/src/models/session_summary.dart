@@ -14,7 +14,7 @@ typedef SessionId = String;
 @immutable
 class SessionSummary {
   /// Creates a [SessionSummary].
-  const SessionSummary({
+  const new({
     required this.id,
     required this.name,
     this.folder,

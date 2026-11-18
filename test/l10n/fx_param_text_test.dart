@@ -51,6 +51,8 @@ const _english = <String, List<String>>{
   'transient.sustain': ['0%', '50%', '100%'],
   'hpGate.highpass': ['Off', 'Off', '500 Hz'],
   'hpGate.gate_threshold': ['-120.0 dB', '-120.0 dB', '0.0 dB'],
+  'hpGate.gate_release': ['3.2 ms', '3.2 ms', '2000 ms'],
+  'hpGate.gate_detector': ['Off', 'Off', '100 ms'],
   'doubler.mix': ['0%', '100%', '100%'],
   'doubler.separation': ['0%', '100%', '100%'],
   'chorus.rate': ['0%', '45%', '100%'],
@@ -59,6 +61,7 @@ const _english = <String, List<String>>{
   'wah.pedal': ['0%', '62%', '100%'],
   'overdrive.drive': ['0%', '9%', '100%'],
   'overdrive.tone': ['0%', '50%', '100%'],
+  'overdrive.level': ['0.0 dB', '0.0 dB', '12.0 dB'],
   'distortion.drive': ['0%', '20%', '100%'],
   'distortion.tone': ['0%', '50%', '100%'],
   'vinyl.drive': ['0%', '40%', '100%'],
@@ -168,6 +171,8 @@ const _spanish = <String, List<String>>{
   'transient.sustain': ['0%', '50%', '100%'],
   'hpGate.highpass': ['Apagado', 'Apagado', '500 Hz'],
   'hpGate.gate_threshold': ['-120,0 dB', '-120,0 dB', '0,0 dB'],
+  'hpGate.gate_release': ['3,2 ms', '3,2 ms', '2000 ms'],
+  'hpGate.gate_detector': ['Apagado', 'Apagado', '100 ms'],
   'doubler.mix': ['0%', '100%', '100%'],
   'doubler.separation': ['0%', '100%', '100%'],
   'chorus.rate': ['0%', '45%', '100%'],
@@ -176,6 +181,7 @@ const _spanish = <String, List<String>>{
   'wah.pedal': ['0%', '62%', '100%'],
   'overdrive.drive': ['0%', '9%', '100%'],
   'overdrive.tone': ['0%', '50%', '100%'],
+  'overdrive.level': ['0,0 dB', '0,0 dB', '12,0 dB'],
   'distortion.drive': ['0%', '20%', '100%'],
   'distortion.tone': ['0%', '50%', '100%'],
   'vinyl.drive': ['0%', '40%', '100%'],
@@ -289,10 +295,7 @@ void main() {
       expect(en.fxParamValueText(attack, 0.3), '0.22 ms');
       expect(es.fxParamValueText(attack, 0.3), '0,22 ms');
       // 0.999 ms rounds to 1.00, so it reads with one decimal.
-      expect(
-        en.fxParamValueText(attack, attack.settingFor(0.999)),
-        '1.0 ms',
-      );
+      expect(en.fxParamValueText(attack, attack.settingFor(0.999)), '1.0 ms');
     });
 
     test('reads a ratio with one decimal against 1', () {

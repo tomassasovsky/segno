@@ -1,5 +1,5 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/settings/view/settings_fact_panel.dart';
@@ -12,7 +12,7 @@ import 'package:segno/update/usb/usb_update_package.dart';
 /// installed. Nothing while the list is closed.
 class UpdatesUsbPanel extends StatelessWidget {
   /// Creates an [UpdatesUsbPanel]; [onClosed] runs when the list closes.
-  const UpdatesUsbPanel({required this.onClosed, super.key});
+  const new({required this.onClosed, super.key});
 
   /// Called once the list is closed: by Cancel, or by a package staged.
   final VoidCallback onClosed;
@@ -139,7 +139,7 @@ class UpdatesUsbPanel extends StatelessWidget {
 int _megabytes(int bytes) => (bytes + (1 << 20) - 1) >> 20;
 
 class _PackageRow extends StatelessWidget {
-  const _PackageRow({
+  const new({
     required this.package,
     required this.onTap,
     this.autofocus = false,

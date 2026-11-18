@@ -144,14 +144,15 @@ double _rad(double degrees) => degrees * math.pi / 180;
 Offset _polar(Offset c, double r, double degrees) =>
     c + Offset(math.cos(_rad(degrees)), math.sin(_rad(degrees))) * r;
 
-/// Paints [graphic] for a pedal drawn by [spec], in the face region [r] the
-/// design gives it (the body, the treadle, a window's panel or a rocker's
-/// side band).
+/// Paints [graphic] for a pedal drawn by [spec] that prints [name], in the
+/// face region [r] the design gives it (the body, the treadle, a window's
+/// panel or a rocker's side band).
 void paintFxStompGraphic(
   Canvas canvas,
   FxStompGraphic graphic,
   Rect r,
   FxStompSpec spec,
+  String name,
 ) {
   final (x, y, w, h) = (r.left, r.top, r.width, r.height);
   switch (graphic) {
@@ -176,7 +177,7 @@ void paintFxStompGraphic(
     case FxStompGraphic.slices:
       _slices(canvas, x, y + 450, w, 190);
     case FxStompGraphic.echo:
-      _echo(canvas, spec);
+      _echo(canvas, spec, name);
     case FxStompGraphic.reels:
       _reels(
         canvas,
@@ -204,6 +205,8 @@ void paintFxStompGraphic(
       _double(canvas, x, y, w, h, const Color(0xFF8F2A66));
     case FxStompGraphic.chevrons:
       _chevrons(canvas, x, y, w);
+    case FxStompGraphic.tremolo:
+      _tremolo(canvas, x + 24, y + h * .2, w - 48, h * .7);
   }
 }
 
@@ -239,10 +242,7 @@ void _flames(Canvas canvas, double x, double y, double w, double h) {
         ..add(Offset(px, tip));
     }
     points.add(Offset(x + w, y + h));
-    canvas.drawPath(
-      _poly(points, close: true),
-      fxStompFill(colour, opacity),
-    );
+    canvas.drawPath(_poly(points, close: true), fxStompFill(colour, opacity));
   }
 }
 
@@ -302,11 +302,7 @@ void _ripples(Canvas canvas, double x, double y, double w, double h, Color c) {
   for (var r = 20; r < 420; r += 34) {
     canvas.drawOval(
       Rect.fromCenter(center: centre, width: r * 2.0, height: r * .84),
-      fxStompStroke(
-        c,
-        math.max(1.5, 7 - r / 40),
-        math.max(.08, .6 - r / 500),
-      ),
+      fxStompStroke(c, math.max(1.5, 7 - r / 40), math.max(.08, .6 - r / 500)),
     );
   }
 }
@@ -373,11 +369,7 @@ void _octaves(Canvas canvas, double x, double y, double w, double h) {
   ];
   final centre = Offset(x + w / 2, y + h);
   for (final (i, colour) in bands.indexed) {
-    canvas.drawCircle(
-      centre,
-      w * .75 - i * w * .13,
-      fxStompFill(colour, .85),
-    );
+    canvas.drawCircle(centre, w * .75 - i * w * .13, fxStompFill(colour, .85));
   }
 }
 
@@ -407,13 +399,13 @@ void _slices(Canvas canvas, double x, double y, double w, double h) {
   }
 }
 
-void _echo(Canvas canvas, FxStompSpec spec) {
+void _echo(Canvas canvas, FxStompSpec spec, String name) {
   // The name again, fading up and to the right behind itself.
   final y = spec.titleY ?? kFxStompTreadleTitleY;
   for (final i in const [3, 2, 1]) {
     fxStompPaintText(
       canvas,
-      spec.name,
+      name,
       Offset(225.0 + i * 16, y - i * 13),
       maxWidth: kFxStompTreadleTitleRoom,
       TextStyle(
@@ -512,11 +504,7 @@ void _tuner(Canvas canvas, double x, double y, double w, double h, Color c) {
     canvas.drawLine(
       _polar(centre, r * .82, a),
       _polar(centre, r, a),
-      fxStompStroke(
-        inTune ? const Color(0xFF18A558) : c,
-        inTune ? 6 : 3,
-        .8,
-      ),
+      fxStompStroke(inTune ? const Color(0xFF18A558) : c, inTune ? 6 : 3, .8),
     );
   }
   canvas.drawLine(
@@ -595,6 +583,29 @@ void _double(Canvas canvas, double x, double y, double w, double h, Color c) {
       fxStompStroke(c, 7, .45),
     );
   }
+}
+
+void _tremolo(Canvas canvas, double x, double y, double w, double h) {
+  // A fast wave inside a slow one: the level rising and falling.
+  final yc = y + h / 2;
+  final amp = h * .42;
+  double swell(double t) => .5 - .5 * math.cos(t * 3 * 2 * math.pi);
+  final envelope = Path()..moveTo(x, yc);
+  final wave = Path()..moveTo(x, yc);
+  const steps = 600;
+  for (var i = 1; i <= steps; i++) {
+    final t = i / steps;
+    final level = amp * swell(t);
+    envelope.lineTo(x + w * t, yc - level);
+    wave.lineTo(x + w * t, yc + level * math.sin(t * 27 * 2 * math.pi));
+  }
+  const colour = Color(0xFFF3E3C3);
+  canvas
+    ..drawPath(envelope, fxStompStroke(colour, 3, .35))
+    ..drawPath(
+      wave,
+      fxStompStroke(colour, 4, .6)..strokeJoin = StrokeJoin.round,
+    );
 }
 
 void _chevrons(Canvas canvas, double x, double y, double w) {

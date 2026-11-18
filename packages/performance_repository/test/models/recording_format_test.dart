@@ -52,10 +52,7 @@ Map<String, dynamic> _body({
       'channels': 2,
       'parts':
           parts ??
-          [
-            _part(overs: 2),
-            _part(index: 2, frames: 500, sha256: null),
-          ],
+          [_part(overs: 2), _part(index: 2, frames: 500, sha256: null)],
     },
   ],
   'events_bytes': 40,

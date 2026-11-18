@@ -7,10 +7,7 @@ const List<int> kCountInBarOptions = [0, 1, 2, 4];
 /// The accepted mutually exclusive Count-in and Sound-start settings.
 final class RecordStartSettings extends Equatable {
   /// Creates a validated pair without coercing unsupported choices.
-  RecordStartSettings({
-    required this.countInBars,
-    required this.soundStart,
-  }) {
+  new({required this.countInBars, required this.soundStart}) {
     if (!kCountInBarOptions.contains(countInBars) ||
         countInBars > 0 && soundStart) {
       throw ArgumentError('Invalid recording-start pair');
@@ -18,13 +15,12 @@ final class RecordStartSettings extends Equatable {
   }
 
   /// Decodes exact absence while preserving explicit Off or Sound intent.
-  factory RecordStartSettings.fromCheckpoint(
-    ({int? countInBars, bool? soundStart}) checkpoint,
-  ) => RecordStartSettings(
-    countInBars:
-        checkpoint.countInBars ?? (checkpoint.soundStart == true ? 0 : 1),
-    soundStart: checkpoint.soundStart ?? false,
-  );
+  factory fromCheckpoint(({int? countInBars, bool? soundStart}) checkpoint) =>
+      RecordStartSettings(
+        countInBars:
+            checkpoint.countInBars ?? (checkpoint.soundStart == true ? 0 : 1),
+        soundStart: checkpoint.soundStart ?? false,
+      );
 
   /// Count-in length in bars, independent of a running countdown.
   final int countInBars;
@@ -45,10 +41,7 @@ final class RecordStartSettings extends Equatable {
 /// Confirmed recording-start settings and current capture eligibility.
 final class RecordStartSnapshot extends Equatable {
   /// Creates an immutable accepted snapshot.
-  const RecordStartSnapshot({
-    required this.settings,
-    required this.captureLocked,
-  });
+  const new({required this.settings, required this.captureLocked});
 
   /// The confirmed count-in and Sound pair.
   final RecordStartSettings settings;
@@ -72,7 +65,7 @@ enum RecordStartStatus { applied, rejected, superseded, recoveryRequired }
 /// Persistence and native receipt outcome for the pair.
 final class RecordStartOutcome {
   /// Creates an outcome without treating enqueue as confirmation.
-  const RecordStartOutcome(
+  const new(
     this.status, {
     this.engineResult,
     this.error,

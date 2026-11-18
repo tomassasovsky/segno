@@ -8,13 +8,13 @@ import 'package:pedal_repository/src/pedal_ctrl.dart';
 /// cubit turns these into looper commands, timing tap / long-press /
 /// double-tap from the [ButtonPressed] / [ButtonReleased] timestamps.
 sealed class PedalEvent extends Equatable {
-  const PedalEvent();
+  const new();
 }
 
 /// A pedal button was pressed.
 final class ButtonPressed extends PedalEvent {
   /// Creates a [ButtonPressed] event.
-  const ButtonPressed(this.button, {this.timestamp = Duration.zero});
+  const new(this.button, {this.timestamp = Duration.zero});
 
   /// The button that was pressed.
   final PedalButton button;
@@ -34,7 +34,7 @@ final class ButtonPressed extends PedalEvent {
 /// A pedal button was released.
 final class ButtonReleased extends PedalEvent {
   /// Creates a [ButtonReleased] event.
-  const ButtonReleased(this.button, {this.timestamp = Duration.zero});
+  const new(this.button, {this.timestamp = Duration.zero});
 
   /// The button that was released.
   final PedalButton button;
@@ -52,7 +52,7 @@ final class ButtonReleased extends PedalEvent {
 /// The encoder's push switch went down.
 final class EncoderPressed extends PedalEvent {
   /// Creates an [EncoderPressed] event.
-  const EncoderPressed({this.timestamp = Duration.zero});
+  const new({this.timestamp = Duration.zero});
 
   /// When the press was observed, relative to an arbitrary epoch.
   ///
@@ -69,7 +69,7 @@ final class EncoderPressed extends PedalEvent {
 /// The encoder's push switch came up.
 final class EncoderReleased extends PedalEvent {
   /// Creates an [EncoderReleased] event.
-  const EncoderReleased({this.timestamp = Duration.zero});
+  const new({this.timestamp = Duration.zero});
 
   /// When the release was observed, relative to an arbitrary epoch.
   final Duration timestamp;
@@ -89,7 +89,7 @@ final class EncoderReleased extends PedalEvent {
 /// control.
 final class CtrlChanged extends PedalEvent {
   /// Creates a [CtrlChanged] event.
-  const CtrlChanged({
+  const new({
     required this.jack,
     required this.kind,
     required this.value,
@@ -129,7 +129,7 @@ final class CtrlChanged extends PedalEvent {
 /// counter-clockwise.
 final class EncoderDelta extends PedalEvent {
   /// Creates an [EncoderDelta] event.
-  const EncoderDelta(this.delta);
+  const new(this.delta);
 
   /// The signed number of detents turned since the previous message.
   final int delta;

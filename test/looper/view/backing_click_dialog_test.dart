@@ -1,8 +1,8 @@
 import 'package:bloc_test/bloc_test.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/backing/cubit/backing_cubit.dart';
 import 'package:segno/backing/cubit/backing_mix_cubit.dart';
@@ -17,12 +17,11 @@ import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 
 import '../../helpers/helpers.dart';
 
-class _MockBacking extends MockCubit<BackingCubitState>
-    implements BackingCubit {}
+class _MockBacking extends MockCubit<BackingCubitState> implements BackingCubit;
 
-class _MockMix extends MockCubit<BackingMixState> implements BackingMixCubit {}
+class _MockMix extends MockCubit<BackingMixState> implements BackingMixCubit;
 
-class _MockTempo extends MockCubit<TempoState> implements TempoCubit {}
+class _MockTempo extends MockCubit<TempoState> implements TempoCubit;
 
 void main() {
   late _MockBacking backing;
@@ -43,10 +42,7 @@ void main() {
       ),
     );
     when(() => tempo.state).thenReturn(
-      const TempoState(
-        clickMode: ClickMode.recFirst,
-        clickReady: true,
-      ),
+      const TempoState(clickMode: ClickMode.recFirst, clickReady: true),
     );
   });
 

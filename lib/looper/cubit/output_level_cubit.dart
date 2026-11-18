@@ -30,7 +30,7 @@ part 'output_level_state.dart';
 /// player should not have to wait a quarter of a second to learn about it.
 class OutputLevelCubit extends Cubit<OutputLevelState> {
   /// Creates an [OutputLevelCubit] following [repository].
-  OutputLevelCubit({
+  new({
     required LooperRepository repository,
     Duration refreshInterval = const Duration(milliseconds: 250),
   }) : super(OutputLevelState.of(repository.meters.outputPeak)) {

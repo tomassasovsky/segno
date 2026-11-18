@@ -25,7 +25,7 @@ enum PedalLightSensor {
 /// bright reading the owner captures.
 class PedalAmbientLight extends Equatable {
   /// Creates a [PedalAmbientLight].
-  const PedalAmbientLight({required this.sensor, this.level = 0})
+  const new({required this.sensor, this.level = 0})
     : assert(level >= 0 && level <= 255, 'level must fit a byte'),
       assert(
         sensor != PedalLightSensor.none || level == 0,

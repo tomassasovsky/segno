@@ -1,5 +1,5 @@
-import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/looper/model/fx_art.dart';
 import 'package:segno/looper/view/fx/fx_art_view.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
@@ -13,7 +13,7 @@ import 'package:segno/theme/theme.dart';
 /// choices offered when adding either — so the three read as one list.
 class ControlRowTile extends StatelessWidget {
   /// Creates a [ControlRowTile].
-  const ControlRowTile({
+  const new({
     required this.destination,
     required this.name,
     required this.onTap,
@@ -195,7 +195,7 @@ class ControlRowTile extends StatelessWidget {
 /// would have its values edited with nothing on screen saying whose they are.
 class ControlRowList extends StatefulWidget {
   /// Creates a [ControlRowList].
-  const ControlRowList({
+  const new({
     required this.itemCount,
     required this.itemBuilder,
     this.selectedIndex,

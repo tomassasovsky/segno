@@ -214,13 +214,16 @@ typedef enum le_perf_log_code {
   LE_PLOG_RETIME = 330, /* retime_log: a song-tempo change that retimed the
                          * shared clock with content (#1179 Part 4a): the new
                          * length and the position it continues from. */
-  LE_PLOG_SOURCE_LEN = 331, /* lanei {channel, 0, out_len}: the length of the
-                             * render a track sounds (#1179 Part 4a-ii,
+  LE_PLOG_SOURCE_LEN = 331, /* lanei {channel, bridge, out_len}: the length
+                             * of the render a track sounds (#1179 Part 4a-ii,
                              * events.log version 12), 0 for the take itself
                              * or a render of its own length; logged just
                              * before every 328, so a stretch render (Pitch
                              * Unchanged across a retime) replays at its
-                             * length. */
+                             * length. `bridge` (version 15, #1675) is 1 when
+                             * that source plays through the pitch bridge
+                             * (engine_bridge.h) while its stretch render is
+                             * pending; 0 in older files. */
   LE_PLOG_FX_TEMPO = 332, /* fx_tempo_log: the effect chains' musical time
                            * (#887 part 10, events.log version 14), at every
                            * anchor the engine moves it to (a loop top, a
@@ -228,7 +231,24 @@ typedef enum le_perf_log_code {
                            * from this frame the beat is beat + (f - frame)
                            * * qpf. A render with none runs at 120 BPM from
                            * beat 0. */
+  LE_PLOG_HEARD_SOURCE = 333, /* lanei {channel, lane, value}: what a lane
+                               * that holds a heard image plays from this
+                               * frame (#1713, events.log version 16), one of
+                               * LE_PLOG_HEARD_* below. Logged at a block's
+                               * first frame for every such lane at its first
+                               * block after PERF_ARM, and at every change. */
 } le_perf_log_code;
+
+/* LE_PLOG_HEARD_SOURCE's value: the lane plays its clean take through its
+ * chain (source CLEAN); its image (source HEARD); or its clean take because
+ * its source render cannot play the image at the track's pitch yet (source
+ * HEARD, a render made before the image was). A change crossfades over
+ * 10 ms either way. */
+enum {
+  LE_PLOG_HEARD_CLEAN = 0,
+  LE_PLOG_HEARD_IMAGE = 1,
+  LE_PLOG_HEARD_UNAVAILABLE = 2,
+};
 
 /* Pack/unpack helpers for LE_PLOG_SET_LANE_FX_PARAM / _MONITOR_FX_PARAM's
  * `fx.index` field (see above) — one definition shared by both emission call

@@ -56,9 +56,9 @@
  *     remove. Exchange makes a break raised at any point either observed by
  *     this callback or left standing for the next; it can never be lost.
  *
- * HEADER-ONLY on purpose. A new .c TU would have to be added to six build
- * descriptions (CMakeLists, the macOS podspec forwarders, the SPM forwarders,
- * the native test runner, …); static inline in a header that engine_private.h
+ * HEADER-ONLY on purpose. A new .c TU would have to be added to every build
+ * description (CMakeLists, ENGINE_SRC for the native tests and benches, …);
+ * static inline in a header that engine_private.h
  * already pulls in costs nothing and drifts nowhere.
  *
  * Gate: -DLE_CALLBACK_TELEMETRY=0 (engine_telemetry_gate.h) compiles the timing
@@ -107,9 +107,9 @@ extern "C" {
 #define LE_CB_GAP_SUPPRESS_PERIODS 4u
 
 /* The share of a deadline the effects admission budgets a service to fill:
- * 4/5, kFxBudgetShare in fx_cost.dart (#1515). */
-#define LE_CB_OVER_SHARE_NUM 4u
-#define LE_CB_OVER_SHARE_DEN 5u
+ * 77/100, kFxBudgetShare in fx_cost.dart (#1515, #1724). */
+#define LE_CB_OVER_SHARE_NUM 77u
+#define LE_CB_OVER_SHARE_DEN 100u
 
 /* Monotonic nanoseconds. Never wall-clock (CLOCK_REALTIME / the system time):
  * that clock STEPS — an NTP correction, a DST-less timezone database update or

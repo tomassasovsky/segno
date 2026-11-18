@@ -202,7 +202,7 @@ typedef ReopenResult = ({
 /// Thrown when an [AudioEngine] operation fails.
 class EngineException implements Exception {
   /// Creates an [EngineException] from a failing [result].
-  const EngineException(this.result, [this.message]);
+  const new(this.result, [this.message]);
 
   /// The failing result code.
   final EngineResult result;
@@ -462,6 +462,18 @@ abstract interface class LooperTransport {
   /// Halts track [channel]'s playback, retaining the loop buffer.
   EngineResult stopTrack({int channel = 0});
 
+  /// The Rec-mode Stop's mute (#1773): the next mute of each of track
+  /// [channel]'s lanes, when it lands on the stopped track and the lane was
+  /// unmuted, lets the Post tail the Stop set ringing drain. The track reads
+  /// muted; the tail is gated once the track runs again. Send it before the
+  /// Stop and the mute.
+  ///
+  /// It reserves command room for itself and the [following] commands sent
+  /// right after it (the stops and the lane mutes):
+  /// [EngineResult.notReady], with nothing sent, when they would not all
+  /// fit, so the caller refuses the whole Stop instead of applying half.
+  EngineResult spareTail({int channel = 0, int following = 0});
+
   /// Resumes playback of track [channel].
   EngineResult play({int channel = 0});
 
@@ -563,6 +575,18 @@ abstract interface class LooperTransport {
   /// capture using Record timing. Never starts a new capture from stale state.
   EngineResult stopRecordControl({required int channel});
 
+  /// The Rec-mode Stop of the only audible loop (#1782): [stopRecordControl],
+  /// then the transport parks and the mutes sent after it let track
+  /// [channel]'s Post tail ring out, as [spareTail] does. A playing track
+  /// parks now, and so does an overdub that ends at once. An overdub whose
+  /// end Record timing quantizes runs to that grid end and parks there; until
+  /// then its mute waits for the park, and a second call keeps the arm.
+  ///
+  /// Reserves command room for itself and the [following] commands sent
+  /// right after it (the lane mutes): [EngineResult.notReady], with nothing
+  /// sent, when they would not all fit.
+  EngineResult stopRecordPark({required int channel, int following = 0});
+
   /// Cancels only shared Count-in launches and their one-drain grace.
   /// Ordinary grid/Sound arms and older captures remain untouched.
   EngineResult cancelCountIn();
@@ -629,11 +653,7 @@ abstract interface class EngineRouting {
 
   /// Sets lane [lane] of track [channel]'s playback gain, clamped to
   /// `0..LE_MAX_GAIN` (2.0, +6.02 dB headroom above unity).
-  EngineResult setLaneVolume(
-    double volume, {
-    int channel = 0,
-    int lane = 0,
-  });
+  EngineResult setLaneVolume(double volume, {int channel = 0, int lane = 0});
 
   /// Mutes or unmutes lane [lane] of track [channel].
   EngineResult setLaneMute({
@@ -652,11 +672,7 @@ abstract interface class EngineRouting {
   /// panned, and hard left is the left output alone. On a single masked
   /// output the pan is a plain attenuation of the mid. Reset to centre by a
   /// (re)start, like volume; the caller remembers and re-applies it.
-  EngineResult setLanePan({
-    required double pan,
-    int channel = 0,
-    int lane = 0,
-  });
+  EngineResult setLanePan({required double pan, int channel = 0, int lane = 0});
 
   /// Solos or un-solos track [channel]. While any track is soloed, only
   /// soloed tracks route to the outputs; every other track keeps playing (its
@@ -1187,6 +1203,26 @@ abstract interface class EffectsControl {
     required bool enabled,
   });
 
+  /// What lane [lane] of track [channel] plays (#1713): [LaneSource.heard],
+  /// its heard image where the live take has one, or [LaneSource.clean], its
+  /// clean take through its chain (a take whose effects were edited). A
+  /// direct store that works while stopped; the switch crossfades over about
+  /// 10 ms.
+  EngineResult setLaneSource({
+    required int channel,
+    required int lane,
+    required LaneSource source,
+  });
+
+  /// Gives lane [lane] of track [channel]'s live take a heard image that is
+  /// its clean signal in both sides (what a take with no effects was heard
+  /// as), so an overdub through the input's effects can be captured into it
+  /// (#1713). [EngineResult.ok] when the take already has one;
+  /// [EngineResult.notReady] while the track captures, drains a punch-out,
+  /// edits its length or bounces, or while an earlier attach is in flight;
+  /// [EngineResult.invalid] for a lane with no take.
+  EngineResult heardAttach({required int channel, required int lane});
+
   /// An order-sensitive 64-bit fingerprint of lane [lane] of track [channel]'s
   /// PUBLISHED effect chain — its active entries' types plus (for built-ins)
   /// their parameter bits. For divergence detection only: the repository owns
@@ -1403,6 +1439,17 @@ abstract interface class SessionIo {
   /// (#1168). Read-only — call when not capturing.
   Float32List exportLayer(int channel, int lane, int ordinal);
 
+  /// The heard image (#1713) of the image [exportLayer] reads at the same
+  /// [ordinal], as INTERLEAVED STEREO (left, right; two samples per frame),
+  /// or an empty list when that image has none. Frame for frame as long as
+  /// the clean image. Read-only — call when not capturing.
+  Float32List exportLayerHeard(int channel, int lane, int ordinal);
+
+  /// The heard image (#1713) of lane [lane] of track [channel]'s live take,
+  /// as [exportTrackLane] reads it but INTERLEAVED STEREO, or an empty list
+  /// when the take has none. Read-only — call when not capturing.
+  Float32List exportTrackLaneHeard(int channel, int lane);
+
   /// Lists track [channel]'s history in image-ordinal order with its raw
   /// split ([TrackHistory.undoCount]): split the images by that count, never
   /// by the snapshot's `undoDepth`, which reads 0 while a Clear restore is in
@@ -1422,6 +1469,19 @@ abstract interface class SessionIo {
   /// [commitSession]. Returns [EngineResult.invalid] for a non-empty track or
   /// an out-of-range ordinal.
   EngineResult importLayer(int channel, int lane, int ordinal, Float32List pcm);
+
+  /// Gives the image [importLayer] just staged at ([channel], [lane],
+  /// [ordinal]) its heard image (#1713): INTERLEAVED STEREO [pcm] exactly the
+  /// clean image's length in frames. Call right after that image's
+  /// [importLayer], before the lane's next one, and before
+  /// [finalizeHistory]. Returns [EngineResult.invalid] when the lane's last
+  /// staged image is not this one at this length.
+  EngineResult importLayerHeard(
+    int channel,
+    int lane,
+    int ordinal,
+    Float32List pcm,
+  );
 
   /// Publishes a track reconstructed via [importLayer] with its [history]
   /// ([exportHistory] order): rebuilds the undo/redo stacks with their kinds
@@ -1576,10 +1636,11 @@ abstract interface class EnginePluginHosting {
 
 /// Performance-recording capture (parts 1-2 of the DAW-export stack): arming
 /// and disarming the RT-safe audio-thread taps that copy the master capture
-/// (before the master gain and limiter) and each actively-monitored input
-/// into lock-free capture rings, and the background drain thread that writes
-/// each stream as ordered 32-bit float WAV parts (`master-001.wav`, …,
-/// `input-<n>-001.wav`) plus a `performance.json` sidecar (#1198).
+/// (before the master gain and limiter), each actively-monitored input as
+/// heard, and every input and instrument raw (#1805) into lock-free capture
+/// rings, and the background drain thread that writes each stream as ordered
+/// 32-bit float WAV parts (`master-001.wav`, …, `input-<n>-001.wav`,
+/// `input-raw-<n>-001.wav`) plus a `performance.json` sidecar (#1198).
 ///
 /// Status is read back via [EngineSnapshot] ([EngineSnapshot.isPerfArmed] /
 /// [EngineSnapshot.perfFrames] / [EngineSnapshot.perfOverruns]), the same way
@@ -1642,13 +1703,17 @@ abstract interface class EnginePerformanceCapture {
   VolumeSpace? volumeSpace(String path);
 
   /// Starts an offline render of the finalized capture at [captureDir]: a
-  /// worker thread reconstructs each non-empty track's full-length DRY stem
-  /// (part 7 — wet stems are part 8) by replaying `events.log` against the
+  /// worker thread reconstructs every lane of each non-empty track as a
+  /// full-length dry and wet stem by replaying `events.log` against the
   /// capture's snapshots and retired-layer files, and writes
-  /// `stems/dry/track<channel>.wav`. Reads only from disk — no live-engine
-  /// dependency, so a render runs correctly whether or not this engine is
-  /// currently armed or looping. Returns [EngineResult.ok] once the worker
-  /// thread is launched (this call never blocks on the render itself),
+  /// `stems/dry/track<channel>-lane<lane>.wav`,
+  /// `stems/wet/track<channel>-lane<lane>.wav`, their index
+  /// `stems/stems.json` and the master `stems/wet/master.wav`
+  /// (docs/formats/performance-manifest-format.md, #1824). A track's status
+  /// below succeeds when all its lanes do. Reads only from disk — no
+  /// live-engine dependency, so a render runs correctly whether or not this
+  /// engine is currently armed or looping. Returns [EngineResult.ok] once the
+  /// worker thread is launched (this call never blocks on the render itself),
   /// [EngineResult.invalid] for an empty [captureDir], or
   /// [EngineResult.alreadyRunning] if a render is already active.
   EngineResult renderBegin(String captureDir);
@@ -1658,18 +1723,18 @@ abstract interface class EnginePerformanceCapture {
   /// empty] when none is.
   PerformanceRenderProgress renderPoll();
 
-  /// Reads every track's render outcome discovered so far (growing
-  /// progressively as each stem completes, not only once
-  /// [PerformanceRenderProgress.done]). A per-track failure
+  /// Reads every track's render outcome discovered so far (every track's
+  /// once the stems are written, which the tracks finish together, just
+  /// before [PerformanceRenderProgress.done]). A per-track failure
   /// ([PerformanceRenderTrackStatus.succeeded] `false`) does not abort the
   /// render — the umbrella's partial-success posture.
   List<PerformanceRenderTrackStatus> renderTrackStatuses();
 
   /// Cancels an in-progress render and joins the worker thread; a no-op when
-  /// no render is active. Cancellation is checked once per per-track work
-  /// chunk (never mid-stem), so this only returns once the worker has
-  /// actually stopped, leaving no partial stem file for whichever track was
-  /// in flight.
+  /// no render is active. Cancellation is checked once per block of the
+  /// render (#1747), so this returns once the worker has stopped, a block
+  /// later at most, and removes the stems it had begun: no partial stem file
+  /// stays.
   EngineResult renderCancel();
 }
 
@@ -1956,4 +2021,4 @@ abstract interface class AudioEngine
         EngineSelectedRender,
         SessionIo,
         BackingControl,
-        InterfaceInputControl {}
+        InterfaceInputControl;

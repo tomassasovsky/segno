@@ -1,16 +1,21 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
+import 'package:segno/app/app_notices.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/control/binding/pedal_button_legend.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
+import 'package:segno/notices/notices.dart';
 import 'package:segno/theme/theme.dart';
+
+/// The vertical rhythm of this tab, as drawn: one gap between everything.
+const double _gap = 14;
 
 /// The FX page's pedal assignments: which footswitch you are editing, and what
 /// it acts on in FX mode.
@@ -35,7 +40,7 @@ import 'package:segno/theme/theme.dart';
 /// card that exists only to refuse is worse than no card.
 class FxPedalAssignmentsBody extends StatefulWidget {
   /// Creates a [FxPedalAssignmentsBody].
-  const FxPedalAssignmentsBody({super.key});
+  const new({super.key});
 
   @override
   State<FxPedalAssignmentsBody> createState() => _FxPedalAssignmentsBodyState();
@@ -63,18 +68,7 @@ class _FxPedalAssignmentsBodyState extends State<FxPedalAssignmentsBody> {
   /// Height of the caption row the bank selector sits in.
   static const double _headerHeight = 33;
 
-  /// The vertical rhythm of this tab, as drawn: one gap between everything.
-  static const double _gap = 14;
-
   int _bankOf(ControlState state) => _bank ?? state.activeBank;
-
-  PedalBindingKey? _keyFor(PedalButton button, ControlState state) {
-    if (PedalBindingKey.unbindable.contains(button)) return null;
-    return PedalBindingKey(
-      button: button,
-      bank: PedalBindingKey.isBankKeyed(button) ? _bankOf(state) : null,
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -142,12 +136,14 @@ class _FxPedalAssignmentsBodyState extends State<FxPedalAssignmentsBody> {
             ConsoleCard(
               children: [
                 for (final (index, button) in kTrackSwitches.indexed)
-                  _trackRow(
-                    context,
-                    state: state,
+                  _TrackRow(
+                    key: Key('pedal_switch_${button.name}'),
                     button: button,
                     bank: bank,
+                    binding: _bindingFor(state, button, bank),
+                    open: selected == button,
                     last: index == kTrackSwitches.length - 1,
+                    onTap: () => _select(button, state),
                   ),
               ],
             ),
@@ -159,7 +155,14 @@ class _FxPedalAssignmentsBodyState extends State<FxPedalAssignmentsBody> {
               expanded: selected != null,
               child: selected == null
                   ? const SizedBox(width: double.infinity)
-                  : _assignSection(context, cubit, selected, bank),
+                  : _AssignSection(
+                      state: state,
+                      button: selected,
+                      bank: bank,
+                      showEffects: _showEffects,
+                      onToggleEffects: () =>
+                          setState(() => _showEffects = !_showEffects),
+                    ),
             ),
           ],
         ),
@@ -189,30 +192,51 @@ class _FxPedalAssignmentsBodyState extends State<FxPedalAssignmentsBody> {
     // unselectable: you could move the toggle, but not then pick a row.
     _bank ??= state.activeBank;
   });
+}
 
-  Widget _trackRow(
-    BuildContext context, {
-    required ControlState state,
-    required PedalButton button,
-    required int bank,
-    required bool last,
-  }) {
+/// One track switch in the list: its name for [bank] and what it is bound to.
+class _TrackRow extends StatelessWidget {
+  const new({
+    required this.button,
+    required this.bank,
+    required this.binding,
+    required this.open,
+    required this.last,
+    required this.onTap,
+    super.key,
+  });
+
+  final PedalButton button;
+
+  /// The bank the list is showing.
+  final int bank;
+
+  /// What [button] holds in [bank], or null when it is unassigned.
+  final PedalBinding? binding;
+
+  /// Whether this switch is the one being edited.
+  final bool open;
+
+  /// Whether this is the card's last row, which draws no divider.
+  final bool last;
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
     final l10n = context.l10n;
     final surface = context.surface;
     final looper = context.read<LooperRepository>();
     final trackNames = context.watch<TracksCubit>().state.names;
-    final binding = _bindingFor(state, button, bank);
     final target = binding?.decodeTarget();
     final resolves = target != null && looper.bindingResolves(target);
-    final open = _selected == button;
 
     return ConsoleRow(
-      key: Key('pedal_switch_${button.name}'),
       title: pedalSwitchLabel(l10n, button, bank),
       value: switch ((binding, resolves)) {
         (null, _) => l10n.controlUnassigned,
         (_, false) => l10n.controlTargetMissing,
-        _ => bindingTargetLabel(l10n, trackNames, target!),
+        _ => _boundLabel(l10n, trackNames, looper, target!),
       },
       // A binding whose target is gone takes the warning tone. Drawing it in
       // the muted grey of "unassigned" would state a different and wrong fact:
@@ -226,21 +250,46 @@ class _FxPedalAssignmentsBodyState extends State<FxPedalAssignmentsBody> {
       expanded: open,
       fill: open ? surface.accentSurface : null,
       showDivider: !last,
-      onTap: () => _select(button, state),
+      onTap: onTap,
     );
   }
+}
 
-  /// The caption and the target list for the selected switch.
-  Widget _assignSection(
-    BuildContext context,
-    ControlCubit cubit,
-    PedalButton button,
-    int bank,
-  ) {
+/// The caption and the target list for the selected switch.
+class _AssignSection extends StatelessWidget {
+  const new({
+    required this.state,
+    required this.button,
+    required this.bank,
+    required this.showEffects,
+    required this.onToggleEffects,
+  });
+
+  /// The control state the body was built from.
+  final ControlState state;
+
+  /// The switch being edited.
+  final PedalButton button;
+
+  /// The bank the track list is showing.
+  final int bank;
+
+  /// Whether the list also offers the individual effect slots.
+  final bool showEffects;
+
+  final VoidCallback onToggleEffects;
+
+  @override
+  Widget build(BuildContext context) {
     final l10n = context.l10n;
+    final cubit = context.read<ControlCubit>();
     final looper = context.read<LooperRepository>();
-    final state = cubit.state;
-    final key = _keyFor(button, state);
+    final key = PedalBindingKey.unbindable.contains(button)
+        ? null
+        : PedalBindingKey(
+            button: button,
+            bank: PedalBindingKey.isBankKeyed(button) ? bank : null,
+          );
     final legend = pedalSwitchLegend(l10n, button, bank);
 
     // Edit the set IN FORCE, not the globals: a loaded session's remap
@@ -256,17 +305,29 @@ class _FxPedalAssignmentsBodyState extends State<FxPedalAssignmentsBody> {
     // remap in the process. That is the full-screen plate's existing rule, and
     // two surfaces editing one binding must not disagree about where the edit
     // lands.
+    // A binding whose effects would not fit the budget is refused, and the
+    // notice says why (#1723).
     Future<void> write(PedalBindingSet next) async {
-      if (state.sessionBindings.isNotEmpty) {
-        cubit.applySessionBindings(PedalBindingSet.empty);
+      try {
+        await cubit.setGlobalBindings(next, promote: true);
+      } on FxReachOverBudget {
+        if (!context.mounted) return;
+        context.read<NoticesCubit>().show(
+          Notice(
+            id: AppNoticeId.fxBindOverBudget,
+            tone: NoticeTone.warning,
+            title: (l10n) => l10n.fxBindOverBudget,
+          ),
+        );
       }
-      await cubit.setGlobalBindings(next);
     }
 
-    final targets = looper.availableBindingTargets();
-    final chains = targets.whereType<FxChainTarget>().toList();
-    final slots = targets.whereType<FxSlotTarget>().toList();
-    final listed = <FxBindingTarget>[...chains, if (_showEffects) ...slots];
+    // In signal order: each chain, then its racks (#1711), each rack's own
+    // effects under it once the list is asked for them.
+    final listed = [
+      for (final target in looper.availableBindingTargets())
+        if (showEffects || target is! FxSlotTarget) target,
+    ];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -274,10 +335,7 @@ class _FxPedalAssignmentsBodyState extends State<FxPedalAssignmentsBody> {
         const SizedBox(height: _gap),
         ConsoleGroupLabel(
           PedalBindingKey.isBankKeyed(button)
-              ? l10n.controlAssignGroup(
-                  legend,
-                  String.fromCharCode(65 + bank),
-                )
+              ? l10n.controlAssignGroup(legend, String.fromCharCode(65 + bank))
               : l10n.controlAssignGroupPlain(legend),
         ),
         const SizedBox(height: _gap),
@@ -287,11 +345,10 @@ class _FxPedalAssignmentsBodyState extends State<FxPedalAssignmentsBody> {
           ConsoleCard(
             children: [
               for (final (index, target) in listed.indexed)
-                _targetRow(
-                  context,
+                _TargetRow(
+                  key: Key('pedal_target_${target.canonicalString()}'),
                   target: target,
-                  current: current,
-                  looper: looper,
+                  chosen: target == current,
                   onTap: key == null
                       ? null
                       : () => unawaited(
@@ -317,41 +374,77 @@ class _FxPedalAssignmentsBodyState extends State<FxPedalAssignmentsBody> {
                 ),
               _EffectsToggle(
                 key: const Key('pedal_show_effects'),
-                showing: _showEffects,
-                onTap: () => setState(() => _showEffects = !_showEffects),
+                showing: showEffects,
+                onTap: onToggleEffects,
               ),
             ],
           ),
       ],
     );
   }
+}
 
-  Widget _targetRow(
-    BuildContext context, {
-    required FxBindingTarget target,
-    required FxBindingTarget? current,
-    required LooperRepository looper,
-    required VoidCallback? onTap,
-    required bool last,
-  }) {
+/// What a switch's row or card says it is bound to: the rack by its own name
+/// when the binding names a rack, which the pure [bindingTargetLabel] cannot
+/// read from the rig.
+String _boundLabel(
+  AppLocalizations l10n,
+  List<String> trackNames,
+  LooperRepository looper,
+  FxBindingTarget target,
+) => switch (target) {
+  final FxRackTarget rack => switch (fxRackName(looper, rack)) {
+    final name? => '${fxStageLabel(l10n, trackNames, rack.address)} · $name',
+    null => bindingTargetLabel(l10n, trackNames, rack),
+  },
+  _ => bindingTargetLabel(l10n, trackNames, target),
+};
+
+/// One target in the assign list, checked when the switch holds it.
+class _TargetRow extends StatelessWidget {
+  const new({
+    required this.target,
+    required this.chosen,
+    required this.onTap,
+    required this.last,
+    super.key,
+  });
+
+  final FxBindingTarget target;
+
+  /// Whether the switch being edited holds [target].
+  final bool chosen;
+
+  /// Assigns or clears [target]; null when the switch cannot hold a binding.
+  final VoidCallback? onTap;
+
+  /// Whether this is the card's last row, which draws no divider.
+  final bool last;
+
+  @override
+  Widget build(BuildContext context) {
     final l10n = context.l10n;
     final surface = context.surface;
-    final chosen = target == current;
+    final looper = context.read<LooperRepository>();
     final trackNames = context.watch<TracksCubit>().state.names;
     final stage = fxStageLabel(l10n, trackNames, target.address);
     return ConsoleRow(
-      key: Key('pedal_target_${target.canonicalString()}'),
       title: switch (target) {
         FxChainTarget() => bindingTargetLabel(l10n, trackNames, target),
         // Named by its own effect rather than by repeating the chain above
         // it, which the row already says at its trailing edge.
-        FxSlotTarget() =>
-          fxSlotName(looper, target) ??
-              bindingTargetLabel(l10n, trackNames, target),
+        final FxSlotTarget slot =>
+          fxSlotName(l10n, looper, slot) ??
+              bindingTargetLabel(l10n, trackNames, slot),
+        // A rack is named by its own name, as on the Effects page.
+        final FxRackTarget rack =>
+          fxRackName(looper, rack) ??
+              bindingTargetLabel(l10n, trackNames, rack),
       },
       titleColor: target is FxSlotTarget ? surface.textSecondary : null,
       state: switch (target) {
         FxChainTarget() => stage,
+        FxRackTarget() => stage,
         FxSlotTarget() => l10n.controlEffectIn(stage),
       },
       valueColor: chosen ? surface.accent : surface.textMuted,
@@ -370,7 +463,7 @@ class _FxPedalAssignmentsBodyState extends State<FxPedalAssignmentsBody> {
 
 /// One transport switch: its cap legend over what it is bound to.
 class _SwitchCard extends StatelessWidget {
-  const _SwitchCard({
+  const new({
     required this.button,
     required this.binding,
     required this.selected,
@@ -397,7 +490,7 @@ class _SwitchCard extends StatelessWidget {
     final label = switch ((binding, resolves)) {
       (null, _) => l10n.controlUnassigned,
       (_, false) => l10n.controlTargetMissing,
-      _ => bindingTargetLabel(l10n, trackNames, target!),
+      _ => _boundLabel(l10n, trackNames, looper, target!),
     };
 
     return FocusableTapTarget(
@@ -462,11 +555,7 @@ class _SwitchCard extends StatelessWidget {
 
 /// The assign list's footer: one tap deeper, to the individual effect slots.
 class _EffectsToggle extends StatelessWidget {
-  const _EffectsToggle({
-    required this.showing,
-    required this.onTap,
-    super.key,
-  });
+  const new({required this.showing, required this.onTap, super.key});
 
   final bool showing;
   final VoidCallback onTap;

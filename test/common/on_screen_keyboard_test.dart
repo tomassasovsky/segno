@@ -1,5 +1,5 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/common/on_screen_keyboard/on_screen_keyboard.dart';
 import 'package:segno/common/on_screen_keyboard/on_screen_keyboard_host.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -61,7 +61,7 @@ void main() {
     }) => tester.pumpWidget(
       MaterialApp(
         theme: AppTheme.neon,
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        localizationsDelegates: appLocalizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         builder: (context, child) => OnScreenKeyboardHost(
           enabled: enabled,
@@ -401,9 +401,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('onScreenKeyboard')), findsOneWidget);
 
-      Focus.of(
-        tester.element(find.text('elsewhere')),
-      ).requestFocus();
+      Focus.of(tester.element(find.text('elsewhere'))).requestFocus();
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('onScreenKeyboard')), findsNothing);
@@ -636,7 +634,7 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           theme: AppTheme.neon,
-          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          localizationsDelegates: appLocalizationsDelegates,
           supportedLocales: AppLocalizations.supportedLocales,
           builder: (context, child) => OnScreenKeyboardHost(
             child: Builder(

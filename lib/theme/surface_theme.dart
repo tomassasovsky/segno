@@ -1,6 +1,6 @@
 import 'dart:ui' show lerpDouble;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 
 /// The neutral "setup surface" design tokens (onboarding, settings, and the
@@ -16,7 +16,7 @@ import 'package:segno/looper/model/interaction_mode.dart';
 @immutable
 class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
   /// Creates a [SurfaceTheme].
-  const SurfaceTheme({
+  const new({
     required this.background,
     required this.surface,
     required this.card,
@@ -384,6 +384,17 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
   /// bundled under `assets/fonts/`.
   static const String monoFont = 'JetBrains Mono';
 
+  /// The bundled faces a character missing from a text's own face is drawn
+  /// from, in order: every text's fallback, set on the theme.
+  ///
+  /// Inter has no musical sharp or flat (U+266F, U+266D), which the Tuner's
+  /// note names use, and the appliance has no system fonts to fall back to,
+  /// so without these the glyph draws as nothing there (#1730). Arimo first,
+  /// a sans close to Inter in shape and weight, which has the sharp; then
+  /// JetBrains Mono, which has the flat and every other character the app's
+  /// strings use (`test/theme/font_coverage_test.dart`).
+  static const List<String> fontFallback = [frameFont, monoFont];
+
   @override
   SurfaceTheme copyWith({
     Color? background,
@@ -570,10 +581,7 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
       ledBlue: c(ledBlue, other.ledBlue),
       ringGlow: c(ringGlow, other.ringGlow),
       chromeGradientTop: c(chromeGradientTop, other.chromeGradientTop),
-      chromeGradientBottom: c(
-        chromeGradientBottom,
-        other.chromeGradientBottom,
-      ),
+      chromeGradientBottom: c(chromeGradientBottom, other.chromeGradientBottom),
       chromeBar: c(chromeBar, other.chromeBar),
       meterTrack: c(meterTrack, other.meterTrack),
       pageGlow: c(pageGlow, other.pageGlow),
@@ -699,6 +707,26 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     knobFaceBottom: Color(0xFF121214),
     disabledOpacity: 0.4,
     traceDimOpacity: 0.28,
+  );
+
+  /// The 7" readout's variant of [dark], read from two metres on a panel
+  /// whose backlight bleeds into its blacks (#1674, owner decision 3). Only
+  /// its two dimmest tiers change; every other token is [dark]'s, and the
+  /// main screen keeps [dark] unchanged.
+  ///
+  /// - [textMuted] takes [dark]'s [textTertiary] grey: 5.9:1 on the readout's
+  ///   background and 5.3:1 on [card], up from 3.8:1 and 3.4:1. Everything the
+  ///   readout draws in the muted tier lifts with it: "Empty", the BPM unit,
+  ///   the Loop panel's section labels, lock icons and dotted rule, the tempo
+  ///   keypad's title, and the waveform's bar numbers.
+  /// - [borderSubtle] is an opaque grey, 2.05:1 against [card] instead of the
+  ///   12% white's 1.41:1: the footer strip, the Loop panel's tempo card and
+  ///   the plain buttons' edges. Opaque, so its contrast does not depend on
+  ///   what is under it. On the readout this token is only ever a border; the
+  ///   theme's ink tiers keep [dark]'s alpha (`AppTheme.readout`).
+  static final SurfaceTheme readout = dark.copyWith(
+    textMuted: dark.textTertiary,
+    borderSubtle: const Color(0xFF4A4A50),
   );
 
   /// High-contrast variant of [dark], selected automatically when the OS

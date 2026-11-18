@@ -23,7 +23,7 @@ import 'dart:io';
 /// * the journal mirror is one `stderr` write rather than three (stderr is
 ///   unbuffered, so each call was its own syscall).
 class AppLog {
-  AppLog._();
+  new _();
 
   /// Current log file name inside the init directory.
   static const String fileName = 'segno.log';
@@ -83,11 +83,8 @@ class AppLog {
 
   /// Error, optionally with [error] / [stack]. The only level that syncs to
   /// the disk — see the class doc.
-  static void error(
-    String message, {
-    Object? error,
-    StackTrace? stack,
-  }) => _write('E', message, error: error, stack: stack);
+  static void error(String message, {Object? error, StackTrace? stack}) =>
+      _write('E', message, error: error, stack: stack);
 
   /// Releases the logfile handle, syncing whatever the OS still holds.
   ///

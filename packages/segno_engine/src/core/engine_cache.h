@@ -31,10 +31,26 @@ extern "C" {
  * pump counts from this one definition. */
 #define LE_CACHE_SETTLE_MS 250
 
-/* Transpose's source renders settle for 100 ms (#1179): foot steps are
- * discrete, while the Pre print's 250 ms window exists for parameter sweeps.
- * Same frame-count measure as above. */
-#define LE_CACHE_SOURCE_SETTLE_MS 100
+/* Transpose's and the tempo's source renders settle for 30 ms (#1179,
+ * #1675): foot steps and tempo changes are discrete, while the Pre print's
+ * 250 ms window exists for parameter sweeps. A track plays through the
+ * pitch bridge until its render lands, so this wait is heard. Two ticks of
+ * the app's 60 Hz poll still fold a double step into one render; a render
+ * for a step that has moved on stops at its next lane, or finishes and is
+ * dropped. Same frame-count measure as above. */
+#define LE_CACHE_SOURCE_SETTLE_MS 30
+
+/* Copy-at-enqueue budget: the most dry PCM one tick copies, in mono frames
+ * summed over every lane (or channel, for a whole-track print's mixed
+ * assembly) of every COPYING job: 2 MiB of floats, well under a millisecond
+ * of copying on the console, which bounds the UI-poll drain path's
+ * per-call cost. The jobs of tracks that sound take it first. An 8 s lap at
+ * 48 kHz stages in the tick that enqueues it, so a tempo change's stretch
+ * render reaches the worker at once; the pitch bridge plays until it lands
+ * (#1675), and a chunk of 48000 frames per job and tick kept it on for a
+ * tick per second of loop (133 ms for that lap). Tests derive their
+ * lengths from it. */
+#define LE_CACHE_COPY_TICK_FRAMES (1 << 19)
 
 /* How a Transpose source is rendered, shared by the cache worker and the
  * offline renderer so a stem reproduces the live render exactly: the

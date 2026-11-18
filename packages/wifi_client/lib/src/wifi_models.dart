@@ -5,10 +5,11 @@ import 'package:meta/meta.dart';
 @immutable
 class WifiStatus extends Equatable {
   /// Creates a [WifiStatus].
-  const WifiStatus({
+  const new({
     required this.supported,
     required this.enabled,
     required this.connected,
+    this.connecting = false,
     this.ssid = '',
     this.ip = '',
     this.signal = 0,
@@ -17,10 +18,11 @@ class WifiStatus extends Equatable {
   });
 
   /// Parses the helper's JSON status object.
-  factory WifiStatus.fromJson(Map<String, dynamic> json) => WifiStatus(
+  factory fromJson(Map<String, dynamic> json) => WifiStatus(
     supported: json['supported'] == true,
     enabled: json['enabled'] == true,
     connected: json['connected'] == true,
+    connecting: json['connecting'] == true,
     ssid: '${json['ssid'] ?? ''}',
     ip: '${json['ip'] ?? ''}',
     signal: _asInt(json['signal']),
@@ -49,7 +51,13 @@ class WifiStatus extends Equatable {
   /// Whether associated (wpa_state COMPLETED).
   final bool connected;
 
-  /// Associated SSID (empty when disconnected).
+  /// Whether an activation is in flight on the Wi-Fi device, the app's own
+  /// join or one NetworkManager started by itself; [ssid] then names the
+  /// network it is joining.
+  final bool connecting;
+
+  /// The network the console is on, or while [connecting] the one it is
+  /// joining; empty otherwise.
   final String ssid;
 
   /// IPv4 address when leased (may be empty briefly after connect).
@@ -71,6 +79,7 @@ class WifiStatus extends Equatable {
     supported,
     enabled,
     connected,
+    connecting,
     ssid,
     ip,
     signal,
@@ -83,7 +92,7 @@ class WifiStatus extends Equatable {
 @immutable
 class WifiNetwork extends Equatable {
   /// Creates a [WifiNetwork].
-  const WifiNetwork({
+  const new({
     required this.ssid,
     required this.signal,
     required this.secured,
@@ -92,7 +101,7 @@ class WifiNetwork extends Equatable {
   });
 
   /// Parses one scan-result object.
-  factory WifiNetwork.fromJson(Map<String, dynamic> json) => WifiNetwork(
+  factory fromJson(Map<String, dynamic> json) => WifiNetwork(
     ssid: '${json['ssid'] ?? ''}',
     signal: _asInt(json['signal']),
     secured: json['secured'] == true,

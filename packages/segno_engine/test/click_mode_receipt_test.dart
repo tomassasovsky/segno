@@ -1,13 +1,10 @@
 @Tags(['fuzz'])
 library;
 
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:segno_engine/segno_engine.dart';
 
 void main() {
-  final library = Platform.environment['SEGNO_ENGINE_LIB'];
   group('actual native Hear click receipt', () {
     late PumpedNativeEngine engine;
     const config = EngineConfig(
@@ -84,7 +81,7 @@ void main() {
       expect(engine.snapshot().clickModeRevision, 1);
       expect(engine.snapshot().clickMode, ClickMode.off);
     });
-  }, skip: library == null ? 'SEGNO_ENGINE_LIB is required' : false);
+  });
 
   test(
     'mock receipt completes synchronously without inventing capture state',

@@ -72,7 +72,7 @@ enum FxStage {
 /// meaning or order.
 class FxAddress extends Equatable {
   /// Creates an [FxAddress]. See the class doc for per-stage field meaning.
-  const FxAddress({required this.stage, this.index = 0, this.lane});
+  const new({required this.stage, this.index = 0, this.lane});
 
   /// Rebuilds an [FxAddress] from its [toJson] map. Unknown keys are ignored
   /// (additive-only contract); an unknown or missing `stage` yields `null`.

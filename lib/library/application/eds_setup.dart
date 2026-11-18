@@ -30,9 +30,9 @@ const List<NewLoopTemplateTrack> edsSetup = [
 Future<NewLoopTemplate?> loadEdsSetup(AssetBundle bundle) async {
   final Set<String> present;
   try {
-    present = (await AssetManifest.loadFromAssetBundle(
-      bundle,
-    )).listAssets().toSet();
+    present = (await AssetManifest.loadFromAssetBundle(bundle))
+        .listAssets()
+        .toSet();
   } on Exception {
     return null;
   }

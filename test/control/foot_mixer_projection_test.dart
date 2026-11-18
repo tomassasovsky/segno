@@ -60,9 +60,7 @@ void main() {
     expect(live.selected!.muted, isTrue);
     expect(live.selected!.gain, .6);
     final idle = projectFootMixer(
-      const LooperState(
-        status: EngineStatus(inputChannels: 2),
-      ),
+      const LooperState(status: EngineStatus(inputChannels: 2)),
       selection,
       monitors: monitors,
     );

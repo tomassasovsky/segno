@@ -10,11 +10,7 @@ import 'package:meta/meta.dart';
 @immutable
 class MidiDevice {
   /// Creates a [MidiDevice].
-  const MidiDevice({
-    required this.id,
-    required this.name,
-    this.isDefault = false,
-  });
+  const new({required this.id, required this.name, this.isDefault = false});
 
   /// The per-OS stable id used to re-open this device (`le_midi_open`).
   final String id;

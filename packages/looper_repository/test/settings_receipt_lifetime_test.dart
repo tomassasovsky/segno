@@ -89,9 +89,7 @@ void main() {
     expect(repository.setClickVolume(1.5), EngineResult.ok);
     time.elapse(const Duration(milliseconds: 450));
     EngineResult? later;
-    unawaited(
-      repository.settleClickVolume().then((result) => later = result),
-    );
+    unawaited(repository.settleClickVolume().then((result) => later = result));
     time.elapse(const Duration(milliseconds: 49));
     expect(later, isNull);
     time.elapse(const Duration(milliseconds: 1));

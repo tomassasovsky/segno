@@ -38,6 +38,7 @@
 #include "engine_core.h" /* shared low-level helpers: le_push, valid_channel, ... */
 #include "../host/plugin_slot.h" /* le_plugin_slot_destroy (teardown of slots) */
 #include "engine_fx.h" /* effects DSP island: chain runner, reset/free, latency */
+#include "engine_heard.h" /* the heard image (#1713) */
 #include "engine_instruments.h" /* instrument synth lifecycle (#1197) */
 #include "engine_internal.h"
 #include "engine_miniaudio.h"
@@ -51,7 +52,7 @@
 #include "segno_engine_api.h"
 #include "miniaudio.h"
 #include "perf_drain.h" /* le_perf_drain_stop (reconfigure/destroy teardown) */
-#include "perf_render.h" /* le_perf_render_cancel (reconfigure/destroy teardown) */
+#include "perf_render.h" /* le_perf_render_cancel (destroy teardown) */
 #include "rt_alloc.h" /* le_rt_*: every buffer the audio thread writes */
 #include "tempo_grid.h" /* LE_GRID_DIV_OFF (grid-off quantize default) */
 
@@ -267,6 +268,7 @@ void le_lane_reset_settings(le_lane* ln, int32_t input_channel) {
     store_f32(&ln->a_pan_gr_bits, gr);
   }
   store_i32(&ln->a_muted, 0);
+  store_i32(&ln->a_gate_muted, 0);
   ln->pending_mute = 0;
   store_f32(&ln->a_rms_bits, 0.0f);
   store_f32(&ln->a_peak_bits, 0.0f);
@@ -457,6 +459,7 @@ static void le_engine_quiesce_workers(le_engine* engine) {
   le_collect_retired(engine, 1); /* the device is closed: nothing reads them */
   le_fx_recipe_collect(engine, 1);
   le_cache_shutdown(engine);
+  le_heard_tail_free_all(engine); /* #1713 part 3: worker joined */
   le_bounce_abandon_all(engine); /* #1202: no callback will apply them */
 
   /* Performance-recording capture: stop and join the drain thread — if
@@ -477,20 +480,22 @@ static void le_engine_quiesce_workers(le_engine* engine) {
     le_perf_drain_stop(engine->perf.drain, LE_PERF_STOP_DEVICE_CHANGED);
     engine->perf.drain = NULL;
   }
-  /* An active render is independent of the arm/drain lifecycle above, but
-   * still owned by this engine's perf struct (about to be zeroed below) —
-   * cancel+join it first so a reconfigure never orphans its worker thread
-   * (uncancellable, unpollable, and leaked once the handle is lost). */
-  le_perf_render_cancel(engine);
+  /* An offline render (engine->perf_render, outside `perf`) goes on
+   * through a reconfigure (#1747): it reads only its capture directory,
+   * never the device or the engine's state. Cancelling it here joined a
+   * worker that was rendering a whole stem, holding the audio start for as
+   * long, and then dropped the boot recovery's stems. */
   le_audio_ring_release(&engine->perf.master_ring);
   for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
     le_audio_ring_release(&engine->perf.monitor_ring[c]);
+    le_audio_ring_release(&engine->perf_raw_ring[c]);
   }
   /* Layers staged after the drain thread died (its self-stop on a write
    * failure precedes the final drain cycle) are still heap-owned by this
    * ring — free them before the struct zero below loses the pointers. */
   le_layer_staging_ring_drain_free(&engine->perf.layer_staging_ring);
   engine->perf = (le_perf_capture){0};
+  engine->perf_raw_mask = 0;
   store_i32(&engine->a_perf_armed, 0);
   atomic_store_explicit(&engine->a_perf_frames, 0, memory_order_relaxed);
   atomic_store_explicit(&engine->a_perf_overruns, 0u, memory_order_relaxed);
@@ -567,6 +572,8 @@ static int le_engine_reset_material(le_engine* engine,
     tr->pitch_override = -1;
     store_i32(&tr->a_pitch_override, -1);
     store_i32(&tr->a_src_out, 0);
+    engine->bridges[t].on = 0; /* the pitch bridge (#1675) */
+    engine->bridges[t].turn = 0;
     tr->log_play_len = 0;
     tr->span_clock = 0;
     store_i32(&tr->a_span_clock, 0);
@@ -590,6 +597,7 @@ static int le_engine_reset_material(le_engine* engine,
       }
       le_lane_release_standby(engine, &engine->spares[t][l]);
       le_lane_release_zero_spare(engine, &engine->spares[t][l]);
+      le_heard_free_lane(engine, t, l); /* #1713: the slots' images */
       ln->image_gain = 1.0f;
       ln->image_pan = 0.0f;
       store_i32(&ln->a_live, 0);
@@ -706,6 +714,9 @@ static void le_engine_reset_runtime(le_engine* engine, int32_t sample_rate,
     tr->reverse_pending = 0;
     atomic_store_explicit(&tr->a_reverse_applied, 0, memory_order_relaxed);
     tr->once_ended = 0;
+    tr->tail_spare_next = 0; /* #1773: a reopen spares no tail */
+    tr->park = 0; /* #1782 */
+    tr->gate_spared = 0;
     tr->once_current_pass = 0;
     tr->length_preset_target_frames = 0;
     tr->pending_record = 0;
@@ -984,6 +995,8 @@ static void le_engine_reset_runtime(le_engine* engine, int32_t sample_rate,
    * routed through the per-input monitor graph (le_engine_set_monitor_input). */
   for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
     le_monitor_input_reset(&engine->monitors[c]);
+    /* Its chain is empty, and so its Pre run (#1741). */
+    atomic_store_explicit(&engine->heard_mon_pre[c], 0, memory_order_relaxed);
   }
   /* Capture trim, solo and the per-channel meters (slice 3): unity, off and
    * silent on every (re)configure; the caller re-applies its intent. */
@@ -1382,6 +1395,16 @@ le_engine* le_engine_create(void) {
   /* The audibility gains (#1400) start at their gates on the first frame each
    * track is mixed. */
   for (int t = 0; t < LE_MAX_TRACKS; ++t) engine->trk_gate_stale[t] = 1;
+  /* The heard image (#1713): outside the first frame loop, no attach, and
+   * a fresh take zeroes its image unless told otherwise. */
+  engine->heard_i = -1;
+  engine->heard_zero = 1;
+  for (int t = 0; t < LE_MAX_TRACKS; ++t) {
+    for (int l = 0; l < LE_MAX_LANES; ++l) {
+      engine->heard[t][l].attach_slot = -1;
+      engine->heard[t][l].import_ordinal = -1;
+    }
+  }
   /* No take has dropped a frame (#1198): 0 would name frame 0. */
   atomic_store_explicit(&engine->a_perf_first_drop_frame, UINT64_MAX,
                         memory_order_relaxed);
@@ -1515,6 +1538,7 @@ void le_engine_destroy(le_engine* engine) {
    * destroy-during-active-render test pins exactly this ordering). */
   le_fx_recipe_collect(engine, 1);
   le_cache_shutdown(engine);
+  le_heard_tail_free_all(engine); /* #1713 part 3: worker joined */
   le_bounce_abandon_all(engine); /* #1202: no callback will apply them */
   le_prefault_shutdown(engine); /* its jobs name the pool buffers below */
   le_collect_retired(engine, 1);
@@ -1529,6 +1553,7 @@ void le_engine_destroy(le_engine* engine) {
       }
       le_free_audio_buffer(engine, engine->spares[t][l].standby);
       le_free_audio_buffer(engine, engine->spares[t][l].zero_spare);
+      le_heard_free_lane(engine, t, l); /* #1713 */
       for (int s = 0; s < LE_FX_MAX; ++s) {
         le_fx_free_slot(&ln->fx, s);
         /* The device is already closed (no audio thread), so any hosted plugin
@@ -1593,12 +1618,13 @@ void le_engine_destroy(le_engine* engine) {
   /* Layers staged after the drain thread died (self-stop on write failure)
    * have no consumer left — free them now that the thread is joined. */
   le_layer_staging_ring_drain_free(&engine->perf.layer_staging_ring);
-  /* Same reasoning as the reconfigure teardown above: cancel+join any active
-   * render before this engine (and its perf.render handle) is freed. */
+  /* Cancel+join any active render before this engine (and its perf_render
+   * handle) is freed: its worker must not outlive the handle. */
   le_perf_render_cancel(engine);
   le_audio_ring_release(&engine->perf.master_ring);
   for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
     le_audio_ring_release(&engine->perf.monitor_ring[c]);
+    le_audio_ring_release(&engine->perf_raw_ring[c]);
   }
   le_platform_on_engine_teardown(); /* Linux restores PipeWire's dynamic quantum */
   le_rt_free(engine);
@@ -1838,6 +1864,7 @@ int32_t le_engine_stop(le_engine* engine) {
    * configure re-initializes it. */
   le_fx_recipe_collect(engine, 1);
   le_cache_shutdown(engine);
+  le_heard_tail_free_all(engine); /* #1713 part 3: worker joined */
   le_bounce_abandon_all(engine); /* #1202: no callback will apply them */
   /* Per-OS teardown on stop (not only destroy) so a forced quantum doesn't
    * outlive a running engine for other PipeWire clients. No-op off Linux. */

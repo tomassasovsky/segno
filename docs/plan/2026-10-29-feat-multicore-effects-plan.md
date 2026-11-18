@@ -603,6 +603,18 @@ Acceptance and tests:
   Stop and Mute tails, Undo and the capture-image path inside a block; the
   wet cache's and the stem render's parity tests unchanged and green.
 
+As built (#1729): rather than splitting `mix_tracks_frame`, a third copy of
+it (`mix_tracks_frame_jobs`, `engine_mix_jobs.c`, the heard copy's code plus
+the jobs') runs phase A and records each track's frame (`le_trk_job`): every
+lane's pair before its chain, its pan, gain and gates, and the track's own
+facts. The plain and heard copies compile as before, so the 64-lane gate's
+mixer does not change. A block takes the jobs copy only with workers running
+and two jobs at least. The callback runs a track's job itself up to the
+frame it is at before it changes what the job reads (a print engaging, its
+mask, a Stop's tail clear, a capture image's recipes, a heard lane's own
+chain), and the join sums every track in track and lane order, then runs the
+All tracks stage, so the output is bit-identical with any worker count.
+
 ### Part 3: the output side
 
 All tracks instances and output bus chains as a second fork-join wave after

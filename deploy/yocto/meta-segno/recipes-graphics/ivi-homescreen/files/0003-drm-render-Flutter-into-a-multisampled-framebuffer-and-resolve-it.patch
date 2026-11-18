@@ -1,0 +1,364 @@
+From 530373a2e5345f15343c7c5c6d7e92de7cd4f7c7 Mon Sep 17 00:00:00 2001
+From: Segno <noreply@segno.invalid>
+Date: Thu, 5 Nov 2026 00:44:55 -0300
+Subject: [PATCH] drm: render Flutter into a multisampled framebuffer and
+ resolve it
+
+Impeller's OpenGL ES backend anti-aliases geometry only through 4x
+MSAA. The embedder API hands it the backing store's FBO, and the engine
+treats that FBO as multisampled only when the context has
+GL_EXT_multisampled_render_to_texture
+(MakeRenderTargetFromBackingStoreImpeller in embedder.cc). Mesa's V3D
+(the Raspberry Pi 5) has GL_MAX_SAMPLES = 4 but not that extension, so
+the root pass, which carries every border, rounded rect, circle and
+path, reached the screen with no anti-aliasing at all. Offscreen layers
+Impeller allocates itself were still multisampled, so the same widget
+was smooth under a saveLayer (a colour filter, say) and stair-stepped
+without one.
+
+Do what the Windows embedder does on the same kind of driver
+(flutter/flutter#190060, cherry-picked as #190374): give each Flutter
+backing store a multisampled colour renderbuffer and a multisampled
+depth/stencil renderbuffer, hand Flutter that FBO, and resolve it with
+glBlitFramebuffer into the active slot at the top of every present,
+before any path scans the slot out or composites it. The samples are
+then invalidated so a tiler need not write them back. store.fbo becomes
+only the resolve target, so its single-sample depth/stencil goes.
+
+Only under Impeller. Skia anti-aliases analytically and wraps the
+backing store as single-sample, so a multisampled one would only break
+its read-backs (dst reads, backdrop filters) and cost memory.
+
+IVI_DRM_MSAA_SAMPLES sets the sample count (default 4, capped at
+GL_MAX_SAMPLES; 0 or 1 turns it off). A store whose multisampled FBO is
+incomplete, or whose trial resolve fails (a colour format the driver
+will not resolve into), stays single-sample, as before.
+
+Cost at 4x: a 4-sample RGBA8 colour buffer and a 4-sample D24S8 buffer
+per backing store, about 66 MB at 1920x1080 and 20 MB at 1024x600, less
+the single-sample depth/stencil each store no longer has, plus one
+resolve blit per frame per output.
+
+Upstream-Status: Pending
+---
+ shell/backend/drm_kms_egl/README.md         |   1 +
+ shell/backend/drm_kms_egl/drm_compositor.cc | 192 +++++++++++++++++++-
+ shell/backend/drm_kms_egl/drm_compositor.h  |  29 +++
+ 3 files changed, 221 insertions(+), 1 deletion(-)
+
+diff --git a/shell/backend/drm_kms_egl/README.md b/shell/backend/drm_kms_egl/README.md
+index e101bee2..9c56f915 100644
+--- a/shell/backend/drm_kms_egl/README.md
++++ b/shell/backend/drm_kms_egl/README.md
+@@ -501,6 +501,7 @@ Pacing and scheduling are separate problems and both have to be right — see
+ | `IVI_DRM_FLIP_TRACE` | (off) | `1` logs every PAGE_FLIP_EVENT (frame-cadence diagnostic) |
+ | `IVI_DRM_PROFILE` | (off) | Anything non-empty enables per-frame composite profiling. Every 60 frames, `PresentFramed` / `PresentLayers` log a line: `framed/planes profile (n=60): wait=Xms compose=Yms commit=Zms total=Wms` with both per-stage mean and max. Useful for diagnosing where the per-frame budget goes. |
+ | `IVI_DRM_NO_DIRECT_SCANOUT` | (off) | `1` forces GL composite even when REFLECT_Y is available. Diagnostic — bisects visual artifacts that may live on the direct-scanout path. |
++| `IVI_DRM_MSAA_SAMPLES` | `4` | Samples per pixel in the framebuffer Flutter renders into under Impeller, capped at `GL_MAX_SAMPLES`; `0` or `1` renders single-sample. Skia always renders single-sample: it anti-aliases on its own. Each present resolves it into the scanout buffer with `glBlitFramebuffer`. Impeller's OpenGL ES backend anti-aliases geometry only through MSAA, so without it every edge is aliased on drivers that lack `GL_EXT_multisampled_render_to_texture` (Mesa V3D, for one). Costs a multisampled colour and depth/stencil buffer per backing store (66 MB at 1920x1080, 4x) and one resolve per frame |
+ | `VIDEO_PLAYER_AUDIO_SINK` | — | Set to `alsasink` on bare TTY (no PipeWire) |
+ 
+ #### Real-time scheduling: capability setup
+diff --git a/shell/backend/drm_kms_egl/drm_compositor.cc b/shell/backend/drm_kms_egl/drm_compositor.cc
+index 20e1e78a..e6342a8d 100644
+--- a/shell/backend/drm_kms_egl/drm_compositor.cc
++++ b/shell/backend/drm_kms_egl/drm_compositor.cc
+@@ -53,6 +53,7 @@
+ #include "drm-cxx/src/display/connector_info.hpp"  // ColorimetryInfo / Chromaticity
+ #include "drm-cxx/src/display/hdr_metadata.hpp"  // HdrSourceMetadata / TransferFunction
+ #include "drm-cxx/src/modeset/atomic.hpp"
++#include "engine_switches.h"
+ #include "ihs/platform_view.h"
+ #include "libflutter_engine.h"
+ #include "logging.h"
+@@ -121,6 +122,31 @@ bool AllocDebug() {
+   return enabled;
+ }
+ 
++// ES3 core enums (the NV / ANGLE extension variants share the values), which
++// the ES2 headers this file builds against do not define.
++constexpr GLenum kReadFramebuffer = 0x8CA8;
++constexpr GLenum kDrawFramebuffer = 0x8CA9;
++constexpr GLenum kMaxSamples = 0x8D57;
++constexpr GLsizei kDefaultMsaaSamples = 4;
++
++// IVI_DRM_MSAA_SAMPLES: samples per pixel in the target Flutter renders
++// into. 0 or 1 turns MSAA off. Unset, empty or unparsable: the default.
++GLsizei RequestedMsaaSamples() {
++  const char* env = std::getenv("IVI_DRM_MSAA_SAMPLES");
++  if (env == nullptr || *env == '\0') {
++    return kDefaultMsaaSamples;
++  }
++  char* end = nullptr;
++  const long v = std::strtol(env, &end, 10);
++  if (end == env || *end != '\0' || v < 0 || v > 64) {
++    ihs::log::warn(
++        "[DrmCompositor] IVI_DRM_MSAA_SAMPLES='{}' is not 0..64; using {}", env,
++        kDefaultMsaaSamples);
++    return kDefaultMsaaSamples;
++  }
++  return static_cast<GLsizei>(v);
++}
++
+ // Map the ABI's container colorimetry (IhsColorSpace/IhsColorRange, carried on
+ // the platform view's Dmabuf) to the drm-cxx plane CSC. DEFAULT -> nullopt lets
+ // LayerScene write its own default (BT.709 / limited). Only meaningful for YUV
+@@ -1149,6 +1175,32 @@ void DrmCompositor::EnsureGlCapsProbed() {
+   }
+   gl_caps_.Probe();
+   gl_compositor_ = std::make_unique<GlCompositor>(&gl_caps_);
++
++  // Only Impeller needs it: Skia anti-aliases analytically, and it wraps the
++  // backing store as single-sample, so reading back from a multisampled one
++  // (dst reads, backdrop filters) would fail. MSAA also needs a multisample
++  // renderbuffer, a blit to resolve it and a packed depth/stencil, all ES3
++  // core.
++  msaa_samples_ =
++      ihs::engine_switches::ImpellerActive() ? RequestedMsaaSamples() : 0;
++  if (msaa_samples_ > 1) {
++    GLint max_samples = 0;
++    if (gl_caps_.has_multisampled_renderbuffer &&
++        gl_caps_.has_blit_framebuffer && gl_caps_.has_packed_depth_stencil) {
++      glGetIntegerv(kMaxSamples, &max_samples);
++    }
++    msaa_samples_ = std::min<GLsizei>(msaa_samples_, max_samples);
++  }
++  if (msaa_samples_ <= 1) {
++    msaa_samples_ = 0;
++  }
++  if (gl_caps_.is_es3) {
++    invalidate_framebuffer_ = reinterpret_cast<InvalidateFramebufferFn>(
++        eglGetProcAddress("glInvalidateFramebuffer"));
++  }
++  ihs::log::info("[DrmCompositor] backing-store MSAA: {}",
++                 msaa_samples_ > 1 ? std::to_string(msaa_samples_) + "x"
++                                   : std::string("off"));
+   if (!InitEglExtensions()) {
+     ihs::log::error("[DrmCompositor] missing EGL_KHR_image / GL_OES_EGL_image");
+   }
+@@ -1405,8 +1457,140 @@ uint32_t DrmCompositor::ImportBoAsFb(gbm_bo* bo) const {
+   return fb_id;
+ }
+ 
++bool DrmCompositor::CreateMsaaTarget(GbmBackingStore& store) const {
++  const auto w = static_cast<GLsizei>(store.width);
++  const auto h = static_cast<GLsizei>(store.height);
++  // A multisample resolve needs the same colour format on both sides. An
++  // EGLImage texture takes GL_RGBA8 from a fourcc with alpha and GL_RGB8
++  // from one without; the trial resolve below catches any other mismatch.
++  const bool alpha = store.format == GBM_FORMAT_ARGB8888 ||
++                     store.format == GBM_FORMAT_ABGR8888;
++  const GLenum color_format = alpha ? GL_RGBA8_OES : GL_RGB8_OES;
++
++  glGenRenderbuffers(1, &store.msaa_color_rb);
++  glBindRenderbuffer(GL_RENDERBUFFER, store.msaa_color_rb);
++  gl_caps_.renderbuffer_storage_multisample(GL_RENDERBUFFER, msaa_samples_,
++                                            color_format, w, h);
++  glGenRenderbuffers(1, &store.msaa_depth_stencil_rb);
++  glBindRenderbuffer(GL_RENDERBUFFER, store.msaa_depth_stencil_rb);
++  gl_caps_.renderbuffer_storage_multisample(
++      GL_RENDERBUFFER, msaa_samples_, GL_DEPTH24_STENCIL8_OES, w, h);
++  glBindRenderbuffer(GL_RENDERBUFFER, 0);
++
++  glGenFramebuffers(1, &store.msaa_fbo);
++  glBindFramebuffer(GL_FRAMEBUFFER, store.msaa_fbo);
++  glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
++                            GL_RENDERBUFFER, store.msaa_color_rb);
++  glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
++                            GL_RENDERBUFFER, store.msaa_depth_stencil_rb);
++  glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT,
++                            GL_RENDERBUFFER, store.msaa_depth_stencil_rb);
++  const GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
++  glBindFramebuffer(GL_FRAMEBUFFER, 0);
++
++  // One trial resolve. A resolve that fails leaves the scanout buffer
++  // unwritten on every frame, so fall back to single-sample instead.
++  bool ok = status == GL_FRAMEBUFFER_COMPLETE;
++  if (ok) {
++    for (int i = 0; i < 8 && glGetError() != GL_NO_ERROR; ++i) {
++    }
++    glDisable(GL_SCISSOR_TEST);
++    glBindFramebuffer(kReadFramebuffer, store.msaa_fbo);
++    glBindFramebuffer(kDrawFramebuffer, store.fbo);
++    gl_caps_.blit_framebuffer(0, 0, w, h, 0, 0, w, h, GL_COLOR_BUFFER_BIT,
++                              GL_NEAREST);
++    const GLenum err = glGetError();
++    glBindFramebuffer(GL_FRAMEBUFFER, 0);
++    ok = err == GL_NO_ERROR;
++    if (!ok) {
++      ihs::log::warn(
++          "[DrmCompositor] MSAA resolve into {} failed (0x{:x}); backing "
++          "store stays single-sample",
++          drm::format_name(store.format), err);
++    }
++  } else {
++    ihs::log::warn(
++        "[DrmCompositor] MSAA framebuffer incomplete (0x{:x}); backing store "
++        "stays single-sample",
++        status);
++  }
++  if (!ok) {
++    glDeleteFramebuffers(1, &store.msaa_fbo);
++    glDeleteRenderbuffers(1, &store.msaa_color_rb);
++    glDeleteRenderbuffers(1, &store.msaa_depth_stencil_rb);
++    store.msaa_fbo = 0;
++    store.msaa_color_rb = 0;
++    store.msaa_depth_stencil_rb = 0;
++    return false;
++  }
++
++  // Flutter no longer renders into store.fbo; it is only the resolve target.
++  glBindFramebuffer(GL_FRAMEBUFFER, store.fbo);
++  glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
++                            GL_RENDERBUFFER, 0);
++  glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT,
++                            GL_RENDERBUFFER, 0);
++  glBindFramebuffer(GL_FRAMEBUFFER, 0);
++  glDeleteRenderbuffers(1, &store.depth_stencil_rb);
++  store.depth_stencil_rb = 0;
++  return true;
++}
++
++void DrmCompositor::ResolveMsaaStores(const FlutterLayer** layers,
++                                      const size_t layer_count) const {
++  // Colour, depth and stencil: the depth/stencil Flutter renders with is
++  // never read after the frame either.
++  static constexpr std::array<GLenum, 3> kAttachments = {
++      GL_COLOR_ATTACHMENT0, GL_DEPTH_ATTACHMENT, GL_STENCIL_ATTACHMENT};
++  bool resolved = false;
++  for (size_t i = 0; i < layer_count; ++i) {
++    const FlutterLayer* fl = layers[i];
++    if (fl == nullptr || fl->type != kFlutterLayerContentTypeBackingStore ||
++        fl->backing_store == nullptr) {
++      continue;
++    }
++    const auto* baton = static_cast<StoreBaton*>(fl->backing_store->user_data);
++    if (baton == nullptr || baton->store == nullptr ||
++        baton->store->msaa_fbo == 0) {
++      continue;
++    }
++    const GbmBackingStore& store = *baton->store;
++    const auto w = static_cast<GLint>(store.width);
++    const auto h = static_cast<GLint>(store.height);
++    if (!resolved) {
++      // The blit is clipped by the scissor test, which Flutter leaves set.
++      glDisable(GL_SCISSOR_TEST);
++      resolved = true;
++    }
++    glBindFramebuffer(kReadFramebuffer, store.msaa_fbo);
++    glBindFramebuffer(kDrawFramebuffer, store.fbo);
++    gl_caps_.blit_framebuffer(0, 0, w, h, 0, 0, w, h, GL_COLOR_BUFFER_BIT,
++                              GL_NEAREST);
++    if (invalidate_framebuffer_ != nullptr) {
++      invalidate_framebuffer_(kReadFramebuffer,
++                              static_cast<GLsizei>(kAttachments.size()),
++                              kAttachments.data());
++    }
++  }
++  if (resolved) {
++    glBindFramebuffer(GL_FRAMEBUFFER, 0);
++  }
++}
++
+ void DrmCompositor::DestroyGbmStore(GbmBackingStore& store) const {
+   // Shared resources first: one FBO + one depth/stencil RB per BS.
++  if (store.msaa_fbo != 0) {
++    glDeleteFramebuffers(1, &store.msaa_fbo);
++    store.msaa_fbo = 0;
++  }
++  if (store.msaa_color_rb != 0) {
++    glDeleteRenderbuffers(1, &store.msaa_color_rb);
++    store.msaa_color_rb = 0;
++  }
++  if (store.msaa_depth_stencil_rb != 0) {
++    glDeleteRenderbuffers(1, &store.msaa_depth_stencil_rb);
++    store.msaa_depth_stencil_rb = 0;
++  }
+   if (store.fbo != 0) {
+     glDeleteFramebuffers(1, &store.fbo);
+     store.fbo = 0;
+@@ -2709,6 +2893,8 @@ bool DrmCompositor::PresentLayersLocked(const FlutterLayer** layers,
+ 
+   backend_->MaybeCaptureSnapshot();
+   EnsureGlCapsProbed();
++  // Before any path below scans a slot out or composites it.
++  ResolveMsaaStores(layers, layer_count);
+   // The path this present takes is settled from here; a latch to the GL
+   // fallback during it shows from the next.
+   PublishLatchLead();
+@@ -4915,6 +5101,9 @@ bool DrmCompositor::CreateBackingStore(const FlutterBackingStoreConfig* config,
+     if (!CreateGbmStore(*store, w, h, backing_format, pool_size)) {
+       return false;
+     }
++    if (msaa_samples_ > 1) {
++      CreateMsaaTarget(*store);
++    }
+     ++store_pool_misses_;
+   }
+ 
+@@ -4936,7 +5125,8 @@ bool DrmCompositor::CreateBackingStore(const FlutterBackingStoreConfig* config,
+   out->open_gl.type = kFlutterOpenGLTargetTypeFramebuffer;
+   out->open_gl.framebuffer.target =
+       gl_caps_.has_rgb8_rgba8 ? GL_RGBA8_OES : GL_RGBA;
+-  out->open_gl.framebuffer.name = store->fbo;
++  out->open_gl.framebuffer.name =
++      store->msaa_fbo != 0 ? store->msaa_fbo : store->fbo;
+   out->open_gl.framebuffer.user_data = baton;
+   out->open_gl.framebuffer.destruction_callback = [](void*) {};
+ 
+diff --git a/shell/backend/drm_kms_egl/drm_compositor.h b/shell/backend/drm_kms_egl/drm_compositor.h
+index e99601cb..56d7cf65 100644
+--- a/shell/backend/drm_kms_egl/drm_compositor.h
++++ b/shell/backend/drm_kms_egl/drm_compositor.h
+@@ -111,6 +111,13 @@ struct GbmBackingStore {
+   // each frame; need not be multi-buffered).
+   GLuint fbo = 0;
+   GLuint depth_stencil_rb = 0;
++  // Multisampled target Flutter renders into instead of @c fbo, when the
++  // compositor enables MSAA (CreateMsaaTarget). Each present resolves it
++  // into the active slot through @c fbo, which then has no depth/stencil
++  // of its own. Zero when MSAA is off: Flutter renders into @c fbo.
++  GLuint msaa_fbo = 0;
++  GLuint msaa_color_rb = 0;
++  GLuint msaa_depth_stencil_rb = 0;
+   uint32_t width = 0;
+   uint32_t height = 0;
+   uint32_t format = 0;
+@@ -298,6 +305,14 @@ class DrmCompositor : public IFlipSink {
+   // only participate in GL composition never invoke this — no AddFB2
+   // per frame on framed-mode / GL-fallback paths.
+   bool EnsureDrmFbId(GbmBackingStore& store) const;
++  // Give a Flutter backing store a multisampled colour and depth/stencil
++  // target of msaa_samples_ samples, and drop the single-sample
++  // depth/stencil @c store.fbo no longer needs. False (and the store left
++  // single-sample) when the target cannot be built or resolved.
++  bool CreateMsaaTarget(GbmBackingStore& store) const;
++  // Resolve every multisampled backing store in this frame into its active
++  // slot, before any path scans the slot out or composites it.
++  void ResolveMsaaStores(const FlutterLayer** layers, size_t layer_count) const;
+ 
+   // Composite @p src_tex into @p target_fbo at the given destination rect.
+   // Pass @p src_fbo (the FBO that owns @p src_tex as its color attachment)
+@@ -508,6 +523,20 @@ class DrmCompositor : public IFlipSink {
+ 
+   GlCaps gl_caps_{};
+   bool gl_caps_probed_{false};
++
++  // Samples per pixel in the target Flutter renders into: IVI_DRM_MSAA_SAMPLES
++  // (default 4), capped at GL_MAX_SAMPLES; 0 when MSAA is off. Impeller's
++  // OpenGL ES backend anti-aliases geometry only through MSAA, and without
++  // GL_EXT_multisampled_render_to_texture the engine renders a
++  // single-sample backing store with none, so every edge it draws is
++  // aliased. The Windows embedder does the same (flutter/flutter#190060).
++  GLsizei msaa_samples_{0};
++  // glInvalidateFramebuffer (ES3), or null: drops the samples after each
++  // resolve so a tiler need not write them back.
++  using InvalidateFramebufferFn = void(GL_APIENTRY*)(GLenum target,
++                                                     GLsizei count,
++                                                     const GLenum* attachments);
++  InvalidateFramebufferFn invalidate_framebuffer_{nullptr};
+   std::unique_ptr<GlCompositor> gl_compositor_;
+ 
+   std::unordered_map<StoreBaton*, std::unique_ptr<GbmBackingStore>> stores_;
+-- 
+2.45.2
+

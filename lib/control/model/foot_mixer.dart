@@ -47,12 +47,7 @@ enum FootMixerAction {
 /// One physical pedal's semantics; Control alone supplies gesture timing.
 class FootMixerPedal {
   /// Creates one static role in the accepted ten-pedal layout.
-  const FootMixerPedal(
-    this.press, {
-    this.hold,
-    this.slot,
-    this.immediate = false,
-  });
+  const new(this.press, {this.hold, this.slot, this.immediate = false});
 
   /// Short action, either at contact or matching release.
   final FootMixerAction press;
@@ -70,7 +65,7 @@ class FootMixerPedal {
 /// Transient selection only; gain and mute remain owned by the repositories.
 class FootMixerSelection extends Equatable {
   /// Creates the local Mixer selection.
-  const FootMixerSelection({
+  const new({
     this.domain = FootMixerDomain.tracks,
     this.page = 0,
     this.channel,
@@ -92,7 +87,7 @@ class FootMixerSelection extends Equatable {
 /// One visible physical channel slot, including disabled empty tracks.
 class FootMixerChannel extends Equatable {
   /// Creates a channel reading from current repository facts.
-  const FootMixerChannel({
+  const new({
     required this.channel,
     required this.available,
     required this.gain,
@@ -133,7 +128,7 @@ class FootMixerChannel extends Equatable {
 /// Shared semantic read model for captions, touch and physical pedal feedback.
 class FootMixerProjection extends Equatable {
   /// Creates a complete projection.
-  const FootMixerProjection({
+  const new({
     required this.selection,
     required this.channels,
     required this.channelCount,
@@ -154,14 +149,8 @@ class FootMixerProjection extends Equatable {
       FootMixerAction.recordPlay,
       immediate: true,
     ),
-    PedalButton.stop: FootMixerPedal(
-      FootMixerAction.stop,
-      immediate: true,
-    ),
-    PedalButton.mode: FootMixerPedal(
-      FootMixerAction.exit,
-      immediate: true,
-    ),
+    PedalButton.stop: FootMixerPedal(FootMixerAction.stop, immediate: true),
+    PedalButton.mode: FootMixerPedal(FootMixerAction.exit, immediate: true),
     PedalButton.undo: FootMixerPedal(
       FootMixerAction.decrease,
       hold: FootMixerAction.reset,

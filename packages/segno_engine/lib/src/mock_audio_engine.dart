@@ -7,6 +7,7 @@ import 'package:segno_engine/src/audition.dart';
 import 'package:segno_engine/src/backing.dart';
 import 'package:segno_engine/src/engine_config.dart';
 import 'package:segno_engine/src/engine_snapshot.dart';
+import 'package:segno_engine/src/fx_draining.dart';
 import 'package:segno_engine/src/fx_fingerprint.dart';
 import 'package:segno_engine/src/fx_recipe.dart';
 import 'package:segno_engine/src/generated/segno_engine_bindings.dart';
@@ -33,7 +34,7 @@ import 'package:segno_engine/src/volume_space.dart';
 /// voices reported, no audio is made.
 class MockAudioEngine with SimulatedInstruments implements AudioEngine {
   /// Creates a [MockAudioEngine].
-  MockAudioEngine({
+  new({
     int inputChannels = defaultInputChannels,
     int outputChannels = defaultOutputChannels,
     String? deviceLabel,
@@ -400,6 +401,9 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
   @override
   bool get commandsSettled => true;
 
+  /// The tails the next snapshot reports still draining (#1733).
+  FxDraining fxDraining = FxDraining.none;
+
   @override
   EngineSnapshot snapshot() {
     if (_running) {
@@ -415,6 +419,7 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
     final inputs = _running ? _negotiatedInputs : 0;
     final outputs = _running ? _negotiatedOutputs : 0;
     return EngineSnapshot(
+      fxDraining: fxDraining,
       transposeBypass: _transposeBypass,
       followTempo: _followTempo,
       pitchMode: _pitchMode,
@@ -1054,6 +1059,10 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
   EngineResult stopTrack({int channel = 0}) => _requireRunning();
 
   @override
+  EngineResult spareTail({int channel = 0, int following = 0}) =>
+      _requireRunning();
+
+  @override
   EngineResult play({int channel = 0}) => _requireRunning();
 
   @override
@@ -1099,11 +1108,7 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
   }
 
   @override
-  EngineResult setLaneVolume(
-    double volume, {
-    int channel = 0,
-    int lane = 0,
-  }) {
+  EngineResult setLaneVolume(double volume, {int channel = 0, int lane = 0}) {
     final result = _requireRunning();
     if (!result.isOk) return result;
     _tracks[channel].laneAt(lane).volume = volume.clamp(0.0, LE_MAX_GAIN);
@@ -1263,6 +1268,10 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
   EngineResult stopRecordControl({required int channel}) => _requireRunning();
 
   @override
+  EngineResult stopRecordPark({required int channel, int following = 0}) =>
+      _requireRunning();
+
+  @override
   EngineResult cancelCountIn() => _requireRunning();
 
   @override
@@ -1356,10 +1365,8 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
   );
 
   @override
-  EngineResult setOutputEnabled({
-    required int output,
-    required bool enabled,
-  }) => _requireRunning();
+  EngineResult setOutputEnabled({required int output, required bool enabled}) =>
+      _requireRunning();
 
   @override
   EngineResult setOverdubFeedback(double feedback) => _requireRunning();
@@ -1490,10 +1497,7 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
   }
 
   @override
-  EngineResult setTrackLengthPreset({
-    required int channel,
-    required int bars,
-  }) {
+  EngineResult setTrackLengthPreset({required int channel, required int bars}) {
     final result = _requireRunning();
     if (!result.isOk) return result;
     if (channel < 0 || channel >= LE_MAX_TRACKS) return EngineResult.invalid;
@@ -1606,9 +1610,12 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
     if (channel < 0 || channel >= LE_MAX_TRACKS) return EngineResult.invalid;
     if (lane < 0 || lane >= LE_MAX_LANES) return EngineResult.invalid;
     if (index < 0 || index >= LE_FX_MAX) return EngineResult.invalid;
-    laneFxEnabledCalls.add(
-      (channel: channel, lane: lane, index: index, enabled: enabled),
-    );
+    laneFxEnabledCalls.add((
+      channel: channel,
+      lane: lane,
+      index: index,
+      enabled: enabled,
+    ));
     return EngineResult.ok;
   }
 
@@ -1620,11 +1627,29 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
   }) {
     if (channel < 0 || channel >= LE_MAX_TRACKS) return EngineResult.invalid;
     if (lane < 0 || lane >= LE_MAX_LANES) return EngineResult.invalid;
-    laneFxChainEnabledCalls.add(
-      (channel: channel, lane: lane, enabled: enabled),
-    );
+    laneFxChainEnabledCalls.add((
+      channel: channel,
+      lane: lane,
+      enabled: enabled,
+    ));
     return EngineResult.ok;
   }
+
+  @override
+  EngineResult setLaneSource({
+    required int channel,
+    required int lane,
+    required LaneSource source,
+  }) {
+    if (channel < 0 || channel >= LE_MAX_TRACKS) return EngineResult.invalid;
+    if (lane < 0 || lane >= LE_MAX_LANES) return EngineResult.invalid;
+    return EngineResult.ok;
+  }
+
+  /// The mock holds no audio, so no lane has a take to attach to.
+  @override
+  EngineResult heardAttach({required int channel, required int lane}) =>
+      EngineResult.invalid;
 
   // ---- Track-stage (per-track stereo bus) chain (FX v3 part 1b) ----
   // Mirrors the lane family: ring-backed setters keep the running gate,
@@ -1666,9 +1691,7 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
   }) {
     if (channel < 0 || channel >= LE_MAX_TRACKS) return EngineResult.invalid;
     if (index < 0 || index >= LE_FX_MAX) return EngineResult.invalid;
-    trackFxEnabledCalls.add(
-      (channel: channel, index: index, enabled: enabled),
-    );
+    trackFxEnabledCalls.add((channel: channel, index: index, enabled: enabled));
     return EngineResult.ok;
   }
 
@@ -1844,10 +1867,8 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
   }) => _requireRunning();
 
   @override
-  EngineResult setMonitorInputOutput({
-    required int input,
-    required int mask,
-  }) => _requireRunning();
+  EngineResult setMonitorInputOutput({required int input, required int mask}) =>
+      _requireRunning();
 
   @override
   EngineResult setMonitorInputVolume({
@@ -1856,10 +1877,8 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
   }) => _requireRunning();
 
   @override
-  EngineResult setMonitorInputMute({
-    required int input,
-    required bool muted,
-  }) => _requireRunning();
+  EngineResult setMonitorInputMute({required int input, required bool muted}) =>
+      _requireRunning();
 
   @override
   EngineResult setMonitorInputPan({required int input, required double pan}) {
@@ -1912,9 +1931,11 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
       return EngineResult.invalid;
     }
     if (index < 0 || index >= LE_FX_MAX) return EngineResult.invalid;
-    monitorInputFxEnabledCalls.add(
-      (input: input, index: index, enabled: enabled),
-    );
+    monitorInputFxEnabledCalls.add((
+      input: input,
+      index: index,
+      enabled: enabled,
+    ));
     return EngineResult.ok;
   }
 
@@ -1979,12 +2000,27 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
   @override
   Float32List exportLayer(int channel, int lane, int ordinal) => Float32List(0);
 
+  @override
+  Float32List exportLayerHeard(int channel, int lane, int ordinal) =>
+      Float32List(0);
+
+  @override
+  Float32List exportTrackLaneHeard(int channel, int lane) => Float32List(0);
+
   /// The mock holds no audio, so no track's content ever changes.
   @override
   int trackAudioRev(int channel) => 0;
 
   @override
   EngineResult importLayer(
+    int channel,
+    int lane,
+    int ordinal,
+    Float32List pcm,
+  ) => _requireRunning();
+
+  @override
+  EngineResult importLayerHeard(
     int channel,
     int lane,
     int ordinal,
@@ -2360,7 +2396,7 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
 class MockPluginSlotHandle implements PluginSlotHandle {
   /// Creates a [MockPluginSlotHandle] for [pluginId], seeded with the default
   /// value of each [mockParams] entry.
-  MockPluginSlotHandle(this.pluginId)
+  new(this.pluginId)
     : _values = {for (final p in mockParams) p.id: p.def},
       stateBlob = Uint8List.fromList('mock-state:$pluginId'.codeUnits);
 

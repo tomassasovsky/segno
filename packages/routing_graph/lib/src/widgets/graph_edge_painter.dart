@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:routing_graph/src/widgets/graph_edge.dart';
 
 /// Paints a list of [GraphEdge]s as wires.
@@ -14,7 +14,7 @@ import 'package:routing_graph/src/widgets/graph_edge.dart';
 /// legible instead of falling into the dash gaps.
 class GraphEdgePainter extends CustomPainter {
   /// Creates a painter for [edges].
-  GraphEdgePainter(this.edges);
+  new(this.edges);
 
   /// The wires to paint, in build order (faded ones are still drawn first).
   final List<GraphEdge> edges;

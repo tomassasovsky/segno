@@ -23,7 +23,7 @@ enum FxDestinationKind {
 /// `Whole track` is a distinct processing target, not "all the parts at once":
 /// it names the track's own stereo bus, downstream of every part.
 sealed class FxTrackPart extends Equatable {
-  const FxTrackPart();
+  const new();
 
   /// The whole track's own chain.
   static const FxTrackPart whole = FxWholeTrack._();
@@ -34,7 +34,7 @@ sealed class FxTrackPart extends Equatable {
 
 /// The whole track's own chain, downstream of its parts.
 final class FxWholeTrack extends FxTrackPart {
-  const FxWholeTrack._();
+  const new _();
 
   @override
   List<Object?> get props => const [];
@@ -43,7 +43,7 @@ final class FxWholeTrack extends FxTrackPart {
 /// One separately recorded part of the selected track.
 final class FxRecordedPart extends FxTrackPart {
   /// Creates an [FxRecordedPart] naming lane [lane].
-  const FxRecordedPart(this.lane);
+  const new(this.lane);
 
   /// The lane within the selected track.
   final int lane;
@@ -60,19 +60,19 @@ final class FxRecordedPart extends FxTrackPart {
 /// is a track, and a part index names nothing without the track.
 class FxDestination extends Equatable {
   /// Creates an [FxDestination].
-  const FxDestination({
+  const new({
     required this.kind,
     required this.index,
     this.part = FxTrackPart.whole,
   });
 
   /// A live input's chain.
-  const FxDestination.liveInput(int input)
+  const new liveInput(int input)
     : this(kind: FxDestinationKind.liveInput, index: input);
 
   /// A recorded track's chain — its whole-track bus unless [part] says
   /// otherwise.
-  const FxDestination.recordedTrack(int channel, {FxTrackPart? part})
+  const new recordedTrack(int channel, {FxTrackPart? part})
     : this(
         kind: FxDestinationKind.recordedTrack,
         index: channel,
@@ -84,12 +84,11 @@ class FxDestination extends Equatable {
   /// Carried as a recorded-kind destination with [allTracksIndex], because
   /// that is where the pen puts it: beside Track 8 in the same strip, not in
   /// a fourth kind of its own.
-  const FxDestination.allTracks()
+  const new allTracks()
     : this(kind: FxDestinationKind.recordedTrack, index: allTracksIndex);
 
   /// One output destination's chain.
-  const FxDestination.output(int bus)
-    : this(kind: FxDestinationKind.output, index: bus);
+  const new output(int bus) : this(kind: FxDestinationKind.output, index: bus);
 
   /// The [index] that means All tracks rather than a track channel.
   static const int allTracksIndex = -1;

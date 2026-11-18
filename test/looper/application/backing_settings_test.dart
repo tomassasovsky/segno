@@ -35,10 +35,12 @@ void main() {
       expect(engine.outputMask, 0xC);
       expect(engine.endMode, BackingEnd.repeat);
       expect(engine.clickPan, 0.75);
-      expect(
-        jsonDecode(f.settingsStore.values['backing.mix']! as String),
-        {'level': 0.5, 'pan': -0.25, 'outputMask': 12, 'end': 'repeat'},
-      );
+      expect(jsonDecode(f.settingsStore.values['backing.mix']! as String), {
+        'level': 0.5,
+        'pan': -0.25,
+        'outputMask': 12,
+        'end': 'repeat',
+      });
       expect(f.settingsStore.values['tempo.click_pan'], 0.75);
 
       // A fresh start over the same store replays both into the engine.
@@ -126,10 +128,10 @@ void main() {
     });
 
     test('the owners carry their own keys', () {
-      expect(
-        f.settings.owners.map((owner) => owner.key),
-        [OwnedSetting.backingMix, OwnedSetting.clickPan],
-      );
+      expect(f.settings.owners.map((owner) => owner.key), [
+        OwnedSetting.backingMix,
+        OwnedSetting.clickPan,
+      ]);
     });
   });
 

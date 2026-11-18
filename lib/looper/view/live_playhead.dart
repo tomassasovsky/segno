@@ -12,7 +12,7 @@ import 'package:segno/looper/view/live_value.dart';
 /// widget a key built from it.
 class LivePlayhead<T extends Object> extends StatelessWidget {
   /// Creates a [LivePlayhead].
-  const LivePlayhead({required this.select, required this.builder, super.key});
+  const new({required this.select, required this.builder, super.key});
 
   /// Picks this widget's value out of the playheads.
   final T Function(Playhead playhead) select;

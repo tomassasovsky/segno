@@ -33,7 +33,7 @@ import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/fake_audio_engine.dart';
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 void main() {
   test(
@@ -162,13 +162,9 @@ void main() {
           ),
         ),
       );
-      final manifest =
-          jsonDecode(
-                await File(
-                  '${directory.path}/${Session.manifestName}',
-                ).readAsString(),
-              )
-              as Map<String, dynamic>;
+      final manifest = jsonDecode(
+        await File('${directory.path}/${Session.manifestName}').readAsString(),
+      ) as Map<String, dynamic>;
       final track =
           (manifest['tracks'] as List<dynamic>).single as Map<String, dynamic>;
       final savedLane =
@@ -208,9 +204,8 @@ void main() {
           loopBars: 7,
         ),
       );
-      when(
-        () => looper.defaultRecordTiming,
-      ).thenReturn(RecordTiming.immediately);
+      when(() => looper.defaultRecordTiming)
+          .thenReturn(RecordTiming.immediately);
       when(() => looper.defaultOverdubDecay).thenReturn(0);
       when(() => looper.defaultOneShot).thenReturn(false);
       when(() => looper.trackRecordTimingOverrides).thenReturn(const {});
@@ -633,6 +628,7 @@ void main() {
 
       final rig = rigFromBundle((
         session: read,
+        heardStems: const <(int, int), List<Float32List>>{},
         laneStems: {
           (0, 0): [
             Float32List.fromList([1, 1, 1, 1]),
@@ -765,9 +761,10 @@ void main() {
         ),
       });
 
-      final effects = performanceChainsFromLooper(
-        looper,
-      ).laneChains.single.effects;
+      final effects = performanceChainsFromLooper(looper)
+          .laneChains
+          .single
+          .effects;
 
       final effect = effects.single as le.BuiltInEffect;
       expect(effect.type, le.TrackEffectType.octaver);
@@ -792,9 +789,10 @@ void main() {
         ),
       });
 
-      final effects = performanceChainsFromLooper(
-        looper,
-      ).laneChains.single.effects;
+      final effects = performanceChainsFromLooper(looper)
+          .laneChains
+          .single
+          .effects;
 
       final effect = effects.single as le.PluginEffect;
       expect(effect.ref.format, le.PluginFormat.vst3);
@@ -833,9 +831,8 @@ void main() {
     test('captures an enabled DRY monitor (no FX)', () {
       // Same rule as the session save: the capture documents every configured
       // monitor, not just the ones carrying an FX chain.
-      when(looper.allMonitors).thenReturn(const {
-        0: InputMonitor(input: 0, mode: MonitorMode.on),
-      });
+      when(looper.allMonitors)
+          .thenReturn(const {0: InputMonitor(input: 0, mode: MonitorMode.on)});
 
       final monitor = performanceChainsFromLooper(looper).monitors.single;
 
@@ -915,6 +912,40 @@ void main() {
       tracks: tracks,
     );
 
+    test("carries each lane's recorded input to the rig (#1678)", () {
+      final pcm = Float32List.fromList([1, 1, 1, 1]);
+      final rig = rigFromBundle((
+        session: sessionWith([
+          const SessionTrack(
+            fadeAmount: 1,
+            reversed: false,
+            channel: 0,
+            multiple: 1,
+            lengthFrames: 4,
+            lanes: [
+              SessionLane(
+                lane: 0,
+                volume: 1,
+                muted: false,
+                outputMask: 0x3,
+                inputChannel: 0,
+                recordedInput: 2,
+                layers: [SessionLayer(file: 'track0_lane0_L0.wav')],
+                history: TrackHistory.none,
+              ),
+            ],
+          ),
+        ]),
+        heardStems: const <(int, int), List<Float32List>>{},
+        laneStems: {
+          (0, 0): [pcm],
+        },
+      ));
+      final lane = rig.tracks.single.lanes.single;
+      expect(lane.inputChannel, 0);
+      expect(lane.recordedInput, 2);
+    });
+
     test('maps bare-array FX payloads and current chain envelopes', () {
       final pcm = Float32List.fromList([1, 1, 1, 1]);
       final bare = encodeTrackEffects([
@@ -941,9 +972,7 @@ void main() {
               lanes: [lane(0, 'track0_lane0_L0.wav')],
             ),
           ],
-          laneChains: [
-            SessionLaneChain(channel: 0, lane: 0, encoded: bare),
-          ],
+          laneChains: [SessionLaneChain(channel: 0, lane: 0, encoded: bare)],
           monitors: [
             SessionMonitor(
               input: 0,
@@ -955,6 +984,7 @@ void main() {
             ),
           ],
         ),
+        heardStems: const <(int, int), List<Float32List>>{},
         laneStems: {
           (0, 0): [pcm],
         },
@@ -986,6 +1016,7 @@ void main() {
           overdubDecay: 40,
           loopBars: 7,
         ),
+        heardStems: const <(int, int), List<Float32List>>{},
         laneStems: const {},
       ));
 
@@ -1034,6 +1065,7 @@ void main() {
             ),
           ],
         ),
+        heardStems: const <(int, int), List<Float32List>>{},
         laneStems: {
           (0, 0): [pcm],
         },
@@ -1076,6 +1108,7 @@ void main() {
             ),
           ],
         ),
+        heardStems: const <(int, int), List<Float32List>>{},
         laneStems: {
           (1, 0): [Float32List(16)],
         },
@@ -1094,6 +1127,7 @@ void main() {
           baseLengthFrames: 4,
           tracks: [],
         ),
+        heardStems: const <(int, int), List<Float32List>>{},
         laneStems: const {},
       ));
 
@@ -1125,6 +1159,7 @@ void main() {
             encoded: '',
           ),
         ),
+        heardStems: const <(int, int), List<Float32List>>{},
         laneStems: const {},
       ));
 
@@ -1144,6 +1179,7 @@ void main() {
               encoded: '',
             ),
           ),
+          heardStems: const <(int, int), List<Float32List>>{},
           laneStems: const {},
         )),
         throwsFormatException,
@@ -1189,6 +1225,7 @@ void main() {
             ),
           ],
         ),
+        heardStems: const <(int, int), List<Float32List>>{},
         laneStems: {
           (0, 0): [pcm],
         },
@@ -1209,58 +1246,56 @@ void main() {
       );
     });
 
-    test(
-      'a current Session with omitted bus chains maps empty stages '
-      'and FX defaults',
-      () {
-        final pcm = Float32List.fromList([1, 1, 1, 1]);
-        final bundle = (
-          session: Session(
-            sampleRate: 48000,
-            channels: 1,
-            baseLengthFrames: 4,
-            tracks: [
-              SessionTrack(
-                fadeAmount: 1,
-                reversed: false,
-                channel: 0,
-                multiple: 1,
-                lengthFrames: 4,
-                lanes: [lane(0, 'track0_lane0_L0.wav')],
-              ),
-            ],
-            // The FX decoder handles bare-array payloads independently of
-            // the schema-8 manifest reader.
-            laneChains: [
-              SessionLaneChain(
-                channel: 0,
-                lane: 0,
-                encoded: encodeTrackEffects([
-                  BuiltInEffect(type: TrackEffectType.drive),
-                ]),
-              ),
-            ],
-          ),
-          laneStems: {
-            (0, 0): [pcm],
-          },
-        );
+    test('a current Session with omitted bus chains maps empty stages '
+        'and FX defaults', () {
+      final pcm = Float32List.fromList([1, 1, 1, 1]);
+      final bundle = (
+        session: Session(
+          sampleRate: 48000,
+          channels: 1,
+          baseLengthFrames: 4,
+          tracks: [
+            SessionTrack(
+              fadeAmount: 1,
+              reversed: false,
+              channel: 0,
+              multiple: 1,
+              lengthFrames: 4,
+              lanes: [lane(0, 'track0_lane0_L0.wav')],
+            ),
+          ],
+          // The FX decoder handles bare-array payloads independently of
+          // the schema-8 manifest reader.
+          laneChains: [
+            SessionLaneChain(
+              channel: 0,
+              lane: 0,
+              encoded: encodeTrackEffects([
+                BuiltInEffect(type: TrackEffectType.drive),
+              ]),
+            ),
+          ],
+        ),
+        heardStems: const <(int, int), List<Float32List>>{},
+        laneStems: {
+          (0, 0): [pcm],
+        },
+      );
 
-        final rig = rigFromBundle(bundle);
+      final rig = rigFromBundle(bundle);
 
-        expect(rig.trackChains, isEmpty);
-        expect(rig.outputChains, isEmpty);
-        // The lane it DID describe loads enabled at both levels, with no
-        // inheritance marker — and no slot ids yet (the repository mints
-        // those).
-        final loop = rig.laneChains[(0, 0)]!;
-        expect(loop.chainEnabled, isTrue);
-        expect(loop.meta, isNull);
-        final loopFx = loop.entries.single as BuiltInEffect;
-        expect(loopFx.enabled, isTrue);
-        expect(loopFx.slotId, isNull);
-      },
-    );
+      expect(rig.trackChains, isEmpty);
+      expect(rig.outputChains, isEmpty);
+      // The lane it DID describe loads enabled at both levels, with no
+      // inheritance marker — and no slot ids yet (the repository mints
+      // those).
+      final loop = rig.laneChains[(0, 0)]!;
+      expect(loop.chainEnabled, isTrue);
+      expect(loop.meta, isNull);
+      final loopFx = loop.entries.single as BuiltInEffect;
+      expect(loopFx.enabled, isTrue);
+      expect(loopFx.slotId, isNull);
+    });
 
     test('maps every lane that has decoded audio', () {
       final l0 = Float32List.fromList([1, 1, 1, 1]);
@@ -1279,6 +1314,7 @@ void main() {
             ],
           ),
         ]),
+        heardStems: const <(int, int), List<Float32List>>{},
         laneStems: {
           (0, 0): [l0],
           (0, 1): [l1],
@@ -1306,6 +1342,7 @@ void main() {
               lanes: [lane(0, 'track${channel}_lane0_L0.wav')],
             ),
         ]),
+        heardStems: const <(int, int), List<Float32List>>{},
         laneStems: {
           (0, 0): [pcm],
           (1, 0): [pcm],
@@ -1314,10 +1351,7 @@ void main() {
       final rig = rigFromBundle(bundle);
       expect(
         [for (final t in rig.tracks) (t.channel, t.reversed)],
-        [
-          (0, true),
-          (1, false),
-        ],
+        [(0, true), (1, false)],
       );
     });
 
@@ -1347,6 +1381,11 @@ void main() {
         Float32List.fromList([5]),
         Float32List.fromList([6]),
       ];
+      final heard1 = [
+        Float32List(0),
+        Float32List.fromList([.5, -.5]),
+        Float32List(0),
+      ];
       final bundle = (
         session: sessionWith([
           SessionTrack(
@@ -1361,12 +1400,18 @@ void main() {
             ],
           ),
         ]),
+        // Lane 1's live image holds a heard image (#1713); lane 0 has none.
+        heardStems: {(0, 1): heard1},
         laneStems: {(0, 0): l0, (0, 1): l1},
       );
 
       final rig = rigFromBundle(bundle);
       final lanes = rig.tracks.single.lanes;
       expect(lanes, hasLength(2));
+      expect(lanes[0].heard, isEmpty);
+      expect(lanes[1].heard, heard1);
+      expect(lanes[1].heardAt(1), heard1[1]);
+      expect(lanes[1].heardAt(0), isEmpty);
       expect(lanes[0].layers, l0);
       expect(lanes[0].history, history);
       expect(lanes[0].undoCount, 1);
@@ -1415,6 +1460,7 @@ void main() {
             ),
           ],
         ),
+        heardStems: const <(int, int), List<Float32List>>{},
         laneStems: {
           (0, 0): [pcm],
         },
@@ -1451,6 +1497,7 @@ void main() {
           ),
         ]),
         // Lane 1 has no decoded audio.
+        heardStems: const <(int, int), List<Float32List>>{},
         laneStems: {
           (0, 0): [l0],
         },
@@ -1483,6 +1530,7 @@ void main() {
           ),
         ]),
         // Only track 0's audio decoded.
+        heardStems: const <(int, int), List<Float32List>>{},
         laneStems: {
           (0, 0): [
             Float32List.fromList([1, 1, 1, 1]),
@@ -1691,10 +1739,7 @@ void main() {
         'recordedLengthFrames': 0,
       };
 
-      expect(
-        jsonEncode(full.forNewLoop().toJson()),
-        jsonEncode(expected),
-      );
+      expect(jsonEncode(full.forNewLoop().toJson()), jsonEncode(expected));
     });
 
     test('rigForNewLoop is the empty rig with every setting and chain', () {
@@ -1705,7 +1750,11 @@ void main() {
       expect(rig.loopBars, 0);
       expect(rig.primaryTrack, -1);
       // The rest is what an Open of the same session applies.
-      final opened = rigFromBundle((session: full, laneStems: const {}));
+      final opened = rigFromBundle((
+        session: full,
+        laneStems: const {},
+        heardStems: const {},
+      ));
       expect(rig.tempoBpm, 96);
       expect(rig.tempoSource, opened.tempoSource);
       expect((rig.tsNum, rig.tsDen), (7, 8));

@@ -1,5 +1,5 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/control/model/foot_reverse.dart';
@@ -17,7 +17,7 @@ import 'package:segno/theme/theme.dart';
 /// shows all eight directions.
 class FootReverseView extends StatelessWidget {
   /// Creates the performance surface within the real Tracks hierarchy.
-  const FootReverseView({super.key});
+  const new({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -88,7 +88,7 @@ class FootReverseView extends StatelessWidget {
 
 /// The all-eight overview: a heading over two rows of four tracks.
 class _ReverseOverview extends StatelessWidget {
-  const _ReverseOverview({required this.projection});
+  const new({required this.projection});
 
   final FootReverseProjection projection;
 
@@ -132,7 +132,7 @@ class _ReverseOverview extends StatelessWidget {
 
 /// One track in the overview: name, then its direction or Empty.
 class _ReverseOverviewCell extends StatelessWidget {
-  const _ReverseOverviewCell({required this.track, required this.name});
+  const new({required this.track, required this.name});
 
   final FootReverseTrack track;
   final String name;
@@ -152,35 +152,31 @@ class _ReverseOverviewCell extends StatelessWidget {
     return Opacity(
       key: Key('foot_reverse_overview_${track.channel}'),
       opacity: track.busy ? surface.disabledOpacity : 1,
-      child: _overviewColumn(l10n, style, color),
-    );
-  }
-
-  Widget _overviewColumn(AppLocalizations l10n, TextStyle style, Color color) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        AppText(
-          name,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: style,
-        ),
-        const SizedBox(height: 10),
-        Row(
-          children: [
-            if (track.recorded) ...[
-              Icon(
-                _directionIcon(reversed: track.reversed),
-                size: 26,
-                color: color,
-              ),
-              const SizedBox(width: 9),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          AppText(
+            name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: style,
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              if (track.recorded) ...[
+                Icon(
+                  _directionIcon(reversed: track.reversed),
+                  size: 26,
+                  color: color,
+                ),
+                const SizedBox(width: 9),
+              ],
+              AppText(_directionWord(l10n, track), style: style),
             ],
-            AppText(_directionWord(l10n, track), style: style),
-          ],
-        ),
-      ],
+          ),
+        ],
+      ),
     );
   }
 }
@@ -198,7 +194,7 @@ IconData _directionIcon({required bool reversed}) =>
     reversed ? Icons.chevron_left : Icons.chevron_right;
 
 class _FootReversePedal extends StatelessWidget {
-  const _FootReversePedal({required this.button, required this.projection});
+  const new({required this.button, required this.projection});
 
   final PedalButton button;
   final FootReverseProjection projection;

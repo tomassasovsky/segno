@@ -7,10 +7,10 @@ import 'package:bloc_test/bloc_test.dart';
 import 'package:brightness_client/brightness_client.dart';
 import 'package:console_facts_client/console_facts_client.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:operation_guards/operation_guards.dart';
@@ -53,14 +53,14 @@ import '../helpers/helpers.dart';
 import '../settings/touch_calibration/fake_touch_calibration_client.dart';
 import 'screenshot_settings.dart';
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+    implements LooperBloc;
 
-class _MockMidiDevices extends Mock implements MidiDeviceRepository {}
+class _MockMidiDevices extends Mock implements MidiDeviceRepository;
 
-class _MockUpdateCubit extends MockCubit<UpdateState> implements UpdateCubit {}
+class _MockUpdateCubit extends MockCubit<UpdateState> implements UpdateCubit;
 
 /// What the appliance reports about its own build. A real [UpdateCubit] over
 /// the unsupported backend knows neither its version nor its channel, and the
@@ -154,12 +154,13 @@ ThemeData _theme() => ThemeData(
 /// The pen 29 study's radio: The Studio up, a saved network out of range, and
 /// four others. Each switch reaches one of the eight accepted screens.
 class _PreviewWifiClient implements WifiClient {
-  _PreviewWifiClient({
+  new({
     this.enabled = true,
     this.connected = true,
     this.internet = true,
     this.holdJoins = false,
-    this.refuseKey = false,
+    this.refuse,
+    this.joining = false,
   });
 
   final bool enabled;
@@ -169,8 +170,11 @@ class _PreviewWifiClient implements WifiClient {
   /// A join never ends, so the Connecting dialog stays up.
   final bool holdJoins;
 
-  /// A join is refused as a wrong password.
-  final bool refuseKey;
+  /// Why every join fails, or null when joins succeed.
+  final WifiJoinError? refuse;
+
+  /// NetworkManager is bringing The Studio back by itself.
+  final bool joining;
 
   @override
   bool get isSupported => true;
@@ -182,7 +186,8 @@ class _PreviewWifiClient implements WifiClient {
       supported: true,
       enabled: enabled,
       connected: up,
-      ssid: up ? 'The Studio' : '',
+      connecting: enabled && !up && joining,
+      ssid: up || joining ? 'The Studio' : '',
       ip: up ? '192.168.1.42' : '',
       signal: -42,
       autoConnect: const {'The Studio': true, 'Venue backstage': false},
@@ -206,9 +211,19 @@ class _PreviewWifiClient implements WifiClient {
   ];
 
   @override
+  Stream<void> changes() => const Stream.empty();
+
+  @override
   Future<void> connect(String ssid, {String? psk}) async {
     if (holdJoins) await Completer<void>().future;
-    if (refuseKey) throw StateError('segno-wifi-ctl: authentication failed');
+    final reason = refuse;
+    if (reason != null) {
+      throw WifiHelperException(
+        'segno-wifi-ctl: join failed',
+        join: reason,
+        restored: 'The Studio',
+      );
+    }
   }
 
   @override
@@ -280,23 +295,20 @@ void main() {
     EngineStatus status = _previewStatus,
   }) {
     final looper = _MockLooperRepository();
+    registerFallbackValue(<FxControlReach>[]);
+    when(() => looper.fxReachFits(any())).thenReturn(true);
     when(() => looper.sessionRevision).thenReturn(0);
     stubScreenshotSettings(looper);
-    when(() => looper.recordStartSettingsFailures).thenAnswer(
-      (_) => const Stream<EngineResult>.empty(),
-    );
-    when(() => looper.clickModeFailures).thenAnswer(
-      (_) => const Stream<EngineResult>.empty(),
-    );
-    when(() => looper.clickVolumeFailures).thenAnswer(
-      (_) => const Stream<EngineResult>.empty(),
-    );
-    when(() => looper.recordTimingFailures).thenAnswer(
-      (_) => const Stream<EngineResult>.empty(),
-    );
-    when(() => looper.lengthSettingsFailures).thenAnswer(
-      (_) => const Stream<EngineResult>.empty(),
-    );
+    when(() => looper.recordStartSettingsFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
+    when(() => looper.clickModeFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
+    when(() => looper.clickVolumeFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
+    when(() => looper.recordTimingFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
+    when(() => looper.lengthSettingsFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
     when(() => looper.inputSetup).thenReturn(const InputSetup.empty());
     when(() => looper.laneCount(any())).thenAnswer((call) {
       final channel = call.positionalArguments.first as int;
@@ -312,16 +324,13 @@ void main() {
     );
     final looperStates = StreamController<LooperState>.broadcast();
     addTearDown(looperStates.close);
-    when(() => looper.monitorChanges).thenAnswer(
-      (_) => const Stream<int>.empty(),
-    );
-    when(() => looper.monitorParamChanges).thenAnswer(
-      (_) => const Stream<int>.empty(),
-    );
+    when(() => looper.monitorChanges)
+        .thenAnswer((_) => const Stream<int>.empty());
+    when(() => looper.monitorParamChanges)
+        .thenAnswer((_) => const Stream<int>.empty());
     when(() => looper.looperState).thenAnswer((_) => looperStates.stream);
-    when(
-      () => looper.mixSettingsFailures,
-    ).thenAnswer((_) => const Stream.empty());
+    when(() => looper.mixSettingsFailures)
+        .thenAnswer((_) => const Stream.empty());
     when(() => looper.mixGeneration).thenReturn(0);
     var looperNow = LooperState(
       tracks: [for (var i = 0; i < 8; i++) Track(channel: i)],
@@ -351,9 +360,8 @@ void main() {
       );
       return EngineResult.ok;
     });
-    when(looper.measureLoopbackLatency).thenAnswer(
-      (_) async => const LatencyResult(LatencyOutcome.timedOut),
-    );
+    when(looper.measureLoopbackLatency)
+        .thenAnswer((_) async => const LatencyResult(LatencyOutcome.timedOut));
     when(looper.allMonitors).thenReturn(const {});
     when(
       () => looper.setMonitorInputMode(
@@ -544,9 +552,7 @@ void main() {
       client: client ?? FakeConsoleFactsClient(latency: Duration.zero),
       settings: settings,
     );
-    final pedal = PedalCubit(
-      pedal: PedalRepository(NoopPedalLink()),
-    );
+    final pedal = PedalCubit(pedal: PedalRepository(NoopPedalLink()));
     // The pen's own numbers (31 `Storage overview`): Internal 128 GB with
     // 64.0 GB free, SEGNO USB 32 GB with 24.2 GB free, at 48 kHz.
     final usb = FakeUsbStorageClient(
@@ -660,7 +666,7 @@ void main() {
       MaterialApp(
         debugShowCheckedModeBanner: false,
         theme: _theme(),
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        localizationsDelegates: appLocalizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         home: MultiRepositoryProvider(
           providers: [
@@ -774,7 +780,10 @@ void main() {
   }, skip: !rendersScreenshots);
 
   testWidgets('Network page, 29/04 incorrect password', (tester) async {
-    await pumpNetwork(tester, _PreviewWifiClient(refuseKey: true));
+    await pumpNetwork(
+      tester,
+      _PreviewWifiClient(refuse: WifiJoinError.wrongPassword),
+    );
     await tester.tap(find.byKey(const Key('network_row_Rehearsal Room')));
     await tester.pumpAndSettle();
     await typePassword(tester, 'wrongkey');
@@ -784,6 +793,43 @@ void main() {
     await expectLater(
       find.byType(MaterialApp),
       matchesGoldenFile('goldens/settings_network_wifi_incorrect.png'),
+    );
+  }, skip: !rendersScreenshots);
+
+  testWidgets('Network page, a join that could not connect', (tester) async {
+    await pumpNetwork(
+      tester,
+      _PreviewWifiClient(refuse: WifiJoinError.noConnection),
+    );
+    await tester.tap(find.byKey(const Key('network_row_Rehearsal Room')));
+    await tester.pumpAndSettle();
+    await typePassword(tester, 'rehearse');
+    await tester.tap(find.widgetWithText(InkWell, 'Connect').last);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('network_retry')), findsOneWidget);
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/settings_network_wifi_failed.png'),
+    );
+  }, skip: !rendersScreenshots);
+
+  testWidgets('Network page, rejoining by itself', (tester) async {
+    await size(tester);
+    await pumpPage(
+      tester,
+      page: const NetworkSettingsPage(),
+      wifi: WifiRepository(
+        client: _PreviewWifiClient(connected: false, joining: true),
+      ),
+    );
+    // The progress bar sweeps for as long as the join runs: no settling.
+    for (var i = 0; i < 4; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(find.byKey(const Key('network_progress')), findsOneWidget);
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/settings_network_wifi_rejoining.png'),
     );
   }, skip: !rendersScreenshots);
 
@@ -815,9 +861,7 @@ void main() {
     );
   }, skip: !rendersScreenshots);
 
-  testWidgets('Network page, 29/08 connected without internet', (
-    tester,
-  ) async {
+  testWidgets('Network page, 29/08 connected without internet', (tester) async {
     await pumpNetwork(tester, _PreviewWifiClient(internet: false));
     await expectLater(
       find.byType(Scaffold),
@@ -838,9 +882,7 @@ void main() {
     );
   }, skip: !rendersScreenshots);
 
-  testWidgets('FX pedal assignments with a switch selected', (
-    tester,
-  ) async {
+  testWidgets('FX pedal assignments with a switch selected', (tester) async {
     await size(tester);
     final rig = controlProviders(tester);
     await rig.control.setGlobalBindings(
@@ -851,11 +893,7 @@ void main() {
         ),
       ]),
     );
-    await pumpPage(
-      tester,
-      page: const FxPedalAssignmentsPage(),
-      control: rig,
-    );
+    await pumpPage(tester, page: const FxPedalAssignmentsPage(), control: rig);
     await tester.pumpAndSettle();
     await tester.pump(const Duration(milliseconds: 500));
     await tester.tap(find.byKey(const Key('pedal_switch_track1')));
@@ -897,11 +935,7 @@ void main() {
       looperState: LooperState(tracks: const [Track()], status: status),
       status: status,
     );
-    await pumpPage(
-      tester,
-      page: const DevicePage(),
-      control: providers,
-    );
+    await pumpPage(tester, page: const DevicePage(), control: providers);
     await tester.pumpAndSettle();
     return providers;
   }
@@ -1111,9 +1145,7 @@ void main() {
     );
   }, skip: !rendersScreenshots);
 
-  testWidgets('Updates page, staged and waiting for a restart', (
-    tester,
-  ) async {
+  testWidgets('Updates page, staged and waiting for a restart', (tester) async {
     await pumpSystem(
       tester,
       const UpdatesSettingsPage(),

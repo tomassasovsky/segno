@@ -8,7 +8,7 @@ typedef OwnedSettingFailure = ({OwnedSetting key, SettingOutcome outcome});
 /// shutdown flush and Retry.
 class SettingsOwners {
   /// Registers [all] in the order every caller acquires them.
-  const SettingsOwners(this.all);
+  const new(this.all);
 
   /// The owners, in their fixed order.
   final List<SettingsOwner<Object, Object?>> all;

@@ -1,23 +1,24 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/looper/view/looper_mode_change.dart';
 import 'package:segno/theme/theme.dart';
 
 /// The Loop mode page: the five mode cards with their diagrams (the pen's
-/// `mode-choices`, 1744 x 420 at (88, 332) under the title). A card that the
+/// `mode-choices`, 420 high, under the tabs). A card that the
 /// engine refuses right now shows its reason in place of its description;
 /// choosing a mode over playing loops asks "Stop loops and switch" in the
 /// pen's own dialog (accepted design, Loop mode transitions).
 class LoopModePage extends StatelessWidget {
   /// Creates a [LoopModePage].
-  const LoopModePage({super.key});
+  const new({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -33,11 +34,12 @@ class LoopModePage extends StatelessWidget {
     final primary = context.select<LooperBloc, int>(
       (bloc) => bloc.state.transport.primaryTrack,
     );
-    // The cards share the content width, under the title (#1590).
+    // The cards share the content width (#1590), under the tabs where every
+    // Loop settings tab starts (#1672).
     return Positioned(
       left: 0,
       right: 0,
-      top: 332,
+      top: kLoopTabContentTop,
       child: Row(
         children: [
           for (final (i, mode) in LooperMode.values.indexed) ...[
@@ -112,7 +114,7 @@ class LoopModePage extends StatelessWidget {
 /// One mode card: 330 x 420, the name and a check when selected, the
 /// three-track diagram, and the description or reason.
 class _ModeCard extends StatelessWidget {
-  const _ModeCard({
+  const new({
     required this.mode,
     required this.selected,
     required this.reason,
@@ -212,7 +214,7 @@ class _ModeCard extends StatelessWidget {
 /// The pen's three-track diagram for a mode: each track is a 272 x 32 row of
 /// loop blocks, drawn from the pen's own block positions.
 class _ModeDiagram extends StatelessWidget {
-  const _ModeDiagram({required this.mode, required this.selected});
+  const new({required this.mode, required this.selected});
 
   final LooperMode mode;
   final bool selected;

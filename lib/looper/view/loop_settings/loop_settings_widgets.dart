@@ -1,6 +1,6 @@
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/common/encoder_intents.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/loop_settings/loop_edit_scope.dart';
@@ -13,7 +13,7 @@ import 'package:segno/theme/theme.dart';
 /// from the blue selection.
 class LoopFocusable extends StatelessWidget {
   /// Creates a focus stop around one actionable control.
-  const LoopFocusable({
+  const new({
     required this.child,
     required this.onActivate,
     this.enabled = true,
@@ -52,36 +52,34 @@ class LoopFocusable extends StatelessWidget {
         },
       ),
     },
-    child: _focus(context),
-  );
-
-  Widget _focus(BuildContext context) => Focus(
-    focusNode: focusNode,
-    canRequestFocus: enabled,
-    autofocus: autofocus,
-    onKeyEvent: (_, event) {
-      if (!enabled || event is! KeyDownEvent) return KeyEventResult.ignored;
-      if (event.logicalKey == LogicalKeyboardKey.enter ||
-          event.logicalKey == LogicalKeyboardKey.numpadEnter ||
-          event.logicalKey == LogicalKeyboardKey.space) {
-        onActivate();
-        return KeyEventResult.handled;
-      }
-      return KeyEventResult.ignored;
-    },
-    child: Builder(
-      builder: (context) => DecoratedBox(
-        position: DecorationPosition.foreground,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(radius),
-          border: Border.all(
-            color: Focus.of(context).hasFocus
-                ? context.surface.encoderFocus
-                : Colors.transparent,
-            width: 3,
+    child: Focus(
+      focusNode: focusNode,
+      canRequestFocus: enabled,
+      autofocus: autofocus,
+      onKeyEvent: (_, event) {
+        if (!enabled || event is! KeyDownEvent) return KeyEventResult.ignored;
+        if (event.logicalKey == LogicalKeyboardKey.enter ||
+            event.logicalKey == LogicalKeyboardKey.numpadEnter ||
+            event.logicalKey == LogicalKeyboardKey.space) {
+          onActivate();
+          return KeyEventResult.handled;
+        }
+        return KeyEventResult.ignored;
+      },
+      child: Builder(
+        builder: (context) => DecoratedBox(
+          position: DecorationPosition.foreground,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(radius),
+            border: Border.all(
+              color: Focus.of(context).hasFocus
+                  ? context.surface.encoderFocus
+                  : Colors.transparent,
+              width: 3,
+            ),
           ),
+          child: child,
         ),
-        child: child,
       ),
     ),
   );
@@ -94,7 +92,7 @@ class LoopFocusable extends StatelessWidget {
 /// the recording rows.
 class LoopChoiceButton extends StatelessWidget {
   /// Creates a [LoopChoiceButton].
-  const LoopChoiceButton({
+  const new({
     required this.label,
     required this.selected,
     required this.onTap,
@@ -104,11 +102,17 @@ class LoopChoiceButton extends StatelessWidget {
     this.enabled = true,
     this.fontSize = 24,
     this.hint,
+    this.fitLabel = false,
     super.key,
   });
 
   /// Why the choice cannot be taken, announced while it is not [enabled].
   final String? hint;
+
+  /// Whether a label wider than [width] widens the button instead of
+  /// shrinking to fit it, for a button that stands alone rather than in a
+  /// row of equal choices (#1672).
+  final bool fitLabel;
 
   /// The choice's name.
   final String label;
@@ -161,38 +165,30 @@ class LoopChoiceButton extends StatelessWidget {
             child: InkWell(
               canRequestFocus: false,
               onTap: enabled ? onTap : null,
-              child: SizedBox(
+              child: _LoopButtonBox(
                 width: width,
                 height: height,
-                // A label longer than its box scales down rather than
-                // overflowing: the pen's boxes fit the English labels, and a
-                // translation may not.
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (icon != null) ...[
-                          Icon(icon, size: 36, color: textColor),
-                          const SizedBox(width: 24),
-                        ],
-                        // The button's own Semantics names it; the visible
-                        // text would read the label a second time.
-                        ExcludeSemantics(
-                          child: AppText(
-                            label,
-                            style: TextStyle(
-                              color: textColor,
-                              fontSize: fontSize,
-                              height: 1,
-                            ),
-                          ),
+                fitLabel: fitLabel,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (icon != null) ...[
+                      Icon(icon, size: 36, color: textColor),
+                      const SizedBox(width: 24),
+                    ],
+                    // The button's own Semantics names it; the visible
+                    // text would read the label a second time.
+                    ExcludeSemantics(
+                      child: AppText(
+                        label,
+                        style: TextStyle(
+                          color: textColor,
+                          fontSize: fontSize,
+                          height: 1,
                         ),
-                      ],
+                      ),
                     ),
-                  ),
+                  ],
                 ),
               ),
             ),
@@ -203,12 +199,52 @@ class LoopChoiceButton extends StatelessWidget {
   }
 }
 
+/// A Loop button's box: [width] x [height] with the label centred 12 in
+/// from the sides. A label longer than the box scales down rather than
+/// overflowing (the pen's boxes fit the English labels, and a translation
+/// may not), unless [fitLabel], where the box grows from [width] to fit it
+/// as far as its parent allows.
+class _LoopButtonBox extends StatelessWidget {
+  const new({
+    required this.width,
+    required this.height,
+    required this.fitLabel,
+    required this.child,
+  });
+
+  final double width;
+  final double height;
+  final bool fitLabel;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    // With fitLabel the label still scales down where the parent cannot
+    // give it room to grow.
+    final label = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: FittedBox(fit: BoxFit.scaleDown, child: child),
+    );
+    if (!fitLabel) {
+      return SizedBox(width: width, height: height, child: label);
+    }
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        minWidth: width,
+        minHeight: height,
+        maxHeight: height,
+      ),
+      child: Align(widthFactor: 1, child: label),
+    );
+  }
+}
+
 /// The pen's on/off switch: an 86 x 46 pill whose knob sits right and lights
 /// when on, optionally led by its [label]. Label and pill are one control and
 /// one focus stop, so a tap on either and the encoder press all toggle it.
 class LoopSwitch extends StatelessWidget {
   /// Creates a [LoopSwitch].
-  const LoopSwitch({
+  const new({
     required this.value,
     required this.onChanged,
     required this.semanticLabel,
@@ -237,6 +273,11 @@ class LoopSwitch extends StatelessWidget {
 
   /// The knob's diameter.
   static const double knobSize = 30;
+
+  /// The touch margin left and right of the label and pill, inside the
+  /// switch's tap area and focus outline. A row of controls takes it out of
+  /// its gaps, so the visible gap is the row's (#1672).
+  static const double touchMargin = 12;
 
   @override
   Widget build(BuildContext context) {
@@ -286,7 +327,7 @@ class LoopSwitch extends StatelessWidget {
             child: ConstrainedBox(
               constraints: const BoxConstraints(minHeight: 64),
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
+                padding: const EdgeInsets.symmetric(horizontal: touchMargin),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -316,7 +357,7 @@ class LoopSwitch extends StatelessWidget {
 /// A row of equal [LoopChoiceButton]s sharing [width] with [gap] between.
 class LoopChoiceRow<T> extends StatelessWidget {
   /// Creates a [LoopChoiceRow].
-  const LoopChoiceRow({
+  const new({
     required this.values,
     required this.labelOf,
     required this.keyOf,
@@ -395,12 +436,12 @@ class LoopChoiceRow<T> extends StatelessWidget {
 /// A section heading (the pen's h2).
 class LoopSectionLabel extends StatelessWidget {
   /// Creates a [LoopSectionLabel].
-  const LoopSectionLabel(this.text, {this.fontSize = 28, super.key});
+  const new(this.text, {this.fontSize = 28, super.key});
 
   /// The heading.
   final String text;
 
-  /// 28 on most rows, 32 on the playback and audio fields.
+  /// 28; 26 where it leads a control in a row, as a switch's label does.
   final double fontSize;
 
   @override
@@ -429,10 +470,9 @@ enum LoopFieldOrigin {
 /// A scoped field's heading with its origin tag under or beside it.
 class LoopFieldLabel extends StatelessWidget {
   /// Creates a [LoopFieldLabel].
-  const LoopFieldLabel({
+  const new({
     required this.title,
     this.origin,
-    this.fontSize = 28,
     this.originBeside = false,
     super.key,
   });
@@ -443,9 +483,6 @@ class LoopFieldLabel extends StatelessWidget {
   /// The origin tag; `null` on the defaults scope, where every field is the
   /// default.
   final LoopFieldOrigin? origin;
-
-  /// The heading size.
-  final double fontSize;
 
   /// Draws the tag beside the heading (the record timing heading) rather
   /// than under it.
@@ -474,7 +511,7 @@ class LoopFieldLabel extends StatelessWidget {
               height: 1,
             ),
           );
-    final heading = LoopSectionLabel(title, fontSize: fontSize);
+    final heading = LoopSectionLabel(title);
     if (tagText == null) return heading;
     if (originBeside) {
       return Row(
@@ -489,19 +526,16 @@ class LoopFieldLabel extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        heading,
-        const SizedBox(height: 10),
-        tagText,
-      ],
+      children: [heading, const SizedBox(height: 10), tagText],
     );
   }
 }
 
-/// The pen's "Use default" button: 172 x 64, outlined.
+/// The pen's "Use default" button: 172 x 64, outlined, wider when its label
+/// needs it.
 class LoopUseDefaultButton extends StatelessWidget {
   /// Creates a [LoopUseDefaultButton].
-  const LoopUseDefaultButton({required this.onTap, super.key});
+  const new({required this.onTap, super.key});
 
   /// Removes the field's override, or null while its owner is unavailable.
   final VoidCallback? onTap;
@@ -510,6 +544,7 @@ class LoopUseDefaultButton extends StatelessWidget {
   Widget build(BuildContext context) => LoopOutlinedButton(
     width: 172,
     label: context.l10n.loopUseDefault,
+    fitLabel: true,
     onTap: onTap,
   );
 }
@@ -542,7 +577,7 @@ enum LoopButtonTone {
 /// optional trailing glyph, or a glyph alone.
 class LoopOutlinedButton extends StatelessWidget {
   /// Creates a [LoopOutlinedButton].
-  const LoopOutlinedButton({
+  const new({
     required this.width,
     required this.onTap,
     this.label,
@@ -558,12 +593,17 @@ class LoopOutlinedButton extends StatelessWidget {
     this.borderColor,
     this.focusNode,
     this.autofocus = false,
+    this.fitLabel = false,
     super.key,
   });
 
   /// Whether the encoder starts on this button when its page or dialog
   /// opens.
   final bool autofocus;
+
+  /// Whether a label wider than [width] widens the button instead of
+  /// shrinking to fit it (#1672).
+  final bool fitLabel;
 
   /// The button's focus node; see [LoopFocusable.focusNode].
   final FocusNode? focusNode;
@@ -675,34 +715,33 @@ class LoopOutlinedButton extends StatelessWidget {
           child: InkWell(
             canRequestFocus: false,
             onTap: onTap,
-            child: SizedBox(
-              width: width,
-              height: height,
-              child: Center(
-                child: icon != null
-                    ? Icon(icon, size: 28, color: foreground)
-                    : Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        child: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (leadingIcon != null) ...[
-                                Icon(leadingIcon, size: 28, color: foreground),
-                                const SizedBox(width: 12),
-                              ],
-                              AppText(label ?? '', style: text),
-                              if (trailingIcon != null) ...[
-                                const SizedBox(width: 12),
-                                Icon(trailingIcon, size: 28, color: foreground),
-                              ],
-                            ],
-                          ),
-                        ),
-                      ),
-              ),
-            ),
+            child: icon != null
+                ? SizedBox(
+                    width: width,
+                    height: height,
+                    child: Center(
+                      child: Icon(icon, size: 28, color: foreground),
+                    ),
+                  )
+                : _LoopButtonBox(
+                    width: width,
+                    height: height,
+                    fitLabel: fitLabel,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (leadingIcon != null) ...[
+                          Icon(leadingIcon, size: 28, color: foreground),
+                          const SizedBox(width: 12),
+                        ],
+                        AppText(label ?? '', style: text),
+                        if (trailingIcon != null) ...[
+                          const SizedBox(width: 12),
+                          Icon(trailingIcon, size: 28, color: foreground),
+                        ],
+                      ],
+                    ),
+                  ),
           ),
         ),
       ),
@@ -726,7 +765,7 @@ LoopFieldOrigin? scopedOrigin({
 /// The one-sentence note under a field (the pen's length-note).
 class LoopNote extends StatelessWidget {
   /// Creates a [LoopNote].
-  const LoopNote(this.text, {this.tone = LoopNoteTone.plain, super.key});
+  const new(this.text, {this.tone = LoopNoteTone.plain, super.key});
 
   /// The sentence.
   final String text;
@@ -764,7 +803,7 @@ enum LoopNoteTone {
 /// 68 high, a neutral inline notice (#1562), at most two lines.
 class LoopLockBanner extends StatelessWidget {
   /// Creates a [LoopLockBanner].
-  const LoopLockBanner({required this.text, required this.width, super.key});
+  const new({required this.text, required this.width, super.key});
 
   /// The reason.
   final String text;
@@ -786,7 +825,7 @@ class LoopLockBanner extends StatelessWidget {
 /// name at the right.
 class LoopScopeSelector extends StatelessWidget {
   /// Creates a [LoopScopeSelector].
-  const LoopScopeSelector({
+  const new({
     required this.trackNames,
     required this.selected,
     required this.onSelected,
@@ -819,40 +858,44 @@ class LoopScopeSelector extends StatelessWidget {
             top: 16,
             child: LoopSectionLabel(l10n.loopScopeTracks),
           ),
+          // Defaults, then the tracks 12 apart; Defaults widens for a
+          // longer translation and the tracks follow it (#1672).
           Positioned(
             left: 328,
             top: 0,
-            child: LoopChoiceButton(
-              key: const Key('loop_scope_defaults'),
-              label: l10n.loopScopeDefaults,
-              selected: selected == null,
-              onTap: () {
-                LoopEditScope.maybeOf(context)?.cancel();
-                onSelected(null);
-              },
-              width: 144,
-              height: 64,
-            ),
-          ),
-          for (var i = 0; i < trackNames.length; i++)
-            Positioned(
-              left: 328 + 156 + 76.0 * i,
-              top: 0,
-              child: Semantics(
-                label: l10n.loopScopeTrack(i + 1),
-                child: LoopChoiceButton(
-                  key: Key('loop_scope_track_$i'),
-                  label: '${i + 1}',
-                  selected: selected == i,
+            child: Row(
+              spacing: context.spacing.md,
+              children: [
+                LoopChoiceButton(
+                  key: const Key('loop_scope_defaults'),
+                  label: l10n.loopScopeDefaults,
+                  selected: selected == null,
                   onTap: () {
                     LoopEditScope.maybeOf(context)?.cancel();
-                    onSelected(i);
+                    onSelected(null);
                   },
-                  width: 64,
+                  width: 144,
                   height: 64,
+                  fitLabel: true,
                 ),
-              ),
+                for (var i = 0; i < trackNames.length; i++)
+                  Semantics(
+                    label: l10n.loopScopeTrack(i + 1),
+                    child: LoopChoiceButton(
+                      key: Key('loop_scope_track_$i'),
+                      label: '${i + 1}',
+                      selected: selected == i,
+                      onTap: () {
+                        LoopEditScope.maybeOf(context)?.cancel();
+                        onSelected(i);
+                      },
+                      width: 64,
+                      height: 64,
+                    ),
+                  ),
+              ],
             ),
+          ),
           if (name != null)
             Positioned(
               right: 0,
@@ -882,7 +925,7 @@ class LoopScopeSelector extends StatelessWidget {
 /// restore its opening value and ownership.
 class LoopStepper extends StatefulWidget {
   /// Creates a [LoopStepper].
-  const LoopStepper({
+  const new({
     required this.value,
     required this.unit,
     required this.onDecrement,
@@ -1095,7 +1138,7 @@ class _LoopStepperState extends State<LoopStepper> {
 /// keyboard/encoder draft, arrows preview it, Enter commits, and Back cancels.
 class LoopSlider extends StatefulWidget {
   /// Creates a [LoopSlider].
-  const LoopSlider({
+  const new({
     required this.value,
     required this.onChanged,
     required this.width,
@@ -1286,107 +1329,99 @@ class _LoopSliderState extends State<LoopSlider> {
           onTurn: _step,
         ),
       },
-      child: _focus(context, surface, width, enabled, clamped),
-    );
-  }
-
-  Widget _focus(
-    BuildContext context,
-    SurfaceTheme surface,
-    double width,
-    bool enabled,
-    double clamped,
-  ) {
-    return Focus(
-      canRequestFocus: enabled,
-      onKeyEvent: _handleKey,
-      onFocusChange: (focused) {
-        if (!focused && _keyboardDraft != null) _cancelEdit();
-      },
-      child: Builder(
-        builder: (context) {
-          final focused = Focus.of(context).hasFocus;
-          return Semantics(
-            slider: true,
-            label: widget.semanticLabel,
-            value: _semanticValue(clamped),
-            increasedValue: _semanticValue(
-              (clamped + widget.keyboardStep).clamp(0.0, widget.max),
-            ),
-            decreasedValue: _semanticValue(
-              (clamped - widget.keyboardStep).clamp(0.0, widget.max),
-            ),
-            enabled: enabled,
-            onIncrease: enabled && clamped < widget.max
-                ? () => _semanticStep(1)
-                : null,
-            onDecrease: enabled && clamped > 0 ? () => _semanticStep(-1) : null,
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTapUp: enabled
-                  ? (details) {
-                      _touchSet(details.localPosition.dx);
-                      _touchCommit(_fraction(details.localPosition.dx));
-                    }
+      child: Focus(
+        canRequestFocus: enabled,
+        onKeyEvent: _handleKey,
+        onFocusChange: (focused) {
+          if (!focused && _keyboardDraft != null) _cancelEdit();
+        },
+        child: Builder(
+          builder: (context) {
+            final focused = Focus.of(context).hasFocus;
+            return Semantics(
+              slider: true,
+              label: widget.semanticLabel,
+              value: _semanticValue(clamped),
+              increasedValue: _semanticValue(
+                (clamped + widget.keyboardStep).clamp(0.0, widget.max),
+              ),
+              decreasedValue: _semanticValue(
+                (clamped - widget.keyboardStep).clamp(0.0, widget.max),
+              ),
+              enabled: enabled,
+              onIncrease: enabled && clamped < widget.max
+                  ? () => _semanticStep(1)
                   : null,
-              // Gesture arena arbitration withholds the single-tap write
-              // until a double tap is ruled out. A reset never sends an
-              // intermediate tempo/decay value to the engine or store.
-              onDoubleTap: enabled ? widget.onDoubleTap : null,
-              onHorizontalDragStart: enabled
-                  ? (details) => _touchSet(details.localPosition.dx)
+              onDecrease: enabled && clamped > 0
+                  ? () => _semanticStep(-1)
                   : null,
-              onHorizontalDragUpdate: enabled
-                  ? (details) => _touchSet(details.localPosition.dx)
-                  : null,
-              onHorizontalDragEnd: enabled
-                  ? (_) => _touchCommit(_touchPreview ?? widget.value)
-                  : null,
-              onHorizontalDragCancel: enabled
-                  ? () {
-                      _touchPreview = null;
-                      widget.onEditCancel?.call(widget.value);
-                    }
-                  : null,
-              child: Opacity(
-                opacity: enabled ? 1 : surface.disabledOpacity,
-                child: Container(
-                  width: width,
-                  height: LoopSlider.height,
-                  decoration: BoxDecoration(
-                    color: surface.surface,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: focused
-                          ? surface.encoderFocus
-                          : surface.borderHairline,
-                      width: focused ? 3 : 1,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTapUp: enabled
+                    ? (details) {
+                        _touchSet(details.localPosition.dx);
+                        _touchCommit(_fraction(details.localPosition.dx));
+                      }
+                    : null,
+                // Gesture arena arbitration withholds the single-tap write
+                // until a double tap is ruled out. A reset never sends an
+                // intermediate tempo/decay value to the engine or store.
+                onDoubleTap: enabled ? widget.onDoubleTap : null,
+                onHorizontalDragStart: enabled
+                    ? (details) => _touchSet(details.localPosition.dx)
+                    : null,
+                onHorizontalDragUpdate: enabled
+                    ? (details) => _touchSet(details.localPosition.dx)
+                    : null,
+                onHorizontalDragEnd: enabled
+                    ? (_) => _touchCommit(_touchPreview ?? widget.value)
+                    : null,
+                onHorizontalDragCancel: enabled
+                    ? () {
+                        _touchPreview = null;
+                        widget.onEditCancel?.call(widget.value);
+                      }
+                    : null,
+                child: Opacity(
+                  opacity: enabled ? 1 : surface.disabledOpacity,
+                  child: Container(
+                    width: width,
+                    height: LoopSlider.height,
+                    decoration: BoxDecoration(
+                      color: surface.surface,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: focused
+                            ? surface.encoderFocus
+                            : surface.borderHairline,
+                        width: focused ? 3 : 1,
+                      ),
                     ),
-                  ),
-                  clipBehavior: Clip.antiAlias,
-                  child: Stack(
-                    children: [
-                      Positioned(
-                        left: 0,
-                        top: 0,
-                        bottom: 0,
-                        width: (width - 2) * clamped,
-                        child: ColoredBox(color: surface.controlStrong),
-                      ),
-                      Positioned(
-                        left: (width - 2) * clamped,
-                        top: 0,
-                        bottom: 0,
-                        width: 2,
-                        child: ColoredBox(color: surface.textSecondary),
-                      ),
-                    ],
+                    clipBehavior: Clip.antiAlias,
+                    child: Stack(
+                      children: [
+                        Positioned(
+                          left: 0,
+                          top: 0,
+                          bottom: 0,
+                          width: (width - 2) * clamped,
+                          child: ColoredBox(color: surface.controlStrong),
+                        ),
+                        Positioned(
+                          left: (width - 2) * clamped,
+                          top: 0,
+                          bottom: 0,
+                          width: 2,
+                          child: ColoredBox(color: surface.textSecondary),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
     );
   }

@@ -10,7 +10,7 @@ import 'dart:convert';
 /// draws no conclusions.
 class FxPreset {
   /// Creates an [FxPreset].
-  const FxPreset({
+  const new({
     required this.family,
     required this.name,
     required this.id,

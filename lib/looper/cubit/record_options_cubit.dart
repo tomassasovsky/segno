@@ -10,7 +10,7 @@ import 'package:segno/looper/model/record_options_view_state.dart';
 /// Presents accepted recording options and the latest length edit result.
 class RecordOptionsCubit extends Cubit<RecordOptionsViewState> {
   /// Borrows the application owner without taking over its lifetime.
-  RecordOptionsCubit({required RecordSettings settings})
+  new({required RecordSettings settings})
     : _settings = settings,
       super(RecordOptionsViewState(options: settings.state)) {
     _subscription = settings.stream.listen(_onSettings);

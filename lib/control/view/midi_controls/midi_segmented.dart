@@ -1,11 +1,11 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
 
 /// One option of a [MidiSegmented].
 class MidiSegment<T> {
   /// Creates a [MidiSegment].
-  const MidiSegment({required this.value, required this.label});
+  const new({required this.value, required this.label});
 
   /// What choosing it means.
   final T value;
@@ -19,7 +19,7 @@ class MidiSegment<T> {
 /// or Released.
 class MidiSegmented<T> extends StatelessWidget {
   /// Creates a [MidiSegmented].
-  const MidiSegmented({
+  const new({
     required this.segments,
     required this.selected,
     required this.onSelected,
@@ -89,7 +89,7 @@ class MidiSegmented<T> extends StatelessWidget {
 }
 
 class _Segment extends StatelessWidget {
-  const _Segment({
+  const new({
     required this.label,
     required this.selected,
     required this.width,

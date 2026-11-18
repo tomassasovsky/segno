@@ -43,7 +43,7 @@ enum FxRackEdge {
   /// The only entry of a one-entry rack.
   only(3);
 
-  const FxRackEdge(this.bits);
+  new(this.bits);
 
   /// The native bits.
   final int bits;
@@ -67,7 +67,7 @@ int fxInstanceId(String? slotId) {
 /// A complete effect instance prepared before structural admission.
 class FxRecipeSlot {
   /// Creates a detached, immutable slot description.
-  FxRecipeSlot({
+  new({
     required this.type,
     List<double> params = const [],
     this.enabled = true,
@@ -122,7 +122,7 @@ class FxRecipeSlot {
 /// One chain replacement, published atomically by the audio callback.
 class FxRecipe {
   /// Copies the prepared slots so the caller cannot change an admitted recipe.
-  FxRecipe({
+  new({
     required List<FxRecipeSlot> slots,
     this.preCount = 0,
     this.enabled = true,

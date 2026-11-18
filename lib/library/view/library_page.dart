@@ -1,13 +1,12 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart' show LooperState;
+import 'package:material_ui/material_ui.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/l10n/l10n.dart';
-import 'package:segno/library/application/removable_volumes.dart';
 import 'package:segno/library/cubit/library_audio_cubit.dart';
 import 'package:segno/library/cubit/library_cubit.dart';
 import 'package:segno/library/view/library_audio_tab.dart';
@@ -20,6 +19,7 @@ import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:session_repository/session_repository.dart';
+import 'package:storage_repository/storage_repository.dart';
 
 /// The full-screen Library (pen `01 CURRENT UX` 19/01): saved sessions with
 /// search, folders and a preview that never loads, and the Audio section
@@ -30,7 +30,7 @@ import 'package:session_repository/session_repository.dart';
 /// [LibraryAudioCubit] is created the first time that section shows.
 class LibraryPage extends StatelessWidget {
   /// Creates the Library page.
-  const LibraryPage({super.key});
+  const new({super.key});
 
   @override
   Widget build(BuildContext context) => MultiBlocProvider(
@@ -41,7 +41,7 @@ class LibraryPage extends StatelessWidget {
           unawaited(session.refreshSessions());
           final cubit = LibraryCubit(
             sessions: context.read<SessionRepository>(),
-            volumes: context.read<RemovableVolumes>(),
+            storage: context.read<StorageRepository>(),
             pedal: context.read<PedalRepository>(),
             guards: context.read<GuardRegistry>(),
           );
@@ -55,7 +55,7 @@ class LibraryPage extends StatelessWidget {
         create: (context) => LibraryAudioCubit(
           performance: context.read<PerformanceRepository>(),
           sessions: context.read<SessionRepository>(),
-          volumes: context.read<RemovableVolumes>(),
+          storage: context.read<StorageRepository>(),
           guards: context.read<GuardRegistry>(),
         ),
       ),
@@ -78,7 +78,7 @@ class LibraryPage extends StatelessWidget {
 /// selected; a failed save stays until a later action, as it stays true.
 class LibraryView extends StatefulWidget {
   /// Creates the Library view.
-  const LibraryView({super.key});
+  const new({super.key});
 
   @override
   State<LibraryView> createState() => _LibraryViewState();
@@ -93,9 +93,8 @@ class _LibraryViewState extends State<LibraryView> {
 
   void _reselect(BuildContext context, SessionState session) {
     final library = context.read<LibraryCubit>();
-    if (library.state.folderFilter case FolderSessions(
-      :final folder,
-    ) when !session.folders.contains(folder)) {
+    if (library.state.folderFilter case FolderSessions(:final folder)
+        when !session.folders.contains(folder)) {
       // The chip's folder was renamed or deleted.
       library.filterFolder(const AllSessions());
     }
@@ -141,8 +140,8 @@ class _LibraryViewState extends State<LibraryView> {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final section = context.select<LibraryCubit, LibrarySection>(
-      (c) => c.state.section,
+    final audio = context.select<LibraryCubit, bool>(
+      (c) => c.state.section == LibrarySection.audio,
     );
     final session = context.watch<SessionCubit>().state;
     final failure = session.failureCount == _dismissed
@@ -173,9 +172,8 @@ class _LibraryViewState extends State<LibraryView> {
               previous.backup != current.backup &&
               (current.backup is LibraryBackupConflict ||
                   current.backup is LibraryBackupInterrupted),
-          listener: (context, state) => unawaited(
-            showLibraryBackupQuestion(context, state.backup!),
-          ),
+          listener: (context, state) =>
+              unawaited(showLibraryBackupQuestion(context, state.backup!)),
         ),
         // A restore added a session: the catalog shows it.
         BlocListener<LibraryCubit, LibraryState>(
@@ -209,18 +207,37 @@ class _LibraryViewState extends State<LibraryView> {
       ],
       // The listeners hold in both sections: a footswitch, a recording
       // track and a New loop act the same from Audio.
-      child: section == LibrarySection.audio
-          ? _buildAudio(context)
-          : Material(
-              type: MaterialType.transparency,
-              child: LoopSettingsFrame(
-                key: const Key('library_page'),
-                tabs: LibrarySectionTabs(onShow: (s) => _show(context, s)),
-                title: l10n.libraryTitle,
-                onBack: () => Navigator.pop(context),
-                onStage: _toTracks,
-                actions: const LibraryActions(),
-                children: [
+      child: Material(
+        type: MaterialType.transparency,
+        child: LoopSettingsFrame(
+          key: const Key('library_page'),
+          tabs: LibrarySectionTabs(onShow: (s) => _show(context, s)),
+          // The Audio section (pen 18/01): its title follows the export in
+          // front of the player (20/08 `Exporting audio`, 20/12 `Exported to
+          // USB`).
+          title: audio
+              ? switch (context.select<LibraryAudioCubit, LibraryAudioExport?>(
+                  (c) => c.state.export,
+                )) {
+                  LibraryExportRunning() => l10n.libraryAudioExporting,
+                  LibraryExportDone() => l10n.libraryAudioExported,
+                  _ => l10n.libraryAudioTitle,
+                }
+              : l10n.libraryTitle,
+          onBack: () => Navigator.pop(context),
+          onStage: _toTracks,
+          actions: audio ? null : const LibraryActions(),
+          children: audio
+              ? const [
+                  Positioned(
+                    left: 0,
+                    top: 128,
+                    right: 0,
+                    height: 820,
+                    child: LibraryAudioTab(),
+                  ),
+                ]
+              : [
                   // 19/05 shortens the layout by 60 to make room for the line.
                   Positioned(
                     left: 0,
@@ -241,39 +258,7 @@ class _LibraryViewState extends State<LibraryView> {
                       ),
                     ),
                 ],
-              ),
-            ),
-    );
-  }
-
-  /// The Audio section (pen 18/01): its title follows the export in front
-  /// of the player (20/08 `Exporting audio`, 20/12 `Exported to USB`).
-  Widget _buildAudio(BuildContext context) {
-    final l10n = context.l10n;
-    final export = context.select<LibraryAudioCubit, LibraryAudioExport?>(
-      (c) => c.state.export,
-    );
-    return Material(
-      type: MaterialType.transparency,
-      child: LoopSettingsFrame(
-        key: const Key('library_page'),
-        tabs: LibrarySectionTabs(onShow: (s) => _show(context, s)),
-        title: switch (export) {
-          LibraryExportRunning() => l10n.libraryAudioExporting,
-          LibraryExportDone() => l10n.libraryAudioExported,
-          _ => l10n.libraryAudioTitle,
-        },
-        onBack: () => Navigator.pop(context),
-        onStage: _toTracks,
-        children: const [
-          Positioned(
-            left: 0,
-            top: 128,
-            right: 0,
-            height: 820,
-            child: LibraryAudioTab(),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -296,7 +281,7 @@ bool trackStartedCapturing(LooperState previous, LooperState current) {
 /// The Library's crumb tabs: `Sessions` and `Audio`, 180 x 64 each.
 class LibrarySectionTabs extends StatelessWidget {
   /// Creates the tabs; [onShow] switches the section.
-  const LibrarySectionTabs({required this.onShow, super.key});
+  const new({required this.onShow, super.key});
 
   /// Shows a section.
   final ValueChanged<LibrarySection> onShow;
@@ -399,11 +384,7 @@ LibraryFailure? libraryFailureOf(SessionState state) {
 /// any other failed catalog action.
 class LibraryFailureLine extends StatelessWidget {
   /// Creates the line for [failure].
-  const LibraryFailureLine({
-    required this.failure,
-    this.refusedBy,
-    super.key,
-  });
+  const new({required this.failure, this.refusedBy, super.key});
 
   /// What failed.
   final LibraryFailure failure;
@@ -433,11 +414,7 @@ class LibraryFailureLine extends StatelessWidget {
         child: AppText(
           message,
           key: const Key('library_failure'),
-          style: TextStyle(
-            color: context.surface.rec,
-            fontSize: 23,
-            height: 1,
-          ),
+          style: TextStyle(color: context.surface.rec, fontSize: 23, height: 1),
         ),
       ),
     );
@@ -449,7 +426,7 @@ class LibraryFailureLine extends StatelessWidget {
 /// action runs.
 class LibraryActions extends StatelessWidget {
   /// Creates the Library's title-row actions.
-  const LibraryActions({super.key});
+  const new({super.key});
 
   @override
   Widget build(BuildContext context) {

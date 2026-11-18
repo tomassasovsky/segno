@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// The neutral structural design tokens for a routing graph — backgrounds,
 /// card fills, lines, and text shades — layered onto [ThemeData] via a
@@ -15,7 +15,7 @@ import 'package:flutter/material.dart';
 @immutable
 class RoutingGraphTheme extends ThemeExtension<RoutingGraphTheme> {
   /// Creates a [RoutingGraphTheme].
-  const RoutingGraphTheme({
+  const new({
     required this.background,
     required this.surface,
     required this.card,

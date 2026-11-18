@@ -1,12 +1,12 @@
 import 'dart:async';
 
 import 'package:bloc_test/bloc_test.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/appliance/power_off/power_cubit.dart';
@@ -21,15 +21,14 @@ import 'package:storage_repository/storage_repository.dart';
 
 import 'destination_harness.dart';
 
-class _MockPowerCubit extends MockCubit<PowerState> implements PowerCubit {}
+class _MockPowerCubit extends MockCubit<PowerState> implements PowerCubit;
 
-class _MockSessionCubit extends MockCubit<SessionState>
-    implements SessionCubit {}
+class _MockSessionCubit extends MockCubit<SessionState> implements SessionCubit;
 
-class _MockStorageRepository extends Mock implements StorageRepository {}
+class _MockStorageRepository extends Mock implements StorageRepository;
 
 class _MockPerformanceRecorderCubit extends MockCubit<PerformanceRecorderState>
-    implements PerformanceRecorderCubit {}
+    implements PerformanceRecorderCubit;
 
 /// Takes every route off the navigator the moment it is pushed, before its
 /// page builds, and keeps its name: the test is about WHICH page a tile
@@ -78,7 +77,7 @@ void main() {
       navigatorKey: segnoNavigatorKey,
       navigatorObservers: observers,
       theme: AppTheme.neon,
-      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      localizationsDelegates: appLocalizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
       home: SettingsHomePage(powerAvailable: powerAvailable),
     );
@@ -273,10 +272,7 @@ void main() {
       const surface = SurfaceTheme.dark;
       expect(pixel(edge(SettingsDestination.loop, 0)), surface.encoderFocus);
       expect(pixel(edge(SettingsDestination.loop, 2)), surface.encoderFocus);
-      expect(
-        pixel(edge(SettingsDestination.effects, 0)),
-        surface.menuArtLine,
-      );
+      expect(pixel(edge(SettingsDestination.effects, 0)), surface.menuArtLine);
       expect(
         pixel(edge(SettingsDestination.effects, 2)),
         surface.menuArtGround,

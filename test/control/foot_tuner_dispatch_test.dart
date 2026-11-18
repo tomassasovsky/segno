@@ -25,18 +25,18 @@ class _Store extends FakeKeyValueStore {
   @override
   Future<void> setInt(String key, int value) async {
     if (key == failKey) throw StateError('disk full');
-    return super.setInt(key, value);
+    return await super.setInt(key, value);
   }
 
   @override
   Future<void> setString(String key, String value) async {
     if (key == failKey) throw StateError('disk full');
-    return super.setString(key, value);
+    return await super.setString(key, value);
   }
 }
 
 class _Rig {
-  _Rig({int inputs = 4, String? storedSetup, bool seed = false}) {
+  new({int inputs = 4, String? storedSetup, bool seed = false}) {
     engine.nextSnapshot = engine.nextSnapshot.copyWith(inputChannels: inputs);
     if (storedSetup != null) store.values['pedal.setup'] = storedSetup;
     looper = LooperRepository(engine: engine, ticker: ticks.stream)
@@ -173,10 +173,7 @@ void main() {
   });
 
   test('a paired source mutes both members', () async {
-    final rig = await enter(
-      setup: InputSetup(pairs: const {2: 0}),
-      input: 3,
-    );
+    final rig = await enter(setup: InputSetup(pairs: const {2: 0}), input: 3);
     try {
       expect(rig.engine.tunerInput, 3);
       expect(rig.engine.tunerMuteMask, 0xC);
@@ -507,9 +504,9 @@ void main() {
           expect(rig.control.state.tunerDefaultSeeded, isTrue);
           expect(rig.store.values['pedal.tuner_default_seeded'], isTrue);
           expect(
-            PedalSetup.decode(
-              rig.store.values['pedal.setup']! as String,
-            ).customFor(PedalButton.track2, bank: 0).hold,
+            PedalSetup.decode(rig.store.values['pedal.setup']! as String)
+                .customFor(PedalButton.track2, bank: 0)
+                .hold,
             tuner,
           );
         } finally {

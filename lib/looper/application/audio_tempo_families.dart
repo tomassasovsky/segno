@@ -10,7 +10,7 @@ import 'package:settings_repository/settings_repository.dart';
 /// stored keys, their repository vector and their default.
 sealed class _InheritFamily<T extends Object>
     implements SettingsFamily<InheritSnapshot<T>, bool?> {
-  const _InheritFamily(this._repository, this._settings);
+  const new(this._repository, this._settings);
 
   final LooperRepository _repository;
   final SettingsRepository _settings;
@@ -116,7 +116,7 @@ sealed class _InheritFamily<T extends Object>
 /// turns it off ships with it.
 final class FollowTempoFamily extends _InheritFamily<bool> {
   /// Binds the family to its repository receipt and its stored keys.
-  const FollowTempoFamily({
+  const new({
     required LooperRepository repository,
     required SettingsRepository settings,
   }) : super(repository, settings);
@@ -180,7 +180,7 @@ final class FollowTempoFamily extends _InheritFamily<bool> {
 /// whether it follows the speed; an absent default is Unchanged.
 final class PitchModeFamily extends _InheritFamily<PitchMode> {
   /// Binds the family to its repository receipt and its stored keys.
-  const PitchModeFamily({
+  const new({
     required LooperRepository repository,
     required SettingsRepository settings,
   }) : super(repository, settings);

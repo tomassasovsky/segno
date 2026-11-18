@@ -1,7 +1,7 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/backing/cubit/backing_cubit.dart';
 import 'package:segno/backing/cubit/backing_mix_cubit.dart';
 import 'package:segno/control/binding/mix_value_scale.dart';
@@ -41,7 +41,7 @@ Future<void> showBackingClickDialog(BuildContext context) {
 /// The pen's 1260 x 549 `Backing & click` panel.
 class BackingClickDialog extends StatelessWidget {
   /// Creates a [BackingClickDialog].
-  const BackingClickDialog({super.key});
+  const new({super.key});
 
   static const double _width = 1260;
   static const double _pad = 41;
@@ -145,7 +145,7 @@ class BackingClickDialog extends StatelessWidget {
 /// One `stage-aux-channel` row: the name and what it plays, then Volume on
 /// the Mixer's gain axis and Pan. A double tap restores unity or centre.
 class _AuxChannel extends StatefulWidget {
-  const _AuxChannel({
+  const new({
     required this.name,
     required this.subtitle,
     required this.level,
@@ -183,7 +183,6 @@ class _AuxChannelState extends State<_AuxChannel> {
 
   static const double _labelWidth = 280;
   static const double _controlLeft = 320;
-  static const double _controlWidth = 409;
   static const double _controlGap = 40;
 
   @override
@@ -230,7 +229,7 @@ class _AuxChannelState extends State<_AuxChannel> {
             ),
           ),
           const SizedBox(width: _controlLeft - _labelWidth),
-          _control(
+          _AuxControl(
             key: const Key('backing_click_volume'),
             label: l10n.expressionControlVolume,
             semanticLabel: widget.volumeLabel,
@@ -246,7 +245,7 @@ class _AuxChannelState extends State<_AuxChannel> {
             onReset: () => widget.onLevel(1),
           ),
           const SizedBox(width: _controlGap),
-          _control(
+          _AuxControl(
             key: const Key('backing_click_pan'),
             label: l10n.routingPan,
             semanticLabel: widget.panLabel,
@@ -265,34 +264,47 @@ class _AuxChannelState extends State<_AuxChannel> {
       ),
     );
   }
+}
 
-  Widget _control({
-    required Key key,
-    required String label,
-    required String semanticLabel,
-    required String readout,
-    required double value,
-    required bool enabled,
-    required ValueChanged<double> onChanged,
-    required ValueChanged<double> onCommit,
-    required VoidCallback onCancel,
-    required VoidCallback onReset,
-  }) => SizedBox(
-    key: key,
-    width: _controlWidth,
+/// One of a channel's sliders, with its label and readout above it.
+class _AuxControl extends StatelessWidget {
+  const new({
+    required this.label,
+    required this.semanticLabel,
+    required this.readout,
+    required this.value,
+    required this.enabled,
+    required this.onChanged,
+    required this.onCommit,
+    required this.onCancel,
+    required this.onReset,
+    super.key,
+  });
+
+  final String label;
+  final String semanticLabel;
+  final String readout;
+  final double value;
+  final bool enabled;
+  final ValueChanged<double> onChanged;
+  final ValueChanged<double> onCommit;
+  final VoidCallback onCancel;
+  final VoidCallback onReset;
+
+  static const double _width = 409;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: _width,
     child: Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        RoutingInlineLabel(
-          label: label,
-          value: readout,
-          width: _controlWidth,
-        ),
+        RoutingInlineLabel(label: label, value: readout, width: _width),
         const SizedBox(height: 7),
         LoopSlider(
           value: value,
-          width: _controlWidth,
+          width: _width,
           semanticLabel: semanticLabel,
           semanticValueBuilder: (_) => readout,
           enabled: enabled,

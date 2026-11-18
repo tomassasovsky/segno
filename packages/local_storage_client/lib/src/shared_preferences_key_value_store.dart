@@ -6,7 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 class SharedPreferencesKeyValueStore implements KeyValueStore {
   /// Creates a [SharedPreferencesKeyValueStore], optionally with an injected
   /// [preferences] instance (useful for tests).
-  SharedPreferencesKeyValueStore({SharedPreferencesAsync? preferences})
+  new({SharedPreferencesAsync? preferences})
     : _prefs = preferences ?? SharedPreferencesAsync();
 
   final SharedPreferencesAsync _prefs;

@@ -49,7 +49,7 @@ MonitorMode? monitorModeFromName(String name) =>
 /// editing the input chain afterwards never alters an earlier take.
 class InputMonitor extends Equatable {
   /// Creates an [InputMonitor].
-  const InputMonitor({
+  const new({
     required this.input,
     this.mode = MonitorMode.off,
     this.outputMask = 0x3,

@@ -26,6 +26,8 @@
 #define LE_ENGINE_READ_HEAD_H
 #include <stdint.h>
 
+#include "engine_hot.h" /* LE_AUDIO_HOT_AT (#1718) */
+
 typedef struct le_read_head {
   int32_t reversed; /* 0 forward, 1 reversed */
   double origin;    /* source-frame origin, re-set so the index stays continuous */
@@ -98,7 +100,7 @@ static inline int le_head_is_integral(const le_read_head* h) {
 
 /* Linear interpolation between the two source samples around `index`, with
  * wrap. A zero fraction returns buf[i] itself (the identity path). */
-static inline float le_head_sample(const float* buf, int32_t len,
+static inline LE_AUDIO_HOT_AT(0) float le_head_sample(const float* buf, int32_t len,
                                    double index) {
   int64_t i = (int64_t)index;
   const float frac = (float)(index - (double)i);
@@ -128,7 +130,7 @@ static inline float le_head_box(const float* buf, int32_t len, int64_t i,
  * the head's direction (first sidelobe -13 dB), interpolated between the
  * boxes at floor(index) and the next index so a non-integer position is not
  * quantised to whole samples. Below 2 it is the plain sample. */
-static inline float le_head_sample_decimated(const float* buf, int32_t len,
+static inline LE_AUDIO_HOT_AT(0) float le_head_sample_decimated(const float* buf, int32_t len,
                                              double index, double rate,
                                              int32_t reversed) {
   int32_t n = (int32_t)rate;
@@ -146,7 +148,7 @@ static inline float le_head_sample_decimated(const float* buf, int32_t len,
 
 /* The sample a head reads at `index`: decimated at rate >= 2, interpolated
  * below. One definition for the callback and the renderer. */
-static inline float le_head_read(const float* buf, int32_t len,
+static inline LE_AUDIO_HOT_AT(13) float le_head_read(const float* buf, int32_t len,
                                  const le_read_head* h, double index) {
   return h->rate >= 2.0
              ? le_head_sample_decimated(buf, len, index, h->rate, h->reversed)

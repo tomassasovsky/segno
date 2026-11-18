@@ -39,26 +39,17 @@ part 'power_state.dart';
 /// that flag; there is no shared latch.
 class PowerCubit extends Cubit<PowerState> {
   /// Creates a [PowerCubit].
-  PowerCubit({
-    required void Function() stopTransport,
-    required FutureOr<void> Function({required bool retry}) flush,
-    required Future<void> Function() storageSettled,
-    required GuardRegistry guards,
-    required void Function() pedalGoodbye,
-    required Future<void> Function() powerOff,
-    required Future<void> Function() reboot,
-    required Future<bool> Function() updateInstalling,
-    Duration markHold = const Duration(seconds: 2),
-  }) : _stopTransport = stopTransport,
-       _flush = flush,
-       _storageSettled = storageSettled,
-       _guards = guards,
-       _pedalGoodbye = pedalGoodbye,
-       _powerOff = powerOff,
-       _reboot = reboot,
-       _updateInstalling = updateInstalling,
-       _markHold = markHold,
-       super(const PowerState());
+  new({
+    required this._stopTransport,
+    required this._flush,
+    required this._storageSettled,
+    required this._guards,
+    required this._pedalGoodbye,
+    required this._powerOff,
+    required this._reboot,
+    required this._updateInstalling,
+    this._markHold = const Duration(seconds: 2),
+  }) : super(const PowerState());
 
   final void Function() _stopTransport;
   final FutureOr<void> Function({required bool retry}) _flush;
@@ -144,10 +135,7 @@ class PowerCubit extends Cubit<PowerState> {
   /// from [snapshot], so a session that gained content or a name since then
   /// is saved: Save As when unnamed, [save] when named. A session write
   /// already chosen (named, or the Save As name) is kept.
-  void retry(
-    PowerSnapshot snapshot, {
-    required Future<void> Function() save,
-  }) {
+  void retry(PowerSnapshot snapshot, {required Future<void> Function() save}) {
     if (state.phase != PowerPhase.saveFailed || _save == null) return;
     if (_refused(snapshot)) return;
     final action = state.action!;

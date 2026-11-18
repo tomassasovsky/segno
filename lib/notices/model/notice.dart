@@ -18,7 +18,7 @@ typedef NoticeText = String Function(AppLocalizations l10n);
 @immutable
 class NoticeAction {
   /// Creates a [NoticeAction].
-  const NoticeAction({
+  const new({
     required this.label,
     required this.onPressed,
     this.icon,
@@ -46,7 +46,7 @@ class NoticeAction {
 @immutable
 class Notice {
   /// Creates a [Notice].
-  const Notice({
+  const new({
     required this.id,
     required this.title,
     this.tone = NoticeTone.neutral,

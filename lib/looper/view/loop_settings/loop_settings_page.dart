@@ -1,7 +1,7 @@
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/app/app_notices.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/loop_settings_feedback_cubit.dart';
@@ -41,7 +41,7 @@ enum LoopSettingsTab {
 /// from anywhere.
 class LoopSettingsPage extends StatefulWidget {
   /// Creates a [LoopSettingsPage] opened at [initial].
-  const LoopSettingsPage({
+  const new({
     this.initial = LoopSettingsTab.mode,
     this.onTab,
     this.onStage,
@@ -123,9 +123,7 @@ class _LoopSettingsPageState extends State<LoopSettingsPage> {
         child: LoopEditScope(
           coordinator: _edits,
           child: CallbackShortcuts(
-            bindings: {
-              const SingleActivator(LogicalKeyboardKey.escape): _back,
-            },
+            bindings: {const SingleActivator(LogicalKeyboardKey.escape): _back},
             child: Focus(
               autofocus: true,
               child: Scaffold(
@@ -182,7 +180,7 @@ class _LoopSettingsPageState extends State<LoopSettingsPage> {
 /// The four tabs at the right end of the title row: one 64 high choice each,
 /// the selected one filled, as the Pedals page's contexts are drawn.
 class _LoopSettingsTabs extends StatelessWidget {
-  const _LoopSettingsTabs({required this.selected, required this.onShow});
+  const new({required this.selected, required this.onShow});
 
   final LoopSettingsTab selected;
   final ValueChanged<LoopSettingsTab> onShow;

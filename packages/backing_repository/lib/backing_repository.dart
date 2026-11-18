@@ -4,6 +4,7 @@ library;
 
 export 'package:segno_engine/segno_engine.dart'
     show AudioDecoder, BackingEnd, BackingEndEvent, BackingTransport;
+
 export 'src/audio_decoders.dart'
     show createMockAudioDecoder, createNativeAudioDecoder;
 export 'src/backing_asset_store.dart'

@@ -1,5 +1,5 @@
-import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/expression_catalogue.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -14,7 +14,7 @@ import 'package:segno/theme/theme.dart';
 /// the rig is, and the accepted design gives it the room.
 class ExpressionDestinationPicker extends StatelessWidget {
   /// Creates an [ExpressionDestinationPicker].
-  const ExpressionDestinationPicker({
+  const new({
     required this.destinations,
     required this.kind,
     required this.onKind,
@@ -105,16 +105,27 @@ class ExpressionDestinationPicker extends StatelessWidget {
                       mainAxisExtent: _rowHeight,
                     ),
                     itemCount: shown.length,
-                    itemBuilder: (context, index) =>
-                        _row(context, shown[index]),
+                    itemBuilder: (context, index) => _DestinationRow(
+                      destination: shown[index],
+                      onOpen: onOpen,
+                    ),
                   ),
                 ),
         ),
       ],
     );
   }
+}
 
-  Widget _row(BuildContext context, ExpressionDestination destination) {
+/// One destination: its name and a chevron, opening its controls.
+class _DestinationRow extends StatelessWidget {
+  const new({required this.destination, required this.onOpen});
+
+  final ExpressionDestination destination;
+  final ValueChanged<ExpressionDestination> onOpen;
+
+  @override
+  Widget build(BuildContext context) {
     final surface = context.surface;
     return Semantics(
       button: true,
@@ -167,7 +178,7 @@ class ExpressionDestinationPicker extends StatelessWidget {
 /// Pick a control on one destination.
 class ExpressionControlPicker extends StatelessWidget {
   /// Creates an [ExpressionControlPicker].
-  const ExpressionControlPicker({
+  const new({
     required this.destination,
     required this.taken,
     required this.onPick,
@@ -223,23 +234,49 @@ class ExpressionControlPicker extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 18),
-            _grid(context, group),
+            // The pen's three-across grid of control buttons.
+            Wrap(
+              spacing: _gridGap,
+              runSpacing: _gridGap,
+              children: [
+                for (final control in group.controls)
+                  _ControlButton(
+                    control: control,
+                    already: taken.contains(control.target),
+                    onPick: onPick,
+                  ),
+              ],
+            ),
           ],
         ],
       ),
     );
   }
 
-  /// The pen's three-across grid of control buttons.
-  Widget _grid(BuildContext context, ExpressionControlGroup group) => Wrap(
-    spacing: _gridGap,
-    runSpacing: _gridGap,
-    children: [for (final control in group.controls) _button(context, control)],
-  );
+  static const double _gridGap = 14;
+}
 
-  Widget _button(BuildContext context, ExpressionControl control) {
+/// One control a pedal can sweep: its art, its name, and whether it is taken.
+class _ControlButton extends StatelessWidget {
+  const new({
+    required this.control,
+    required this.already,
+    required this.onPick,
+  });
+
+  final ExpressionControl control;
+
+  /// Whether this pedal already sweeps it.
+  final bool already;
+  final ValueChanged<ControlValueTarget> onPick;
+
+  /// The pen's grid: three buttons across the workspace.
+  static const double _buttonWidth = 560;
+  static const double _buttonHeight = 90;
+
+  @override
+  Widget build(BuildContext context) {
     final surface = context.surface;
-    final already = taken.contains(control.target);
     final enabled = !already && control.disabledReason == null;
     return SizedBox(
       width: _buttonWidth,
@@ -328,16 +365,11 @@ class ExpressionControlPicker extends StatelessWidget {
       ),
     );
   }
-
-  /// The pen's grid: three buttons across the workspace.
-  static const double _buttonWidth = 560;
-  static const double _buttonHeight = 90;
-  static const double _gridGap = 14;
 }
 
 /// Keeps the track beside the content and visible while lists are scrolled.
 class _PickerScroll extends StatefulWidget {
-  const _PickerScroll({required this.builder});
+  const new({required this.builder});
 
   final Widget Function(ScrollController) builder;
 

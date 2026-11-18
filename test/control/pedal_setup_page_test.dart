@@ -1,9 +1,9 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
@@ -13,6 +13,7 @@ import 'package:segno/app/application/owned_value_port.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/control/binding/external_pedal.dart';
 import 'package:segno/control/binding/pedal_button_legend.dart';
+import 'package:segno/control/binding/pedal_led_labels.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/control/view/console_pedal_layout.dart';
 import 'package:segno/control/view/pedal_setup/pedal_setup_map.dart';
@@ -37,7 +38,7 @@ import '../helpers/fake_record_timing_control.dart';
 import '../helpers/test_fade_settings.dart';
 import '../helpers/test_mix_settings.dart';
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 class _ControlledStore extends FakeKeyValueStore {
   Completer<void>? pending;
@@ -49,7 +50,7 @@ class _ControlledStore extends FakeKeyValueStore {
   @override
   Future<String?> getString(String key) async {
     if (key == 'pedal.setup') await loading?.future;
-    return super.getString(key);
+    return await super.getString(key);
   }
 
   @override
@@ -85,9 +86,8 @@ void main() {
     looperStates = StreamController<LooperState>.broadcast();
     store = _ControlledStore();
     when(() => looper.looperState).thenAnswer((_) => looperStates.stream);
-    when(
-      () => looper.mixSettingsFailures,
-    ).thenAnswer((_) => const Stream.empty());
+    when(() => looper.mixSettingsFailures)
+        .thenAnswer((_) => const Stream.empty());
     when(() => looper.state).thenReturn(
       LooperState(
         tracks: [for (var i = 0; i < 8; i++) Track(channel: i)],
@@ -108,6 +108,7 @@ void main() {
     WidgetTester tester, {
     bool preload = true,
     VoidCallback? onStage,
+    InteractionMode mode = InteractionMode.record,
   }) async {
     settings = SettingsRepository(store: store);
     tester.view
@@ -154,10 +155,11 @@ void main() {
     addTearDown(() => unawaited(control.close()));
     addTearDown(() => unawaited(tracks.close()));
     if (preload) await control.load();
+    control.setMode(mode);
 
     await tester.pumpWidget(
       MaterialApp(
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        localizationsDelegates: appLocalizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         theme: ThemeData(
           extensions: [
@@ -350,12 +352,7 @@ void main() {
       await pump(tester);
       expect(control.state.pedalSetup.modePress, InteractionMode.mute);
 
-      await choose(
-        tester,
-        field: press,
-        group: 'modes',
-        choice: 'mode_fx',
-      );
+      await choose(tester, field: press, group: 'modes', choice: 'mode_fx');
       // Nothing has reached the rig yet: the edit is a draft.
       expect(control.state.pedalSetup.modePress, InteractionMode.mute);
 
@@ -370,12 +367,7 @@ void main() {
 
     testWidgets('Cancel discards the draft', (tester) async {
       await pump(tester);
-      await choose(
-        tester,
-        field: hold,
-        group: 'modes',
-        choice: 'none',
-      );
+      await choose(tester, field: hold, group: 'modes', choice: 'none');
       await tester.tap(find.byKey(cancel));
       await tester.pumpAndSettle();
       expect(control.state.pedalSetup.modeHold, InteractionMode.custom);
@@ -420,6 +412,28 @@ void main() {
           operation: TrackOperation.mute,
           scope: SelectedTrackScope(),
         ),
+      );
+    });
+
+    testWidgets('a renamed track renames the assignment that names it', (
+      tester,
+    ) async {
+      await pump(tester);
+      await openCustom(tester);
+      await choose(
+        tester,
+        field: press,
+        group: 'fixed',
+        choice: 'direct:mute:0',
+      );
+      unawaited(tracks.rename(0, 'Bassline'));
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(
+          of: find.byKey(press),
+          matching: find.textContaining('Bassline'),
+        ),
+        findsOneWidget,
       );
     });
 
@@ -697,9 +711,7 @@ void main() {
     for (var i = 1; i <= 4; i++) {
       expect(
         tester
-            .widget<PedalSetupCap>(
-              find.byKey(Key('pedal_setup_cap_track$i')),
-            )
+            .widget<PedalSetupCap>(find.byKey(Key('pedal_setup_cap_track$i')))
             .ledActive,
         isFalse,
         reason: 'Draft bank B is not live bank A',
@@ -707,9 +719,7 @@ void main() {
     }
     expect(
       tester
-          .widget<PedalSetupCap>(
-            find.byKey(const Key('pedal_setup_cap_stop')),
-          )
+          .widget<PedalSetupCap>(find.byKey(const Key('pedal_setup_cap_stop')))
           .ledActive,
       isTrue,
     );
@@ -777,17 +787,13 @@ void main() {
     expect(pages, 1);
   });
 
-  testWidgets(
-    'desktop picker attaches its visible scrollbar',
-    (tester) async {
-      await pump(tester);
-      await tester.tap(find.byKey(hold));
-      await tester.pumpAndSettle();
-      expect(tester.takeException(), isNull);
-      expect(find.byKey(const Key('pedal_choice_picker')), findsOneWidget);
-    },
-    variant: TargetPlatformVariant.only(TargetPlatform.macOS),
-  );
+  testWidgets('desktop picker attaches its visible scrollbar', (tester) async {
+    await pump(tester);
+    await tester.tap(find.byKey(hold));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.byKey(const Key('pedal_choice_picker')), findsOneWidget);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
 
   testWidgets('Stage closes the calling tray without saving the draft', (
     tester,
@@ -818,20 +824,14 @@ void main() {
     await tester.tap(find.byKey(save));
     await tester.pumpAndSettle();
     expect(control.state.pedalSetup.external, external);
-    expect(
-      control.state.pedalSetup.modePress,
-      InteractionMode.fx,
-    );
+    expect(control.state.pedalSetup.modePress, InteractionMode.fx);
   });
 
   testWidgets('startup waits for the saved setup before the first edit', (
     tester,
   ) async {
     store.values['pedal.setup'] = const PedalSetup()
-        .copyWith(
-          recordHold: RecordHold.none,
-          trackHold: TrackHold.clearTrack,
-        )
+        .copyWith(recordHold: RecordHold.none, trackHold: TrackHold.clearTrack)
         .encode();
     store.loading = Completer<void>();
     await pump(tester, preload: false);
@@ -933,9 +933,7 @@ void main() {
 
   testWidgets(
     'unreadable assignments need a deliberate confirmed replacement',
-    (
-      tester,
-    ) async {
+    (tester) async {
       const damaged = '{"trackHold":"unknown-hold"}';
       store.values['pedal.setup'] = damaged;
       await pump(tester);
@@ -1057,16 +1055,13 @@ void main() {
   }
 
   Future<void> ledMode(WidgetTester tester, InteractionMode mode) async {
-    await tester.tap(find.byKey(const Key('pedal_led_mode')));
-    await tester.pumpAndSettle();
-    final choice = find.byKey(
-      Key('pedal_choice_mode_${ModeAction(mode).token}'),
-    );
-    await tester.ensureVisible(choice);
-    await tester.pumpAndSettle();
-    await tester.tap(choice);
+    await tester.tap(find.byKey(Key('pedal_led_mode_${mode.name}')));
     await tester.pumpAndSettle();
   }
+
+  bool modeTabSelected(WidgetTester tester, InteractionMode mode) => tester
+      .widget<LoopChoiceButton>(find.byKey(Key('pedal_led_mode_${mode.name}')))
+      .selected;
 
   /// Opens the colour editor from [field] and commits it at zero brightness.
   Future<void> paintBlack(WidgetTester tester, Key field) async {
@@ -1083,10 +1078,8 @@ void main() {
   }
 
   const black = PedalColor(0, 0, 0);
-  PedalSetupCap capOf(WidgetTester tester, PedalButton button) =>
-      tester.widget<PedalSetupCap>(
-        find.byKey(Key('pedal_setup_cap_${button.name}')),
-      );
+  PedalSetupCap capOf(WidgetTester tester, PedalButton button) => tester
+      .widget<PedalSetupCap>(find.byKey(Key('pedal_setup_cap_${button.name}')));
 
   group('LED colors', () {
     testWidgets(
@@ -1138,7 +1131,8 @@ void main() {
           SpacingTheme.standard.xl,
         );
         for (final key in [
-          'pedal_led_mode',
+          for (final mode in InteractionMode.values)
+            'pedal_led_mode_${mode.name}',
           'pedal_setup_context_tracks',
           'pedal_setup_context_custom',
           'pedal_setup_context_leds',
@@ -1155,18 +1149,20 @@ void main() {
       },
     );
 
-    testWidgets('the mode picker switches the shown colour map', (
-      tester,
-    ) async {
+    testWidgets('the mode tabs switch the shown colour map, and only LED '
+        'colors shows them', (tester) async {
       await pump(tester);
+      final record = find.byKey(const Key('pedal_led_mode_record'));
+      expect(record, findsNothing);
+      await tester.tap(find.byKey(const Key('pedal_setup_context_custom')));
+      await tester.pumpAndSettle();
+      expect(record, findsNothing);
       await openLeds(tester);
+      expect(record, findsOneWidget);
       await ledMode(tester, InteractionMode.mute);
       expect(capOf(tester, PedalButton.mode).ledColor, ledGreen);
       expect(capOf(tester, PedalButton.track1).ledColor, ledGreen);
-      expect(
-        find.byKey(const Key('pedal_led_state_armed')),
-        findsOneWidget,
-      );
+      expect(find.byKey(const Key('pedal_led_state_armed')), findsOneWidget);
       // Custom colours only MODE and Bank; its pedals carry their own colour
       // beside their assignment.
       await ledMode(tester, InteractionMode.custom);
@@ -1177,11 +1173,86 @@ void main() {
       }
       expect(capOf(tester, PedalButton.mode).selected, isTrue);
       expect(capOf(tester, PedalButton.mode).ledColor, ledYellow);
-      expect(
-        find.byKey(const Key('pedal_led_state_current')),
-        findsOneWidget,
-      );
+      expect(find.byKey(const Key('pedal_led_state_current')), findsOneWidget);
       expect(tester.takeException(), isNull);
+    });
+
+    testWidgets(
+      'Record and Mute are separate modes, each named and with its own map',
+      (tester) async {
+        await pump(tester);
+        await openLeds(tester);
+        final l10n = AppLocalizations.of(
+          tester.element(find.byType(PedalSetupPage)),
+        );
+        // One tab per mode, each by its own name, never the Exit action,
+        // across the content box under the title row.
+        final content = tester.getRect(
+          find.byKey(const Key('pedal_setup_page')),
+        );
+        Rect? previous;
+        for (final mode in InteractionMode.values) {
+          final tab = find.byKey(Key('pedal_led_mode_${mode.name}'));
+          expect(
+            tester.widget<LoopChoiceButton>(tab).label,
+            pedalLedModeLabel(l10n, mode),
+          );
+          final rect = tester.getRect(tab);
+          expect(rect.height, 64, reason: mode.name);
+          if (previous != null) {
+            expect(rect.top, previous.top, reason: mode.name);
+            expect(
+              rect.left - previous.right,
+              moreOrLessEquals(SpacingTheme.standard.sm),
+              reason: mode.name,
+            );
+          }
+          previous = rect;
+        }
+        expect(
+          tester.getRect(find.byKey(const Key('pedal_led_mode_record'))).left,
+          content.left + SpacingTheme.standard.xxl,
+        );
+        expect(
+          previous!.right,
+          moreOrLessEquals(content.right - SpacingTheme.standard.xxl),
+        );
+        expect(find.text(l10n.actionModeExit), findsNothing);
+        expect(modeTabSelected(tester, InteractionMode.record), isTrue);
+        await ledMode(tester, InteractionMode.mute);
+        expect(modeTabSelected(tester, InteractionMode.mute), isTrue);
+        expect(modeTabSelected(tester, InteractionMode.record), isFalse);
+
+        await paintBlack(tester, const Key('pedal_led_state_armed'));
+        await tester.tap(find.byKey(save));
+        await tester.pumpAndSettle();
+        final leds = control.state.pedalSetup.leds;
+        expect(
+          leds.colorFor(
+            InteractionMode.mute,
+            PedalLedGroup.tracks,
+            PedalLedState.armed,
+          ),
+          black,
+        );
+        expect(leds.isEdited(InteractionMode.record), isFalse);
+        // The console lights from the active mode's map: a dark track pedal
+        // carries its group's first colour, Mute's armed or Record's
+        // recording.
+        control.setMode(InteractionMode.mute);
+        await tester.pumpAndSettle();
+        expect(pedal.lastFrame!.colorFor(PedalButton.track2), black);
+        control.setMode(InteractionMode.record);
+        await tester.pumpAndSettle();
+        expect(pedal.lastFrame!.colorFor(PedalButton.track2), ledRed);
+      },
+    );
+
+    testWidgets("opens on the console's mode", (tester) async {
+      await pump(tester, mode: InteractionMode.mute);
+      await openLeds(tester);
+      expect(modeTabSelected(tester, InteractionMode.mute), isTrue);
+      expect(find.byKey(const Key('pedal_led_state_armed')), findsOneWidget);
     });
 
     testWidgets(

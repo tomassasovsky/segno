@@ -4,7 +4,7 @@ import 'package:wifi_client/src/wifi_models.dart';
 /// No-op client used on desktop / when the helper is absent.
 class UnsupportedWifiClient implements WifiClient {
   /// Creates an [UnsupportedWifiClient].
-  const UnsupportedWifiClient();
+  const new();
 
   @override
   bool get isSupported => false;
@@ -14,6 +14,9 @@ class UnsupportedWifiClient implements WifiClient {
 
   @override
   Future<List<WifiNetwork>> scan() async => const [];
+
+  @override
+  Stream<void> changes() => const Stream.empty();
 
   @override
   Future<void> connect(String ssid, {String? psk}) async {}

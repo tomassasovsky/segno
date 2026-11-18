@@ -47,7 +47,7 @@ bool musicKeepsAwake(BuildContext context) => idleKeepsAwake(
 /// panel shows.
 class IdleDimHost extends StatefulWidget {
   /// Creates an [IdleDimHost] around [child].
-  const IdleDimHost({required this.child, super.key});
+  const new({required this.child, super.key});
 
   /// The app.
   final Widget child;
@@ -122,7 +122,7 @@ class _IdleDimHostState extends State<IdleDimHost> {
 /// the barrier, so it never presses the control under the finger.
 class IdleDimBarrier extends StatelessWidget {
   /// Creates an [IdleDimBarrier] around [child].
-  const IdleDimBarrier({required this.child, super.key});
+  const new({required this.child, super.key});
 
   /// What the barrier covers.
   final Widget child;

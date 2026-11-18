@@ -5,7 +5,7 @@ import 'package:segno/control/model/foot_length.dart';
 /// (#1168). Control owns contacts; this component caches nothing.
 class FootLengthActions {
   /// Connects the shared repository without introducing a new lifetime.
-  const FootLengthActions({required this.repository});
+  const new({required this.repository});
 
   /// Owner of the tracks and their length edits.
   final LooperRepository repository;
@@ -15,11 +15,8 @@ class FootLengthActions {
     required int bank,
     required int cursor,
     LooperState? looper,
-  }) => projectFootLength(
-    looper ?? repository.state,
-    bank: bank,
-    cursor: cursor,
-  );
+  }) =>
+      projectFootLength(looper ?? repository.state, bank: bank, cursor: cursor);
 
   /// Doubles or halves [channel]. Completes with null when the edit landed,
   /// or why it did not: an empty or busy track is refused without reaching

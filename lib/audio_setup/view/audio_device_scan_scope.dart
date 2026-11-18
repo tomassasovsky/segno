@@ -24,7 +24,7 @@ import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
 /// audio settings section) and a transition can overlap them.
 class AudioDeviceScanScope extends StatefulWidget {
   /// Creates an [AudioDeviceScanScope] polling over [child]'s lifetime.
-  const AudioDeviceScanScope({required this.child, super.key});
+  const new({required this.child, super.key});
 
   /// The picker subtree whose lifetime bounds the enumeration.
   final Widget child;

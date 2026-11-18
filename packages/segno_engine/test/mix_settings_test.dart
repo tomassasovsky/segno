@@ -34,4 +34,16 @@ void main() {
     expect(above, greaterThan(LE_MAX_INPUT_TRIM));
     expect(EngineMixSettings(revision: 1, trims: {0: above}).isValid, isFalse);
   });
+
+  test('a record image takes heard lanes inside the lane range (#1713)', () {
+    RecordImage image(Set<int> heard) => RecordImage(
+      revision: 1,
+      lanes: const {0: (gain: 1, pan: 0)},
+      heardLanes: heard,
+    );
+    expect(image(const {0, 7}).isValid, isTrue);
+    expect(image(const {8}).isValid, isFalse);
+    expect(image(const {-1}).isValid, isFalse);
+    expect(image(const {0}).heardLanes, const {0});
+  });
 }

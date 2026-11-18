@@ -22,7 +22,7 @@ enum BackingMixField {
 class BackingMix extends Equatable {
   /// Creates a [BackingMix]; the defaults are a silent, unrouted backing that
   /// stops at its end.
-  const BackingMix({
+  const new({
     this.level = 1,
     this.pan = 0,
     this.outputMask = 0,
@@ -30,7 +30,7 @@ class BackingMix extends Equatable {
   });
 
   /// Reads the stored record strictly; throws [FormatException] otherwise.
-  factory BackingMix.fromJson(Object? json) {
+  factory fromJson(Object? json) {
     const keys = {'level', 'pan', 'outputMask', 'end'};
     if (json is! Map<String, dynamic> ||
         json.length != keys.length ||

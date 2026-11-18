@@ -109,39 +109,30 @@ void main() {
       expect(engine.calls.where((c) => c == 'stop'), isEmpty);
     },
   );
-  test(
-    'successful receipt with wrong vector is owed, not accepted, and Retry '
-    'lands it without a stop',
-    () async {
-      await start();
-      engine.corrupt = true;
-      repository.setRecordTiming(RecordTiming.quarter);
-      expect(
-        await repository.settleRecordTimingSettings(),
-        EngineResult.invalid,
-      );
-      expect(repository.recordTimingRecoveryRequired, isTrue);
-      expect(repository.defaultRecordTiming, RecordTiming.immediately);
-      expect(
-        repository.recordTimingRestartIntent.defaultTiming,
-        RecordTiming.quarter,
-      );
-      expect(engine.calls.where((c) => c == 'stop'), isEmpty);
-      engine.corrupt = false;
-      expect(repository.recoverRecordTimingSettings(), EngineResult.ok);
-      expect(await repository.settleRecordTimingSettings(), EngineResult.ok);
-      expect(repository.recordTimingRecoveryRequired, isFalse);
-      expect(repository.defaultRecordTiming, RecordTiming.quarter);
-    },
-  );
+  test('successful receipt with wrong vector is owed, not accepted, and Retry '
+      'lands it without a stop', () async {
+    await start();
+    engine.corrupt = true;
+    repository.setRecordTiming(RecordTiming.quarter);
+    expect(await repository.settleRecordTimingSettings(), EngineResult.invalid);
+    expect(repository.recordTimingRecoveryRequired, isTrue);
+    expect(repository.defaultRecordTiming, RecordTiming.immediately);
+    expect(
+      repository.recordTimingRestartIntent.defaultTiming,
+      RecordTiming.quarter,
+    );
+    expect(engine.calls.where((c) => c == 'stop'), isEmpty);
+    engine.corrupt = false;
+    expect(repository.recoverRecordTimingSettings(), EngineResult.ok);
+    expect(await repository.settleRecordTimingSettings(), EngineResult.ok);
+    expect(repository.recordTimingRecoveryRequired, isFalse);
+    expect(repository.defaultRecordTiming, RecordTiming.quarter);
+  });
   test('an owed timing vector does not refuse a Mixer edit', () async {
     await start();
     engine.corrupt = true;
     repository.setRecordTiming(RecordTiming.quarter);
-    expect(
-      await repository.settleRecordTimingSettings(),
-      EngineResult.invalid,
-    );
+    expect(await repository.settleRecordTimingSettings(), EngineResult.invalid);
     expect(repository.recordTimingRecoveryRequired, isTrue);
     expect(repository.setVolume(.5, channel: 1), EngineResult.ok);
     expect(await repository.settleMixSettings(), EngineResult.ok);

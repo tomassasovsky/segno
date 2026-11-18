@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/control/view/fx_pedal_assignments_body.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/settings/view/settings_destination_page.dart';
@@ -10,7 +10,7 @@ import 'package:segno/settings/view/settings_destination_page.dart';
 /// Pedal banks redesign replaces the body.
 class FxPedalAssignmentsPage extends StatelessWidget {
   /// Creates a [FxPedalAssignmentsPage].
-  const FxPedalAssignmentsPage({super.key});
+  const new({super.key});
 
   @override
   Widget build(BuildContext context) {

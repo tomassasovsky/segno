@@ -20,15 +20,14 @@ enum RemoveRefusal {
 /// [repository] and are never written until committed here.
 class InstrumentSettings {
   /// Builds the owner over [looper]'s lifetime, [instruments] and
-  /// [settings]' record. [mintId] gives each new instrument its identity.
-  InstrumentSettings({
+  /// [settings]' record. [_mintId] gives each new instrument its identity.
+  new({
     required LooperRepository looper,
     required InstrumentRepository instruments,
     required SettingsRepository settings,
-    String Function() mintId = SlotIds.mint,
+    this._mintId = SlotIds.mint,
   }) : _looper = looper,
        repository = instruments,
-       _mintId = mintId,
        owner = SettingsOwner(
          repository: looper,
          family: InstrumentsFamily(

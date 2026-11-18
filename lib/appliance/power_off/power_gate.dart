@@ -10,7 +10,7 @@ import 'package:segno/session/cubit/session_cubit.dart';
 /// function of this snapshot so tests own the predicate without a widget tree.
 class PowerSnapshot extends Equatable {
   /// Creates a [PowerSnapshot].
-  const PowerSnapshot({
+  const new({
     this.takeInFlight = false,
     this.transferInFlight = false,
     this.updateInFlight = false,

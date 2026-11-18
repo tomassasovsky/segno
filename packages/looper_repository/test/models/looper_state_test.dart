@@ -19,9 +19,8 @@ void main() {
         TrackState.overdubbing,
       ]) {
         expect(
-          LooperState(
-            tracks: [Track(state: state, lengthFrames: 10)],
-          ).isPlaying,
+          LooperState(tracks: [Track(state: state, lengthFrames: 10)])
+              .isPlaying,
           isTrue,
           reason: '$state',
         );
@@ -101,10 +100,7 @@ void main() {
         primaryTrack: 0,
         primaryDesignation: 0,
       ),
-      tracks: [
-        crown,
-        const Track(channel: 1, lengthFrames: 100),
-      ],
+      tracks: [crown, const Track(channel: 1, lengthFrames: 100)],
     );
 
     test('every Song track is a section', () {
@@ -120,10 +116,7 @@ void main() {
         crown: const Track(lengthFrames: 200, multiple: 2),
       );
       expect(multiple.isSection(1), isFalse);
-      expect(
-        rig(LooperMode.band, crown: const Track()).isSection(1),
-        isFalse,
-      );
+      expect(rig(LooperMode.band, crown: const Track()).isSection(1), isFalse);
     });
 
     test('a Band designation on a cleared track leaves no sections, though '

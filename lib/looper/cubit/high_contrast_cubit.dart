@@ -10,9 +10,7 @@ import 'package:settings_repository/settings_repository.dart';
 /// Defaults to off until [load] restores the saved preference.
 class HighContrastCubit extends Cubit<bool> {
   /// Creates a [HighContrastCubit], off until [load] restores the saved value.
-  HighContrastCubit({required SettingsRepository settings})
-    : _settings = settings,
-      super(false);
+  new({required this._settings}) : super(false);
 
   final SettingsRepository _settings;
   Future<void>? _loadFuture;

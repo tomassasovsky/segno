@@ -64,9 +64,7 @@ void main() {
     });
 
     test('load restores the saved settings and their level', () async {
-      await settings.saveConsoleLeds(
-        const ConsoleLedSettings(brightness: 0.6),
-      );
+      await settings.saveConsoleLeds(const ConsoleLedSettings(brightness: 0.6));
       await cubit.load();
       expect(cubit.state.settings.brightness, 0.6);
       expect(pedal.ledLevel, ledLevelOf(0.6));
@@ -147,10 +145,9 @@ void main() {
         expect(cubit.state.followingLight, isFalse);
         expect(pedal.ledLevel, ledLevelOf(0.6));
         // Only the hello's replay of the same level, no dip.
-        expect(
-          levelsSent().skip(sent).map((m) => m.level).toSet(),
-          {ledLevelOf(0.6)},
-        );
+        expect(levelsSent().skip(sent).map((m) => m.level).toSet(), {
+          ledLevelOf(0.6),
+        });
       });
     });
 

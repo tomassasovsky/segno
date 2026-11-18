@@ -19,7 +19,7 @@ import 'package:update_repository/update_repository.dart';
 /// `AppliancePlatformBackend` over a fake [ApplianceEnv].
 class SystemApplianceEnv implements ApplianceEnv {
   /// Creates a [SystemApplianceEnv]. [helperPath] is the update helper.
-  const SystemApplianceEnv({this.helperPath = kApplianceHelperPath});
+  const new({this.helperPath = kApplianceHelperPath});
 
   /// Path to the update helper (run directly; the appliance app is root).
   final String helperPath;

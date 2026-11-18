@@ -1,6 +1,6 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
 import 'package:segno/theme/theme.dart';
 
@@ -82,9 +82,10 @@ void main() {
       );
       expect(backMaterial.color, Colors.transparent);
       expect(
-        (shapeOf(tester, 'loop_settings_back') as RoundedRectangleBorder)
-            .side
-            .color,
+        (shapeOf(
+          tester,
+          'loop_settings_back',
+        ) as RoundedRectangleBorder).side.color,
         surface.frameControlLine,
       );
 
@@ -94,9 +95,10 @@ void main() {
       );
       expect(stageMaterial.color, surface.frameControlFill);
       expect(
-        (shapeOf(tester, 'loop_settings_stage') as RoundedRectangleBorder)
-            .side
-            .color,
+        (shapeOf(
+          tester,
+          'loop_settings_stage',
+        ) as RoundedRectangleBorder).side.color,
         surface.frameControlLine,
       );
     });

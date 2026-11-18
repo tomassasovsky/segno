@@ -1,9 +1,9 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:operation_guards/operation_guards.dart';
@@ -34,9 +34,9 @@ import '../helpers/fake_record_timing_control.dart';
 import '../helpers/test_fade_settings.dart';
 import '../helpers/test_mix_settings.dart';
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
-class _MockMidiDevices extends Mock implements MidiDeviceRepository {}
+class _MockMidiDevices extends Mock implements MidiDeviceRepository;
 
 TrackEffect _fx(String slotId, TrackEffectType type) =>
     BuiltInEffect(type: type, slotId: slotId);
@@ -63,6 +63,8 @@ void main() {
       settings: SettingsRepository(store: FakeKeyValueStore()),
     );
     looper = _MockLooperRepository();
+    registerFallbackValue(<FxControlReach>[]);
+    when(() => looper.fxReachFits(any())).thenReturn(true);
     when(() => looper.sessionRevision).thenReturn(0);
     when(() => looper.mixGeneration).thenReturn(0);
     when(() => looper.inputSetup).thenReturn(const InputSetup.empty());
@@ -73,9 +75,8 @@ void main() {
       _fx('slot-reverb', TrackEffectType.reverb),
     ];
     when(() => looper.looperState).thenAnswer((_) => looperStates.stream);
-    when(
-      () => looper.mixSettingsFailures,
-    ).thenAnswer((_) => const Stream.empty());
+    when(() => looper.mixSettingsFailures)
+        .thenAnswer((_) => const Stream.empty());
     when(() => looper.state).thenReturn(
       LooperState(
         tracks: [for (var i = 0; i < 8; i++) Track(channel: i)],
@@ -91,9 +92,8 @@ void main() {
     when(() => looper.allTracksEffects).thenReturn(const []);
     when(() => looper.outputChainEnabled(any())).thenReturn(true);
     when(() => looper.allTracksChainEnabled).thenReturn(true);
-    when(
-      () => looper.outputChainEnvelope(0),
-    ).thenReturn(const FxChainEnvelope());
+    when(() => looper.outputChainEnvelope(0))
+        .thenReturn(const FxChainEnvelope());
     when(() => looper.outputChainEnabled(any())).thenReturn(true);
     when(() => looper.setMasterGain(any())).thenReturn(EngineResult.ok);
 
@@ -174,7 +174,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         locale: locale,
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        localizationsDelegates: appLocalizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         theme: ThemeData(
           extensions: [
@@ -193,11 +193,7 @@ void main() {
               BlocProvider.value(value: tracks),
               // The tray asks the link whether a CTRL pedal could deliver: a
               // rig with no MIDI is still bindable from the console.
-              BlocProvider(
-                create: (_) => PedalCubit(
-                  pedal: pedal,
-                ),
-              ),
+              BlocProvider(create: (_) => PedalCubit(pedal: pedal)),
             ],
             child: const FxPedalAssignmentsPage(),
           ),
@@ -270,6 +266,54 @@ void main() {
 
       expect(find.byKey(Key('pedal_target_$slot')), findsOneWidget);
       expect(find.text('Drive'), findsOneWidget);
+    });
+
+    testWidgets('each rack is listed under its chain, by its own name, and '
+        'a switch bound to it says so (#1711)', (tester) async {
+      const reverb = FxRack(id: 'rack-a', name: 'Reverb + Delay');
+      const chords = FxRack(id: 'rack-b', name: 'Soft Chords');
+      masterChain = [
+        BuiltInEffect(
+          type: TrackEffectType.reverb,
+          slotId: 'slot-reverb',
+          rack: reverb,
+        ),
+        BuiltInEffect(
+          type: TrackEffectType.drive,
+          slotId: 'slot-drive',
+          rack: chords,
+        ),
+      ];
+      await pump(tester);
+      await tester.tap(find.byKey(const Key('pedal_switch_recPlay')));
+      await tester.pumpAndSettle();
+
+      final rack = const FxRackTarget(
+        address: _master,
+        rackId: 'rack-b',
+      ).canonicalString();
+      expect(find.byKey(Key('pedal_target_$rack')), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(Key('pedal_target_$rack')),
+          matching: find.text('Soft Chords'),
+        ),
+        findsOneWidget,
+      );
+
+      await tester.ensureVisible(find.byKey(Key('pedal_target_$rack')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(Key('pedal_target_$rack')));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('pedal_switch_recPlay')));
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('pedal_switch_recPlay')),
+          matching: find.textContaining('Soft Chords'),
+        ),
+        findsOneWidget,
+      );
     });
 
     testWidgets('choosing a target assigns it, and choosing it again clears', (
@@ -370,10 +414,7 @@ void main() {
       // unassigned rather than inheriting bank A's binding.
       await tester.tap(find.text('B'));
       await tester.pumpAndSettle();
-      expect(
-        find.text(l10nOf(tester).controlUnassigned),
-        findsWidgets,
-      );
+      expect(find.text(l10nOf(tester).controlUnassigned), findsWidgets);
     });
 
     testWidgets('a binding whose target is gone takes the warning tone', (
@@ -396,7 +437,10 @@ void main() {
 
       final l10n = l10nOf(tester);
       final row = tester.widget<ConsoleRow>(
-        find.byKey(const Key('pedal_switch_track1')),
+        find.descendant(
+          of: find.byKey(const Key('pedal_switch_track1')),
+          matching: find.byType(ConsoleRow),
+        ),
       );
       expect(row.value, l10n.controlTargetMissing);
       expect(

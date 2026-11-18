@@ -12,11 +12,6 @@ import 'package:segno_engine/segno_engine.dart' show PumpedNativeEngine;
 /// Save selected audio's path through the real engine: two literal loops
 /// rendered to a file by the repository decode to their literal sum.
 void main() {
-  final library = Platform.environment['SEGNO_ENGINE_LIB'];
-  final skip = library == null || library.isEmpty
-      ? 'Build packages/segno_engine/tool/build_test_lib.sh and set SEGNO_ENGINE_LIB'
-      : null;
-
   test('renders two literal loops to a WAV of their sum', () async {
     final engine = PumpedNativeEngine();
     final ticks = StreamController<void>.broadcast(sync: true);
@@ -53,10 +48,7 @@ void main() {
     expect(engine.commitSession(8, loopBeats: 0), EngineResult.ok);
     engine.pump(frames: 0);
 
-    const render = SelectedRender(
-      sources: {0, 1},
-      tails: RenderTailRule.cut,
-    );
+    const render = SelectedRender(sources: {0, 1}, tails: RenderTailRule.cut);
     final measured = repository.measureRender(render);
     expect(measured.result, EngineResult.ok);
     expect(measured.plan!.frames, 48);
@@ -78,5 +70,5 @@ void main() {
       expect(data.getFloat32(44 + 8 * f, Endian.little), sum);
       expect(data.getFloat32(48 + 8 * f, Endian.little), sum);
     }
-  }, skip: skip);
+  });
 }

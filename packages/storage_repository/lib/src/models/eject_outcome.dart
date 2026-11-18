@@ -12,16 +12,16 @@ enum EjectPhase {
 
 /// How an eject ended.
 sealed class EjectOutcome extends Equatable {
-  const EjectOutcome();
+  const new();
 
   /// The volume is unmounted; the drive can be pulled.
-  const factory EjectOutcome.safeToRemove() = EjectSafeToRemove;
+  const factory safeToRemove() = EjectSafeToRemove;
 
   /// The volume is still there; see [EjectFailed.reason].
-  const factory EjectOutcome.failed(String reason) = EjectFailed;
+  const factory failed(String reason) = EjectFailed;
 
   /// The caller withdrew the request before the helper served it.
-  const factory EjectOutcome.cancelled() = EjectCancelled;
+  const factory cancelled() = EjectCancelled;
 
   @override
   List<Object?> get props => const [];
@@ -30,7 +30,7 @@ sealed class EjectOutcome extends Equatable {
 /// The volume is unmounted; the drive can be pulled.
 final class EjectSafeToRemove extends EjectOutcome {
   /// Creates an [EjectSafeToRemove].
-  const EjectSafeToRemove();
+  const new();
 }
 
 /// The eject did not happen. [reason] is the helper's (`busy` when the
@@ -41,7 +41,7 @@ final class EjectSafeToRemove extends EjectOutcome {
 /// pulled), or `removed` when the drive was pulled first.
 final class EjectFailed extends EjectOutcome {
   /// Creates an [EjectFailed] with [reason].
-  const EjectFailed(this.reason);
+  const new(this.reason);
 
   /// Why.
   final String reason;
@@ -53,7 +53,7 @@ final class EjectFailed extends EjectOutcome {
 /// The caller withdrew the request before the helper served it.
 final class EjectCancelled extends EjectOutcome {
   /// Creates an [EjectCancelled].
-  const EjectCancelled();
+  const new();
 }
 
 /// Eject was refused before any request was filed: these leases are still
@@ -61,7 +61,7 @@ final class EjectCancelled extends EjectOutcome {
 /// during USB work").
 class EjectRefused implements Exception {
   /// Creates an [EjectRefused] naming the [holders].
-  const EjectRefused(this.holders);
+  const new(this.holders);
 
   /// The leases holding the volume; each carries the purpose the Storage page
   /// shows next to the disabled Eject.

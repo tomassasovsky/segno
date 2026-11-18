@@ -221,10 +221,8 @@ void main() {
 
   test('a decoder refusal is reported by its reason', () async {
     final a = await asset('a.wav');
-    decoder.beforeDecode = () async =>
-        decoder.mock.files[a.path] = const MockAudioFile.refused(
-          EngineResult.tooLong,
-        );
+    decoder.beforeDecode = () async => decoder.mock.files[a.path] =
+        const MockAudioFile.refused(EngineResult.tooLong);
     // ContentDecoder registers from the file before the hook runs, so the
     // hook's refusal is what the decode meets.
     expect(await repo.load(a.digest), isFalse);

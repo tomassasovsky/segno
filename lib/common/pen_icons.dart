@@ -58,7 +58,7 @@ enum PenIcon {
 /// Draws [icon] in [color], scaled to whatever box it is given.
 class PenIconPainter extends CustomPainter {
   /// Creates a [PenIconPainter].
-  const PenIconPainter({required this.icon, required this.color});
+  const new({required this.icon, required this.color});
 
   /// Which glyph to draw.
   final PenIcon icon;
@@ -234,12 +234,7 @@ class PenIconPainter extends CustomPainter {
     const kx = 12.375 / 13.5;
     const ky = 11.9167 / 13;
     // (top, bottom) of each bar in the source span, left to right.
-    const bars = <(double, double)>[
-      (4.5, 8.5),
-      (0, 13),
-      (2.5, 10.5),
-      (5, 8),
-    ];
+    const bars = <(double, double)>[(4.5, 8.5), (0, 13), (2.5, 10.5), (5, 8)];
     for (var i = 0; i < bars.length; i++) {
       final x = 3.6667 + i * 4.5 * kx;
       canvas.drawLine(
@@ -258,7 +253,7 @@ class PenIconPainter extends CustomPainter {
 /// A [PenIcon] as a widget, sized and coloured like an [Icon].
 class PenIconView extends StatelessWidget {
   /// Creates a [PenIconView].
-  const PenIconView({
+  const new({
     required this.icon,
     required this.size,
     required this.color,

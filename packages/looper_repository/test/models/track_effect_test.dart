@@ -34,7 +34,7 @@ void main() {
           expect(d.atMin, e.atMin, reason: reason);
           expect(d.atMax, e.atMax, reason: reason);
           expect(d.defaultValue, e.defaultValue, reason: reason);
-          expect(d.taperUnverified, e.taperUnverified, reason: reason);
+          expect(d.off.name, e.off.name, reason: reason);
           for (final v in [0.0, 0.3, 0.5, 1.0]) {
             expect(d.valueAt(v), e.valueAt(v), reason: '$reason at $v');
           }
@@ -537,10 +537,7 @@ void main() {
       final disabled = [
         BuiltInEffect(type: TrackEffectType.drive, enabled: false),
       ];
-      expect(
-        fxChainFingerprint(enabled),
-        isNot(fxChainFingerprint(disabled)),
-      );
+      expect(fxChainFingerprint(enabled), isNot(fxChainFingerprint(disabled)));
       // A plugin's enabled bit folds too.
       const pRef = PluginRef(format: PluginFormat.clap, id: 'p');
       expect(
@@ -590,10 +587,7 @@ void main() {
       expect(fxChainFingerprint(a), fxChainFingerprint(b));
       // But a plugin differs from a built-in.
       final builtIn = [BuiltInEffect(type: TrackEffectType.drive)];
-      expect(
-        fxChainFingerprint(a),
-        isNot(fxChainFingerprint(builtIn)),
-      );
+      expect(fxChainFingerprint(a), isNot(fxChainFingerprint(builtIn)));
     });
   });
 }

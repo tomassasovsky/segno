@@ -15,7 +15,7 @@ import 'package:segno_engine/segno_engine_ffi.dart';
 /// device lifetime, so queued callbacks from a closed port cannot be relabeled.
 class MidiControllerSource implements ControllerSource {
   /// Creates native capture, optionally over an injected client.
-  MidiControllerSource({MidiClient? client}) : _client = client ?? MidiClient();
+  new({MidiClient? client}) : _client = client ?? MidiClient();
 
   final MidiClient _client;
   final _inputs = StreamController<RawControllerInput>.broadcast();

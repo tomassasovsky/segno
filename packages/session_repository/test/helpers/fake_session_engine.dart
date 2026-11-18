@@ -13,6 +13,13 @@ class _FakeLane {
   /// owning track's image count; a single-layer lane holds just the live
   /// buffer.
   List<Float32List> layers = [Float32List(0)];
+
+  /// Each layer's heard image (#1713), interleaved stereo, by ordinal; a
+  /// missing or empty entry is a layer without one.
+  List<Float32List> heard = const [];
+
+  /// What the lane plays (#1713).
+  LaneSource source = LaneSource.heard;
 }
 
 class _FakeTrack {
@@ -58,7 +65,7 @@ class _FakeTrack {
 /// and per-track PCM closely enough to exercise the session repository's
 /// save/load without the native engine.
 class FakeSessionEngine with SimulatedInstruments implements AudioEngine {
-  FakeSessionEngine({this.channels = 1, this.sampleRate = 48000});
+  new({this.channels = 1, this.sampleRate = 48000});
 
   // The audition voice (#1178): records what it was asked to play.
 
@@ -360,6 +367,10 @@ class FakeSessionEngine with SimulatedInstruments implements AudioEngine {
                 lengthFrames: t.lengthFrames,
                 rms: 0,
                 peak: 0,
+                heard:
+                    t.liveIndex < lane.heard.length &&
+                    lane.heard[t.liveIndex].isNotEmpty,
+                source: lane.source,
               ),
           ],
         ),
@@ -396,6 +407,35 @@ class FakeSessionEngine with SimulatedInstruments implements AudioEngine {
     if (ordinal < 0 || ordinal >= layers.length) return Float32List(0);
     return Float32List.fromList(layers[ordinal]);
   }
+
+  /// Gives lane [lane] of the seeded track [channel] [heard] images by
+  /// ordinal (#1713), interleaved stereo; an empty entry is a layer without
+  /// one.
+  void seedHeard(int channel, int lane, List<Float32List> heard) {
+    _tracks[channel].audioRev++;
+    _tracks[channel].lanes[lane].heard = List.of(heard);
+  }
+
+  @override
+  Float32List exportLayerHeard(int channel, int lane, int ordinal) {
+    final track = _tracks[channel];
+    if (lane < 0 || lane >= track.lanes.length) return Float32List(0);
+    final heard = track.lanes[lane].heard;
+    if (ordinal < 0 || ordinal >= heard.length) return Float32List(0);
+    return Float32List.fromList(heard[ordinal]);
+  }
+
+  @override
+  Float32List exportTrackLaneHeard(int channel, int lane) =>
+      exportLayerHeard(channel, lane, _tracks[channel].liveIndex);
+
+  @override
+  EngineResult importLayerHeard(
+    int channel,
+    int lane,
+    int ordinal,
+    Float32List pcm,
+  ) => EngineResult.ok;
 
   @override
   EngineResult importTrack(int channel, Float32List pcm) =>
@@ -721,6 +761,9 @@ class FakeSessionEngine with SimulatedInstruments implements AudioEngine {
   @override
   EngineResult stopTrack({int channel = 0}) => EngineResult.ok;
   @override
+  EngineResult spareTail({int channel = 0, int following = 0}) =>
+      EngineResult.ok;
+  @override
   EngineResult play({int channel = 0}) => EngineResult.ok;
   @override
   EngineResult undo({int channel = 0}) => EngineResult.ok;
@@ -899,6 +942,19 @@ class FakeSessionEngine with SimulatedInstruments implements AudioEngine {
     required bool enabled,
   }) => EngineResult.ok;
   @override
+  EngineResult setLaneSource({
+    required int channel,
+    required int lane,
+    required LaneSource source,
+  }) {
+    _tracks[channel].lanes[lane].source = source;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult heardAttach({required int channel, required int lane}) =>
+      EngineResult.ok;
+  @override
   EngineResult setMonitorInputFxEnabled({
     required int input,
     required int index,
@@ -1056,25 +1112,19 @@ class FakeSessionEngine with SimulatedInstruments implements AudioEngine {
     required bool enabled,
   }) => EngineResult.ok;
   @override
-  EngineResult setMonitorInputOutput({
-    required int input,
-    required int mask,
-  }) => EngineResult.ok;
+  EngineResult setMonitorInputOutput({required int input, required int mask}) =>
+      EngineResult.ok;
   @override
   EngineResult setMonitorInputVolume({
     required int input,
     required double volume,
   }) => EngineResult.ok;
   @override
-  EngineResult setMonitorInputMute({
-    required int input,
-    required bool muted,
-  }) => EngineResult.ok;
+  EngineResult setMonitorInputMute({required int input, required bool muted}) =>
+      EngineResult.ok;
   @override
-  EngineResult setMonitorInputPan({
-    required int input,
-    required double pan,
-  }) => EngineResult.ok;
+  EngineResult setMonitorInputPan({required int input, required double pan}) =>
+      EngineResult.ok;
   @override
   EngineResult setMonitorInputFx({
     required int input,
@@ -1101,10 +1151,8 @@ class FakeSessionEngine with SimulatedInstruments implements AudioEngine {
   @override
   Map<(int, int), LaneCacheState> laneCacheStates() => const {};
   @override
-  EngineResult setOutputEnabled({
-    required int output,
-    required bool enabled,
-  }) => EngineResult.ok;
+  EngineResult setOutputEnabled({required int output, required bool enabled}) =>
+      EngineResult.ok;
   @override
   EngineResult perfArm(PerfTarget target) => EngineResult.ok;
   @override
@@ -1223,6 +1271,10 @@ class FakeSessionEngine with SimulatedInstruments implements AudioEngine {
 
   @override
   EngineResult stopRecordControl({required int channel}) => EngineResult.ok;
+
+  @override
+  EngineResult stopRecordPark({required int channel, int following = 0}) =>
+      EngineResult.ok;
 
   @override
   EngineResult cancelCountIn() => EngineResult.ok;

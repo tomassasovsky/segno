@@ -4,11 +4,7 @@ part of 'outputs_cubit.dart';
 /// called.
 class OutputsState extends Equatable {
   /// Creates an [OutputsState].
-  const OutputsState({
-    this.device = '',
-    this.names = const {},
-    this.lifetime = 0,
-  });
+  const new({this.device = '', this.names = const {}, this.lifetime = 0});
 
   /// How many destinations a device change probes for stored names.
   ///

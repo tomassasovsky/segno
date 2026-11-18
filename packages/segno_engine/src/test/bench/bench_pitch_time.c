@@ -396,6 +396,82 @@ static stats scenario_baseline(const bench_opts* o, int lanes_per_track,
                                   denom, 0, 0);
 }
 
+/* The pitch bridge (#1675): every track follows a 120 -> 100 BPM retime
+ * with Pitch Unchanged and the cache capped so no stretch render lands, so
+ * the timed loop is the mixer reading every lane through the bridge (two
+ * grains per lane per frame, one alignment search per lane per hop). */
+static stats scenario_bridge(const bench_opts* o, int lanes_per_track,
+                             const float* src, int32_t frames) {
+  rig r;
+  memset(&r, 0, sizeof(r));
+  r.period = o->period;
+  r.e = le_engine_create();
+  /* a whole number of 120 BPM beats */
+  const int32_t beats = (int32_t)((int64_t)frames * 2 / o->rate);
+  if (r.e == NULL || beats < 1 ||
+      le_engine_configure(r.e, o->rate, 2, 2, 2 * frames) != LE_OK) {
+    fprintf(stderr, "bridge rig failed\n");
+    exit(3);
+  }
+  const int32_t len = (int32_t)((int64_t)beats * o->rate / 2);
+  for (int32_t t = 0; t < LE_MAX_TRACKS; ++t) {
+    for (int32_t l = 0; l < lanes_per_track; ++l) {
+      if (le_engine_import_track_lane(r.e, t, l, src, len) != LE_OK) {
+        fprintf(stderr, "bridge import failed\n");
+        exit(3);
+      }
+    }
+  }
+  uint64_t request = 0;
+  if (le_engine_commit_session(r.e, len, beats) != LE_OK ||
+      le_engine_restore_tempo(r.e, 120.0f, LE_TEMPO_SOURCE_MANUAL) != LE_OK) {
+    fprintf(stderr, "bridge commit failed\n");
+    exit(3);
+  }
+  r.in = (float*)calloc((size_t)o->period * 2, sizeof(float));
+  r.out = (float*)calloc((size_t)o->period * 2, sizeof(float));
+  le_engine_process(r.e, r.out, r.in, 0);
+  if (le_engine_set_follow_tempo(r.e, -1, 1, &request) != LE_OK) exit(3);
+  (void)le_engine_set_fx_cache_cap(r.e, 1024); /* no stretch render fits */
+  for (int32_t t = 0; t < LE_MAX_TRACKS; ++t) {
+    if (le_engine_play(r.e, t) != LE_OK) exit(3);
+  }
+  for (int k = 0; k < 200; ++k) {
+    le_engine_process(r.e, r.out, r.in, (uint32_t)o->period);
+  }
+  if (le_engine_set_tempo(r.e, 100.0f) != LE_OK) {
+    fprintf(stderr, "bridge retime refused\n");
+    exit(3);
+  }
+  /* past the swap window, so the timed loop is the steady bridge */
+  for (int k = 0; k < 200; ++k) {
+    le_engine_process(r.e, r.out, r.in, (uint32_t)o->period);
+  }
+  le_track_snapshot ts;
+  le_engine_get_track(r.e, 0, &ts);
+  if (ts.pitch_effective_cents != 0) {
+    fprintf(stderr, "bridge not engaged (%d cents)\n",
+            ts.pitch_effective_cents);
+    exit(3);
+  }
+  const size_t periods = (size_t)(o->seconds * o->rate / o->period);
+  double* t = (double*)malloc(sizeof(double) * periods);
+  le_snapshot* snap = (le_snapshot*)calloc(1, sizeof(le_snapshot));
+  rt_enter();
+  for (size_t k = 0; k < periods; ++k) {
+    const double a = now_us();
+    le_engine_process(r.e, r.out, r.in, (uint32_t)o->period);
+    t[k] = now_us() - a;
+    if ((k & 63) == 0) le_engine_get_snapshot(r.e, snap); /* the UI's poll */
+  }
+  rt_leave();
+  free(snap);
+  const stats st = stats_of(t, periods);
+  free(t);
+  rig_destroy(&r);
+  return st;
+}
+
 /* Tracks the transposed scenario saw sounding their pitch when timing began,
  * the seconds the renders took, and the peak RSS after them. */
 static int g_transposed_engaged;
@@ -828,6 +904,12 @@ int main(int argc, char** argv) {
   const stats transposed =
       scenario_baseline_chains(&o, 8, src, frames, 8, 1, 1, 7);
   print_row("8 x 8, Pre chains, 8/1, all +7 st", transposed);
+  /* The pitch bridge (#1675, informational): the mixer with every lane
+   * keeping its pitch through a retime while its stretch is pending. */
+  print_row("8 tracks x 1 lane bridged 120->100",
+            scenario_bridge(&o, 1, src, frames));
+  print_row("8 tracks x 8 lanes bridged 120->100",
+            scenario_bridge(&o, 8, src, frames));
   printf("\n- transposed rig: %d of 8 tracks sounding +7 st when timed; "
          "renders took %.1f s; peak RSS after them %.0f MiB\n",
          g_transposed_engaged, g_transposed_render_s,

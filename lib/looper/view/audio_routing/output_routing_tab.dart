@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
 import 'package:segno/audio_setup/cubit/outputs_cubit.dart';
@@ -102,7 +102,7 @@ int shownBuses(int deviceBuses, int mask) => deviceBuses == 0
 /// never opens monitoring.
 class OutputRoutingTab extends StatefulWidget {
   /// Creates an [OutputRoutingTab].
-  const OutputRoutingTab({super.key});
+  const new({super.key});
 
   @override
   State<OutputRoutingTab> createState() => _OutputRoutingTabState();
@@ -113,11 +113,6 @@ class _OutputRoutingTabState extends State<OutputRoutingTab> {
   int _input = 0;
   int _channel = 0;
   RoutingPlayer _player = RoutingPlayer.click;
-
-  /// The pen's source card and gap, shared with Input setup. The cards
-  /// share the content width, never narrower than the pen's card.
-  static const double _cardWidth = 264;
-  static const double _cardGap = 16;
 
   /// Where the destinations start, after the Send to label.
   static const double _destinationsLeft = 328;
@@ -229,16 +224,20 @@ class _OutputRoutingTabState extends State<OutputRoutingTab> {
         Positioned(
           left: 0,
           top: _kind == RoutingSourceKind.tracks ? 353 : 359,
-          child: _sources(values),
+          child: _Sources(
+            kind: _kind,
+            values: values,
+            player: _player,
+            onInput: (input) => setState(() => _input = input),
+            onChannel: (channel) => setState(() => _channel = channel),
+            onPlayer: (player) => setState(() => _player = player),
+          ),
         ),
         if (live)
           Positioned(
             left: 0,
             top: 545,
-            child: _HearLive(
-              input: values.input,
-              busy: values.sourceBusy,
-            ),
+            child: _HearLive(input: values.input, busy: values.sourceBusy),
           ),
         Positioned(
           left: 0,
@@ -330,9 +329,36 @@ class _OutputRoutingTabState extends State<OutputRoutingTab> {
       ],
     );
   }
+}
 
-  /// The sources of the chosen kind.
-  Widget _sources(_RoutingValues values) {
+/// The sources of the chosen kind.
+class _Sources extends StatelessWidget {
+  const new({
+    required this.kind,
+    required this.values,
+    required this.player,
+    required this.onInput,
+    required this.onChannel,
+    required this.onPlayer,
+  });
+
+  final RoutingSourceKind kind;
+  final _RoutingValues values;
+
+  /// The selected player, among [RoutingSourceKind.players].
+  final RoutingPlayer player;
+
+  final ValueChanged<int> onInput;
+  final ValueChanged<int> onChannel;
+  final ValueChanged<RoutingPlayer> onPlayer;
+
+  /// The pen's source card and gap, shared with Input setup. The cards
+  /// share the content width, never narrower than the pen's card.
+  static const double _cardWidth = 264;
+  static const double _cardGap = 16;
+
+  @override
+  Widget build(BuildContext context) {
     final l10n = context.l10n;
     final width = LoopSettingsFrame.contentWidthOf(context);
     double cardWidth(int count) => fillingCardWidth(
@@ -341,7 +367,7 @@ class _OutputRoutingTabState extends State<OutputRoutingTab> {
       gap: _cardGap,
       minWidth: _cardWidth,
     );
-    return switch (_kind) {
+    return switch (kind) {
       RoutingSourceKind.live => SizedBox(
         width: width,
         height: 112,
@@ -363,7 +389,7 @@ class _OutputRoutingTabState extends State<OutputRoutingTab> {
               input,
             ),
             selected: input == values.input,
-            onTap: () => setState(() => _input = input),
+            onTap: () => onInput(input),
           ),
         ),
       ),
@@ -372,24 +398,24 @@ class _OutputRoutingTabState extends State<OutputRoutingTab> {
         count: values.trackCount,
         selected: values.channel,
         names: trackDisplayNames(context, values.trackCount),
-        onSelected: (channel) => setState(() => _channel = channel),
+        onSelected: onChannel,
       ),
       // The pen's 21/04: the backing track and the click, each routed on
       // its own.
       RoutingSourceKind.players => Row(
         children: [
-          for (final player in RoutingPlayer.values) ...[
-            if (player.index > 0) const SizedBox(width: _cardGap),
+          for (final each in RoutingPlayer.values) ...[
+            if (each.index > 0) const SizedBox(width: _cardGap),
             RoutingSourceCard(
-              key: Key('routing_source_${player.name}'),
+              key: Key('routing_source_${each.name}'),
               width: cardWidth(RoutingPlayer.values.length),
               ordinal: null,
-              name: switch (player) {
+              name: switch (each) {
                 RoutingPlayer.backing => l10n.routingSourceBacking,
                 RoutingPlayer.click => l10n.routingSourceClick,
               },
-              selected: player == _player,
-              onTap: () => setState(() => _player = player),
+              selected: each == player,
+              onTap: () => onPlayer(each),
             ),
           ],
         ],
@@ -400,7 +426,7 @@ class _OutputRoutingTabState extends State<OutputRoutingTab> {
 
 /// The pen's `Audio sources` row: which kind of thing is being routed.
 class _SourceKinds extends StatelessWidget {
-  const _SourceKinds({required this.selected, required this.onSelected});
+  const new({required this.selected, required this.onSelected});
 
   final RoutingSourceKind selected;
   final ValueChanged<RoutingSourceKind> onSelected;
@@ -446,7 +472,7 @@ class _SourceKinds extends StatelessWidget {
 /// The pen's `Hear live` row: whether a jack is heard now, never, or whenever
 /// a track that records it is armed.
 class _HearLive extends StatelessWidget {
-  const _HearLive({required this.input, required this.busy});
+  const new({required this.input, required this.busy});
 
   final int input;
   final bool busy;

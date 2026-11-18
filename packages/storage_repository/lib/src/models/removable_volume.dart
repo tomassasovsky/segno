@@ -27,7 +27,7 @@ enum RemovableVolumeStatus {
 /// [RemovableVolumeStatus.ejecting] while an eject it filed is in flight.
 class RemovableVolume extends Equatable {
   /// Creates a [RemovableVolume].
-  const RemovableVolume({
+  const new({
     required this.generation,
     required this.fingerprint,
     required this.label,
@@ -41,10 +41,7 @@ class RemovableVolume extends Equatable {
 
   /// The volume from the helper's [record]; [ejecting] overrides the status
   /// while this repository's eject request is in flight.
-  factory RemovableVolume.fromRecord(
-    RemovableVolumeRecord record, {
-    bool ejecting = false,
-  }) {
+  factory fromRecord(RemovableVolumeRecord record, {bool ejecting = false}) {
     return RemovableVolume(
       generation: record.generation,
       fingerprint: record.fingerprint,
@@ -102,6 +99,19 @@ class RemovableVolume extends Equatable {
 
   /// mount's first stderr line for a failed or read-only-fallback mount.
   final String? failureReason;
+
+  /// FAT32's largest file: 4 GiB less one byte (#1794).
+  static const int fat32MaxFileBytes = 0xFFFFFFFF;
+
+  /// The largest file a filesystem of [fsType] holds, or null when it has
+  /// no limit a file the console writes comes near. Of the filesystems the
+  /// helper mounts, only FAT (`vfat`) has one: exFAT, NTFS and ext4 hold
+  /// files of terabytes.
+  static int? maxFileBytesOf(String fsType) =>
+      fsType == 'vfat' ? fat32MaxFileBytes : null;
+
+  /// The largest file its filesystem holds ([maxFileBytesOf]).
+  int? get maxFileBytes => maxFileBytesOf(fsType);
 
   /// Whether its files can be read right now: mounted, read-write or
   /// read-only.

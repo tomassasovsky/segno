@@ -6,16 +6,29 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:performance_repository/performance_repository.dart';
-import 'package:segno/library/application/removable_volumes.dart';
 import 'package:segno/library/cubit/library_audio_cubit.dart';
 import 'package:segno/library/cubit/library_cubit.dart';
 import 'package:session_repository/session_repository.dart';
+import 'package:storage_repository/storage_repository.dart';
+import 'package:usb_storage_client/usb_storage_client.dart';
 
+import '../../helpers/fake_storage_io.dart';
 import '../helpers/fake_drive.dart';
 
-class _MockPerformance extends Mock implements PerformanceRepository {}
+class _MockPerformance extends Mock implements PerformanceRepository;
 
-class _MockSessions extends Mock implements SessionRepository {}
+class _MockSessions extends Mock implements SessionRepository;
+
+/// A [FakeStorageIo] that reports every volume sync, so a test sees what
+/// the stick and the export held at that moment.
+class _RecordingStorageIo extends FakeStorageIo {
+  new(this._onVolumeSync);
+
+  final void Function(String path) _onVolumeSync;
+
+  @override
+  void syncVolume(String path) => _onVolumeSync(path);
+}
 
 const _mixdown = SessionMixdown(frames: 48000, sampleRate: 48000, bytes: 4);
 
@@ -48,17 +61,16 @@ void main() {
     performance = _MockPerformance();
     guards = GuardRegistry();
     when(() => performance.rendering).thenReturn(false);
+    when(() => performance.stemsRendered(any())).thenReturn(true);
     sessions = _MockSessions();
     dawWrites = [];
     when(() => performance.listCaptures()).thenAnswer((_) async => []);
     when(() => sessions.listSessions()).thenAnswer((_) async => []);
     when(() => sessions.mixdownOf(any())).thenAnswer((_) async => null);
-    when(
-      () => performance.readPeaks(any(), buckets: any(named: 'buckets')),
-    ).thenAnswer((_) async => Float32List.fromList([0.5]));
-    when(
-      () => sessions.readMixdownPeaks(any(), buckets: any(named: 'buckets')),
-    ).thenAnswer((_) async => Float32List.fromList([0.25]));
+    when(() => performance.readPeaks(any(), buckets: any(named: 'buckets')))
+        .thenAnswer((_) async => Float32List.fromList([0.5]));
+    when(() => sessions.readMixdownPeaks(any(), buckets: any(named: 'buckets')))
+        .thenAnswer((_) async => Float32List.fromList([0.25]));
     when(() => sessions.stopAudition()).thenReturn(EngineResult.ok);
     when(() => sessions.auditionState()).thenReturn(const AuditionState());
   });
@@ -71,7 +83,7 @@ void main() {
   LibraryAudioCubit build({DawProjectWriter? dawProject}) => LibraryAudioCubit(
     performance: performance,
     sessions: sessions,
-    volumes: drive,
+    storage: drive,
     guards: guards,
     previewPoll: const Duration(milliseconds: 1),
     dawProject:
@@ -130,9 +142,8 @@ void main() {
   }
 
   Future<LibraryAudioCubit> withSession(String id, String name) async {
-    when(
-      () => sessions.listSessions(),
-    ).thenAnswer((_) async => [SessionSummary(id: id, name: name)]);
+    when(() => sessions.listSessions())
+        .thenAnswer((_) async => [SessionSummary(id: id, name: name)]);
     when(() => sessions.mixdownOf(id)).thenAnswer((_) async => _mixdown);
     final cubit = build();
     addTearDown(cubit.close);
@@ -173,9 +184,8 @@ void main() {
     });
 
     test('a listing that fails leaves the folders empty', () async {
-      when(
-        () => performance.listCaptures(),
-      ).thenThrow(const FileSystemException());
+      when(() => performance.listCaptures())
+          .thenThrow(const FileSystemException());
       final cubit = build();
       addTearDown(cubit.close);
 
@@ -217,9 +227,8 @@ void main() {
     });
 
     test('none when it does not read', () async {
-      when(
-        () => performance.readPeaks(any(), buckets: any(named: 'buckets')),
-      ).thenThrow(StateError('no'));
+      when(() => performance.readPeaks(any(), buckets: any(named: 'buckets')))
+          .thenThrow(StateError('no'));
       final cubit = await withRecording(take('perf-a'));
       expect(cubit.state.peaks, isNull);
     });
@@ -241,9 +250,8 @@ void main() {
           sourceRate: 48000,
         ),
       );
-      when(
-        () => sessions.auditionState(),
-      ).thenReturn(const AuditionState(frames: 4800, position: 960));
+      when(() => sessions.auditionState())
+          .thenReturn(const AuditionState(frames: 4800, position: 960));
       final cubit = await withRecording(capture);
 
       await cubit.preview();
@@ -317,9 +325,8 @@ void main() {
           sourceRate: 48000,
         ),
       );
-      when(
-        () => sessions.auditionState(),
-      ).thenReturn(const AuditionState(frames: 4800));
+      when(() => sessions.auditionState())
+          .thenReturn(const AuditionState(frames: 4800));
       final cubit = await withRecording(take('perf-a'));
       await cubit.preview();
 
@@ -335,6 +342,183 @@ void main() {
   });
 
   group('Export to USB', () {
+    test('reaches the drive the USB helper mounted, through the storage '
+        'repository, past an unsupported whole-disk record (#1790)', () async {
+      // The console's own stick: an ISO image's whole-disk signature on sda
+      // that the helper refuses, and the FAT partition it mounts.
+      final mount = '${temp.path}/3-SANDISK';
+      Directory(mount).createSync();
+      RemovableVolumeRecord record(
+        int generation,
+        String kname,
+        String fsType,
+        RemovableVolumeRecordStatus status, {
+        String? mountPoint,
+      }) => RemovableVolumeRecord(
+        generation: generation,
+        kname: kname,
+        fingerprint: 'SanDisk_Cruzer_Glide-$kname',
+        label: kname == 'sda' ? 'ISOIMAGE' : 'SANDISK',
+        fsType: fsType,
+        mountPoint: mountPoint,
+        sizeBytes: 15669919744,
+        status: status,
+        readOnly: false,
+      );
+      final client = FakeUsbStorageClient(
+        initial: [
+          record(2, 'sda', 'iso9660', RemovableVolumeRecordStatus.unsupported),
+          record(
+            3,
+            'sda1',
+            'vfat',
+            RemovableVolumeRecordStatus.mounted,
+            mountPoint: mount,
+          ),
+        ],
+      );
+      final storage = StorageRepository(
+        client: client,
+        exportsRoot: () async => exports,
+        volumeSpace: (_) => null,
+        guards: guards,
+        storageIo: FakeStorageIo(),
+      );
+      addTearDown(() async {
+        await storage.dispose();
+        await client.dispose();
+      });
+      await storage.volumes.firstWhere((v) => v.isNotEmpty);
+      final capture = take('Evening loop');
+      when(() => performance.listCaptures()).thenAnswer((_) async => [capture]);
+      final cubit = LibraryAudioCubit(
+        performance: performance,
+        sessions: sessions,
+        storage: storage,
+        guards: guards,
+      );
+      addTearDown(cubit.close);
+      await cubit.load();
+      cubit.openFolder(LibraryAudioFolder.performances);
+      await cubit.select(cubit.state.items.single);
+
+      await cubit.export(
+        LibraryAudioExportKind.recording,
+        purpose: 'Exporting Evening loop',
+      );
+
+      expect(
+        cubit.state.export,
+        const LibraryExportDone(
+          name: 'Evening loop.wav',
+          folder: LibraryAudioFolder.performances,
+        ),
+      );
+      expect(
+        File('$mount/Segno/Performances/Evening loop.wav').readAsBytesSync(),
+        [1, 1],
+      );
+      expect(storage.leases, isEmpty);
+    });
+
+    test('Exported to USB comes only after every file was fsynced and the '
+        'volume holding the placed package was synced (#1797)', () async {
+      final mount = '${temp.path}/3-SANDISK';
+      Directory(mount).createSync();
+      final client = FakeUsbStorageClient(
+        initial: [
+          RemovableVolumeRecord(
+            generation: 3,
+            kname: 'sda1',
+            fingerprint: 'SanDisk_Cruzer_Glide-sda1',
+            label: 'SANDISK',
+            fsType: 'vfat',
+            mountPoint: mount,
+            sizeBytes: 15669919744,
+            status: RemovableVolumeRecordStatus.mounted,
+            readOnly: false,
+          ),
+        ],
+      );
+      late LibraryAudioCubit cubit;
+      final events = <String>[];
+      List<String> onStick() => [
+        for (final e in Directory(mount).listSync(recursive: true))
+          if (e is File) e.path.substring(mount.length + 1),
+      ]..sort();
+      final io = _RecordingStorageIo(
+        (path) => events.add(
+          'volume sync $path: ${cubit.state.export.runtimeType}, '
+          '${onStick().join(', ')}',
+        ),
+      );
+      final storage = StorageRepository(
+        client: client,
+        exportsRoot: () async => exports,
+        volumeSpace: (_) => null,
+        guards: guards,
+        storageIo: io,
+        copyBytes: (source, part, abort) => StorageRepository.copyChunks(
+          source,
+          part,
+          abort,
+          sync: (file) async {
+            events.add('fsync ${await file.length()} bytes');
+            await file.flush();
+          },
+        ),
+      );
+      addTearDown(() async {
+        await storage.dispose();
+        await client.dispose();
+      });
+      await storage.volumes.firstWhere((v) => v.isNotEmpty);
+      final capture = take('perf');
+      for (final f in ['stems/wet/master.wav', 'project.als']) {
+        File('${capture.path}/$f')
+          ..createSync(recursive: true)
+          ..writeAsBytesSync([1, 2, 3]);
+      }
+      when(() => performance.dawPackageFiles(any())).thenAnswer(
+        (_) => ['master-001.wav', 'stems/wet/master.wav', 'project.als'],
+      );
+      when(() => performance.listCaptures()).thenAnswer((_) async => [capture]);
+      cubit = LibraryAudioCubit(
+        performance: performance,
+        sessions: sessions,
+        storage: storage,
+        guards: guards,
+        dawProject: (_) async => null,
+      );
+      addTearDown(cubit.close);
+      await cubit.load();
+      cubit.openFolder(LibraryAudioFolder.performances);
+      await cubit.select(cubit.state.items.single);
+
+      await cubit.export(LibraryAudioExportKind.dawPackage, purpose: 'p');
+
+      const package = 'Segno/Performances/perf';
+      expect(events.length, 7);
+      // Each file: its bytes fsynced, then the volume synced after the
+      // rename that names it.
+      for (var i = 0; i < 3; i++) {
+        expect(events[2 * i], startsWith('fsync '));
+        expect(
+          events[2 * i + 1],
+          startsWith('volume sync $mount: LibraryExportRunning'),
+        );
+      }
+      // Then once more after the swap: the package in place, no staging
+      // left, and the export still running.
+      expect(
+        events.last,
+        'volume sync $mount: LibraryExportRunning, '
+        '$package/master-001.wav, $package/project.als, '
+        '$package/stems/wet/master.wav',
+      );
+      expect(cubit.state.export, isA<LibraryExportDone>());
+    });
+
     test('a one-part recording lands as one WAV, through one copy under a '
         'named lease', () async {
       final cubit = await withRecording(take('Evening loop'));
@@ -344,7 +528,7 @@ void main() {
         purpose: 'Exporting Evening loop',
       );
 
-      expect(drive.leases, ['Exporting Evening loop']);
+      expect(drive.leasePurposes, [WritePurpose.export]);
       // Staged copies overwrite only the export's own staging.
       expect(drive.copies.single.policy, ConflictPolicy.replace);
       expect(drive.files, ['Segno/Performances/Evening loop.wav']);
@@ -372,20 +556,18 @@ void main() {
           'Segno/Performances/Evening loop · Part 003.wav',
         ]);
         expect(
-          File(
-            '${drive.mount}/Segno/Performances/Evening loop · Part 002.wav',
-          ).readAsBytesSync(),
+          File('${drive.mount}/Segno/Performances/Evening loop · Part 002.wav')
+              .readAsBytesSync(),
           [2, 2],
         );
       },
     );
 
-    test('the DAW package writes the project first when it is missing, '
-        'then copies the bundle as one directory', () async {
+    test('the DAW package writes the project afresh, then copies the bundle '
+        'as one directory', () async {
       final capture = take('Evening loop');
-      when(() => performance.dawPackageFiles(any())).thenAnswer(
-        (_) => ['master-001.wav', 'project.als'],
-      );
+      when(() => performance.dawPackageFiles(any()))
+          .thenAnswer((_) => ['master-001.wav', 'project.als']);
       final cubit = await withRecording(capture);
 
       await cubit.export(LibraryAudioExportKind.dawPackage, purpose: 'p');
@@ -395,11 +577,18 @@ void main() {
         'Segno/Performances/Evening loop/master-001.wav',
         'Segno/Performances/Evening loop/project.als',
       ]);
+      // A Live Project, which Live saves in place (#1837).
+      final info = Directory(
+        '${drive.mount}/Segno/Performances/Evening loop/Ableton Project Info',
+      );
+      expect(info.existsSync(), isTrue);
+      expect(info.listSync(), isEmpty);
       expect(cubit.state.export, isA<LibraryExportDone>());
 
-      // Written once: the next package finds it.
+      // Written again for the next package: one an earlier version left
+      // may be a set Live refuses.
       await cubit.export(LibraryAudioExportKind.dawPackage, purpose: 'p');
-      expect(dawWrites, hasLength(1));
+      expect(dawWrites, [capture.path, capture.path]);
     });
 
     test('a name already on the drive asks first, writing nothing, and '
@@ -428,12 +617,9 @@ void main() {
 
     test('Replace writes over it; Cancel leaves it', () async {
       final cubit = await withRecording(take('Evening loop'));
-      final there =
-          File(
-              '${drive.mount}/Segno/Performances/Evening loop.wav',
-            )
-            ..createSync(recursive: true)
-            ..writeAsBytesSync([9]);
+      final there = File('${drive.mount}/Segno/Performances/Evening loop.wav')
+        ..createSync(recursive: true)
+        ..writeAsBytesSync([9]);
 
       await cubit.export(LibraryAudioExportKind.recording, purpose: 'p');
       cubit.cancelExport();
@@ -473,6 +659,17 @@ void main() {
       expect(drive.copies, isEmpty);
     });
 
+    test('a lease the storage repository refuses reads as busy', () async {
+      final cubit = await withRecording(take('Evening loop'));
+      drive.leaseRefusal = const StorageFailure.busy(GuardKind.capture);
+
+      await cubit.export(LibraryAudioExportKind.recording, purpose: 'p');
+
+      expect(cubit.state.error, LibraryAudioError.exportBusy);
+      expect(cubit.state.export, isNull);
+      expect(drive.copies, isEmpty);
+    });
+
     test('a full drive on the third file of a package removes the two '
         'already placed, and says so', () async {
       final capture = take('Evening loop', parts: 3);
@@ -493,12 +690,34 @@ void main() {
       expect(File('${capture.path}/master-003.wav').readAsBytesSync(), [3, 3]);
     });
 
+    test('a file of 4 GiB for a FAT32 drive is refused before anything is '
+        'written, and says so (#1794)', () async {
+      await drive.close();
+      drive = FakeDrive('${temp.path}/usb', fsType: 'vfat');
+      final capture = take('Evening loop');
+      // Sparse: 4 GiB long, nothing written.
+      final stem = File('${capture.path}/stems/wet/master.wav')
+        ..createSync(recursive: true);
+      stem.openSync(mode: FileMode.write)
+        ..truncateSync(1 << 32)
+        ..closeSync();
+      when(() => performance.dawPackageFiles(any()))
+          .thenAnswer((_) => ['master-001.wav', 'stems/wet/master.wav']);
+      final cubit = await withRecording(capture);
+
+      await cubit.export(LibraryAudioExportKind.dawPackage, purpose: 'p');
+
+      expect(drive.copies, isEmpty);
+      expect(drive.files, isEmpty);
+      expect(cubit.state.error, LibraryAudioError.tooLargeForDrive);
+      expect(cubit.state.export, isNull);
+    });
+
     test(
       'a drive lost part-way leaves no package and asks for the drive',
       () async {
-        when(() => performance.dawPackageFiles(any())).thenAnswer(
-          (_) => ['master-001.wav', 'master-002.wav'],
-        );
+        when(() => performance.dawPackageFiles(any()))
+            .thenAnswer((_) => ['master-001.wav', 'master-002.wav']);
         final cubit = await withRecording(take('Evening loop', parts: 2));
         drive
           ..failOnCopy = 2
@@ -562,9 +781,9 @@ void main() {
 
       expect(drive.files, ['Segno/Sessions/Gig- night-.wav']);
       final scratch =
-          verify(
-                () => sessions.exportMixdown('s-a', captureAny()),
-              ).captured.single
+          verify(() => sessions.exportMixdown('s-a', captureAny()))
+                  .captured
+                  .single
               as String;
       expect(File(scratch).existsSync(), isFalse);
       expect(
@@ -615,6 +834,145 @@ void main() {
 
       expect(cubit.state.error, LibraryAudioError.dawProjectFailed);
       expect(cubit.state.dawProjectWritten, isFalse);
+    });
+
+    test('a take with no rendered stems renders them first (#1824)', () async {
+      final capture = take('perf-old');
+      when(() => performance.stemsRendered(capture.path)).thenReturn(false);
+      when(
+        () => performance.renderStems(
+          capture.path,
+          cancelled: any(named: 'cancelled'),
+          onProgress: any(named: 'onProgress'),
+        ),
+      ).thenAnswer((_) async => true);
+      final cubit = await withRecording(capture);
+
+      await cubit.writeProject();
+
+      verify(
+        () => performance.renderStems(
+          capture.path,
+          cancelled: any(named: 'cancelled'),
+          onProgress: any(named: 'onProgress'),
+        ),
+      ).called(1);
+      expect(dawWrites, [capture.path]);
+      expect(cubit.state.dawProjectWritten, isTrue);
+    });
+
+    test('a render that fails is reported, and the project is left as it '
+        'was', () async {
+      final capture = take('perf-old');
+      final project = File('${capture.path}/project.als')
+        ..writeAsBytesSync([1, 2, 3]);
+      when(() => performance.stemsRendered(capture.path)).thenReturn(false);
+      when(
+        () => performance.renderStems(
+          capture.path,
+          cancelled: any(named: 'cancelled'),
+          onProgress: any(named: 'onProgress'),
+        ),
+      ).thenAnswer((_) async => false);
+      final cubit = await withRecording(capture);
+
+      await cubit.writeProject();
+
+      expect(cubit.state.error, LibraryAudioError.dawProjectFailed);
+      expect(cubit.state.dawProjectWritten, isFalse);
+      expect(dawWrites, isEmpty);
+      expect(project.readAsBytesSync(), [1, 2, 3]);
+    });
+
+    group('the DAW package of a take with no rendered stems (#1824)', () {
+      late CaptureSummary capture;
+
+      setUp(() {
+        capture = take('perf-old');
+        File('${capture.path}/project.als').writeAsBytesSync([1, 2, 3]);
+        when(() => performance.stemsRendered(capture.path)).thenReturn(false);
+        when(() => performance.dawPackageFiles(any()))
+            .thenAnswer((_) => ['master-001.wav', 'project.als']);
+      });
+
+      test('renders the stems first, its progress shown as the copy is, '
+          'then writes and copies the package', () async {
+        when(
+          () => performance.renderStems(
+            capture.path,
+            cancelled: any(named: 'cancelled'),
+            onProgress: any(named: 'onProgress'),
+          ),
+        ).thenAnswer((invocation) async {
+          final onProgress =
+              invocation.namedArguments[#onProgress] as void Function(double);
+          onProgress(0.5);
+          return true;
+        });
+        final cubit = await withRecording(capture);
+        final fractions = <double>[];
+        final sub = cubit.stream.listen((s) {
+          if (s.export case LibraryExportRunning(:final fraction)) {
+            fractions.add(fraction);
+          }
+        });
+        addTearDown(sub.cancel);
+
+        await cubit.export(LibraryAudioExportKind.dawPackage, purpose: 'p');
+
+        expect(fractions, contains(0.5));
+        expect(dawWrites, [capture.path]);
+        expect(cubit.state.export, isA<LibraryExportDone>());
+      });
+
+      test('a render that fails stops the export and leaves the project as '
+          'it was', () async {
+        when(
+          () => performance.renderStems(
+            capture.path,
+            cancelled: any(named: 'cancelled'),
+            onProgress: any(named: 'onProgress'),
+          ),
+        ).thenAnswer((_) async => false);
+        final cubit = await withRecording(capture);
+
+        await cubit.export(LibraryAudioExportKind.dawPackage, purpose: 'p');
+
+        expect(cubit.state.error, LibraryAudioError.exportFailed);
+        expect(dawWrites, isEmpty);
+        expect(drive.copies, isEmpty);
+        expect(File('${capture.path}/project.als').readAsBytesSync(), [
+          1,
+          2,
+          3,
+        ]);
+      });
+
+      test('a cancel during the render ends the export with nothing '
+          'written', () async {
+        late LibraryAudioCubit cubit;
+        when(
+          () => performance.renderStems(
+            capture.path,
+            cancelled: any(named: 'cancelled'),
+            onProgress: any(named: 'onProgress'),
+          ),
+        ).thenAnswer((invocation) async {
+          cubit.cancelExport();
+          final cancelled =
+              invocation.namedArguments[#cancelled] as bool Function();
+          expect(cancelled(), isTrue);
+          return false;
+        });
+        cubit = await withRecording(capture);
+
+        await cubit.export(LibraryAudioExportKind.dawPackage, purpose: 'p');
+
+        expect(cubit.state.export, isNull);
+        expect(cubit.state.error, isNull);
+        expect(dawWrites, isEmpty);
+        expect(drive.copies, isEmpty);
+      });
     });
   });
 

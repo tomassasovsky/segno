@@ -14,27 +14,37 @@ import 'package:session_repository/src/session_exception.dart';
 @immutable
 class SessionLayer {
   /// Creates a [SessionLayer].
-  const SessionLayer({required this.file});
+  const new({required this.file, this.heard});
 
   /// Projects a [SessionLayer] from a decoded JSON map.
-  factory SessionLayer.fromJson(Map<String, dynamic> json) =>
-      SessionLayer(file: json['file'] as String);
+  factory fromJson(Map<String, dynamic> json) => SessionLayer(
+    file: json['file'] as String,
+    heard: json['heard'] as String?,
+  );
 
   /// Filename of this layer's WAV within the session bundle.
   final String file;
 
+  /// Filename of this layer's heard image (schema v19, #1713): the input
+  /// chain's output recorded with the take, a stereo 32-bit float WAV frame
+  /// for frame as long as [file]. `null` when the image has none (a take
+  /// recorded dry, or saved before v19), which then plays [file] through
+  /// its lane's chain.
+  final String? heard;
+
   /// Serializes this layer to a JSON map.
-  Map<String, dynamic> toJson() => {'file': file};
+  Map<String, dynamic> toJson() => {'file': file, 'heard': ?heard};
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is SessionLayer &&
           runtimeType == other.runtimeType &&
-          file == other.file;
+          file == other.file &&
+          heard == other.heard;
 
   @override
-  int get hashCode => file.hashCode;
+  int get hashCode => Object.hash(file, heard);
 }
 
 /// One lane of a [SessionTrack] (schema v3): its mix/routing plus the ordered
@@ -52,7 +62,7 @@ class SessionLayer {
 @immutable
 class SessionLane {
   /// Creates a [SessionLane].
-  const SessionLane({
+  const new({
     required this.lane,
     required this.volume,
     required this.muted,
@@ -62,12 +72,13 @@ class SessionLane {
     required this.history,
     this.pan = 0,
     this.balance = 1,
+    this.recordedInput = -1,
   });
 
   /// Projects a [SessionLane] from a decoded JSON map. The stored
   /// `redoCount` is derived on write and cross-checked by
   /// [SessionTrack.fromJson].
-  factory SessionLane.fromJson(Map<String, dynamic> json) => SessionLane(
+  factory fromJson(Map<String, dynamic> json) => SessionLane(
     lane: (json['lane'] as num).toInt(),
     volume: (json['volume'] as num).toDouble(),
     muted: json['muted'] as bool,
@@ -79,6 +90,7 @@ class SessionLane {
     ],
     pan: (json['pan'] as num?)?.toDouble() ?? 0,
     balance: (json['balance'] as num?)?.toDouble() ?? 1,
+    recordedInput: (json['recordedInput'] as num).toInt(),
     history: TrackHistory(
       _readHistory(json['history']),
       undoCount: (json['undoCount'] as num).toInt(),
@@ -102,8 +114,15 @@ class SessionLane {
   /// Bitmask of output channels this lane plays to (bit c => output c).
   final int outputMask;
 
-  /// Hardware input channel this lane records (`-1` = none).
+  /// Hardware input channel this lane records (`-1` = none): the setting
+  /// for the next take.
   final int inputChannel;
+
+  /// The hardware input the lane's take was captured from (schema v18),
+  /// `-1` when unknown. Fixed when the take starts, so changing
+  /// [inputChannel] afterwards never renames the take. A session saved
+  /// before the field existed takes its [inputChannel] on conversion.
+  final int recordedInput;
 
   /// The lane's recorded image (slice 3), `-1` (left) .. `1` (right): where
   /// its input sat when the take was recorded, without the track's own pan
@@ -150,6 +169,7 @@ class SessionLane {
     'muted': muted,
     'outputMask': outputMask,
     'inputChannel': inputChannel,
+    'recordedInput': recordedInput,
     'layers': [for (final l in layers) l.toJson()],
     if (pan != 0) 'pan': pan,
     if (balance != 1) 'balance': balance,
@@ -175,6 +195,7 @@ class SessionLane {
           muted == other.muted &&
           outputMask == other.outputMask &&
           inputChannel == other.inputChannel &&
+          recordedInput == other.recordedInput &&
           pan == other.pan &&
           balance == other.balance &&
           history == other.history &&
@@ -187,6 +208,7 @@ class SessionLane {
     muted,
     outputMask,
     inputChannel,
+    recordedInput,
     pan,
     balance,
     history,
@@ -200,7 +222,7 @@ class SessionLane {
 @immutable
 class SessionTrack {
   /// Creates a [SessionTrack].
-  const SessionTrack({
+  const new({
     required this.channel,
     required this.multiple,
     required this.lengthFrames,
@@ -212,7 +234,7 @@ class SessionTrack {
   });
 
   /// Projects a [SessionTrack] from a current-schema JSON map.
-  factory SessionTrack.fromJson(Map<String, dynamic> json) {
+  factory fromJson(Map<String, dynamic> json) {
     final amount = json['fadeAmount'];
     if (amount is! num || !amount.isFinite || amount < 0 || amount > 1) {
       throw const FormatException('invalid track Fade amount');
@@ -347,19 +369,14 @@ class SessionTrack {
 @immutable
 class SessionLaneChain {
   /// Creates a [SessionLaneChain].
-  const SessionLaneChain({
-    required this.channel,
-    required this.lane,
-    required this.encoded,
-  });
+  const new({required this.channel, required this.lane, required this.encoded});
 
   /// Projects a [SessionLaneChain] from a decoded JSON map.
-  factory SessionLaneChain.fromJson(Map<String, dynamic> json) =>
-      SessionLaneChain(
-        channel: (json['channel'] as num).toInt(),
-        lane: (json['lane'] as num).toInt(),
-        encoded: json['encoded'] as String,
-      );
+  factory fromJson(Map<String, dynamic> json) => SessionLaneChain(
+    channel: (json['channel'] as num).toInt(),
+    lane: (json['lane'] as num).toInt(),
+    encoded: json['encoded'] as String,
+  );
 
   /// Track channel this chain belongs to.
   final int channel;
@@ -402,14 +419,13 @@ class SessionLaneChain {
 @immutable
 class SessionTrackChain {
   /// Creates a [SessionTrackChain].
-  const SessionTrackChain({required this.channel, required this.encoded});
+  const new({required this.channel, required this.encoded});
 
   /// Projects a [SessionTrackChain] from a decoded JSON map.
-  factory SessionTrackChain.fromJson(Map<String, dynamic> json) =>
-      SessionTrackChain(
-        channel: (json['channel'] as num).toInt(),
-        encoded: json['encoded'] as String,
-      );
+  factory fromJson(Map<String, dynamic> json) => SessionTrackChain(
+    channel: (json['channel'] as num).toInt(),
+    encoded: json['encoded'] as String,
+  );
 
   /// Track channel whose stereo bus this chain sits on.
   final int channel;
@@ -437,10 +453,10 @@ class SessionTrackChain {
 @immutable
 class SessionOutputChain {
   /// Creates a [SessionOutputChain].
-  const SessionOutputChain({required this.bus, required this.encoded});
+  const new({required this.bus, required this.encoded});
 
   /// Projects a [SessionOutputChain] from a decoded JSON map.
-  factory SessionOutputChain.fromJson(Map<String, dynamic> json) {
+  factory fromJson(Map<String, dynamic> json) {
     final bus = json['bus'];
     if (bus is! int || bus < 0 || bus >= 16) {
       throw const FormatException('invalid output chain destination');
@@ -474,7 +490,7 @@ class SessionOutputChain {
 @immutable
 class SessionMonitor {
   /// Creates a [SessionMonitor].
-  const SessionMonitor({
+  const new({
     required this.input,
     required this.mode,
     required this.outputMask,
@@ -484,7 +500,7 @@ class SessionMonitor {
   });
 
   /// Projects a [SessionMonitor] from a decoded JSON map.
-  factory SessionMonitor.fromJson(Map<String, dynamic> json) {
+  factory fromJson(Map<String, dynamic> json) {
     final mode = json['mode'];
     if (mode != 'off' && mode != 'on' && mode != 'auto') {
       throw const FormatException('invalid session monitor mode');
@@ -572,7 +588,7 @@ class SessionMonitor {
 @immutable
 class SessionInputSetup {
   /// Creates a [SessionInputSetup].
-  const SessionInputSetup({
+  const new({
     this.trimDb = const {},
     this.pan = const {},
     this.pairs = const {},
@@ -580,7 +596,7 @@ class SessionInputSetup {
 
   /// Projects a [SessionInputSetup] from a decoded JSON map; `null` is the
   /// current schema's omitted empty setup.
-  factory SessionInputSetup.fromJson(Map<String, dynamic>? json) {
+  factory fromJson(Map<String, dynamic>? json) {
     if (json == null) return const SessionInputSetup();
     double value(Object? raw) => (raw! as num).toDouble();
     return SessionInputSetup(
@@ -639,7 +655,7 @@ class SessionInputSetup {
 @immutable
 class SessionOutputSetup {
   /// Creates a [SessionOutputSetup].
-  const SessionOutputSetup({
+  const new({
     this.level = const {},
     this.muted = const {},
     this.mono = const {},
@@ -647,7 +663,7 @@ class SessionOutputSetup {
   });
 
   /// Projects a [SessionOutputSetup] from a current-schema JSON map.
-  factory SessionOutputSetup.fromJson(Map<String, dynamic>? json) {
+  factory fromJson(Map<String, dynamic>? json) {
     if (json == null) return const SessionOutputSetup();
     if (json.keys.any(
       (key) =>
@@ -745,10 +761,10 @@ class SessionOutputSetup {
 @immutable
 class SessionBackingItem {
   /// Creates a [SessionBackingItem].
-  const SessionBackingItem({required this.digest, required this.name});
+  const new({required this.digest, required this.name});
 
   /// Reads exactly `{"digest", "name"}`; anything else is refused.
-  factory SessionBackingItem.fromJson(Object? json) {
+  factory fromJson(Object? json) {
     if (json is! Map<String, dynamic> ||
         json.length != 2 ||
         json['digest'] is! String ||
@@ -797,7 +813,7 @@ class SessionBackingItem {
 @immutable
 class SessionBacking {
   /// Creates a [SessionBacking]; the defaults are an empty, silent player.
-  const SessionBacking({
+  const new({
     this.prepared = const [],
     this.loaded,
     this.endMode = BackingEnd.stop,
@@ -808,7 +824,7 @@ class SessionBacking {
 
   /// Reads the current schema's block strictly: exactly the six keys, a
   /// prepared list without repeated digests, and every value in range.
-  factory SessionBacking.fromJson(Object? json) {
+  factory fromJson(Object? json) {
     const keys = {
       'prepared',
       'loaded',
@@ -924,7 +940,7 @@ class SessionBacking {
 @immutable
 class Session {
   /// Creates a [Session].
-  const Session({
+  const new({
     required this.sampleRate,
     required this.channels,
     required this.baseLengthFrames,
@@ -984,7 +1000,7 @@ class Session {
   ///
   /// Requires the current integer schema version. Current-schema defaults
   /// omitted by [toJson] still read as their declared defaults.
-  factory Session.fromJson(Map<String, dynamic> json) {
+  factory fromJson(Map<String, dynamic> json) {
     final version = json['version'];
     if (version is! int) {
       throw const FormatException('session version must be an integer');
@@ -1105,8 +1121,10 @@ class Session {
   /// (`start`) and the grid in beats (`loopBeats`), since 15 (#1200) the
   /// backing setup and the click's pan, and since 16 (#1179 Part 4b) the
   /// recorded tempo, each take's span and the Audio & tempo settings, and
-  /// since 17 (#854) the lap each take was played on.
-  static const int formatVersion = 17;
+  /// since 17 (#854) the lap each take was played on, and since 18 (#1678)
+  /// the input each lane's take was captured from, and since 19 (#1713)
+  /// each layer's heard image.
+  static const int formatVersion = 19;
 
   /// The manifest filename within a session bundle.
   static const String manifestName = 'session.json';

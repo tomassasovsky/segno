@@ -58,7 +58,7 @@ enum BackingFailureReason {
 /// A refused import, load or stage, for the UI to explain.
 class BackingFailure extends Equatable implements Exception {
   /// Creates a [BackingFailure].
-  const BackingFailure(this.reason, {this.name = '', this.digest});
+  const new(this.reason, {this.name = '', this.digest});
 
   /// Why.
   final BackingFailureReason reason;

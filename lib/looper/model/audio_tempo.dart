@@ -4,10 +4,10 @@ import 'package:equatable/equatable.dart';
 /// (#1179 Audio & tempo).
 final class AudioTempoAddress extends Equatable {
   /// The default inherited by tracks without an override.
-  const AudioTempoAddress.defaults() : channel = null;
+  const new defaults() : channel = null;
 
   /// One fixed, zero-based track, independent of selection and its label.
-  const AudioTempoAddress.track(int this.channel);
+  const new track(int this.channel);
 
   /// Null denotes the default; track coordinates are 0 through 7.
   final int? channel;
@@ -37,10 +37,8 @@ const audioTempoAddresses = <Object?>[
 /// inherit, including an override equal to the default.
 final class InheritSnapshot<T extends Object> extends Equatable {
   /// Takes an immutable copy of the explicit track overrides.
-  InheritSnapshot({
-    required this.defaultValue,
-    required Map<int, T> trackOverrides,
-  }) : trackOverrides = Map.unmodifiable(trackOverrides);
+  new({required this.defaultValue, required Map<int, T> trackOverrides})
+    : trackOverrides = Map.unmodifiable(trackOverrides);
 
   /// The value tracks without an override inherit.
   final T defaultValue;

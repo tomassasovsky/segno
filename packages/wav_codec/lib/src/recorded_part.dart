@@ -26,7 +26,7 @@ import 'package:meta/meta.dart';
 @immutable
 class RecordedPartHeader {
   /// Creates a [RecordedPartHeader].
-  RecordedPartHeader({
+  new({
     required this.sampleRate,
     required this.channels,
     required Uint8List takeId,
@@ -58,7 +58,7 @@ class RecordedPartHeader {
   ///
   /// Throws [FormatException] unless the first [headerBytes] bytes are
   /// exactly the layout above with a 32-bit float format.
-  factory RecordedPartHeader.decode(Uint8List bytes) {
+  factory decode(Uint8List bytes) {
     if (bytes.length < headerBytes) {
       throw const FormatException('shorter than a part header');
     }
@@ -224,14 +224,14 @@ bool isOver(double sample) => sample > 1.0 || sample < -1.0;
 /// Samples are written unchanged; [overs] counts those above full scale. Use
 /// it from a background isolate: it is synchronous file I/O.
 class RecordedPartWriter {
-  RecordedPartWriter._(this._file, this._header, this._maxDataBytes);
+  new _(this._file, this._header, this._maxDataBytes);
 
   /// Creates (or truncates) the part at [path] and writes [header] with a
   /// zero payload size.
   ///
   /// [partBytes] is the most the whole file may hold, header included:
   /// [defaultPartBytes] unless a caller (a test) wants smaller parts.
-  factory RecordedPartWriter.create(
+  factory create(
     String path,
     RecordedPartHeader header, {
     int partBytes = defaultPartBytes,

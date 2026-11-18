@@ -5,7 +5,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/looper/looper.dart';
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 LooperState _state({required bool connected}) =>
     LooperState(status: EngineStatus(isConnected: connected));
@@ -38,9 +38,8 @@ void main() {
       ticker = StreamController<void>.broadcast();
       when(() => looper.state).thenReturn(_state(connected: false));
       when(looper.devices).thenReturn(const []);
-      when(
-        () => looper.startEngine(any(), warmUp: any(named: 'warmUp')),
-      ).thenReturn(EngineResult.ok);
+      when(() => looper.startEngine(any(), warmUp: any(named: 'warmUp')))
+          .thenReturn(EngineResult.ok);
     });
 
     tearDown(() => ticker.close());
@@ -131,15 +130,13 @@ void main() {
         ticker.add(null);
         await pumpEventQueue();
 
-        verify(
-          () => looper.startEngine(_captureConfig, warmUp: true),
-        ).called(1);
+        verify(() => looper.startEngine(_captureConfig, warmUp: true))
+            .called(1);
       });
 
       test('does not thrash when a present device cannot be opened', () async {
-        when(
-          () => looper.startEngine(any(), warmUp: any(named: 'warmUp')),
-        ).thenReturn(EngineResult.device);
+        when(() => looper.startEngine(any(), warmUp: any(named: 'warmUp')))
+            .thenReturn(EngineResult.device);
         when(looper.devices).thenReturn(const [_device]);
         await build(); // present at load -> one attempt
 

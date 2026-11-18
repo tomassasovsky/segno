@@ -19,7 +19,7 @@ enum PerformanceCompletionStatus {
 class PerformanceCompletionCubit extends Cubit<PerformanceCompletionStatus> {
   /// Creates a [PerformanceCompletionCubit] over the shared [pedal] event
   /// stream.
-  PerformanceCompletionCubit({required PedalRepository pedal})
+  new({required PedalRepository pedal})
     : super(PerformanceCompletionStatus.active) {
     _pedalSubscription = pedal.events.listen(_onPedalEvent);
   }
@@ -37,6 +37,6 @@ class PerformanceCompletionCubit extends Cubit<PerformanceCompletionStatus> {
   @override
   Future<void> close() async {
     await _pedalSubscription.cancel();
-    return super.close();
+    return await super.close();
   }
 }

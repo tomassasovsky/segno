@@ -11,7 +11,7 @@ import 'package:segno/theme/text_metrics.dart';
 /// forces one.
 class AppText extends StatelessWidget {
   /// Creates an [AppText].
-  const AppText(
+  const new(
     String this.data, {
     super.key,
     this.style,
@@ -31,7 +31,7 @@ class AppText extends StatelessWidget {
   }) : textSpan = null;
 
   /// Creates an [AppText] with an [InlineSpan].
-  const AppText.rich(
+  const new rich(
     InlineSpan this.textSpan, {
     super.key,
     this.style,

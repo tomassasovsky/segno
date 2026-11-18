@@ -38,7 +38,7 @@ enum ArmTrigger {
 /// they arrive on `LooperRepository.meterLevels` (#1301).
 class Track extends Equatable {
   /// Creates a [Track].
-  const Track({
+  const new({
     this.channel = 0,
     this.state = TrackState.empty,
     this.volume = 1,
@@ -112,9 +112,10 @@ class Track extends Equatable {
   final PitchMode? pitchModeOverride;
 
   /// The pitch a tempo retime puts on what the track sounds now, in cents
-  /// (#1179): 0 at its own tempo or once its time-stretched render plays;
-  /// the tempo ratio's shift while that render is pending, or with Pitch
-  /// following the speed. Speed and Transpose are not included.
+  /// (#1179): 0 at its own tempo, while the pitch bridge keeps the pitch
+  /// until its time-stretched render lands (#1675) and once that render
+  /// plays; the tempo ratio's shift with Pitch following the speed. Speed
+  /// and Transpose are not included.
   final int pitchEffectiveCents;
 
   /// Whether the track is muted.
@@ -277,10 +278,7 @@ class Track extends Equatable {
   /// even when the nominal BPM differs. Without that grid, [sampleRate] and
   /// denominator-note BPM determine the duration of [TransportState.tsNum]
   /// beats. One frame of rounding is allowed; fractional bars remain unknown.
-  int? wholeBars({
-    required TransportState transport,
-    required int sampleRate,
-  }) {
+  int? wholeBars({required TransportState transport, required int sampleRate}) {
     final perBeat = _framesPerBeat(transport, sampleRate);
     if (perBeat == null || transport.tsNum <= 0) return null;
     return _whole(perBeat * transport.tsNum);

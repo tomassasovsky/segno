@@ -2,7 +2,7 @@ part of 'pedal_cubit.dart';
 
 /// Link status, raw physical readings and the canonical LED frame.
 class PedalState extends Equatable {
-  const PedalState({
+  const new({
     this.status = PedalLinkStatus.disconnected,
     this.firmwareVersion,
     this.protocolVersion,
@@ -53,7 +53,7 @@ class PedalState extends Equatable {
 /// What a CTRL control last reported.
 class PedalCtrlReading extends Equatable {
   /// Creates a [PedalCtrlReading].
-  const PedalCtrlReading({required this.kind, required this.value});
+  const new({required this.kind, required this.value});
 
   /// What the board decided is plugged into the jack.
   final PedalCtrlKind kind;

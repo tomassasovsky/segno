@@ -72,6 +72,16 @@ typedef _ControlOrigins = ({
 bool _isSharedValue(ControlValueTarget target) =>
     target is MixValueTarget || target is OwnedValueTarget;
 
+/// A binding refused because the effects it could switch on would not fit
+/// the effects budget (#1723). Nothing was saved.
+final class FxReachOverBudget implements Exception {
+  /// Creates the refusal.
+  const new();
+
+  @override
+  String toString() => 'Not enough effects budget for what it can switch on';
+}
+
 /// The press/long-press state machine every gestural footswitch shares.
 ///
 /// [press] arms a hold timer and remembers the tap action; holding past the
@@ -158,7 +168,7 @@ class _HoldGesture {
 /// clock from the fill's start, the time the fill runs, and whether it can
 /// still fire.
 class _ClearFill {
-  _ClearFill({required this.fillTime, required this.stillValid});
+  new({required this.fillTime, required this.stillValid});
 
   final Stopwatch clock = Stopwatch()..start();
   final Duration fillTime;
@@ -194,13 +204,15 @@ class ControlCubit extends Cubit<ControlState> {
   /// that cubit observes this repository's own status stream, so it reflects
   /// a pedal-triggered arm/disarm too.
   ///
-  /// [currentChains] resolves the live lane/monitor chains + master-limiter
+  /// [_currentChains] resolves the live lane/monitor chains + master-limiter
   /// state to stamp into the arm snapshot, read fresh at each arm — the same
   /// narrow function dependency `PerformanceRecorderCubit` takes for the
   /// toolbar path, so both arm gestures record the same rig. It is injected
   /// rather than mapped here: the mapping lives in the session feature, and a
   /// feature never imports another feature. Defaults to the empty snapshot
-  /// (what this call site passed before it was wired).
+  /// (what this call site passed before it was wired). [_currentNames]
+  /// resolves what the player calls each track and input, injected the same
+  /// way (#1799).
   /// [controller] is the external-MIDI seam (part 7): its resolved binding
   /// events land at the same dispatch point the pedal's do, so a discrete CC
   /// stomps exactly like a footswitch. [midiDevices] supplies every captured
@@ -209,36 +221,34 @@ class ControlCubit extends Cubit<ControlState> {
   /// a build or test with no MIDI seam simply never receives external
   /// control.
   ///
-  /// [takeLocked] suppresses Rec / overdub / perf-arm while the power-off
-  /// route is up, so a take cannot start behind the dialog. [inputLocked]
+  /// [_takeLocked] suppresses Rec / overdub / perf-arm while the power-off
+  /// route is up, so a take cannot start behind the dialog. [_inputLocked]
   /// holds continuous writes (expression sweeps, External values, MIDI
   /// values) during Session transitions and disposal only; the power-off
   /// route leaves them running until its flush suspends input.
-  ControlCubit({
+  new({
     required LooperRepository looper,
-    required PedalRepository pedal,
+    required this._pedal,
     required SettingsRepository settings,
     required PerformanceRepository performance,
-    required MixSettingsCoordinator mixSettings,
-    required FxChainPersistence fxPersistence,
+    required this._mixSettings,
+    required this._fxPersistence,
     required OwnedValueControl ownedValues,
     required FadeSettings fadeSettings,
     TunerSettings? tunerSettings,
     bool seedTunerDefault = false,
     ControllerRepository? controller,
     MidiDeviceRepository? midiDevices,
-    Duration Function()? midiClock,
-    Duration learnTimeout = const Duration(seconds: 15),
-    PerformanceChains Function() currentChains = _noChains,
-    bool Function() takeLocked = _neverLocked,
-    bool Function() inputLocked = _neverLocked,
+    this._midiClock,
+    this._learnTimeout = const Duration(seconds: 15),
+    this._currentChains = _noChains,
+    this._currentNames = _noNames,
+    this._takeLocked = _neverLocked,
+    this._inputLocked = _neverLocked,
     Future<int?> Function(String path)? freeSpaceBytes,
   }) : _looper = looper,
-       _pedal = pedal,
        _settings = settings,
        _performance = performance,
-       _mixSettings = mixSettings,
-       _fxPersistence = fxPersistence,
        _owned = ownedValues,
        _footReverseActions = FootReverseActions(repository: looper),
        _footPeelActions = FootPeelActions(repository: looper),
@@ -251,14 +261,9 @@ class ControlCubit extends Cubit<ControlState> {
          settings: fadeSettings,
        ),
        _midiDevices = midiDevices,
-       _midiClock = midiClock,
-       _learnTimeout = learnTimeout,
-       _currentChains = currentChains,
-       _takeLocked = takeLocked,
-       _inputLocked = inputLocked,
        _freeSpaceBytes =
            freeSpaceBytes ??
-           ((String path) async => performance.volumeSpace(path)?.freeBytes),
+           ((path) async => performance.volumeSpace(path)?.freeBytes),
        super(const ControlState()) {
     _fxPersistence.onOrdinaryWrite = _onOrdinaryFxWrite;
     _mixSettings.onOrdinaryValues = _onOrdinaryMixValues;
@@ -280,6 +285,7 @@ class ControlCubit extends Cubit<ControlState> {
     _midiSub = midiDevices?.connections.listen(_onMidiConnection);
     _midiMessageSub = midiDevices?.messages.listen(_onMidiInput);
     _tunerSub = _tunerSettings.changes.listen(_onTunerPreferences);
+    _looper.setFxReach(fxReachOf(state));
     if (_tunerSettings.live != state.tunerPreferences) {
       emit(state.copyWith(tunerPreferences: _tunerSettings.live));
     }
@@ -298,15 +304,9 @@ class ControlCubit extends Cubit<ControlState> {
   final Duration Function()? _midiClock;
   final _midiStopwatch = Stopwatch()..start();
   Duration _midiReadTime = Duration.zero;
-  late final _midiDecoder = MidiDecoder(
-    clock: () => _midiReadTime,
-  );
-  late final _midiLearnDecoder = MidiDecoder(
-    clock: () => _midiReadTime,
-  );
-  late final _midiSignalDecoder = MidiDecoder(
-    clock: () => _midiReadTime,
-  );
+  late final _midiDecoder = MidiDecoder(clock: () => _midiReadTime);
+  late final _midiLearnDecoder = MidiDecoder(clock: () => _midiReadTime);
+  late final _midiSignalDecoder = MidiDecoder(clock: () => _midiReadTime);
   late final _midiEngine = MidiMappingEngine(
     read: _readMidiValue,
     step: _midiStep,
@@ -963,13 +963,10 @@ class ControlCubit extends Cubit<ControlState> {
               await _mixSettings.runExclusive(() async {});
               if (cancelled()) return;
               resolveSurvivors();
-              outcome = await _mixSettings.setControllerValues(
-                {
-                  for (final target in mixValues.keys)
-                    target: parameters[target]!,
-                },
-                releasedValues: released(),
-              );
+              outcome = await _mixSettings.setControllerValues({
+                for (final target in mixValues.keys)
+                  target: parameters[target]!,
+              }, releasedValues: released());
             }
             if (outcome.isOk) mixValues.keys.forEach(heldApplied);
             if (outcome.isOk && !cancelled()) {
@@ -1082,10 +1079,7 @@ class ControlCubit extends Cubit<ControlState> {
     }
   }
 
-  bool? _survivingActivation(
-    FxBindingTarget target, {
-    Object? excluding,
-  }) {
+  bool? _survivingActivation(FxBindingTarget target, {Object? excluding}) {
     ({bool value, int order})? latest;
     for (final entry in (_activationHolders[target] ?? {}).entries) {
       if (entry.key == excluding) continue;
@@ -1096,10 +1090,7 @@ class ControlCubit extends Cubit<ControlState> {
     return latest?.value;
   }
 
-  double? _survivingParameter(
-    ControlValueTarget target, {
-    Object? excluding,
-  }) {
+  double? _survivingParameter(ControlValueTarget target, {Object? excluding}) {
     ({double value, int order})? latest;
     for (final entry in (_parameterHolders[target] ?? {}).entries) {
       if (entry.key == excluding) continue;
@@ -1114,6 +1105,9 @@ class ControlCubit extends Cubit<ControlState> {
   /// [PerformanceRepository.arm] already assumes when given nothing.
   static PerformanceChains _noChains() => const PerformanceChains();
 
+  /// The default `currentNames`: nothing named.
+  static PerformanceNames _noNames() => const PerformanceNames();
+
   static bool _neverLocked() => false;
 
   final LooperRepository _looper;
@@ -1124,6 +1118,7 @@ class ControlCubit extends Cubit<ControlState> {
   final FxChainPersistence _fxPersistence;
   final Duration _learnTimeout;
   final PerformanceChains Function() _currentChains;
+  final PerformanceNames Function() _currentNames;
   final bool Function() _takeLocked;
 
   /// Holds continuous writes (expression, External values, MIDI values)
@@ -1558,6 +1553,20 @@ class ControlCubit extends Cubit<ControlState> {
         !state.pedalSetupRuntimeUnsaved) {
       return;
     }
+    // A change to what the switches reach is admitted and committed as one
+    // step of the reach queue (#1723); a press's logical state is not one.
+    if (!setup.external.sameConfigurationAs(state.pedalSetup.external)) {
+      return await _serializeReach(() async {
+        if (isClosed) return;
+        _admitReach(state.copyWith(pedalSetup: setup));
+        await _commitPedalSetup(setup);
+      });
+    }
+    await _commitPedalSetup(setup);
+  }
+
+  /// Saves [setup] and makes it live.
+  Future<void> _commitPedalSetup(PedalSetup setup) async {
     _storeFxStopNotice();
     try {
       await _settings.savePedalSetup(setup.encode());
@@ -2035,7 +2044,15 @@ class ControlCubit extends Cubit<ControlState> {
   }
 
   /// Rec mode: mute the cursor track (finalizing a capture first). Muting the
-  /// only audible loop parks the whole transport.
+  /// only audible loop parks the whole transport, and its mute spares the
+  /// Post tail: the tail rings out while the track is stopped, as a Stop's
+  /// does, and the engine gates it once the track runs again (#1773). The
+  /// engine parks it ([LooperRepository.stopRecordPark], #1782): a playing
+  /// loop at the press, an overdubbing one where its overdub ends, which is
+  /// the grid end when Record timing quantizes it. Until then the pass runs
+  /// on and the mute waits for the park. A track already stopped (after a
+  /// Once end or a second Stop) only gets the spare
+  /// ([LooperRepository.spareTail]) ahead of its mute.
   bool _recStop(int channel) {
     final track = _trackAt(channel);
     if (track == null) return false;
@@ -2043,16 +2060,26 @@ class ControlCubit extends Cubit<ControlState> {
     if (_l.isSection(channel) && _l.songWaitingSection == channel) {
       return _looper.cancelArm(channel: channel).isOk;
     }
-    if (!_looper.stopRecordControl(channel: channel).isOk) {
-      return false;
-    }
-    if (!_setTrackMute(muted: true, channel: channel).isOk) return false;
-    if (track.state == TrackState.playing && _isLastAudibleTrack(channel)) {
-      for (final t in _tracks) {
-        _looper.stopTrack(channel: t.channel);
+    final lanes = _looper.laneCount(channel);
+    final parks =
+        (track.state == TrackState.playing ||
+            track.state == TrackState.overdubbing) &&
+        _isLastAudibleTrack(channel);
+    // All or nothing: the park and the spare reserve room for the lane mutes
+    // after them, and a refusal refuses the whole Stop, so a full command
+    // ring never leaves the loop parked but unmuted.
+    if (parks) {
+      if (!_looper.stopRecordPark(channel: channel, following: lanes).isOk) {
+        return false;
+      }
+    } else {
+      if (!_looper.stopRecordControl(channel: channel).isOk) return false;
+      if (track.state == TrackState.stopped &&
+          !_looper.spareTail(channel: channel, following: lanes).isOk) {
+        return false;
       }
     }
-    return true;
+    return _setTrackMute(muted: true, channel: channel).isOk;
   }
 
   /// Parks the play transport: freezes EVERY running content track (muted
@@ -2094,11 +2121,7 @@ class ControlCubit extends Cubit<ControlState> {
     final waiting = live.transport.songQueuedTrack;
     // A Stop on the waiting section drops its request (and a waiting
     // Record's arm) in the engine, or stops it if the handoff started it.
-    final stopping = {
-      ...running,
-      ...playingNow,
-      if (waiting >= 0) waiting,
-    };
+    final stopping = {...running, ...playingNow, if (waiting >= 0) waiting};
     if (stopping.isEmpty) return true; // Keep the parked resume set.
     final latch = {...(playingNow.isEmpty ? running : playingNow)}
       ..removeWhere(state.excluded.contains);
@@ -2280,9 +2303,7 @@ class ControlCubit extends Cubit<ControlState> {
       if (_l.isSection(channel) && t.isRunning) return;
       // Joining is the explicit un-exclude.
       if (state.excluded.contains(channel)) {
-        emit(
-          state.copyWith(excluded: {...state.excluded}..remove(channel)),
-        );
+        emit(state.copyWith(excluded: {...state.excluded}..remove(channel)));
       }
       _looper.play(channel: channel);
     }
@@ -2858,9 +2879,7 @@ class ControlCubit extends Cubit<ControlState> {
   void nextFootMixerPage() {
     if (!_mixerEditable) return;
     emit(
-      state.copyWith(
-        footMixer: _footMixerActions.nextPage(state.footMixer),
-      ),
+      state.copyWith(footMixer: _footMixerActions.nextPage(state.footMixer)),
     );
   }
 
@@ -3077,8 +3096,7 @@ class ControlCubit extends Cubit<ControlState> {
       case PedalButton.track3:
       case PedalButton.track4:
         final channel = state.bankBaseChannel + _trackIndex(button);
-        trackPressed(channel);
-        _armTrackHold(button);
+        _armTrackHold(button, press: () => trackPressed(channel));
     }
   }
 
@@ -3369,9 +3387,7 @@ class ControlCubit extends Cubit<ControlState> {
         if (operation == TrackOperation.solo && channels.length > 1) {
           return _mixSettings
               .toggleTrackSolos(channels.toSet())
-              .then(
-                (outcome) => outcome.isOk,
-              );
+              .then((outcome) => outcome.isOk);
         }
         var accepted = false;
         for (final channel in channels) {
@@ -3444,9 +3460,7 @@ class ControlCubit extends Cubit<ControlState> {
       case TrackOperation.solo:
         return _mixSettings
             .toggleTrackSolo(channel: channel)
-            .then(
-              (outcome) => outcome.isOk,
-            );
+            .then((outcome) => outcome.isOk);
       case TrackOperation.clear:
         if (_fxPersistence.sessionTransitionActive) return false;
         if (!_looper.clear(channel: channel).isOk) return false;
@@ -3727,7 +3741,10 @@ class ControlCubit extends Cubit<ControlState> {
         return (result: EngineResult.device, announced: true);
       }
     }
-    final result = await _performance.arm(chains: _currentChains());
+    final result = await _performance.arm(
+      chains: _currentChains(),
+      names: _currentNames(),
+    );
     return (result: result, announced: result == EngineResult.notReady);
   }
 
@@ -3790,38 +3807,70 @@ class ControlCubit extends Cubit<ControlState> {
     );
   }
 
-  /// Track selection/transport remains immediate; Hold follows the current
-  /// bank position until the threshold fires.
-  void _armTrackHold(PedalButton button) {
-    if (state.pedalSetupUnavailable || state.mode != InteractionMode.record) {
-      return;
+  /// Runs the track [press] and arms the configured Track Hold. The Hold
+  /// follows the current bank position until the threshold fires.
+  ///
+  /// Record keeps its press on contact and runs either Hold. Mute runs only
+  /// Clear track (#1671), and then its press is the gesture's tap: it acts
+  /// on release, on the track pressed, and a clear that fires cancels it,
+  /// so nothing sounds, rejoins the mix or parks the loop before a clear.
+  /// Arm overdub, which starts an overdub, stays out of a mix-only mode,
+  /// and with it Mute keeps its press on contact. In Song, Mute's clear
+  /// leaves a capturing section alone, as Mute's press does.
+  void _armTrackHold(PedalButton button, {required void Function() press}) {
+    final hold = state.pedalSetupUnavailable
+        ? TrackHold.none
+        : state.pedalSetup.trackHold;
+    final mute = state.mode == InteractionMode.mute;
+    final armed = switch (state.mode) {
+      InteractionMode.record => hold != TrackHold.none,
+      InteractionMode.mute => hold == TrackHold.clearTrack,
+      _ => false,
+    };
+    final pressOnRelease = armed && mute;
+    if (!pressOnRelease) press();
+    if (!armed) return;
+    int channelNow() => state.bankBaseChannel + _trackIndex(button);
+    // [fresh] reads the engine now, for the one-shot action: a take can
+    // begin in the native callback before the next poll. The fill's 20 ms
+    // ticks use the polled tracks.
+    Track? trackNow({required bool fresh}) {
+      final channel = channelNow();
+      final tracks = fresh ? _looper.state.tracks : _tracks;
+      return channel >= 0 && channel < tracks.length ? tracks[channel] : null;
     }
-    final hold = state.pedalSetup.trackHold;
-    if (hold == TrackHold.none) return;
-    final clearTrack = hold == TrackHold.clearTrack;
+
+    bool songCapture({required bool fresh}) =>
+        mute &&
+        _l.transport.looperMode == LooperMode.song &&
+        (trackNow(fresh: fresh)?.isCapturing ?? false);
+    final clears = switch (hold) {
+      TrackHold.clearTrack => () => !songCapture(fresh: false),
+      TrackHold.none || TrackHold.armOverdub => null,
+    };
     _armGesture(
       _trackHoldGestures.putIfAbsent(button, _HoldGesture.new),
       cue: button,
-      clears: clearTrack ? () => true : null,
-      clearPause: clearTrack ? _clearTrackPause : Duration.zero,
+      clears: clears,
+      clearPause: clears == null ? Duration.zero : _clearTrackPause,
+      onTap: pressOnRelease ? press : null,
       onHold: () {
-        final channel = state.bankBaseChannel + _trackIndex(button);
         switch (hold) {
           case TrackHold.none:
             return;
           case TrackHold.armOverdub:
-            // This directional action must use a fresh capture fact. A take
-            // can begin in the native callback before the next UI poll.
-            final tracks = _looper.state.tracks;
-            if (channel >= 0 &&
-                channel < tracks.length &&
-                tracks[channel].hasContent &&
-                !tracks[channel].pending &&
-                !tracks[channel].isCapturing) {
-              _looper.record(channel: channel);
+            final track = trackNow(fresh: true);
+            if (track != null &&
+                track.hasContent &&
+                !track.pending &&
+                !track.isCapturing) {
+              _looper.record(channel: track.channel);
             }
           case TrackHold.clearTrack:
-            if (_looper.clear(channel: channel).isOk) _meetClearFill(button);
+            if (songCapture(fresh: true)) return;
+            if (_looper.clear(channel: channelNow()).isOk) {
+              _meetClearFill(button);
+            }
         }
       },
     );
@@ -3843,16 +3892,36 @@ class ControlCubit extends Cubit<ControlState> {
   /// not survive the edit, and a target left enabled with no binding to
   /// release it is exactly the wedge (B1) the release-all rule exists to
   /// prevent.
-  Future<void> setGlobalBindings(PedalBindingSet next) async {
-    if (next == state.globalBindings) return;
+  ///
+  /// With [promote], the session's remap is dropped first, so [next] is the
+  /// set in force: the FX page's editor rule.
+  ///
+  /// Throws [FxReachOverBudget], saving nothing, when the effects [next]
+  /// could switch on would not fit the effects budget (#1723).
+  Future<void> setGlobalBindings(
+    PedalBindingSet next, {
+    bool promote = false,
+  }) => _serializeReach(() async {
+    if (isClosed) return;
+    final session = promote ? PedalBindingSet.empty : state.sessionBindings;
+    if (next == state.globalBindings && session == state.sessionBindings) {
+      return;
+    }
+    _admitReach(state.copyWith(globalBindings: next, sessionBindings: session));
+    // One emit for both sets: the old globals never come in force between
+    // them, so the effects budget never weighs that in-between set.
+    final saves = next != state.globalBindings;
+    if (session != state.sessionBindings) _customLastActions.clear();
     _invalidateGestures();
-    emit(state.copyWith(globalBindings: next));
+    emit(state.copyWith(globalBindings: next, sessionBindings: session));
+    if (!saves) return;
     _storeFxStopNotice();
     await _settings.savePedalBindings(next.encode());
-  }
+  });
 
-  /// Removes every MIDI and pedal assignment to the effects [slotIds] of the
-  /// chain at [address] (the ones `fxAssignmentsTo` counts) and saves each
+  /// Removes every MIDI and pedal assignment to the effects [slotIds] and the
+  /// racks [rackIds] of the chain at [address] (the ones `fxAssignmentsTo`
+  /// counts) and saves each
   /// store that changed: the session and global pedal bindings, the external
   /// pedal setup and the MIDI mappings.
   ///
@@ -3866,9 +3935,11 @@ class ControlCubit extends Cubit<ControlState> {
   // ignore: prefer_void_public_cubit_methods
   Future<bool> removeFxAssignments(
     FxAddress address,
-    Set<String> slotIds,
-  ) async {
-    bool names(Object? target) => fxTargetNamesEffect(target, address, slotIds);
+    Set<String> slotIds, {
+    Set<String> rackIds = const {},
+  }) async {
+    bool names(Object? target) =>
+        fxTargetNamesEffect(target, address, slotIds, rackIds: rackIds);
     var saved = true;
     Future<void> attempt(Future<void> Function() write) async {
       try {
@@ -3895,11 +3966,47 @@ class ControlCubit extends Cubit<ControlState> {
     );
     await attempt(() async {
       final midi = await removeMidiControls(
-        (key) => fxMidiKeyNamesEffect(key, address, slotIds),
+        (key) => fxMidiKeyNamesEffect(key, address, slotIds, rackIds: rackIds),
       );
       if (!midi.saved) saved = false;
     });
     return saved;
+  }
+
+  /// The last save that can change what the controls reach (#1723), still
+  /// running: the console bindings, the external switches' setup or the MIDI
+  /// mappings, whichever page saves them. Null when none is.
+  Future<void>? _reachTail;
+
+  /// Runs [step] after the save in [_reachTail], at once when there is none,
+  /// so its budget check ([_admitReach]) and its commit are one step: two
+  /// saves from different pages cannot both pass against the same room.
+  Future<T> _serializeReach<T>(Future<T> Function() step) {
+    final prior = _reachTail;
+    final next = prior == null ? step() : prior.then((_) => step());
+    late final Future<void> tail;
+    tail = next
+        .then<void>((_) {}, onError: (Object _, StackTrace _) {})
+        .whenComplete(() {
+          if (identical(_reachTail, tail)) _reachTail = null;
+        });
+    _reachTail = tail;
+    return next;
+  }
+
+  /// Throws [FxReachOverBudget] when what [next]'s controls could switch on
+  /// would not fit the effects budget (#1723). A change that only takes reach
+  /// away is never refused ([fxReachShrinks]): if the charge still rises (an
+  /// alternation moving past the cap), the repository holds chains off until
+  /// it fits (R2). Controls that reach what they reached before never ask
+  /// the repository.
+  void _admitReach(ControlState next) {
+    final before = fxReachOf(state);
+    final after = fxReachOf(next);
+    if (fxReachShrinks(before, after) || FxReach(before) == FxReach(after)) {
+      return;
+    }
+    if (!_looper.fxReachFits(after)) throw const FxReachOverBudget();
   }
 
   /// Stores the FX notice decision once it is known to be shown, so a later
@@ -4102,6 +4209,20 @@ class ControlCubit extends Cubit<ControlState> {
           return false;
         }
         _fxPersistence.ordinaryTarget(target, enabled: !prior);
+        // A toggle is the player's new setting, so the chain it changed is
+        // saved and a reload keeps it — a rack's switch (#1711) as much as a
+        // chain's or an effect's. A momentary returns to what is saved. An
+        // empty chain switched off is not saved, as the Effects page's own
+        // switch does not save it: every boot would restore a bypass on the
+        // effects added there later.
+        if (!prior ||
+            (_looper.chainEntriesAt(target.address)?.isNotEmpty ?? false)) {
+          _fxPersistence.scheduleSave(
+            target.address,
+            _settings,
+            debounce: Duration.zero,
+          );
+        }
       case BindingBehavior.momentary:
         if (_heldRestore.containsKey(binding.key)) return false;
         _log('binding momentary ${binding.key.button.name} (was $prior)');
@@ -4149,18 +4270,8 @@ class ControlCubit extends Cubit<ControlState> {
     );
   }
 
-  FxBindingTarget? _scoped(FxBindingTarget? target, BindingScope scope) {
-    if (target == null || scope == BindingScope.fixed) return target;
-    final address = resolveBindingAddress(target.address, scope, state.cursor);
-    if (address == target.address) return target;
-    return switch (target) {
-      FxChainTarget() => FxChainTarget(address),
-      FxSlotTarget(:final slotId) => FxSlotTarget(
-        address: address,
-        slotId: slotId,
-      ),
-    };
-  }
+  FxBindingTarget? _scoped(FxBindingTarget? target, BindingScope scope) =>
+      target == null ? null : resolveBindingTarget(target, scope, state.cursor);
 
   /// Restores the momentary [button] is holding, if any.
   ///
@@ -4227,7 +4338,7 @@ class ControlCubit extends Cubit<ControlState> {
       target = _scoped(binding.decodeTarget(), binding.scope);
       behavior = binding.behavior;
     }
-    final enabled = target == null ? null : _looper.bindingEnabled(target);
+    final enabled = target == null ? null : _looper.bindingLit(target);
     if (enabled == null) return (lit: false, stale: true);
     return (
       lit: behavior == BindingBehavior.momentary ? held : enabled,
@@ -4411,12 +4522,7 @@ class ControlCubit extends Cubit<ControlState> {
     final channels = completed && contact
         ? last.channels
         : _channelsForAction(action);
-    return _customActionIsActive(
-      action,
-      channels,
-      looper,
-      contact: contact,
-    );
+    return _customActionIsActive(action, channels, looper, contact: contact);
   }
 
   bool _customActionIsActive(
@@ -4519,7 +4625,18 @@ class ControlCubit extends Cubit<ControlState> {
 
   @override
   void emit(ControlState state) {
+    final external = state.pedalSetup.external;
+    final reachChanged =
+        !identical(state.globalBindings, this.state.globalBindings) ||
+        !identical(state.sessionBindings, this.state.sessionBindings) ||
+        !identical(state.midiMappings, this.state.midiMappings) ||
+        // A press's logical state is in the setup too, and reaches nothing.
+        !identical(external, this.state.pedalSetup.external) &&
+            !external.sameConfigurationAs(this.state.pedalSetup.external);
     super.emit(state);
+    // What the controls can turn on is what the effects budget reserves room
+    // for (#1723), so the repository hears every change to it.
+    if (reachChanged) _looper.setFxReach(fxReachOf(state));
     // Every stored-intent change re-projects the pedal frame (the diff in
     // [_pushProjected] keeps the wire quiet when the LEDs are unaffected).
     // After super.emit — onChange fires BEFORE the state field updates, and

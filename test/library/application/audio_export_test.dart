@@ -1,8 +1,9 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:segno/library/application/audio_export.dart';
-import 'package:segno/library/application/removable_volumes.dart';
+import 'package:storage_repository/storage_repository.dart';
 
 import '../helpers/fake_drive.dart';
 
@@ -88,7 +89,7 @@ void main() {
     plan,
     generation: drive.generation,
     policy: policy,
-    purpose: 'Exporting Evening loop',
+    purpose: WritePurpose.export,
     cancelled: cancelled,
     onProgress: onProgress,
   );
@@ -110,7 +111,7 @@ void main() {
       final at = await run(parts(3), onProgress: progress.add);
 
       expect(at, '$perf/Evening loop · Part 001.wav');
-      expect(drive.leases, ['Exporting Evening loop']);
+      expect(drive.leasePurposes, [WritePurpose.export]);
       expect(drive.copies.map((c) => (c.relativePath, c.policy)), [
         for (var i = 1; i <= 3; i++)
           ('$staging/Evening loop · Part 00$i.wav', ConflictPolicy.replace),
@@ -119,6 +120,41 @@ void main() {
         for (var i = 1; i <= 3; i++) '$perf/Evening loop · Part 00$i.wav',
       ]);
       expect(progress.last, 1);
+      // The volume is synced once the swap and its clean-up are done.
+      expect(drive.volumeSyncs, [drive.files]);
+    });
+
+    test('is reported only once the volume sync after the swap has finished '
+        '(#1797)', () async {
+      drive.syncHold = Completer<void>();
+      var reported = false;
+
+      final export = run(parts(2)).then((_) => reported = true);
+      await pumpEventQueue();
+
+      // Every file is in place and nothing of the swap is left...
+      expect(drive.volumeSyncs, [
+        [
+          '$perf/Evening loop · Part 001.wav',
+          '$perf/Evening loop · Part 002.wav',
+        ],
+      ]);
+      expect(
+        Directory('${drive.mount}/$perf').listSync().map((e) => e.path),
+        isNot(contains(contains(AudioExporter.stagingPrefix))),
+      );
+      // ...but the export is not done until the sync is.
+      expect(reported, isFalse);
+
+      drive.syncHold!.complete();
+      await export;
+      expect(reported, isTrue);
+    });
+
+    test('a volume sync the drive refuses fails the export', () async {
+      drive.failOnSync = const StorageFailure.io('Input/output error');
+
+      await expectLater(run(parts(2)), throwsA(isA<StorageIo>()));
     });
 
     test(
@@ -295,10 +331,7 @@ void main() {
       () async {
         drive.spaceAnswer = const VolumeSpace(totalBytes: 100, freeBytes: 11);
 
-        await expectLater(
-          run(parts(3)),
-          throwsA(isA<StorageFull>()),
-        );
+        await expectLater(run(parts(3)), throwsA(isA<StorageFull>()));
         expect(drive.copies, isEmpty);
       },
     );
@@ -307,6 +340,83 @@ void main() {
       drive.spaceAnswer = const VolumeSpace(totalBytes: 100, freeBytes: 12);
       await run(parts(3));
       expect(drive.copies, hasLength(3));
+    });
+  });
+
+  group('a file larger than the drive holds (#1794)', () {
+    /// An internal file [bytes] long, sparse: nothing is written to it.
+    String sparse(String relative, int bytes) {
+      final file = File('$internal/$relative')
+        ..parent.createSync(recursive: true)
+        ..createSync();
+      file.openSync(mode: FileMode.write)
+        ..truncateSync(bytes)
+        ..closeSync();
+      return file.path;
+    }
+
+    Future<void> driveOf(String fsType) async {
+      await drive.close();
+      drive = FakeDrive('${temp.path}/usb', fsType: fsType);
+      exporter = AudioExporter(drive);
+    }
+
+    AudioExportPlan withLongStem(int bytes) => AudioExportPlan(
+      name: 'Evening loop',
+      folder: perf,
+      package: true,
+      files: [
+        AudioExportFile(source('take/project.als'), 'project.als'),
+        AudioExportFile(
+          sparse('take/stems/wet/master.wav', bytes),
+          'stems/wet/master.wav',
+        ),
+      ],
+    );
+
+    test('a FAT32 drive refuses a file of 4 GiB before anything on it is '
+        'touched', () async {
+      await driveOf('vfat');
+      // An earlier export's leftovers stay as they are too.
+      onDrive('$staging/project.als');
+
+      await expectLater(
+        run(withLongStem(1 << 32)),
+        throwsA(
+          const StorageFailure.fileTooLarge(
+            fsType: 'vfat',
+            maxFileBytes: 0xFFFFFFFF,
+            fileBytes: 1 << 32,
+          ),
+        ),
+      );
+      expect(drive.copies, isEmpty);
+      expect(drive.files, ['$staging/project.als']);
+    });
+
+    test('a FAT32 drive takes a file one byte under 4 GiB', () async {
+      await driveOf('vfat');
+      // Stops at the long file's copy: it got past the check.
+      drive
+        ..failOnCopy = 2
+        ..failure = const StorageFailure.io('stopped here');
+
+      await expectLater(
+        run(withLongStem(0xFFFFFFFF)),
+        throwsA(isA<StorageIo>()),
+      );
+      expect(drive.copies, hasLength(2));
+      expect(drive.copies.last.relativePath, endsWith('stems/wet/master.wav'));
+    });
+
+    test('an exFAT drive takes a file of 4 GiB', () async {
+      await driveOf('exfat');
+      drive
+        ..failOnCopy = 2
+        ..failure = const StorageFailure.io('stopped here');
+
+      await expectLater(run(withLongStem(1 << 32)), throwsA(isA<StorageIo>()));
+      expect(drive.copies, hasLength(2));
     });
   });
 
@@ -326,7 +436,30 @@ void main() {
         ('$staging/Evening loop/stems/wet/track0.wav', ConflictPolicy.replace),
         ('$staging/Evening loop/project.als', ConflictPolicy.replace),
       ]);
+      expect(drive.volumeSyncs, [drive.files]);
     });
+
+    test(
+      "holds its empty folders, a Live Project's among them (#1837)",
+      () async {
+        await run(
+          AudioExportPlan(
+            name: 'Evening loop',
+            folder: perf,
+            package: true,
+            files: package().files,
+            folders: const ['Ableton Project Info'],
+          ),
+        );
+
+        final info = Directory(
+          '${drive.mount}/$perf/Evening loop/Ableton Project Info',
+        );
+        expect(info.existsSync(), isTrue);
+        expect(info.listSync(), isEmpty);
+        expect(Directory('${drive.mount}/$staging').existsSync(), isFalse);
+      },
+    );
 
     test('ask reports the directory already there before writing', () async {
       onDrive('$perf/Evening loop/old.wav');
@@ -343,14 +476,11 @@ void main() {
       expect(drive.files, contains('$perf/Evening loop/old.wav'));
 
       await run(package(), policy: ConflictPolicy.replace);
-      expect(
-        drive.files.where((f) => f.startsWith('$perf/Evening loop/')),
-        [
-          '$perf/Evening loop/master-001.wav',
-          '$perf/Evening loop/project.als',
-          '$perf/Evening loop/stems/wet/track0.wav',
-        ],
-      );
+      expect(drive.files.where((f) => f.startsWith('$perf/Evening loop/')), [
+        '$perf/Evening loop/master-001.wav',
+        '$perf/Evening loop/project.als',
+        '$perf/Evening loop/stems/wet/track0.wav',
+      ]);
       expect(
         drive.files.where((f) => f.contains(AudioExporter.stagingPrefix)),
         isEmpty,
@@ -410,15 +540,83 @@ void main() {
     });
   });
 
+  group('two exports into one folder at once', () {
+    test("the second one's recovery leaves the first one's staging alone, so "
+        'both land whole', () async {
+      final hold = Completer<void>();
+      // The first export stops on its second file, its first one staged.
+      drive.beforeCopy = (copy) {
+        if (copy == 2) drive.hold = hold;
+      };
+      final first = run(package());
+      while (drive.copies.length < 2) {
+        await pumpEventQueue();
+      }
+      final second = run(
+        AudioExportPlan(
+          name: 'Acoustic set',
+          folder: perf,
+          files: [
+            AudioExportFile(
+              source('other/master-001.wav', fill: 2),
+              '{name}.wav',
+            ),
+          ],
+        ),
+      );
+      await pumpEventQueue();
+
+      expect(
+        File('${drive.mount}/$staging/Evening loop/master-001.wav')
+            .existsSync(),
+        isTrue,
+      );
+      hold.complete();
+      await Future.wait([first, second]);
+      expect(drive.files, [
+        '$perf/Acoustic set.wav',
+        '$perf/Evening loop/master-001.wav',
+        '$perf/Evening loop/project.als',
+        '$perf/Evening loop/stems/wet/track0.wav',
+      ]);
+    });
+  });
+
+  group('two exports of one name at once', () {
+    test('Keep both gives the second the next free name, as it would one '
+        'after the other', () async {
+      final hold = Completer<void>();
+      drive.beforeCopy = (copy) {
+        if (copy == 2) drive.hold = hold;
+      };
+      final first = run(package(), policy: ConflictPolicy.keepBoth);
+      while (drive.copies.length < 2) {
+        await pumpEventQueue();
+      }
+      final second = run(package(), policy: ConflictPolicy.keepBoth);
+      await pumpEventQueue();
+      // The second waits for the first's turn in the folder.
+      expect(drive.copies, hasLength(2));
+
+      hold.complete();
+      expect(await first, '$perf/Evening loop');
+      expect(await second, '$perf/Evening loop (2)');
+      expect(drive.files, [
+        for (final name in ['Evening loop (2)', 'Evening loop']) ...[
+          '$perf/$name/master-001.wav',
+          '$perf/$name/project.als',
+          '$perf/$name/stems/wet/track0.wav',
+        ],
+      ]);
+    });
+  });
+
   group('after a cut', () {
     /// What a power cut between the two renames of a package Replace leaves:
     /// the old package aside with its target list, the new one staged, no
     /// package under its name.
     void cutMidSwap() {
-      onDrive(
-        '$aside/Evening loop/old.wav',
-        fill: 7,
-      );
+      onDrive('$aside/Evening loop/old.wav', fill: 7);
       File(
         '${drive.mount}/$perf/${AudioExporter.stagingPrefix}Evening loop.old/'
         '${AudioExporter.targetsName}',
@@ -453,10 +651,7 @@ void main() {
       onDrive('$perf/Done/new.wav', fill: 3);
       // Half done: Part 001 placed, Part 002 still staged, both old aside.
       for (var i = 1; i <= 2; i++) {
-        onDrive(
-          '$aside/Evening loop · Part 00$i.wav',
-          fill: i,
-        );
+        onDrive('$aside/Evening loop · Part 00$i.wav', fill: i);
       }
       File(
         '${drive.mount}/$perf/${AudioExporter.stagingPrefix}Evening loop.old/'
@@ -487,7 +682,7 @@ void main() {
           parts(1),
           generation: drive.generation + 1,
           policy: ConflictPolicy.ask,
-          purpose: 'Exporting',
+          purpose: WritePurpose.export,
         ),
         throwsA(isA<StorageVolumeLost>()),
       );
@@ -516,5 +711,5 @@ extension on AudioExportPlan {
 /// Stands for the process stopping: no handler of the exporter's catches it
 /// as a filesystem failure.
 class _Cut implements Exception {
-  const _Cut();
+  const new();
 }

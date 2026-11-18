@@ -45,77 +45,67 @@ void main() {
       expect(thinned.last.value, raw.last.value);
     });
 
-    test(
-      'a straight ramp thins to just its two endpoints (well within epsilon '
-      'everywhere)',
-      () {
-        final raw = [
-          for (var i = 0; i <= 100; i++)
-            AutomationBreakpoint(beat: i * 0.1, value: i / 100.0),
-        ];
-        final thinned = thinVolumeAutomation(raw: raw, tempoBpm: 120);
-        expect(thinned, hasLength(2));
-      },
-    );
+    test('a straight ramp thins to just its two endpoints (well within epsilon '
+        'everywhere)', () {
+      final raw = [
+        for (var i = 0; i <= 100; i++)
+          AutomationBreakpoint(beat: i * 0.1, value: i / 100.0),
+      ];
+      final thinned = thinVolumeAutomation(raw: raw, tempoBpm: 120);
+      expect(thinned, hasLength(2));
+    });
 
-    test(
-      'thinned breakpoints stay within epsilon of the raw curve at every '
-      'raw sample',
-      () {
-        const epsilon = 0.02;
-        final raw = [
-          for (var i = 0; i <= 300; i++)
-            AutomationBreakpoint(
-              beat: i * 0.02,
-              value: 0.5 + 0.45 * math.sin(i * 0.15),
-            ),
-        ];
-        final thinned = thinVolumeAutomation(
-          raw: raw,
-          tempoBpm: 120,
-          epsilon: epsilon,
-          // Density cap set generously high so this test isolates the
-          // epsilon guarantee specifically, not the density cap's.
-          maxBreakpointsPerSecond: 10000,
-        );
-        expect(thinned.length, lessThan(raw.length));
-        for (final sample in raw) {
-          final predicted = _interpolate(thinned, sample.beat);
-          expect((predicted - sample.value).abs(), lessThanOrEqualTo(epsilon));
-        }
-      },
-    );
+    test('thinned breakpoints stay within epsilon of the raw curve at every '
+        'raw sample', () {
+      const epsilon = 0.02;
+      final raw = [
+        for (var i = 0; i <= 300; i++)
+          AutomationBreakpoint(
+            beat: i * 0.02,
+            value: 0.5 + 0.45 * math.sin(i * 0.15),
+          ),
+      ];
+      final thinned = thinVolumeAutomation(
+        raw: raw,
+        tempoBpm: 120,
+        epsilon: epsilon,
+        // Density cap set generously high so this test isolates the
+        // epsilon guarantee specifically, not the density cap's.
+        maxBreakpointsPerSecond: 10000,
+      );
+      expect(thinned.length, lessThan(raw.length));
+      for (final sample in raw) {
+        final predicted = _interpolate(thinned, sample.beat);
+        expect((predicted - sample.value).abs(), lessThanOrEqualTo(epsilon));
+      }
+    });
 
-    test(
-      'density is bounded for a fast sweep even where every sample exceeds '
-      'epsilon (the density cap, not epsilon, is what bounds it here)',
-      () {
-        // A 1 kHz-equivalent-density fixture: far more samples per second
-        // than any reasonable epsilon-only simplification would keep sparse
-        // on its own, forcing the hard density cap to do the work.
-        final raw = [
-          for (var i = 0; i <= 1000; i++)
-            AutomationBreakpoint(
-              beat: i * 0.001,
-              value: 0.5 + 0.5 * math.sin(i * 3.0),
-            ),
-        ];
-        const tempoBpm = 120.0;
-        const maxPerSecond = 30.0;
-        final thinned = thinVolumeAutomation(
-          raw: raw,
-          tempoBpm: tempoBpm,
-          epsilon: 0.0001, // tiny — would keep nearly everything on its own
-        );
+    test('density is bounded for a fast sweep even where every sample exceeds '
+        'epsilon (the density cap, not epsilon, is what bounds it here)', () {
+      // A 1 kHz-equivalent-density fixture: far more samples per second
+      // than any reasonable epsilon-only simplification would keep sparse
+      // on its own, forcing the hard density cap to do the work.
+      final raw = [
+        for (var i = 0; i <= 1000; i++)
+          AutomationBreakpoint(
+            beat: i * 0.001,
+            value: 0.5 + 0.5 * math.sin(i * 3.0),
+          ),
+      ];
+      const tempoBpm = 120.0;
+      const maxPerSecond = 30.0;
+      final thinned = thinVolumeAutomation(
+        raw: raw,
+        tempoBpm: tempoBpm,
+        epsilon: 0.0001, // tiny — would keep nearly everything on its own
+      );
 
-        final totalSeconds =
-            (raw.last.beat - raw.first.beat) / (tempoBpm / 60.0);
-        final maxAllowed =
-            (totalSeconds * maxPerSecond).ceil() + 2; // +first/last slack
-        expect(thinned.length, lessThanOrEqualTo(maxAllowed));
-        expect(thinned.length, lessThan(raw.length));
-      },
-    );
+      final totalSeconds = (raw.last.beat - raw.first.beat) / (tempoBpm / 60.0);
+      final maxAllowed =
+          (totalSeconds * maxPerSecond).ceil() + 2; // +first/last slack
+      expect(thinned.length, lessThanOrEqualTo(maxAllowed));
+      expect(thinned.length, lessThan(raw.length));
+    });
 
     test(
       'a realistic volume ride stays within epsilon under the DEFAULT '

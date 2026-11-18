@@ -44,7 +44,7 @@ enum MidiConnectivity {
 /// state. Independent of the audio engine.
 class MidiConnection extends Equatable {
   /// Creates a [MidiConnection].
-  const MidiConnection({
+  const new({
     this.devices = const [],
     this.open = const {},
     this.openErrors = const {},

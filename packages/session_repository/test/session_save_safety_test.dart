@@ -48,11 +48,7 @@ void main() {
   /// save.
   Future<Map<String, List<int>>> savedOldThenEdited() async {
     engine.seedTrack(0, Float32List.fromList([1, 1, 1, 1]));
-    await repo().save(
-      bundle(),
-      settings: const SessionSettings(),
-      name: 'Old',
-    );
+    await repo().save(bundle(), settings: const SessionSettings(), name: 'Old');
     final before = snapshotOf(bundle());
     engine.seedTrack(0, Float32List.fromList([2, 2, 2, 2, 2, 2, 2, 2]));
     return before;

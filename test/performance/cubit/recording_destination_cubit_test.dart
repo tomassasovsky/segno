@@ -73,9 +73,7 @@ void main() {
 
     test('a drive that cannot take a recording is not chosen', () async {
       await build(
-        volumes: [
-          usbRecord(1, status: RemovableVolumeRecordStatus.readOnly),
-        ],
+        volumes: [usbRecord(1, status: RemovableVolumeRecordStatus.readOnly)],
       );
 
       await cubit.choose(usb1);

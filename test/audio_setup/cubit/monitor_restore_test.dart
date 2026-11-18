@@ -70,13 +70,13 @@ class _RestoreStore extends FakeKeyValueStore {
     if (refuseRead && key == 'monitor_input_mode.0') {
       throw StateError('saved monitor unavailable');
     }
-    return super.getString(key);
+    return await super.getString(key);
   }
 }
 
 /// Gates the existing transaction stages without changing their effects.
 class _RestoreRepository extends LooperRepository {
-  _RestoreRepository(FakeAudioEngine engine)
+  new(FakeAudioEngine engine)
     : super(engine: engine, ticker: const Stream<void>.empty());
 
   int fxCalls = 0;
@@ -296,10 +296,7 @@ void main() {
           await fx.flush();
           await expectRestored(cubit, muted: true);
         },
-        errors: () => [
-          isA<StateError>(),
-          if (!shared) isA<StateError>(),
-        ],
+        errors: () => [isA<StateError>(), if (!shared) isA<StateError>()],
       );
     }
 

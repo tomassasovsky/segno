@@ -12,6 +12,7 @@ import 'package:looper_repository/src/models/fx_address.dart';
 import 'package:looper_repository/src/models/fx_chain_envelope.dart';
 import 'package:looper_repository/src/models/fx_chain_group.dart';
 import 'package:looper_repository/src/models/fx_cost.dart';
+import 'package:looper_repository/src/models/fx_reach.dart';
 import 'package:looper_repository/src/models/fx_slot_ids.dart';
 import 'package:looper_repository/src/models/input_monitor.dart';
 import 'package:looper_repository/src/models/input_setup.dart';
@@ -55,6 +56,7 @@ import 'package:segno_engine/segno_engine.dart'
         PluginRef,
         TrackEffect,
         TrackEffectType,
+        encodeTrackEffects,
         fxPreCount;
 
 /// The history action the player requested.
@@ -69,7 +71,7 @@ enum RecoveryAction {
 /// A recovery refused before changing the current session.
 class RecoveryRefusal {
   /// Creates a refusal for the requested [action].
-  const RecoveryRefusal({required this.action, required this.result});
+  const new({required this.action, required this.result});
 
   /// The requested direction through history.
   final RecoveryAction action;
@@ -79,7 +81,7 @@ class RecoveryRefusal {
 }
 
 class _TimingIntent {
-  _TimingIntent(
+  new(
     this.defaultTiming,
     this.rememberedDivision,
     Map<int, RecordTiming> overrides,
@@ -90,7 +92,7 @@ class _TimingIntent {
 }
 
 class _LengthIntent {
-  _LengthIntent(this.defaultBars, Map<int, int> overrides, this.mode)
+  new(this.defaultBars, Map<int, int> overrides, this.mode)
     : overrides = Map.unmodifiable(overrides);
   final int defaultBars;
   final Map<int, int> overrides;
@@ -134,32 +136,32 @@ AudioEngine createNativeAudioEngine() => NativeAudioEngine();
 /// The Click stage's linear gain ceiling; unity is half of its travel.
 const double kMaxClickGain = 2;
 
+/// Where the rig's history stood at the last undoable clear (#1707): the
+/// newest edit then filed on any track ([TrackSnapshot.historySeq]), the
+/// tracks that were empty or recording a first take, and the tracks a Clear
+/// all was refused on.
+typedef _ClearMark = ({int seq, Set<int> empty, Set<int> refused});
+
 /// Owns the [AudioEngine] and is the single source of looper truth.
 ///
 /// Polls the engine snapshot on a ticker, projects it into a [LooperState], and
 /// publishes distinct states on [looperState]. Looper commands are forwarded to
 /// the engine. The bloc layer depends on this repository, never on the engine.
 class LooperRepository {
-  /// Creates a [LooperRepository] driving [engine].
+  /// Creates a [LooperRepository] driving [_engine].
   ///
-  /// [ticker] drives snapshot polling; when omitted a periodic stream at
-  /// [pollInterval] (~60 Hz) is used. Injecting a ticker makes tests
+  /// [_ticker] drives snapshot polling; when omitted a periodic stream at
+  /// [_pollInterval] (~60 Hz) is used. Injecting a ticker makes tests
   /// deterministic.
-  LooperRepository({
-    required AudioEngine engine,
-    Stream<void>? ticker,
-    Duration pollInterval = const Duration(milliseconds: 16),
-    Stream<void>? reconnectTicker,
-    Duration reconnectInterval = const Duration(seconds: 1),
-    Duration renderPollInterval = const Duration(milliseconds: 16),
-    Duration renderFreezeTimeout = const Duration(seconds: 2),
-  }) : _engine = engine,
-       _ticker = ticker,
-       _pollInterval = pollInterval,
-       _reconnectTicker = reconnectTicker,
-       _reconnectInterval = reconnectInterval,
-       _renderPollInterval = renderPollInterval,
-       _renderFreezeTimeout = renderFreezeTimeout {
+  new({
+    required this._engine,
+    this._ticker,
+    this._pollInterval = const Duration(milliseconds: 16),
+    this._reconnectTicker,
+    this._reconnectInterval = const Duration(seconds: 1),
+    this._renderPollInterval = const Duration(milliseconds: 16),
+    this._renderFreezeTimeout = const Duration(seconds: 2),
+  }) {
     _controller = StreamController<LooperState>.broadcast(
       onListen: _startPolling,
       onCancel: _stopPolling,
@@ -248,11 +250,7 @@ class LooperRepository {
       outputPeaks: s.outputPeaks,
       tracks: [
         for (final track in s.tracks)
-          TrackLevels(
-            peak: track.peak,
-            peakL: track.peakL,
-            peakR: track.peakR,
-          ),
+          TrackLevels(peak: track.peak, peakL: track.peakL, peakR: track.peakR),
       ],
     );
     if (next == _meters) return;
@@ -455,10 +453,8 @@ class LooperRepository {
     _InheritIntent(const {}, defaultValue: false),
     send: (intent) => _sendInherit(
       intent,
-      published: (s) => (
-        s.followTempo,
-        [for (final t in s.tracks) t.followTempoOverride],
-      ),
+      published: (s) =>
+          (s.followTempo, [for (final t in s.tracks) t.followTempoOverride]),
       post: (channel, value) =>
           _engine.setFollowTempo(channel: channel, follow: value),
     ),
@@ -469,10 +465,8 @@ class LooperRepository {
     _InheritIntent(const {}, defaultValue: PitchMode.unchanged),
     send: (intent) => _sendInherit(
       intent,
-      published: (s) => (
-        s.pitchMode,
-        [for (final t in s.tracks) t.pitchModeOverride],
-      ),
+      published: (s) =>
+          (s.pitchMode, [for (final t in s.tracks) t.pitchModeOverride]),
       post: (channel, value) =>
           _engine.setPitchMode(channel: channel, mode: value),
     ),
@@ -866,6 +860,9 @@ class LooperRepository {
     _laneBalance
       ..clear()
       ..addAll(value.balances);
+    // A lane the accepted lane count drops takes its take's source with it,
+    // as it takes its image: regrown, it has never recorded.
+    _laneSource.removeWhere((key, _) => key.$2 >= (value.counts[key.$1] ?? 1));
     _monitorVolume
       ..clear()
       ..addAll(value.monitorLevels);
@@ -1139,7 +1136,7 @@ class LooperRepository {
     _historyFx.clear();
     _restoreFxStaged.clear();
     _pendingClearUndo.clear();
-    _pendingClearAllUndo = const {};
+    _pendingClearGroupUndo = const {};
     return keys;
   }
 
@@ -1166,8 +1163,8 @@ class LooperRepository {
     for (final channel in channels) {
       _restoreFxStaged.remove(channel);
       _pendingClearUndo.remove(channel);
-      if (_pendingClearAllUndo.contains(channel)) {
-        _pendingClearAllUndo = const {};
+      if (_pendingClearGroupUndo.contains(channel)) {
+        _pendingClearGroupUndo = const {};
       }
     }
     return keys;
@@ -1306,7 +1303,16 @@ class LooperRepository {
     // Reading it afterwards can mistake an in-flight join for a cancellation.
     final commandsSettled = _engine.commandsSettled;
     final snapshot = _engine.snapshot();
+    _fxEngineDraining = _fxDrainingIds(snapshot.fxDraining);
+    _noteFxSwitchOffs(snapshot);
     _noticeLengthHistoryRefusals(snapshot);
+    final heardBefore = _laneHeard;
+    _laneHeard = _heardLanesOf(snapshot);
+    // A take that came back with its image (an Undo of a Clear, a recall)
+    // charges nothing again, so what its return held comes back (#1713).
+    if (_fxHeld.isNotEmpty && _laneHeard.difference(heardBefore).isNotEmpty) {
+      _admitRig(release: true);
+    }
     for (final entry in _pendingImages.entries.toList()) {
       final ch = entry.key;
       if (ch >= snapshot.tracks.length) continue;
@@ -1315,33 +1321,38 @@ class LooperRepository {
         final pending = entry.value;
         _laneBasePan.addAll(entry.value.images);
         _laneBalance.addAll(entry.value.balances);
+        _laneSource.addAll(entry.value.sources);
         // A published take changes only source metadata. A concurrently
         // accepted fader edit still owns its independent live level/offset.
         _mix.pending?.images.addAll(entry.value.images);
         _mix.pending?.balances.addAll(entry.value.balances);
         if (pending.clearOnCommit) {
           if (_pendingClearUndo.remove(ch)) _clearRestore.remove(ch);
-          if (_pendingClearAllUndo.contains(ch)) {
-            _pendingClearAllUndo = const {};
+          if (_pendingClearGroupUndo.contains(ch)) {
+            _pendingClearGroupUndo = const {};
           }
         }
         _forgetLaneMutes(ch);
-        final held = <FxAddress>[];
+        // A fresh take's lanes recorded dry hold no image: what an earlier
+        // take was printed with is not theirs.
+        if (pending.clearOnCommit) {
+          _lanePrinted.removeWhere(
+            (key, _) => key.$1 == ch && !pending.inherited.containsKey(key.$2),
+          );
+        }
         for (final inherited in pending.inherited.entries) {
           final lane = inherited.key;
           final effects = inherited.value;
           final key = (ch, lane);
-          final address = FxAddress(stage: FxStage.loop, index: ch, lane: lane);
-          if (pending.held && effects.isNotEmpty) {
-            _fxHeld.add(address);
-            held.add(address);
-          } else {
-            _fxHeld.remove(address);
-          }
+          _fxHeld.remove(FxAddress(stage: FxStage.loop, index: ch, lane: lane));
+          // The take plays what it was heard as while the lane keeps the
+          // chain it was recorded through.
           if (effects.isEmpty) {
+            _lanePrinted.remove(key);
             _laneEffects.remove(key);
             _laneChainMeta.remove(key);
           } else {
+            _lanePrinted[key] = effects;
             _laneEffects[key] = effects;
             _laneChainMeta[key] = List<int>.unmodifiable([
               pending.inheritedInputs[lane],
@@ -1358,16 +1369,11 @@ class LooperRepository {
           }
           onLaneChainChanged?.call(ch, lane);
         }
-        if (held.isNotEmpty) {
-          // One notice per cause: while the standing notice is up the take's
-          // chains join it; otherwise the toast says so (R1).
-          _pruneFxHoldNotice();
-          if (_fxHoldNotice.isNotEmpty) {
-            _fxHoldNotice = [..._fxHoldNotice, ...held];
-          } else {
-            _fxTakeHeld.add(ch);
-          }
-        }
+        // What a take runs live: its chain where the engine could not give
+        // it an image (#1713), its Post entries over the image where it did
+        // (#1741). When that does not fit, its own chains are switched off,
+        // as a chain the rig cannot run is (R2), never another track's.
+        _holdUnheardTake(ch, pending);
         _pendingImages.remove(ch);
         _reproject();
       } else if (commandsSettled &&
@@ -1376,7 +1382,102 @@ class LooperRepository {
         _pendingImages.remove(ch);
       }
     }
+    _syncLaneSources();
     return snapshot;
+  }
+
+  void _holdUnheardTake(int channel, _PendingImage pending) {
+    final rate = _fxRate;
+    final period = _fxPeriod;
+    final budget = fxBudgetNs(rate, period: period);
+    for (final MapEntry(key: lane, value: effects)
+        in pending.inherited.entries) {
+      // A lane playing its image still runs its Post entries (#1741).
+      if (effects.isEmpty) continue;
+      if (_laneHeard.contains((channel, lane)) &&
+          fxPreCount(effects) == effects.length) {
+        continue;
+      }
+      if (_fxLoadAt(rate, period) <= budget) return;
+      final at = FxAddress(stage: FxStage.loop, index: channel, lane: lane);
+      _fxHeld.add(at);
+      _pushChainSwitch(at, on: false);
+      if (!_fxHoldNotice.contains(at)) _fxHoldNotice = [..._fxHoldNotice, at];
+    }
+  }
+
+  static Set<(int, int)> _heardLanesOf(EngineSnapshot snapshot) => {
+    for (var t = 0; t < snapshot.tracks.length; t++)
+      for (var l = 0; l < snapshot.tracks[t].lanes.length; l++)
+        if (snapshot.tracks[t].lanes[l].heard) (t, l),
+  };
+
+  /// What lane [key] plays (#1713): its heard image while its chain is the
+  /// one its take was recorded through, or while that chain is switched off
+  /// for not fitting (R2: an edited take falls back to its image, never to
+  /// dry); its clean take through its chain once the chain was edited.
+  LaneSource _laneSourceOf((int, int) key) {
+    // A chain the player switched off plays dry, held or not.
+    final on = _laneChainEnabled[key] ?? true;
+    final held = _fxHeld.contains(
+      FxAddress(stage: FxStage.loop, index: key.$1, lane: key.$2),
+    );
+    return (on && held) || _printMatches(key, _laneEffects[key] ?? const [])
+        ? LaneSource.heard
+        : LaneSource.clean;
+  }
+
+  /// Whether [chain] on lane [key], with the lane's chain switch, is the
+  /// chain its take was recorded through. Compared as the chains persist, so
+  /// transient state (a plugin's parameter list, a loading flag) does not
+  /// count as an edit.
+  bool _printMatches((int, int) key, List<TrackEffect> chain, {bool? chainOn}) {
+    final printed = _lanePrinted[key] ?? const <TrackEffect>[];
+    if (!(chainOn ?? _laneChainEnabled[key] ?? true)) return false;
+    return identical(chain, printed) ||
+        _preWireOf(chain) == _preWireOf(printed);
+  }
+
+  /// [chain]'s Pre run as it persists, kept per chain instance: chains are
+  /// replaced, never changed in place, so each is encoded once. The image is
+  /// what the Pre run made (#1741): the Post entries run live over it, so
+  /// an edit of one is not a re-amp.
+  String _preWireOf(List<TrackEffect> chain) => _chainWire[chain] ??=
+      encodeTrackEffects(chain.sublist(0, fxPreCount(chain)));
+  final Expando<String> _chainWire = Expando();
+
+  /// Gives the engine every lane's source ([_laneSourceOf]) that changed
+  /// since it was last sent. A lane without a heard image plays its clean
+  /// take whatever its source says, so only the lanes holding one are sent.
+  void _syncLaneSources() {
+    if (!_intendRunning) return;
+    for (final key in _laneHeard) {
+      var source = _laneSourceOf(key);
+      if (_laneSourceSent[key] == source) continue;
+      // A re-amp the Effects page did not weigh (a parameter from the bloc,
+      // a control's press) that does not fit is held, as R2 holds a chain:
+      // the take plays its image, without its Post entries while the chain
+      // is off. The standing notice names it, as it names every chain R2
+      // holds: nothing is switched off unsaid. A chain the player switched
+      // off plays dry and charges what an off chain does, so it is never
+      // held here.
+      if (source == LaneSource.clean &&
+          (_laneChainEnabled[key] ?? true) &&
+          fxRoomNs < 0) {
+        final at = FxAddress(stage: FxStage.loop, index: key.$1, lane: key.$2);
+        _fxHeld.add(at);
+        _pushChainSwitch(at, on: false);
+        if (!_fxHoldNotice.contains(at)) _fxHoldNotice = [..._fxHoldNotice, at];
+        source = _laneSourceOf(key);
+        if (_laneSourceSent[key] == source) continue;
+      }
+      final result = _engine.setLaneSource(
+        channel: key.$1,
+        lane: key.$2,
+        source: source,
+      );
+      if (result.isOk) _laneSourceSent[key] = source;
+    }
   }
 
   late final _timing = SettingsReceipt<_TimingIntent>(
@@ -1620,9 +1721,8 @@ class LooperRepository {
         // whether the callback applied it, so it reads as refused.
         final unchanged =
             intent.mode == priorMode &&
-            [
-              for (var c = 0; c < 8; c++) c,
-            ].every((c) => c < priorBars.length && bars[c] == priorBars[c]);
+            [for (var c = 0; c < 8; c++) c]
+                .every((c) => c < priorBars.length && bars[c] == priorBars[c]);
         final capturing = snapshot.tracks.any(
           (t) =>
               t.state == TrackState.recording ||
@@ -1753,6 +1853,11 @@ class LooperRepository {
   /// take recorded. Absent entries are centre and unity.
   final Map<(int, int), double> _laneBasePan = {};
   final Map<(int, int), double> _laneBalance = {};
+
+  /// The input each lane's take was captured from, fixed with its image
+  /// ([_laneBasePan]) and saved with the session. Labels only: it changes
+  /// nothing the engine plays, so it stays out of the mix intent.
+  final Map<(int, int), int> _laneSource = {};
   final Map<int, double> _trackPan = {};
   final Map<int, bool> _trackSolo = {};
 
@@ -1777,6 +1882,23 @@ class LooperRepository {
   /// input order. Absent => never inherited. Repository-owned meta the engine
   /// never sees; rides the persisted chain envelope.
   final Map<(int, int), List<int>> _laneChainMeta = {};
+
+  // ---- What a take was heard as (#1713) ----
+
+  /// The lanes whose live take holds a heard image (the input chain's output
+  /// recorded with the clean take), from the last snapshot.
+  Set<(int, int)> _laneHeard = const {};
+
+  /// The chain each lane's take was recorded through: the lane plays its
+  /// heard image while its chain is this one, and its clean take through its
+  /// chain once the chain was edited (a re-amp). Absent is an empty chain
+  /// (an image attached to a take recorded dry). Kept through Clear, so
+  /// Undo's restore finds it.
+  final Map<(int, int), List<TrackEffect>> _lanePrinted = {};
+
+  /// The source last given to the engine per lane; cleared when an engine
+  /// starts, so every lane's is sent again.
+  final Map<(int, int), LaneSource> _laneSourceSent = {};
 
   /// The Track-stage (per-track stereo bus) chains and the output destination
   /// chain (FX v3 part 1b), remembered and re-applied on every (re)start,
@@ -2138,11 +2260,8 @@ class LooperRepository {
   Future<EngineResult> setInterfacePhantomPower(
     int phantomSwitch, {
     required bool on,
-  }) => _setInterfaceSwitch(
-    InterfaceControl.phantom,
-    phantomSwitch,
-    on ? 1 : 0,
-  );
+  }) =>
+      _setInterfaceSwitch(InterfaceControl.phantom, phantomSwitch, on ? 1 : 0);
 
   /// Turns a Focusrite unit's setup (MSD) mode off. The unit shows its
   /// controls once it is power-cycled.
@@ -2156,7 +2275,7 @@ class LooperRepository {
   ) async {
     final id = _interfaceCaptureId;
     if (id == null) return EngineResult.notRunning;
-    return _engine.setInterfaceInput(
+    return await _engine.setInterfaceInput(
       id,
       control: control,
       index: index,
@@ -2424,8 +2543,8 @@ class LooperRepository {
     _settleLatencyWait(snapshot);
     _settlePendingClearUndos();
     // Remember retired restore points even when no Undo is waiting. A later
-    // individual clear must not re-form an obsolete clear-all group.
-    _intactClearAllGroup();
+    // clear must not re-form an obsolete group.
+    _intactClearGroup();
     final next = _project(snapshot);
     _rememberLooperMode(next, snapshot.looperMode);
     // Settlement also reaches persistence when the visible state is unchanged.
@@ -2588,7 +2707,12 @@ class LooperRepository {
     mixGeneration: _mixGeneration,
     // As last settled: [undo] and the poll settle the group just before
     // they project.
-    clearAllUndoable: _clearAllGroup.isNotEmpty || _clearAllPending.isNotEmpty,
+    undoableClear: _clearGroup.isEmpty && _clearGroupPending.isEmpty
+        ? UndoableClear.none
+        : _clearGroupIsAll
+        ? UndoableClear.all
+        : UndoableClear.track,
+    editedSinceClear: _editedSinceClear(s),
     tuner: TunerReading(
       hz: s.tunerHz,
       confidence: s.tunerConfidence,
@@ -2694,6 +2818,12 @@ class LooperRepository {
                     volume: _laneVolume[(i, l)] ?? 1,
                     pan: s.tracks[i].lanes[l].pan,
                     imagePan: _laneBasePan[(i, l)] ?? 0,
+                    // A take whose image is still publishing already came
+                    // from its input; a save taken now must not lose it.
+                    recordedInput:
+                        _pendingImages[i]?.sources[(i, l)] ??
+                        _laneSource[(i, l)] ??
+                        -1,
                     balance: _laneBalance[(i, l)] ?? 1,
                     muted: s.tracks[i].lanes[l].muted,
                     lengthFrames: s.tracks[i].lanes[l].lengthFrames,
@@ -3152,6 +3282,8 @@ class LooperRepository {
       _offsetOwed = owesOffset;
       _refusedTarget = null;
       _intendRunning = true;
+      // A source for each image this engine holds is sent again (#1713).
+      _laneSourceSent.clear();
       // R2 (#1515): what the rig cannot run comes up held off, before any
       // chain is replayed.
       _admitRig();
@@ -3814,6 +3946,7 @@ class LooperRepository {
     }
     final images = <(int, int), double>{};
     final balances = <(int, int), double>{};
+    final sources = <(int, int), int>{};
     final source = <int, StereoMix>{};
     for (var lane = 0; lane < laneCount(channel); lane++) {
       final key = (channel, lane);
@@ -3821,10 +3954,15 @@ class LooperRepository {
       final input = _laneInput[key] ?? lane;
       images[key] = _inputSetup.effectivePanOf(input);
       balances[key] = _inputSetup.balanceGainOf(input);
+      sources[key] = input;
       source[lane] = (gain: balances[key]!, pan: images[key]!);
     }
     if (_pendingImages.containsKey(channel)) return EngineResult.notReady;
     final recipes = <int, FxRecipe>{};
+    // The lanes recording through an input chain record it heard (#1713),
+    // even when no entry of it could be copied onto the lane (a plugin whose
+    // state did not capture): the image does not need the copy.
+    final heardLanes = <int>{};
     final inherited = <int, List<TrackEffect>>{};
     final inheritedInputs = <int, int>{};
     final inheritedHandles = <int, Map<String, PluginSlotHandle>>{};
@@ -3848,6 +3986,9 @@ class LooperRepository {
             }
             continue;
           }
+          // What a take records is the chain's Pre run (#1741): a chain
+          // with none is recorded clean, its Post entries live on the lane.
+          if (fxPreCount(chain) > 0) heardLanes.add(lane);
           final captured = <TrackEffect>[];
           for (var index = 0; index < chain.length; index++) {
             final fx = _capturePluginForLane(chain[index], input, index);
@@ -3866,7 +4007,7 @@ class LooperRepository {
                 FxRecipeSlot(
                   type: trackEffectTypeToEngine(fx.type),
                   params: fx.params,
-                  enabled: fx.enabled,
+                  enabled: fx.effectiveEnabled,
                   channels: fxChannelsToEngine(fx.channels),
                   rack: edges[index],
                   path: paths[index],
@@ -3889,7 +4030,7 @@ class LooperRepository {
                 slots.add(
                   FxRecipeSlot(
                     type: trackEffectTypeToEngine(TrackEffectType.none),
-                    enabled: plugin.enabled,
+                    enabled: plugin.effectiveEnabled,
                     channels: fxChannelsToEngine(plugin.channels),
                     rack: edges[index],
                     instance: fxInstanceId(plugin.slotId),
@@ -3909,7 +4050,7 @@ class LooperRepository {
                 FxRecipeSlot(
                   type: trackEffectTypeToEngine(TrackEffectType.none),
                   plugin: handle,
-                  enabled: plugin.enabled,
+                  enabled: plugin.effectiveEnabled,
                   channels: fxChannelsToEngine(plugin.channels),
                   rack: edges[index],
                   instance: fxInstanceId(plugin.slotId),
@@ -3930,22 +4071,47 @@ class LooperRepository {
       detached.forEach(_engine.discardPreparedPlugin);
       return preparationFailure;
     }
-    // R1 (#1515): a take always records and keeps its inherited chains by
-    // value; when they would not fit, they come in switched off.
-    final takeHeld = _takeOverBudget(channel, inherited);
-    if (takeHeld) {
-      for (final MapEntry(:key, :value) in recipes.entries.toList()) {
-        recipes[key] = FxRecipe(
-          slots: value.slots,
-          preCount: value.preCount,
-          enabled: false,
-        );
+    // A take records what the player heard through each lane's input chain
+    // beside its clean take, and plays that (#1713): its effects never come
+    // in switched off for the budget, since a lane playing its image runs no
+    // chain. The lane keeps the chain by value, to re-amp the clean take
+    // when it is edited.
+    // An overdub over a take recorded dry, on a lane with no chain of its
+    // own, records through the input's effects into an image made from the
+    // take's clean signal. A take with a chain of its own keeps playing
+    // through it, and its overdub records clean, as before.
+    if (state != TrackState.empty) {
+      for (var lane = 0; lane < laneCount(channel); lane++) {
+        final key = (channel, lane);
+        // The lane has no chain, so the image holds the input's whole chain,
+        // Post entries included (#1741).
+        if (_laneHeard.contains(key) ||
+            (_laneEffects[key]?.isNotEmpty ?? false) ||
+            _inheritableChain(channel, lane) == null) {
+          continue;
+        }
+        final attached = _engine.heardAttach(channel: channel, lane: lane);
+        // Without the image the overdub would play back dry: while the
+        // engine cannot attach one yet the press is refused, as while a
+        // recipe is in flight. A lane with no take has nothing to attach to.
+        if (attached == EngineResult.notReady) {
+          // Owed one retry, as a fresh capture's refusal is; a retry that
+          // is still refused says so on the track.
+          if (!_retryingRecord) _recordRetry = _RecordRetry(channel);
+          return attached;
+        }
+        if (attached.isOk) _lanePrinted.remove(key);
       }
     }
     _imageRevision = (_imageRevision + 1) & 0xffffffff;
     if (_imageRevision == 0) _imageRevision = 1;
     final result = _engine.recordWithImage(
-      RecordImage(revision: _imageRevision, lanes: source, laneFx: recipes),
+      RecordImage(
+        revision: _imageRevision,
+        lanes: source,
+        laneFx: recipes,
+        heardLanes: heardLanes,
+      ),
       channel: channel,
     );
     if (result.isOk) {
@@ -3953,6 +4119,7 @@ class LooperRepository {
         _imageRevision,
         images,
         balances,
+        sources,
         {
           for (var lane = 0; lane < laneCount(channel); lane++)
             _laneInput[(channel, lane)] ?? lane,
@@ -3961,7 +4128,6 @@ class LooperRepository {
         inheritedInputs,
         inheritedHandles,
         clearOnCommit: state == TrackState.empty,
-        held: takeHeld,
       );
       _reproject();
     } else {
@@ -4091,6 +4257,17 @@ class LooperRepository {
   EngineResult stopTrack({int channel = 0}) =>
       _engine.stopTrack(channel: channel);
 
+  /// The Rec-mode Stop's mute (#1773, [AudioEngine.spareTail]): the next
+  /// mute of track [channel], landing on it stopped, lets the Post tail its
+  /// Stop set ringing drain. It reserves room for the [following] commands
+  /// the caller sends next and refuses ([EngineResult.notReady]) when they
+  /// would not all fit. Nothing to remember across a restart: the engine
+  /// drops it when the track runs again.
+  EngineResult spareTail({int channel = 0, int following = 0}) {
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.spareTail(channel: channel, following: following);
+  }
+
   /// Resumes playback of track [channel].
   EngineResult play({int channel = 0}) {
     if (_transportReserved) return EngineResult.notReady;
@@ -4120,15 +4297,19 @@ class LooperRepository {
   ///
   /// This is the USER's clear. [applySession] uses [_clearDestructive]
   /// instead — loading a session must never be undoable.
+  ///
+  /// The clear is the last undoable clear, as a [clearAll] is (#1707): while
+  /// it stands, an Undo on another track with nothing newer of its own
+  /// restores it ([LooperState.undoRestoresClear]), so a hold-clear that left
+  /// the selection elsewhere comes back from the Undo pedal.
   EngineResult clear({int channel = 0}) {
     if (_transportReserved) return EngineResult.notReady;
     final result = _clearTrack(channel);
-    if (result.isOk) {
-      // A refused native clear leaves the prior restore/group ownership.
-      _clearAllGroup = const {};
-      _clearAllPending = const {};
-      _pendingClearAllUndo = const {};
-    }
+    // A refused native clear leaves the prior restore/group ownership, and
+    // so does a clear with nothing to give back (an empty track): nothing
+    // was erased that an Undo could restore, as with an empty Clear all
+    // (#1642).
+    if (result.isOk) _formClearGroup([channel], all: false);
     return result;
   }
 
@@ -4176,17 +4357,40 @@ class LooperRepository {
   /// is erased, so the last group stays undoable (#1642).
   EngineResult clearAll(Iterable<int> channels) {
     if (_transportReserved) return EngineResult.notReady;
-    _pendingClearAllUndo = const {};
+    _pendingClearGroupUndo = const {};
     if (channels.isEmpty) return EngineResult.ok;
-    final group = <int>{};
-    final pending = <int>{};
+    final cleared = <int>[];
+    final refused = <int>{};
     var result = EngineResult.ok;
     for (final channel in channels) {
       final rc = _clearTrack(channel);
       if (!rc.isOk) {
         result = rc;
+        refused.add(channel);
         continue;
       }
+      cleared.add(channel);
+    }
+    _formClearGroup(cleared, all: true, refused: refused);
+    return result;
+  }
+
+  /// Makes [cleared] the last undoable clear: one track's ([all] false) or a
+  /// Clear all's. It replaces the clear before it, and its Undo is offered
+  /// from every track until something newer retires it. A track's clear
+  /// that leaves nothing to restore keeps the clear before it. A Clear all
+  /// always replaces it, and its own redo group too; a track's clear leaves
+  /// the redo group of an undone clear to its members' Redo, as before.
+  /// [refused] are the tracks a Clear all could not clear: they keep their
+  /// take, and their Undo stays their own.
+  void _formClearGroup(
+    Iterable<int> cleared, {
+    required bool all,
+    Set<int> refused = const {},
+  }) {
+    final group = <int>{};
+    final pending = <int>{};
+    for (final channel in cleared) {
       // Members are the takes the clear can give back, by the engine's own
       // account: a restore point filed now (a playing or stopped take), or
       // one still to be filed (a capture the clear froze — confirmed once
@@ -4199,25 +4403,55 @@ class LooperRepository {
         pending.add(channel);
       }
     }
-    _clearAllGroup = group;
-    _clearAllPending = pending;
-    _clearAllRedoGroup = const {};
-    return result;
+    if (!all && group.isEmpty && pending.isEmpty) return;
+    // A track's clear whose only point is still to be filed may turn out to
+    // have frozen a capture that held nothing: keep the clear before it
+    // until the engine says, so that one is not lost ([_intactClearGroup]).
+    _clearFallback = !all && group.isEmpty
+        ? (
+            group: _clearGroup,
+            pending: _clearGroupPending,
+            all: _clearGroupIsAll,
+            mark: _clearMark,
+          )
+        : null;
+    _clearGroup = group;
+    _clearGroupPending = pending;
+    _clearGroupIsAll = all;
+    if (all) _clearRedoGroup = const {};
+    _pendingClearGroupUndo = const {};
+    _clearMark = _markClear(_engine.snapshot(), refused: refused);
   }
 
-  /// The channels the last [clearAll] erased with a restore point.
-  Set<int> _clearAllGroup = const {};
+  /// The channels the last undoable clear ([clear] or [clearAll]) erased
+  /// with a restore point.
+  Set<int> _clearGroup = const {};
 
-  /// Frozen captures of the last [clearAll] whose restore point is still to
-  /// be filed: promoted to [_clearAllGroup] when it lands, dropped when the
+  /// Frozen captures of the last undoable clear whose restore point is still
+  /// to be filed: promoted to [_clearGroup] when it lands, dropped when the
   /// capture turned out to hold nothing.
-  Set<int> _clearAllPending = const {};
+  Set<int> _clearGroupPending = const {};
 
-  /// The channels an undone [clearAll] restored.
-  Set<int> _clearAllRedoGroup = const {};
+  /// Whether the last undoable clear is a [clearAll].
+  bool _clearGroupIsAll = false;
+
+  /// The rig's history as the last undoable clear left it, which tells the
+  /// tracks with an edit of their own since ([LooperState.editedSinceClear]).
+  _ClearMark _clearMark = (seq: 0, empty: const {}, refused: const {});
+
+  /// The clear before a track's clear whose point is still to be filed: the
+  /// last clear again if that point never lands, dropped once it does.
+  ({Set<int> group, Set<int> pending, bool all, _ClearMark mark})?
+  _clearFallback;
+
+  /// The channels an undone [clearAll] restored, and the tracks it was
+  /// refused on. A track's undone clear needs no group: its Redo is the
+  /// track's own, and forms the clear again ([redo]).
+  Set<int> _clearRedoGroup = const {};
+  Set<int> _clearRedoRefused = const {};
 
   /// A grouped undo waits for every frozen point before changing any member.
-  Set<int> _pendingClearAllUndo = const {};
+  Set<int> _pendingClearGroupUndo = const {};
 
   /// Tracks whose undo waits for the clear's frozen restore point to land:
   /// tapped at a frozen clear, restored on the first poll after the engine
@@ -4231,13 +4465,13 @@ class LooperRepository {
   /// leftover chain (the rule [_dropTakeState] enforces at the clear).
   void _settlePendingClearUndos() {
     _drainHistoryFx();
-    if (_pendingClearAllUndo.isNotEmpty &&
-        !_pendingClearAllUndo.any(
+    if (_pendingClearGroupUndo.isNotEmpty &&
+        !_pendingClearGroupUndo.any(
           (channel) => _engine.clearRestorePending(channel: channel),
         )) {
-      final requested = _pendingClearAllUndo;
-      _pendingClearAllUndo = const {};
-      final group = _intactClearAllGroup();
+      final requested = _pendingClearGroupUndo;
+      _pendingClearGroupUndo = const {};
+      final group = _intactClearGroup();
       if (group.isNotEmpty && requested.containsAll(group)) {
         _undoClearGroup(group);
       }
@@ -4252,56 +4486,116 @@ class LooperRepository {
         _clearRestore.remove(channel);
         _restoreFxStaged.remove(channel);
         // A void member has no re-clear to offer the restored group.
-        _clearAllRedoGroup = _clearAllRedoGroup.difference({channel});
+        _clearRedoGroup = _clearRedoGroup.difference({channel});
       }
     }
   }
 
-  /// The clear-all group while every member still restores a cleared take;
-  /// empty while one does not.
+  static _ClearMark _markClear(
+    EngineSnapshot s, {
+    Set<int> refused = const {},
+  }) => (
+    seq: s.tracks.fold(
+      0,
+      (newest, t) => t.historySeq > newest ? t.historySeq : newest,
+    ),
+    // A first take still recording files no undo entry when it ends, so it
+    // counts with the empty tracks: a take there later is newer.
+    empty: {
+      for (var channel = 0; channel < s.tracks.length; channel++)
+        if (s.tracks[channel].state == TrackState.empty ||
+            s.tracks[channel].state == TrackState.recording)
+          channel,
+    },
+    refused: refused,
+  );
+
+  /// The tracks with an edit of their own since the last undoable clear;
+  /// empty while there is none. A track has one when its next Undo takes
+  /// back an edit filed after the clear (the engine numbers every layer,
+  /// peel, length edit, bounce and redo in one order), when it was empty or
+  /// recording its first take at the clear and has a take now, or when the
+  /// Clear all was refused on it.
+  /// The cleared tracks are left out: a fresh take on one retires the whole
+  /// clear instead ([_intactClearGroup]).
+  Set<int> _editedSinceClear(EngineSnapshot s) {
+    if (_clearGroup.isEmpty && _clearGroupPending.isEmpty) return const {};
+    final mark = _clearMark;
+    return {
+      for (var channel = 0; channel < s.tracks.length; channel++)
+        if (!_clearGroup.contains(channel) &&
+            !_clearGroupPending.contains(channel) &&
+            (s.tracks[channel].historySeq > mark.seq ||
+                (mark.empty.contains(channel) &&
+                    s.tracks[channel].state != TrackState.empty) ||
+                mark.refused.contains(channel)))
+          channel,
+    };
+  }
+
+  /// The last clear's group while every member still restores a cleared
+  /// take; empty while one does not.
   ///
   /// A frozen member whose point is still to be filed counts as a member.
   /// The repository parks the whole group's Undo until every point lands,
   /// then asks the engine to check all recovered lengths before restoring.
-  Set<int> _intactClearAllGroup() {
+  Set<int> _intactClearGroup() {
     // Frozen members first: a filed point makes a member; neither pending
     // nor filed means the capture held nothing to give back.
-    if (_clearAllPending.isNotEmpty) {
-      final group = {..._clearAllGroup};
+    if (_clearGroupPending.isNotEmpty) {
+      final group = {..._clearGroup};
       final pending = <int>{};
-      for (final channel in _clearAllPending) {
+      for (final channel in _clearGroupPending) {
         if (_engine.clearRestorePending(channel: channel)) {
           pending.add(channel);
         } else if (_engine.undoRestoresClear(channel: channel)) {
           group.add(channel);
         }
       }
-      _clearAllGroup = group;
-      _clearAllPending = pending;
+      _clearGroup = group;
+      _clearGroupPending = pending;
+      final fallback = _clearFallback;
+      if (fallback != null && (group.isNotEmpty || pending.isEmpty)) {
+        _clearFallback = null;
+        // The frozen capture held nothing: the clear before it is the last
+        // clear again.
+        if (group.isEmpty) {
+          _clearGroup = fallback.group;
+          _clearGroupPending = fallback.pending;
+          _clearGroupIsAll = fallback.all;
+          _clearMark = fallback.mark;
+          return _intactClearGroup();
+        }
+      }
     }
-    for (final channel in _clearAllGroup) {
+    for (final channel in _clearGroup) {
       if (_engine.undoRestoresClear(channel: channel)) continue;
       // The engine retired the point (a fresh take): the group is gone, and
       // a later single clear on that track must not re-form it.
-      _clearAllGroup = const {};
-      _clearAllPending = const {};
+      _clearGroup = const {};
+      _clearGroupPending = const {};
       return const {};
     }
-    return {..._clearAllGroup, ..._clearAllPending};
+    return {..._clearGroup, ..._clearGroupPending};
   }
 
   /// Whole-rig recovery from a clear-all: the intact group comes back as one
   /// operation; otherwise every track that still holds a clear restore point
-  /// is restored on its own (a group the engine partly retired).
+  /// is restored on its own (a group the engine partly retired, or a single
+  /// clear since).
   EngineResult undoClearAll() {
     if (_transportReserved) return EngineResult.notReady;
     _settlePendingClearUndos();
-    final group = _intactClearAllGroup();
-    if (group.isNotEmpty) return undo(channel: group.first);
+    final group = _intactClearGroup();
+    if (group.isNotEmpty && _clearGroupIsAll) return _undoClearGroup(group);
     var result = EngineResult.ok;
     for (final track in lastState.tracks) {
       if (!track.clearRestore) continue;
-      final rc = undo(channel: track.channel);
+      // Each point once: the single clear's group is restored as itself, and
+      // no other track's restore is redirected to it.
+      final rc = group.contains(track.channel)
+          ? _undoClearGroup(group)
+          : _undoTrack(track.channel);
       if (!rc.isOk) result = rc;
     }
     return result;
@@ -4311,7 +4605,7 @@ class LooperRepository {
   EngineResult _clearDestructive({int channel = 0}) {
     final result = _engine.clear(channel: channel);
     if (!result.isOk) return result;
-    _pendingClearAllUndo = const {};
+    _pendingClearGroupUndo = const {};
     _pendingClearUndo.remove(channel);
     _clearRestore.remove(channel);
     _restoreFxStaged.remove(channel);
@@ -4321,6 +4615,7 @@ class LooperRepository {
     _laneEffects.removeWhere((key, _) => key.$1 == channel);
     _laneChainEnabled.removeWhere((key, _) => key.$1 == channel);
     _laneChainMeta.removeWhere((key, _) => key.$1 == channel);
+    _lanePrinted.removeWhere((key, _) => key.$1 == channel);
     return result;
   }
 
@@ -4399,22 +4694,24 @@ class LooperRepository {
   /// describes the next tap, and the snapshot it derives from does not flip
   /// until the audio thread applies the restore.
   ///
-  /// While a [clearAll] can still be undone, an undo on an empty track with
-  /// nothing newer of its own restores that clear-all
-  /// ([LooperState.undoRestoresClearAll], #1634). Clear all selects track 1,
-  /// which is often not a member, so every surface's Undo (pedal, keyboard,
-  /// MIDI and CTRL bindings) reaches the restore from it. A restore point of
-  /// the track's own does not stop it: a single clear ends the group, so
-  /// that point predates the clear-all, and the next Undo reaches it.
+  /// While the last clear ([clear] or [clearAll]) can still be undone, an
+  /// undo on a track with nothing newer of its own restores that clear
+  /// ([LooperState.undoRestoresClear], #1634, #1707). Clear all selects
+  /// track 1, which is often not a member, and a track's hold-clear can
+  /// leave the selection on another track, so every surface's Undo (pedal,
+  /// keyboard, MIDI and CTRL bindings) reaches the restore from there. A
+  /// restore point of the track's own does not stop it: the later clear
+  /// replaced that one as the last clear, so it is older, and the next Undo
+  /// reaches it.
   EngineResult undo({int channel = 0}) {
     if (_transportReserved) {
       return EngineResult.notReady;
     }
     _settlePendingClearUndos();
     // A grouped clear comes back as one operation, whichever member is asked.
-    final group = _intactClearAllGroup();
+    final group = _intactClearGroup();
     if (group.contains(channel) ||
-        (group.isNotEmpty && state.undoRestoresClearAll(channel))) {
+        (group.isNotEmpty && state.undoRestoresClear(channel))) {
       return _undoClearGroup(group);
     }
     return _undoTrack(channel);
@@ -4422,14 +4719,14 @@ class LooperRepository {
 
   EngineResult _undoClearGroup(Set<int> group) {
     if (group.any((channel) => _engine.clearRestorePending(channel: channel))) {
-      _pendingClearAllUndo = group;
+      _pendingClearGroupUndo = group;
       return EngineResult.ok;
     }
     final ordered = group.toList()
       ..sort()
       ..forEach(_stageClearUndoFx);
     if (ordered.any((member) => !_clearUndoFxReady(member))) {
-      _pendingClearAllUndo = group;
+      _pendingClearGroupUndo = group;
       return EngineResult.ok;
     }
     final gate = _historyModeGate(ordered, redo: false);
@@ -4441,9 +4738,13 @@ class LooperRepository {
       final result = _undoTrack(member);
       if (!result.isOk) return result;
     }
-    _clearAllRedoGroup = group;
-    _clearAllGroup = const {};
-    _clearAllPending = const {};
+    // A track's clear leaves an undone Clear all's grouped Redo alone.
+    if (_clearGroupIsAll) {
+      _clearRedoGroup = group;
+      _clearRedoRefused = _clearMark.refused;
+    }
+    _clearGroup = const {};
+    _clearGroupPending = const {};
     return EngineResult.ok;
   }
 
@@ -4508,9 +4809,9 @@ class LooperRepository {
       return EngineResult.notReady;
     }
     // Cancel a grouped undo before settling it: every member is still clear.
-    if (_pendingClearAllUndo.contains(channel)) {
-      _pendingClearAllUndo.forEach(_cancelStagedClearUndoFx);
-      _pendingClearAllUndo = const {};
+    if (_pendingClearGroupUndo.contains(channel)) {
+      _pendingClearGroupUndo.forEach(_cancelStagedClearUndoFx);
+      _pendingClearGroupUndo = const {};
       return EngineResult.ok;
     }
     if (_pendingClearUndo.remove(channel)) {
@@ -4518,8 +4819,8 @@ class LooperRepository {
       return EngineResult.ok;
     }
     _settlePendingClearUndos();
-    if (_clearAllRedoGroup.contains(channel)) {
-      final group = _clearAllRedoGroup;
+    if (_clearRedoGroup.contains(channel)) {
+      final group = _clearRedoGroup;
       if (group.every((member) => _engine.redoReclears(channel: member))) {
         final ordered = group.toList()..sort();
         final gate = _historyModeGate(ordered, redo: true);
@@ -4528,14 +4829,22 @@ class LooperRepository {
           final result = _redoTrack(member);
           if (!result.isOk) return result;
         }
-        _clearAllRedoGroup = const {};
-        _clearAllGroup = group;
-        _clearAllPending = const {};
+        _clearRedoGroup = const {};
+        _clearGroup = group;
+        _clearGroupPending = const {};
+        _clearGroupIsAll = true;
+        _clearFallback = null;
+        // The re-clear is the newest edit now.
+        _clearMark = _markClear(_engine.snapshot(), refused: _clearRedoRefused);
         return EngineResult.ok;
       }
-      _clearAllRedoGroup = const {};
+      _clearRedoGroup = const {};
     }
-    return _redoTrack(channel);
+    final reclears = _engine.redoReclears(channel: channel);
+    final result = _redoTrack(channel);
+    // A redone clear is a clear again, and the last one (#1707).
+    if (result.isOk && reclears) _formClearGroup([channel], all: false);
+    return result;
   }
 
   /// Changes cached take metadata only after the native history edit succeeds.
@@ -4619,9 +4928,7 @@ class LooperRepository {
   ({EngineResult result, RenderJob? job}) renderToFile(
     SelectedRender render,
     String path,
-  ) => _beginRender(
-    _renderRequest(render, RenderTarget.file, path: path),
-  );
+  ) => _beginRender(_renderRequest(render, RenderTarget.file, path: path));
 
   /// Renders [render] into the engine's memory, at most [maxFrames] frames
   /// (a Bounce destination's capacity). The finished job keeps its result
@@ -5107,6 +5414,10 @@ class LooperRepository {
     // Restore per-lane routing / mix through the cached setters so the caches
     // stay truthful (and a restart replays them). Lane count first — so an
     // added lane is activated — then per-lane input / output / volume / mute.
+    // The takes' sources, taken in once the session's images are (below).
+    // Labels only: one out of range is dropped rather than refusing the
+    // session.
+    final sources = <(int, int), int>{};
     for (final track in rig.tracks) {
       // Activate up to the highest imported lane index — not the lane *count*
       // —
@@ -5122,6 +5433,9 @@ class LooperRepository {
         // below lands on top of it.
         restoredMix.balances[(track.channel, lane.lane)] = lane.balance;
         restoredMix.images[(track.channel, lane.lane)] = lane.pan;
+        if (lane.recordedInput >= 0 && lane.recordedInput < kMaxChannels) {
+          sources[(track.channel, lane.lane)] = lane.recordedInput;
+        }
         restoredMix.levels[(track.channel, lane.lane)] = lane.volume;
         _requireSessionSetting(
           setLaneMute(
@@ -5195,6 +5509,11 @@ class LooperRepository {
           channel: key.$1,
           lane: key.$2,
           inheritedFrom: chain?.meta?.inheritedFrom ?? const [],
+        );
+        restoreLanePrinted(
+          channel: key.$1,
+          lane: key.$2,
+          printed: chain?.meta?.printed,
         );
       }
       for (final channel in <int>{
@@ -5297,6 +5616,9 @@ class LooperRepository {
     // the pairs' balance; before the tracks' lanes are seeded by a later
     // record, which reads it.
     _requireSessionSetting(_requestMix(restoredMix, replay: true));
+    _laneSource
+      ..clear()
+      ..addAll(sources);
     _requireSessionSetting(
       await settleMixSettings(
         pollInterval: clearPollInterval,
@@ -5387,6 +5709,37 @@ class LooperRepository {
                 'layer $ordinal: ${result.name}',
               );
             }
+            // The image's heard image (#1713) goes in right behind it. A
+            // heard attach still in flight refuses it for a buffer or two,
+            // like the clear ack above.
+            final heard = lane.heardAt(ordinal);
+            if (heard.isEmpty) continue;
+            var staged = _engine.importLayerHeard(
+              track.channel,
+              lane.lane,
+              ordinal,
+              heard,
+            );
+            for (
+              var attempt = 0;
+              staged == EngineResult.notReady && attempt < importRetries;
+              attempt++
+            ) {
+              await Future<void>.delayed(interval);
+              requireCurrent();
+              staged = _engine.importLayerHeard(
+                track.channel,
+                lane.lane,
+                ordinal,
+                heard,
+              );
+            }
+            if (!staged.isOk) {
+              throw StateError(
+                'failed to import track ${track.channel} lane ${lane.lane} '
+                'heard layer $ordinal: ${staged.name}',
+              );
+            }
           }
         }
         // The history is track-wide (shared across lanes) — take lane 0's,
@@ -5414,10 +5767,7 @@ class LooperRepository {
         }
         // The lap the take was played on (#854); the import cleared it.
         if (track.anchorLap > 0) {
-          final anchored = _engine.importAnchor(
-            track.channel,
-            track.anchorLap,
-          );
+          final anchored = _engine.importAnchor(track.channel, track.anchorLap);
           if (!anchored.isOk) {
             throw StateError(
               'failed to restore track ${track.channel} anchor: '
@@ -5481,10 +5831,7 @@ class LooperRepository {
           ? rig.recordedLengthFrames
           : rig.baseLengthFrames;
       if (rig.tracks.isNotEmpty && base > 0) {
-        final committed = _engine.commitSession(
-          base,
-          loopBeats: rig.gridBeats,
-        );
+        final committed = _engine.commitSession(base, loopBeats: rig.gridBeats);
         if (!committed.isOk) {
           throw StateError('failed to commit the session: ${committed.name}');
         }
@@ -5508,6 +5855,9 @@ class LooperRepository {
               });
           if (!committed) throw StateError('session import commit was refused');
           _importTracks = null;
+          // The rig was admitted before its takes came in: those playing
+          // their image charge nothing, so what that held comes back (#1713).
+          _admitRig(release: true);
           _reproject();
           return;
         }
@@ -5610,23 +5960,31 @@ class LooperRepository {
       ..._laneEffects.keys,
       ..._laneChainEnabled.keys,
       ..._laneChainMeta.keys,
+      for (final key in {..._lanePrinted.keys, ..._laneHeard})
+        if (lanePrintedWhenEdited(key.$1, key.$2) != null) key,
     };
     return {
       for (final key in keys)
         key: FxChainEnvelope(
           chainEnabled: laneChainEnabled(key.$1, key.$2),
-          // Null — not an empty marker — when the chain was never inherited,
-          // matching [FxChainEnvelope.meta]'s contract and `decodeFxChain`'s
-          // own normalization, so an envelope read back here equals the one a
+          // Null — not an empty marker — when the chain was never inherited
+          // and is the one its take was recorded through, matching
+          // [FxChainEnvelope.meta]'s contract and `decodeFxChain`'s own
+          // normalization, so an envelope read back here equals the one a
           // decode produces.
-          meta: _metaOrNull(laneChainInheritedFrom(key.$1, key.$2)),
+          meta: _metaOrNull(
+            FxChainMeta(
+              inheritedFrom: laneChainInheritedFrom(key.$1, key.$2),
+              printed: lanePrintedWhenEdited(key.$1, key.$2),
+            ),
+          ),
           entries: laneEffects(key.$1, key.$2),
         ),
     };
   }
 
-  static FxChainMeta? _metaOrNull(List<int> inheritedFrom) =>
-      inheritedFrom.isEmpty ? null : FxChainMeta(inheritedFrom: inheritedFrom);
+  static FxChainMeta? _metaOrNull(FxChainMeta meta) =>
+      meta.isEmpty ? null : meta;
 
   /// Every remembered Track-stage (stereo bus) chain as the persisted
   /// envelope, keyed by track channel — the bus twin of [allLaneChains] (bus
@@ -6004,7 +6362,7 @@ class LooperRepository {
   static bool _chainAudiblyDry(
     List<TrackEffect> chain, {
     required bool chainEnabled,
-  }) => !chainEnabled || chain.every((fx) => !fx.enabled);
+  }) => !chainEnabled || chain.every((fx) => !fx.effectiveEnabled);
 
   /// Sets the track's independent playback gain after Pre and before Post.
   /// Part levels and the captured source image remain independent.
@@ -6604,6 +6962,17 @@ class LooperRepository {
     return _engine.stopRecordControl(channel: channel);
   }
 
+  /// The Rec-mode Stop of the only audible loop (#1782): Rec Stop, then the
+  /// engine parks the transport, now or at the grid end Record timing gives
+  /// an overdub, and the mutes sent after it let the Post tail ring out. It
+  /// reserves room for the [following] commands (the lane mutes) and refuses
+  /// ([EngineResult.notReady]) when they would not all fit. Nothing to
+  /// remember across a restart: an armed end does not survive one.
+  EngineResult stopRecordPark({required int channel, int following = 0}) {
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.stopRecordPark(channel: channel, following: following);
+  }
+
   /// Retires only Count-in membership/grace, preserving ordinary live work.
   EngineResult cancelCountIn() {
     if (!_intendRunning) return EngineResult.ok;
@@ -6901,8 +7270,18 @@ class LooperRepository {
     if (handle == null) return false;
     final updated = _readBackParams(fx, handle);
     if (updated == null) return false;
-    _laneEffects[(channel, lane)] = List<TrackEffect>.of(effects)
-      ..[index] = updated;
+    final key = (channel, lane);
+    final next = List<TrackEffect>.of(effects)..[index] = updated;
+    // A take playing what was heard (#1713): the first read of values its
+    // copy did not name changes no sound, so it is not an edit.
+    if (_lanePrinted.containsKey(key) &&
+        _printMatches(key, effects) &&
+        updated.paramValues.entries.every(
+          (e) => (fx.paramValues[e.key] ?? e.value) == e.value,
+        )) {
+      _lanePrinted[key] = next;
+    }
+    _laneEffects[key] = next;
     _reproject();
     return true;
   }
@@ -7513,15 +7892,15 @@ class LooperRepository {
     if (index < 0 || index >= _allTracksEffects.length) {
       return EngineResult.invalid;
     }
+    final next = _withEnabled(_allTracksEffects[index], enabled);
     if (_intendRunning) {
       final result = _engine.setAllTracksFxEnabled(
         index: index,
-        enabled: enabled,
+        enabled: next.effectiveEnabled,
       );
       if (!result.isOk) return result;
     }
-    _allTracksEffects = List<TrackEffect>.of(_allTracksEffects)
-      ..[index] = _withEnabled(_allTracksEffects[index], enabled);
+    _allTracksEffects = List<TrackEffect>.of(_allTracksEffects)..[index] = next;
     return EngineResult.ok;
   }
 
@@ -7532,9 +7911,7 @@ class LooperRepository {
     final released = _fxReleaseFor(address, enabled: enabled);
     if (released != null) return released;
     if (_intendRunning) {
-      final result = _engine.setAllTracksFxChainEnabled(
-        enabled: enabled,
-      );
+      final result = _engine.setAllTracksFxChainEnabled(enabled: enabled);
       if (!result.isOk) return result;
     }
     _fxReleaseAfter(address, enabled: enabled);
@@ -7628,17 +8005,18 @@ class LooperRepository {
     if (effects == null || index < 0 || index >= effects.length) {
       return EngineResult.invalid;
     }
+    final next = _withEnabled(effects[index], enabled);
     if (_intendRunning) {
       final result = _engine.setLaneFxEnabled(
         channel: channel,
         lane: lane,
         index: index,
-        enabled: enabled,
+        enabled: next.effectiveEnabled,
       );
       if (!result.isOk) return result;
     }
     _laneEffects[(channel, lane)] = List<TrackEffect>.of(effects)
-      ..[index] = _withEnabled(effects[index], enabled);
+      ..[index] = next;
     _reproject();
     return EngineResult.ok;
   }
@@ -7736,16 +8114,16 @@ class LooperRepository {
     if (effects == null || index < 0 || index >= effects.length) {
       return EngineResult.invalid;
     }
+    final next = _withEnabled(effects[index], enabled);
     if (_intendRunning) {
       final result = _engine.setMonitorInputFxEnabled(
         input: input,
         index: index,
-        enabled: enabled,
+        enabled: next.effectiveEnabled,
       );
       if (!result.isOk) return result;
     }
-    _monitorEffects[input] = List<TrackEffect>.of(effects)
-      ..[index] = _withEnabled(effects[index], enabled);
+    _monitorEffects[input] = List<TrackEffect>.of(effects)..[index] = next;
     _monitorChanged(input);
     return EngineResult.ok;
   }
@@ -7760,16 +8138,16 @@ class LooperRepository {
     if (effects == null || index < 0 || index >= effects.length) {
       return EngineResult.invalid;
     }
+    final next = _withEnabled(effects[index], enabled);
     if (_intendRunning) {
       final result = _engine.setTrackFxEnabled(
         channel: channel,
         index: index,
-        enabled: enabled,
+        enabled: next.effectiveEnabled,
       );
       if (!result.isOk) return result;
     }
-    _trackEffects[channel] = List<TrackEffect>.of(effects)
-      ..[index] = _withEnabled(effects[index], enabled);
+    _trackEffects[channel] = List<TrackEffect>.of(effects)..[index] = next;
     _reproject();
     return EngineResult.ok;
   }
@@ -7784,19 +8162,119 @@ class LooperRepository {
     if (effects == null || index < 0 || index >= effects.length) {
       return EngineResult.invalid;
     }
+    final next = _withEnabled(effects[index], enabled);
     if (_intendRunning) {
       final result = _engine.setOutputFxEnabled(
         bus: bus,
         index: index,
-        enabled: enabled,
+        enabled: next.effectiveEnabled,
       );
       if (!result.isOk) return result;
     }
-    _outputEffects[bus] = List<TrackEffect>.of(effects)
-      ..[index] = _withEnabled(effects[index], enabled);
+    _outputEffects[bus] = List<TrackEffect>.of(effects)..[index] = next;
     _reproject();
     return EngineResult.ok;
   }
+
+  /// Switches the rack [rackId] in the chain at [address] on or off as a
+  /// whole (#1711), leaving each module's own switch as it is
+  /// ([fxWithRackEnabled]).
+  ///
+  /// The rack's switch lives on its entries (`FxRack.bypassed`) and is saved
+  /// with the chain, as each entry's own switch is. The engine has no rack
+  /// switch: each module's flag there is its EFFECTIVE state
+  /// ([TrackEffect.effectiveEnabled]), written through the same per-entry
+  /// atomic stores (with their click-free ramp) the per-effect setters use,
+  /// so no DSP state is reset and every engine reader (the callback, the wet
+  /// cache, the fingerprints, the performance log) sees the rack's switch
+  /// without knowing racks. Only entries whose effective state changes are
+  /// written.
+  ///
+  /// [EngineResult.invalid] when [address] names no chain or the chain holds
+  /// no such rack.
+  EngineResult setRackEnabled({
+    required FxAddress address,
+    required String rackId,
+    required bool enabled,
+  }) {
+    // A lane-less Loop address names no chain (A9).
+    if (address.stage == FxStage.loop && address.lane == null) {
+      return EngineResult.invalid;
+    }
+    final current = _chainAt(address);
+    final next = fxWithRackEnabled(current, rackId, enabled: enabled);
+    if (next == null) return EngineResult.invalid;
+    if (_intendRunning) {
+      final written = <int>[];
+      for (var i = 0; i < next.length; i++) {
+        final on = next[i].effectiveEnabled;
+        if (on == current[i].effectiveEnabled) continue;
+        final result = _setEngineEntryEnabled(address, i, enabled: on);
+        if (!result.isOk) {
+          // Put back what this call already switched, so the engine never
+          // holds half a rack switch the repository did not take.
+          for (final j in written) {
+            _setEngineEntryEnabled(
+              address,
+              j,
+              enabled: current[j].effectiveEnabled,
+            );
+          }
+          return result;
+        }
+        written.add(i);
+      }
+    }
+    switch (address.stage) {
+      case FxStage.input:
+        _monitorEffects[address.index] = next;
+        _monitorChanged(address.index);
+        return EngineResult.ok;
+      case FxStage.loop:
+        _laneEffects[(address.index, address.lane!)] = next;
+      case FxStage.track:
+        _trackEffects[address.index] = next;
+      case FxStage.allTracks:
+        _allTracksEffects = next;
+      case FxStage.output:
+        _outputEffects[address.index] = next;
+    }
+    _reproject();
+    return EngineResult.ok;
+  }
+
+  /// The engine's per-entry flag for entry [index] of the chain at [address].
+  EngineResult _setEngineEntryEnabled(
+    FxAddress address,
+    int index, {
+    required bool enabled,
+  }) => switch (address.stage) {
+    FxStage.input => _engine.setMonitorInputFxEnabled(
+      input: address.index,
+      index: index,
+      enabled: enabled,
+    ),
+    FxStage.loop => _engine.setLaneFxEnabled(
+      channel: address.index,
+      lane: address.lane!,
+      index: index,
+      enabled: enabled,
+    ),
+    FxStage.track => _engine.setTrackFxEnabled(
+      channel: address.index,
+      index: index,
+      enabled: enabled,
+    ),
+    FxStage.allTracks => _engine.setAllTracksFxEnabled(
+      index: index,
+      enabled: enabled,
+    ),
+    FxStage.output => _engine.setOutputFxEnabled(
+      bus: address.index,
+      index: index,
+      enabled: enabled,
+    ),
+  };
 
   /// Enables/disables lane [lane] of track [channel]'s WHOLE chain in one
   /// atomic flip without touching the per-entry flags (R15).
@@ -7937,6 +8415,35 @@ class LooperRepository {
     _reproject();
   }
 
+  /// Restores the chain lane [lane] of track [channel]'s take was recorded
+  /// through (#1713) as saved: [printed], or the lane's chain as it is when
+  /// the save names none (the two were the same). Call after the lane's
+  /// chain is restored.
+  void restoreLanePrinted({
+    required int channel,
+    required int lane,
+    List<TrackEffect>? printed,
+  }) {
+    _lanePrinted[(channel, lane)] = List<TrackEffect>.unmodifiable(
+      printed ?? laneEffects(channel, lane),
+    );
+    _reproject();
+  }
+
+  /// The chain lane [lane] of track [channel]'s take was recorded through
+  /// (#1713), when it is not the lane's chain (the chain was edited, so the
+  /// take is re-amped): what [FxChainMeta.printed] persists. Null when the
+  /// two are the same, or the lane has none.
+  List<TrackEffect>? lanePrintedWhenEdited(int channel, int lane) {
+    final key = (channel, lane);
+    final printed =
+        _lanePrinted[key] ??
+        (_laneHeard.contains(key) ? const <TrackEffect>[] : null);
+    if (printed == null) return null;
+    final chain = _laneEffects[key] ?? const <TrackEffect>[];
+    return _preWireOf(chain) == _preWireOf(printed) ? null : printed;
+  }
+
   /// Lane [lane] of track [channel]'s inheritance provenance: the inputs its
   /// chain was copied from at record time, in input order; empty when never
   /// inherited.
@@ -8047,7 +8554,7 @@ class LooperRepository {
             FxRecipeSlot(
               type: trackEffectTypeToEngine(fx.type),
               params: fx.params,
-              enabled: fx.enabled,
+              enabled: fx.effectiveEnabled,
               channels: fxChannelsToEngine(fx.channels),
               rack: edges[index],
               path: paths[index],
@@ -8075,7 +8582,7 @@ class LooperRepository {
           slots.add(
             FxRecipeSlot(
               type: trackEffectTypeToEngine(TrackEffectType.none),
-              enabled: plugin.enabled,
+              enabled: plugin.effectiveEnabled,
               channels: fxChannelsToEngine(plugin.channels),
               rack: edges[index],
               instance: fxInstanceId(plugin.slotId),
@@ -8110,7 +8617,7 @@ class LooperRepository {
           FxRecipeSlot(
             type: trackEffectTypeToEngine(TrackEffectType.none),
             plugin: handle,
-            enabled: plugin.enabled,
+            enabled: plugin.effectiveEnabled,
             channels: fxChannelsToEngine(plugin.channels),
             rack: edges[index],
             instance: fxInstanceId(plugin.slotId),
@@ -8125,9 +8632,10 @@ class LooperRepository {
         lane: lane,
         recipe: FxRecipe(
           slots: slots,
-          // The live monitor processes its whole chain before capture. Its
-          // Pre/Post split is metadata for the inherited recording recipe.
-          preCount: owner == FxOwner.monitor ? 0 : fxPreCount(effects),
+          // The live monitor processes its whole chain; a take records its
+          // Pre run, and its Post entries run live on the take's lane
+          // (#1741).
+          preCount: fxPreCount(effects),
           // A chain held off because it did not fit stays off on the engine
           // whatever its saved switch says (#1515).
           enabled: _engineOn(_fxAddressOf(owner, channel, lane), enabled),
@@ -8349,12 +8857,15 @@ class LooperRepository {
     return true;
   }
 
-  /// The running sample rate, or 96 kHz when the engine reports none: what
-  /// the oversampled kinds' charges follow ([kFxOversampledCostNs]) and the
-  /// budget is taken at.
+  /// The running sample rate, or the last config's while the engine reports
+  /// none (a device lost, an apply), so the rig's verdict does not move with
+  /// the device, or 96 kHz before any: the setting the charges
+  /// ([fxCostSetting]) and the budget are taken at.
   int get _fxRate {
     final rate = _engine.snapshot().sampleRate;
-    return rate > 0 ? rate : 96000;
+    if (rate > 0) return rate;
+    final last = _lastEngineConfig?.sampleRate ?? 0;
+    return last > 0 ? last : kFxBenchRate;
   }
 
   /// The running block length, or the bench's when the engine is stopped.
@@ -8363,30 +8874,100 @@ class LooperRepository {
     // what the player's own buffer will hold off.
     final target = _warmUpTarget?.bufferFrames ?? 0;
     final frames = target > 0 ? target : _engine.snapshot().bufferFrames;
-    return frames > 0 ? frames : kFxBenchPeriod;
+    if (frames > 0) return frames;
+    final last = _lastEngineConfig?.bufferFrames ?? 0;
+    return last > 0 ? last : kFxBenchPeriod;
   }
 
   /// What the effects charge the audio thread's worst block ([fxLoadNs]), in
   /// nanoseconds per frame at the running block length: the live inputs'
-  /// chains shared with the effects workers the engine runs (#1515), and the
-  /// tracks, All tracks, the destinations and the lanes on the callback. A
-  /// lane counts in full: its print stands in for its Pre entries only
-  /// between edits, overdubs, evictions and renders, and the worst block is
-  /// the one in between. Every pedal counts whether it is on or off, so
-  /// switching one on is never refused; a chain switched off because it did
-  /// not fit charges nothing, and switching it back on is weighed
-  /// ([fxHeldChainFits]).
+  /// chains (#1515) and each track's lanes' and own chains (#1729) shared
+  /// with the effects workers the engine runs, and All tracks and the
+  /// destinations on the callback. A lane counts in full: its print stands
+  /// in for its Pre entries only between edits, overdubs, evictions and
+  /// renders, and the worst block is the one in between. A lane playing its
+  /// take's heard image (#1713) charges its Post entries only: the image
+  /// stands for its Pre run (#1741).
+  ///
+  /// An effect is charged when it runs or a control can make it run (#1723):
+  /// its own switch, its rack's and its chain's are each on, or a control
+  /// reaches it ([setFxReach]), so a press is never refused. An effect that
+  /// is off and that no control reaches charges nothing; switching it on
+  /// from the screen is weighed then ([fxGrowthNs]). Switches one control
+  /// alternates charge their larger side ([FxReach.states]). A chain switched
+  /// off because it did not fit charges nothing, and switching it back on is
+  /// weighed ([fxHeldChainFits]).
   int get fxCostNs => _fxLoadAt(_fxRate, _fxPeriod);
 
   /// How much [fxCostNs] would grow, in nanoseconds per frame, with the
   /// chain at each address of [chains] replaced by its value (an empty one
-  /// removes it); negative when it would shrink. What an edit is weighed by
-  /// against [fxRoomNs]: one chain for an effects edit, several for a New
-  /// loop template.
-  int fxGrowthNs(Map<FxAddress, List<TrackEffect>> chains) {
+  /// removes it) and the chain switch at each address of [chainSwitches]
+  /// set to its value; negative when it would shrink. What an edit is
+  /// weighed by against [fxRoomNs]: one chain for an effects edit or for a
+  /// switch the screen turns on, several for a New loop template.
+  int fxGrowthNs(
+    Map<FxAddress, List<TrackEffect>> chains, {
+    Map<FxAddress, bool> chainSwitches = const {},
+  }) {
     final period = _fxPeriod;
     final rate = _fxRate;
-    return _fxLoadAt(rate, period, chains) - _fxLoadAt(rate, period);
+    return _fxLoadAt(rate, period, replaced: chains, switches: chainSwitches) -
+        _fxLoadAt(rate, period);
+  }
+
+  /// What the rig's controls can turn on (#1723): the console bindings,
+  /// MIDI mappings and external switches, as the control layer works them
+  /// out. [fxCostNs] reserves room for it.
+  FxReach _fxReach = FxReach.none;
+
+  /// Takes what the rig's controls can now turn on ([FxReach]) and charges
+  /// for it from now on ([fxCostNs]).
+  ///
+  /// A new binding that would not fit is refused before it gets here
+  /// ([fxReachFits]); a reach that comes in over budget anyway (a session's
+  /// bindings) is admitted as a restore is, holding chains off until the
+  /// rest fits (R2), and one that shrank brings back what it held off.
+  void setFxReach(Iterable<FxControlReach> controls) {
+    final next = FxReach(controls);
+    if (next == _fxReach) return;
+    _fxReach = next;
+    if (!_intendRunning) return;
+    // Worked out again from nothing: a reach that shrank brings back what
+    // it had held off.
+    _admitRig(release: true);
+    _reproject();
+  }
+
+  /// The chains one control's press is writing (#1723), with each chain's
+  /// switch: [_fitRig] weighs them as landed, so the side an A/B press
+  /// switches on is admitted beside the side it switches off, not on top of
+  /// it.
+  Map<FxAddress, ({List<TrackEffect> entries, bool on})> _fxPress = const {};
+
+  /// Runs [write], the chain writes of one control's [press], with every
+  /// chain of the press weighed as landed ([_fxPress]).
+  T fxPress<T>(
+    Map<FxAddress, ({List<TrackEffect> entries, bool on})> press,
+    T Function() write,
+  ) {
+    _fxPress = press;
+    try {
+      return write();
+    } finally {
+      _fxPress = const {};
+    }
+  }
+
+  /// Whether the controls [controls] could turn on would fit the effects
+  /// budget: what binding a control checks before it is saved (#1723).
+  /// Reach that adds no charge always fits.
+  bool fxReachFits(Iterable<FxControlReach> controls) {
+    final period = _fxPeriod;
+    final rate = _fxRate;
+    final grows =
+        _fxLoadAt(rate, period, reach: FxReach(controls)) -
+        _fxLoadAt(rate, period);
+    return grows <= 0 || grows <= fxRoomNs;
   }
 
   /// The effects workers the engine runs beside the callback (#1515): 0 on
@@ -8403,84 +8984,337 @@ class LooperRepository {
   }
 
   /// [fxLoadNs] for every chain as it is, or with the chains at the
-  /// addresses of [replaced] replaced by its values. A chain in [held]
-  /// (the chains switched off because they did not fit, unless the caller
-  /// asks about another set) charges nothing: it uses no audio-thread time.
+  /// addresses of [replaced] replaced by its values and the chain switches
+  /// at the addresses of [switches] set to its values, charging what the
+  /// controls [reach] (by default the rig's, [setFxReach]) can turn on. A
+  /// chain in [held] (the chains switched off because they did not fit,
+  /// unless the caller asks about another set) charges nothing: it uses no
+  /// audio-thread time.
+  ///
+  /// An effect is charged when its own switch, its rack's and its chain's
+  /// are each on or reachable. The switches one control alternates take each
+  /// of [FxReach.states] in turn, and the load is the largest.
   int _fxLoadAt(
     int rate,
-    int period, [
+    int period, {
     Map<FxAddress, List<TrackEffect>> replaced = const {},
     Set<FxAddress>? held,
-  ]) {
+    Map<FxAddress, bool> switches = const {},
+    FxReach? reach,
+  }) {
     final off = held ?? _fxHeld;
-    int costAt(FxAddress at, List<TrackEffect> c) => off.contains(at)
-        ? 0
-        : fxChainCostNs(c, period: period, sampleRate: rate);
-    final monitors = {..._monitorEffects};
-    final tracks = {..._trackEffects};
-    final outputs = {..._outputEffects};
-    final lanes = {..._laneEffects};
-    var allTracks = _allTracksEffects;
-    for (final MapEntry(key: at, value: chain) in replaced.entries) {
-      switch (at.stage) {
-        case FxStage.input:
-          monitors[at.index] = chain;
-        case FxStage.loop:
-          lanes[(at.index, at.lane ?? 0)] = chain;
-        case FxStage.track:
-          tracks[at.index] = chain;
-        case FxStage.allTracks:
-          allTracks = chain;
-        case FxStage.output:
-          outputs[at.index] = chain;
+    final controls = reach ?? _fxReach;
+    final chains = <FxAddress, List<TrackEffect>>{
+      ..._fxChains(),
+      for (final MapEntry(key: at, :value) in replaced.entries)
+        if (at.stage == FxStage.loop)
+          FxAddress(stage: FxStage.loop, index: at.index, lane: at.lane ?? 0):
+              value
+        else
+          at: value,
+    };
+    bool chainOn(FxAddress at) => switches[at] ?? _chainSwitchAt(at);
+    bool isOn(FxSwitchKey key) {
+      final chain = chains[key.address] ?? const <TrackEffect>[];
+      if (key.slotId case final slot?) {
+        return chain.any((fx) => fx.slotId == slot && fx.enabled);
       }
+      if (key.rackId case final rack?) {
+        return chain.any((fx) => fx.rack?.id == rack && !fx.rack!.bypassed);
+      }
+      return chainOn(key.address);
     }
-    final serial = [
-      for (final MapEntry(:key, :value) in tracks.entries)
-        costAt(FxAddress(stage: FxStage.track, index: key), value),
-      for (final MapEntry(:key, :value) in outputs.entries)
-        costAt(FxAddress(stage: FxStage.output, index: key), value),
-      costAt(const FxAddress(stage: FxStage.allTracks), allTracks),
-      for (final MapEntry(:key, :value) in lanes.entries)
-        costAt(
-          FxAddress(stage: FxStage.loop, index: key.$1, lane: key.$2),
-          value,
-        ),
-    ].fold(0, (a, b) => a + b);
-    return fxLoadNs(
-      serial: serial,
-      // A held input chain is still a job (the engine releases one for any
-      // chain with an effect in it), one that runs nothing.
-      jobs: [
-        for (final MapEntry(:key, :value) in monitors.entries)
-          if (value.isNotEmpty)
-            costAt(FxAddress(stage: FxStage.input, index: key), value),
-      ],
-      workers: _fxWorkers,
+
+    // A held chain runs only the tails it still drains (#1733).
+    int costAt(FxAddress at, Set<FxSwitchKey> state) => _fxChainChargeNs(
+      at,
+      chains[at]!,
+      rate: rate,
       period: period,
+      chainOn: chainOn(at),
+      state: state,
+      reach: controls,
+      // A hold the engine has not taken yet still runs the chain.
+      held: off.contains(at) && _fxHoldUnpushed[at] != false,
+    );
+
+    // Only the chains an alternation has a switch in change from state to
+    // state.
+    final alternated = controls.alternatedChains;
+    final fixed = {
+      for (final at in chains.keys)
+        if (!alternated.contains(at)) at: costAt(at, const {}),
+    };
+    var worst = 0;
+    for (final state in controls.states(isOn)) {
+      int cost(FxAddress at) => fixed[at] ?? costAt(at, state);
+      // An input's chain is a job (#1515), and so are a track's lanes'
+      // chains and its own chain together (#1729): every one with an effect
+      // in it. A held chain is still part of a job (the engine releases one
+      // for any chain with an effect in it), one that runs nothing, and so
+      // is a chain whose effects are all off. All tracks and the outputs run
+      // on the callback.
+      var serial = 0;
+      final inputJobs = <int>[];
+      final trackJobs = <int, int>{};
+      for (final MapEntry(key: at, :value) in chains.entries) {
+        switch (at.stage) {
+          case FxStage.input:
+            if (value.isNotEmpty) inputJobs.add(cost(at));
+          case FxStage.loop || FxStage.track:
+            if (value.isNotEmpty) {
+              trackJobs[at.index] = (trackJobs[at.index] ?? 0) + cost(at);
+            }
+          case FxStage.allTracks || FxStage.output:
+            serial += cost(at);
+        }
+      }
+      final load = fxLoadNs(
+        serial: serial,
+        jobs: [...inputJobs, ...trackJobs.values],
+        workers: _fxWorkers,
+        period: period,
+        trackJobs: trackJobs.length,
+      );
+      if (load > worst) worst = load;
+    }
+    return worst;
+  }
+
+  /// What the chain [entries] at [address] charges ([fxChainCostNs]), its
+  /// switch [chainOn]: each effect whose own switch, rack's and chain's are
+  /// each on or reached by a control of [reach] (by default the rig's), the
+  /// switches [reach] alternates on exactly when [state] has them.
+  int _fxChainChargeNs(
+    FxAddress address,
+    List<TrackEffect> entries, {
+    required int rate,
+    required int period,
+    required bool chainOn,
+    required Set<FxSwitchKey> state,
+    FxReach? reach,
+    bool held = false,
+  }) {
+    final controls = reach ?? _fxReach;
+    // A take playing its heard image runs no Pre run (#1713): only its Post
+    // entries play, over the image (#1741).
+    final chain = _playsImage(address, entries, chainOn: chainOn)
+        ? entries.sublist(fxPreCount(entries))
+        : entries;
+    if (held) {
+      // Held, its effects stop: what still runs are the tails already
+      // draining, not the effects it was running (#1733).
+      final draining = _fxDrainingHeld[address] ?? const <String?>{};
+      return fxChainCostNs(
+        [
+          for (final fx in chain)
+            if (fxDrains(fx) && draining.contains(fx.slotId)) fx,
+        ],
+        period: period,
+        sampleRate: rate,
+      );
+    }
+    final draining = _fxDrainingCharged[address] ?? const <String?>{};
+    // A switch an alternation sets is on in the states that have it, but an
+    // effect that drains its tail keeps running after its side goes off
+    // (le_fx_type_drains): it is charged in every state, as a press can
+    // leave it draining beside the side going on.
+    bool runs(FxSwitchKey key, {required bool now, required bool drains}) =>
+        controls.alternates(key)
+        ? drains || state.contains(key)
+        : now || controls.free.contains(key);
+    if (chain.isEmpty) return 0;
+    final chainKey = FxSwitchKey.chain(address);
+    return fxChainCostNs(
+      [
+        for (final fx in chain)
+          if (_fxCharged(
+                fx,
+                address,
+                (key, {required now}) =>
+                    runs(key, now: now, drains: fxDrains(fx)),
+                chainKey: chainKey,
+                chainOn: chainOn,
+              ) ||
+              // Switched off, and its tail still running (#1733).
+              (fxDrains(fx) && draining.contains(fx.slotId)))
+            fx,
+      ],
+      period: period,
+      sampleRate: rate,
     );
   }
 
+  /// Every chain the rig holds, by address.
+  Map<FxAddress, List<TrackEffect>> _fxChains() => {
+    for (final MapEntry(:key, :value) in _monitorEffects.entries)
+      FxAddress(stage: FxStage.input, index: key): value,
+    for (final MapEntry(:key, :value) in _laneEffects.entries)
+      FxAddress(stage: FxStage.loop, index: key.$1, lane: key.$2): value,
+    for (final MapEntry(:key, :value) in _trackEffects.entries)
+      FxAddress(stage: FxStage.track, index: key): value,
+    const FxAddress(stage: FxStage.allTracks): _allTracksEffects,
+    for (final MapEntry(:key, :value) in _outputEffects.entries)
+      FxAddress(stage: FxStage.output, index: key): value,
+  };
+
+  /// The ids of the effects whose tails the engine reported still draining
+  /// at the last snapshot, by chain (#1733): a delay, echo, Mode delay or
+  /// reverb switched off keeps running until its tail is quiet, so it keeps
+  /// its charge until then. The engine's slot bits are read against the
+  /// chains as they stood at that snapshot.
+  Map<FxAddress, Set<String?>> _fxEngineDraining = const {};
+
+  /// [_fxEngineDraining] for [draining], against the chains now. A chain
+  /// whose recipe the engine has not adopted yet still has the old layout
+  /// there: its ids stay as they were read last.
+  Map<FxAddress, Set<String?>> _fxDrainingIds(FxDraining draining) {
+    if (draining.isEmpty) return const {};
+    final ids = <FxAddress, Set<String?>>{};
+    for (final (:owner, :channel, :lane, :mask) in draining.chains) {
+      final at = _fxAddressOf(owner, channel, lane);
+      if (_fxTargetPending(owner, channel, lane)) {
+        if (_fxEngineDraining[at] case final kept?) ids[at] = kept;
+        continue;
+      }
+      final chain = _chainAt(at);
+      final slots = {
+        for (var s = 0; s < chain.length && s < kTrackEffectMax; s++)
+          if (mask & (1 << s) != 0) chain[s].slotId,
+      };
+      if (slots.isNotEmpty) ids[at] = slots;
+    }
+    return ids;
+  }
+
+  /// The effects of a draining kind running at the last snapshot, by chain:
+  /// switched on with their racks and their chain, the chain not held.
+  Map<FxAddress, Set<String?>> _fxRunningLast = const {};
+
+  /// Effects of a draining kind one snapshot saw running and a later one saw
+  /// off, with the frames the engine had processed at that later snapshot
+  /// and its count. Until the engine has run two blocks past it, it may not
+  /// have started the drain, so the effect counts as draining whatever the
+  /// engine says. An engine that processes nothing meanwhile runs no tail:
+  /// two snapshots then settle it.
+  final Map<(FxAddress, String?), ({int frames, int poll})> _fxSwitchedOff = {};
+
+  /// The snapshots [_noteFxSwitchOffs] has seen.
+  int _fxPolls = 0;
+
+  /// What a held chain is charged for, by chain: the tails the engine
+  /// reports draining and the effects switched off too recently for it to
+  /// report on ([_fxSwitchedOff]).
+  Map<FxAddress, Set<String?>> _fxDrainingHeld = const {};
+
+  /// What any other chain is charged for as draining, by chain: those of
+  /// [_fxDrainingHeld] and the effects running at the last snapshot, one of
+  /// which may have been switched off since.
+  Map<FxAddress, Set<String?>> _fxDrainingCharged = const {};
+
+  /// Notes, at each snapshot (a poll, and every write's re-projection),
+  /// which draining-kind effects stopped running since the last one, and
+  /// forgets those the engine has had time to report on.
+  void _noteFxSwitchOffs(EngineSnapshot snapshot) {
+    final running = <FxAddress, Set<String?>>{
+      for (final MapEntry(key: at, value: chain) in _fxChains().entries)
+        if (!_fxHeld.contains(at) && _chainSwitchAt(at))
+          at: {
+            // A take playing its heard image runs its Post entries alone
+            // (#1713, #1741).
+            for (final fx
+                in _playsImage(at, chain)
+                    ? chain.sublist(fxPreCount(chain))
+                    : chain)
+              if (fxDrains(fx) && fx.effectiveEnabled) fx.slotId,
+          },
+    }..removeWhere((_, ids) => ids.isEmpty);
+    bool runs((FxAddress, String?) key) =>
+        running[key.$1]?.contains(key.$2) ?? false;
+    final frames = snapshot.framesProcessed;
+    final poll = ++_fxPolls;
+    for (final MapEntry(key: at, value: ids) in _fxRunningLast.entries) {
+      for (final id in ids) {
+        if (!runs((at, id))) {
+          _fxSwitchedOff.putIfAbsent((
+            at,
+            id,
+          ), () => (frames: frames, poll: poll));
+        }
+      }
+    }
+    final block = snapshot.bufferFrames > 0
+        ? snapshot.bufferFrames
+        : kFxBenchPeriod;
+    _fxSwitchedOff.removeWhere(
+      (key, since) =>
+          !snapshot.isRunning ||
+          runs(key) ||
+          frames - since.frames >= 2 * block ||
+          (frames == since.frames && poll - since.poll >= 2),
+    );
+    _fxRunningLast = running;
+    final held = <FxAddress, Set<String?>>{
+      for (final MapEntry(:key, :value) in _fxEngineDraining.entries)
+        key: {...value},
+    };
+    for (final (at, id) in _fxSwitchedOff.keys) {
+      (held[at] ??= {}).add(id);
+    }
+    final charged = <FxAddress, Set<String?>>{
+      for (final MapEntry(:key, :value) in held.entries) key: {...value},
+    };
+    for (final MapEntry(:key, :value) in running.entries) {
+      (charged[key] ??= {}).addAll(value);
+    }
+    _fxDrainingHeld = held;
+    _fxDrainingCharged = charged;
+  }
+
+  /// Whether the lane at [at] would play its heard image with [chain] as its
+  /// chain (#1713): it holds one, and [chain] is the one it was recorded
+  /// through (its Pre run, #1741). Such a lane runs only its Post entries,
+  /// so it charges those; an edit that re-amps it is weighed like any other.
+  bool _playsImage(FxAddress at, List<TrackEffect> chain, {bool? chainOn}) {
+    if (at.stage != FxStage.loop) return false;
+    final key = (at.index, at.lane ?? 0);
+    return _laneHeard.contains(key) &&
+        _printMatches(key, chain, chainOn: chainOn);
+  }
+
+  /// Whether [fx] in the chain at [address] is charged: its chain's switch,
+  /// its rack's and its own each [runs].
+  static bool _fxCharged(
+    TrackEffect fx,
+    FxAddress address,
+    bool Function(FxSwitchKey key, {required bool now}) runs, {
+    required FxSwitchKey chainKey,
+    required bool chainOn,
+  }) =>
+      runs(chainKey, now: chainOn) &&
+      (fx.rack == null ||
+          runs(
+            FxSwitchKey.rack(address, fx.rack!.id),
+            now: !fx.rack!.bypassed,
+          )) &&
+      (fx.slotId == null
+          ? fx.enabled
+          : runs(FxSwitchKey.slot(address, fx.slotId!), now: fx.enabled));
+
   // ---- Chains that do not fit (#1515, the owner's R1 and R2) ----
 
-  /// The chains switched off because they did not fit the effects budget: a
-  /// take's inherited chains at record (R1), or chains the rig could not run
-  /// when it came up (R2). Runtime state only, never saved: each chain keeps
-  /// its entries and its saved switch, plays as off and charges nothing,
-  /// and switching it on is refused until the rig has room for it.
+  /// The chains switched off because they did not fit the effects budget:
+  /// chains the rig could not run when it came up (R2). A take playing its
+  /// heard image runs its Post entries alone (#1713, #1741), and is held only
+  /// for those. Runtime state
+  /// only, never saved: each chain keeps its entries and its saved switch,
+  /// plays as off and charges nothing, and switching it on is refused until
+  /// the rig has room for it.
   final Set<FxAddress> _fxHeld = {};
 
   /// The chains the standing notice names (R2), in the order they were
   /// switched off; empty when no notice stands.
   List<FxAddress> _fxHoldNotice = const [];
-
-  final _fxTakeHeld = StreamController<int>.broadcast();
-
-  /// A take whose inherited chains came in switched off because they did not
-  /// fit (R1), by track channel: the toast's cause. Not sent while the
-  /// standing notice is up; the take's chains join that notice instead, so
-  /// one cause never shows two notices.
-  Stream<int> get fxTakeHeld => _fxTakeHeld.stream;
 
   /// Whether the chain at [address] is switched off because it did not fit.
   bool fxChainHeld(FxAddress address) =>
@@ -8570,7 +9404,7 @@ class LooperRepository {
     FxStage.output => outputChainEnabled(address.index),
   };
 
-  /// Switching a held chain on (R1, R2): refused with [EngineResult.capacity]
+  /// Switching a held chain on (R2): refused with [EngineResult.capacity]
   /// while the rig has no room for it; null when the switch may go ahead.
   /// A switch off, or a chain that is not held, always may (a held chain
   /// stays held when switched off). The hold itself is released by
@@ -8588,6 +9422,7 @@ class LooperRepository {
       for (final named in _fxHoldNotice)
         if (named != address) named,
     ];
+    _syncLaneSources();
   }
 
   /// Whether switching the held chain at [address] on would fit: what the
@@ -8596,8 +9431,14 @@ class LooperRepository {
     if (!_fxHeld.contains(address)) return true;
     final period = _fxPeriod;
     final rate = _fxRate;
+    // Switching it on also switches on its saved switch, if that was off.
     final grows =
-        _fxLoadAt(rate, period, const {}, {..._fxHeld}..remove(address)) -
+        _fxLoadAt(
+          rate,
+          period,
+          held: {..._fxHeld}..remove(address),
+          switches: {address: true},
+        ) -
         _fxLoadAt(rate, period);
     return grows <= 0 || grows <= fxRoomNs;
   }
@@ -8619,6 +9460,9 @@ class LooperRepository {
   /// is held now). With [release], chains held now that the rig turns out to
   /// have room for are switched back on (a session's rig lands held).
   void _admitRig({Set<FxAddress>? before, bool release = false}) {
+    // Which takes play their image (and so charge nothing), as the engine
+    // holds them now (#1713).
+    _laneHeard = _heardLanesOf(_engine.snapshot());
     final previous = {..._fxHeld};
     _fxHeld.clear();
     _fxHoldUnpushed.clear();
@@ -8629,6 +9473,7 @@ class LooperRepository {
       }
     }
     _pruneFxHoldNotice();
+    _syncLaneSources();
   }
 
   /// R2: while the chains (with [incoming] replaced by [chain], when given)
@@ -8651,7 +9496,14 @@ class LooperRepository {
   }) {
     const nothing = (held: <FxAddress>{}, dropped: false);
     if (!_intendRunning) return nothing;
-    final replaced = {if (incoming != null && chain != null) incoming: chain};
+    final replaced = {
+      for (final MapEntry(:key, :value) in _fxPress.entries) key: value.entries,
+      if (incoming != null && chain != null) incoming: chain,
+    };
+    final switches = {
+      for (final MapEntry(:key, :value) in _fxPress.entries) key: value.on,
+      if (incoming != null && incomingOn != null) incoming: incomingOn,
+    };
     // A chain that goes empty has nothing left to hold.
     var dropped = false;
     if (incoming != null && chain != null && chain.isEmpty) {
@@ -8666,7 +9518,8 @@ class LooperRepository {
     final rate = _fxRate;
     final period = _fxPeriod;
     final budget = fxBudgetNs(rate, period: period);
-    if (_fxLoadAt(rate, period, replaced) <= budget) {
+    if (_fxLoadAt(rate, period, replaced: replaced, switches: switches) <=
+        budget) {
       _pruneFxHoldNotice();
       return (held: <FxAddress>{}, dropped: dropped);
     }
@@ -8705,8 +9558,24 @@ class LooperRepository {
     final named = <FxAddress>[];
     final held = <FxAddress>{};
     for (final at in order) {
-      if (_fxLoadAt(rate, period, replaced) <= budget) break;
+      if (_fxLoadAt(rate, period, replaced: replaced, switches: switches) <=
+          budget) {
+        break;
+      }
       if (_fxHeld.contains(at) || chainOf(at).isEmpty) continue;
+      // A chain whose hold frees nothing in any state stays as it is: one
+      // that charges nothing (off, and no control reaches it, #1723), or
+      // only for tails that drain whether it is held or not (#1733).
+      int chargeOf({required bool held}) => _fxChainChargeNs(
+        at,
+        chainOf(at),
+        rate: rate,
+        period: period,
+        chainOn: switches[at] ?? _chainSwitchAt(at),
+        state: _fxReach.alternated,
+        held: held,
+      );
+      if (chargeOf(held: false) <= chargeOf(held: true)) continue;
       _fxHeld.add(at);
       held.add(at);
       if (at != incoming) _pushChainSwitch(at, on: false);
@@ -8718,6 +9587,8 @@ class LooperRepository {
       for (final at in named)
         if (!_fxHoldNotice.contains(at)) at,
     ];
+    // A held re-amped take plays what was heard instead.
+    _syncLaneSources();
     return (held: held, dropped: dropped);
   }
 
@@ -8743,6 +9614,7 @@ class LooperRepository {
       if (at != incoming && _chainSwitchAt(at)) _pushChainSwitch(at, on: true);
     }
     _pruneFxHoldNotice();
+    _syncLaneSources();
   }
 
   /// Sets the engine switch of the chain at [address] to [on]; one with a
@@ -8789,36 +9661,11 @@ class LooperRepository {
     }
   }
 
-  /// R1, at record: whether the chains a take inherits ([lanes], by lane of
-  /// [channel]) would put the rig over budget, with those lanes' old chains
-  /// gone. Takes of other tracks still waiting for their first block charge
-  /// what they inherited, unless they came in off themselves, so takes
-  /// started together cannot each pass on the same room.
-  bool _takeOverBudget(int channel, Map<int, List<TrackEffect>> lanes) {
-    final replaced = {
-      for (final MapEntry(:key, :value) in lanes.entries)
-        FxAddress(stage: FxStage.loop, index: channel, lane: key): value,
-    };
-    if (replaced.values.every((chain) => chain.isEmpty)) return false;
-    final pending = {
-      for (final MapEntry(key: ch, value: image) in _pendingImages.entries)
-        if (ch != channel && !image.held)
-          for (final MapEntry(:key, :value) in image.inherited.entries)
-            FxAddress(stage: FxStage.loop, index: ch, lane: key): value,
-    };
-    final rate = _fxRate;
-    final period = _fxPeriod;
-    final held = {..._fxHeld}
-      ..removeAll(replaced.keys)
-      ..removeAll(pending.keys);
-    final load = _fxLoadAt(rate, period, {...pending, ...replaced}, held);
-    return load > fxBudgetNs(rate, period: period);
-  }
-
   /// What is left of the effects budget ([fxBudgetNs]) at the running rate
   /// and block length, in nanoseconds per frame; negative once the chains
-  /// went over (a removal is never refused, and a take's inherited chain is
-  /// never refused either: a recording is not an edit).
+  /// went over (a removal is never refused, and a take is never refused
+  /// either: it plays what it was heard as, over which only its Post entries
+  /// run).
   int get fxRoomNs {
     return fxBudgetNs(_fxRate, period: _fxPeriod) - fxCostNs;
   }
@@ -9105,7 +9952,9 @@ class LooperRepository {
         ? snapshot.tracks[retry.channel]
         : null;
     if (track == null ||
-        track.state != TrackState.empty ||
+        (track.state != TrackState.empty &&
+            track.state != TrackState.playing &&
+            track.state != TrackState.stopped) ||
         track.pending ||
         track.pendingLaunch != null ||
         track.countInCancelGrace) {
@@ -9769,7 +10618,6 @@ class LooperRepository {
     await _followTempo.dispose();
     await _pitchMode.dispose();
     await _recordingInputRequired.close();
-    await _fxTakeHeld.close();
     await _recordRefusals.close();
     await _overdubRefusals.close();
     await _lengthHistoryRefusals.close();
@@ -9806,7 +10654,7 @@ int resolvedPrimaryTrack(int designation, List<TrackSnapshot> tracks) {
 /// content changed; a playhead tick, a level tick, a mute or a volume change
 /// move none of these.
 class _WaveformKey extends Equatable {
-  const _WaveformKey({
+  const new({
     required this.state,
     required this.lengthFrames,
     required this.undoDepth,
@@ -9814,7 +10662,7 @@ class _WaveformKey extends Equatable {
     required this.clearRestore,
   });
 
-  factory _WaveformKey.of(Track track) => _WaveformKey(
+  factory of(Track track) => _WaveformKey(
     state: track.state,
     lengthFrames: track.lengthFrames,
     undoDepth: track.undoDepth,
@@ -9840,7 +10688,7 @@ class _WaveformKey extends Equatable {
 
 /// One cached waveform read with the sweep it is waiting on.
 class _WaveformRead {
-  _WaveformRead(this.key, this.samples, {required this.sweepFrom})
+  new(this.key, this.samples, {required this.sweepFrom})
     : lastProgress = sweepFrom;
 
   final _WaveformKey key;
@@ -9858,7 +10706,7 @@ class _WaveformRead {
 }
 
 class _MixIntent {
-  _MixIntent({
+  new({
     required Map<int, double> pans,
     required Map<int, double> trackLevels,
     required Map<int, bool> solos,
@@ -9904,33 +10752,31 @@ class _MixIntent {
 }
 
 class _PendingImage {
-  _PendingImage(
+  new(
     this.revision,
     this.images,
     this.balances,
+    this.sources,
     this.inputs,
     this.inherited,
     this.inheritedInputs,
     this.inheritedHandles, {
     required this.clearOnCommit,
-    this.held = false,
   });
   final int revision;
   final Map<(int, int), double> images;
   final Map<(int, int), double> balances;
+  final Map<(int, int), int> sources;
   final Set<int> inputs;
   final Map<int, List<TrackEffect>> inherited;
   final Map<int, int> inheritedInputs;
   final Map<int, Map<String, PluginSlotHandle>> inheritedHandles;
   final bool clearOnCommit;
-
-  /// The inherited chains did not fit and came in switched off (R1).
-  final bool held;
 }
 
 /// One refused fresh-capture press waiting for its retry (#1146).
 class _RecordRetry {
-  _RecordRetry(this.channel);
+  new(this.channel);
 
   final int channel;
 
@@ -9939,7 +10785,7 @@ class _RecordRetry {
 }
 
 class _FxPreparationRefused implements Exception {
-  const _FxPreparationRefused(this.result);
+  const new(this.result);
 
   final EngineResult result;
 }
@@ -9947,14 +10793,14 @@ class _FxPreparationRefused implements Exception {
 /// A Loop setting with the inherit grammar (#1179 Follow tempo and Pitch):
 /// the default every track inherits and per-track overrides.
 final class _InheritIntent<V extends Object> {
-  _InheritIntent(Map<int, V> overrides, {required this.defaultValue})
+  new(Map<int, V> overrides, {required this.defaultValue})
     : overrides = Map.unmodifiable(overrides);
   final V defaultValue;
   final Map<int, V> overrides;
 }
 
 final class _OneShotIntent {
-  _OneShotIntent(Map<int, bool> overrides, {required this.defaultValue})
+  new(Map<int, bool> overrides, {required this.defaultValue})
     : overrides = Map.unmodifiable(overrides);
   final bool defaultValue;
   final Map<int, bool> overrides;
@@ -9963,7 +10809,7 @@ final class _OneShotIntent {
 
 /// A cable measurement waiting for its result.
 class _LatencyWait {
-  _LatencyWait(this.request, this.timeout);
+  new(this.request, this.timeout);
 
   final int request;
   final Timer timeout;

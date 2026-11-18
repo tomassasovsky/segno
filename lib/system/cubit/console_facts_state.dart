@@ -19,7 +19,7 @@ enum ConsoleFactsStatus {
 /// What the app knows about the box it is running on.
 class ConsoleFactsState extends Equatable {
   /// Creates a [ConsoleFactsState].
-  const ConsoleFactsState({
+  const new({
     required this.supported,
     this.status = ConsoleFactsStatus.initial,
     this.storage = const StorageUsage.unknown(),

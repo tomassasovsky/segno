@@ -10,7 +10,7 @@ import 'package:equatable/equatable.dart';
 /// draws a playhead: the progress bars and the waveforms.
 class Playhead extends Equatable {
   /// Creates a [Playhead].
-  const Playhead({this.tracks = const []});
+  const new({this.tracks = const []});
 
   /// Each track's play position as a share of its loop, `0..1`, indexed by
   /// channel. `0` while the track has no length or is recording its take:

@@ -46,6 +46,41 @@ extension EngineLocalizations on AppLocalizations {
     TrackEffectType.smartTune => effectSmartTune,
   };
 
+  /// The localized name of the catalogue module [module] (its
+  /// `FxModule.name`, which an entry stores as `TrackEffect.module`), or
+  /// `null` for a name the catalogue does not have.
+  String? fxModuleLabel(String module) => switch (module) {
+    'Ambience' => fxModuleAmbience,
+    'Amp' => fxModuleAmp,
+    'Chorus' => fxModuleChorus,
+    'Compressor' => fxModuleCompressor,
+    'Degrade' => fxModuleDegrade,
+    'Delay' => fxModuleDelay,
+    'Distortion' => fxModuleDistortion,
+    'Doubler' => fxModuleDoubler,
+    'Dub delay' => fxModuleDubDelay,
+    'Dub reverb' => fxModuleDubReverb,
+    'Four-band EQ' => fxModuleFourBandEq,
+    'Harmonizer' => fxModuleHarmonizer,
+    'High-pass gate' => fxModuleHighPassGate,
+    'Low-pass filter' => fxModuleLowPassFilter,
+    'Modulation' => fxModuleModulation,
+    'Octaver' => fxModuleOctaver,
+    'Overdrive' => fxModuleOverdrive,
+    'Parametric EQ' => fxModuleParametricEq,
+    'Pitch shift' => fxModulePitchShift,
+    'Pumper' => fxModulePumper,
+    'Reverb' => fxModuleReverb,
+    'Slicer' => fxModuleSlicer,
+    'Smart tune' => fxModuleSmartTune,
+    'Spring reverb' => fxModuleSpringReverb,
+    'Transient' => fxModuleTransient,
+    'Vinyl' => fxModuleVinyl,
+    'Wah' => fxModuleWah,
+    'Whammy' => fxModuleWhammy,
+    _ => null,
+  };
+
   /// The name of a built-in effect parameter, by its stable key. An unknown
   /// key reads as the key itself rather than as nothing.
   String fxParamName(FxParamInfo p) => fxParamKeyName(p.key);
@@ -133,6 +168,8 @@ extension EngineLocalizations on AppLocalizations {
     'sustain' => paramSustain,
     'highpass' => paramHighpass,
     'gate_threshold' => paramGateThreshold,
+    'gate_release' => paramGateRelease,
+    'gate_detector' => paramGateDetector,
     'separation' => paramSeparation,
     'pedal' => paramPedal,
     'frequency' => paramFrequency,
@@ -495,11 +532,7 @@ extension EngineLocalizations on AppLocalizations {
   ///
   /// An unnamed destination falls back to its full jack label (`Outputs 1–2`
   /// or `Output 5` for an odd final jack).
-  String outputName(
-    Map<int, String> names,
-    int bus, {
-    required int channels,
-  }) {
+  String outputName(Map<int, String> names, int bus, {required int channels}) {
     final given = names[bus] ?? '';
     if (given.isNotEmpty) return given;
     return outputBusLabel(bus, channels: channels);

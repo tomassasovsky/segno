@@ -27,7 +27,7 @@ String readBootId() {
 @immutable
 class ReconciledTake {
   /// Creates a [ReconciledTake].
-  const ReconciledTake({
+  const new({
     required this.takeId,
     required this.sampleRate,
     required this.streams,
@@ -309,21 +309,44 @@ int countOvers(String path, int dataBytes) {
 }
 
 /// The streams a take wrote, from its sidecar's `channel_layout`: the
-/// master (stream 0, 1 or 2 channels) and each captured input `n` (stream
-/// `1 + n`, stereo). Null when the layout does not read, which nothing may
-/// guess at.
+/// master (stream 0, 1 or 2 channels), each input `n` recorded as heard
+/// (`captured_inputs`, stream `1 + n`, stereo) and, for a take since #1805,
+/// each input recorded raw (`raw_inputs`, stream [PerfTarget.rawStreamBase]
+/// `+ n`, mono; every input the device has, monitored or not). Null when the
+/// layout does not read, which nothing may guess at.
 List<({int stream, int channels})>? streamsOf(Map<String, dynamic> native) {
   final layout = native['channel_layout'] ?? const <String, dynamic>{};
   if (layout is! Map<String, dynamic>) return null;
   final master = layout['master_channels'] ?? 1;
   final inputs = layout['captured_inputs'] ?? const <dynamic>[];
-  if (master is! int || master < 1 || master > 2 || inputs is! List) {
+  final raw = layout['raw_inputs'] ?? const <dynamic>[];
+  if (master is! int ||
+      master < 1 ||
+      master > 2 ||
+      inputs is! List ||
+      raw is! List) {
     return null;
   }
   final streams = [(stream: 0, channels: master)];
+  final captured = <int>{};
   for (final input in inputs) {
-    if (input is! int || input < 0) return null;
+    if (input is! int ||
+        input < 0 ||
+        1 + input >= PerfTarget.rawStreamBase ||
+        !captured.add(input)) {
+      return null;
+    }
     streams.add((stream: 1 + input, channels: 2));
+  }
+  final recordedRaw = <int>{};
+  for (final input in raw) {
+    if (input is! int ||
+        input < 0 ||
+        PerfTarget.rawStreamBase + input > 0xFFFF ||
+        !recordedRaw.add(input)) {
+      return null;
+    }
+    streams.add((stream: PerfTarget.rawStreamBase + input, channels: 1));
   }
   return streams;
 }
@@ -376,7 +399,7 @@ String _hex(Uint8List bytes) =>
     bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
 
 class _DiskPart {
-  _DiskPart(this.index, this.file, this.length, this.frames, this.header);
+  new(this.index, this.file, this.length, this.frames, this.header);
 
   final int index;
   final File file;

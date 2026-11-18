@@ -79,7 +79,7 @@ enum ControlActionGroup {
 /// one never follows the bank — "Track 3 · Clear" means track 3 from either
 /// bank, which is the whole point of naming it.
 sealed class ActionScope extends Equatable {
-  const ActionScope();
+  const new();
 
   /// Parses a scope [token] back, or `null` when it names nothing.
   static ActionScope? tryParse(String token) {
@@ -102,7 +102,7 @@ sealed class ActionScope extends Equatable {
 /// Whatever track is selected when the action fires.
 final class SelectedTrackScope extends ActionScope {
   /// Creates a [SelectedTrackScope].
-  const SelectedTrackScope();
+  const new();
 
   @override
   String get token => 'selected';
@@ -117,7 +117,7 @@ final class SelectedTrackScope extends ActionScope {
 /// All eight tracks, in one edit.
 final class AllTracksScope extends ActionScope {
   /// Creates an [AllTracksScope].
-  const AllTracksScope();
+  const new();
 
   @override
   String get token => 'all';
@@ -132,7 +132,7 @@ final class AllTracksScope extends ActionScope {
 /// One named track, independent of the bank and of the selection.
 final class FixedTrackScope extends ActionScope {
   /// Creates a [FixedTrackScope] on [channel] (zero-based).
-  const FixedTrackScope(this.channel);
+  const new(this.channel);
 
   /// The track this scope names.
   final int channel;
@@ -183,7 +183,7 @@ enum TrackOperation {
   /// Keep the last half of the track: Divide (#1168).
   divideLastHalf('divide-last');
 
-  const TrackOperation(this.token);
+  new(this.token);
 
   /// The key fragment this operation contributes.
   final String token;
@@ -251,7 +251,7 @@ enum ControlCommand {
   /// Switch the track bank A / B.
   nextBank('bank:next');
 
-  const ControlCommand(this.key);
+  new(this.key);
 
   /// The whole key for this command. Spelled out per member rather than
   /// derived from the member name, because the accepted catalogue does not
@@ -271,7 +271,7 @@ enum ControlCommand {
 /// One entry in the catalogue: something a control can be assigned to do.
 sealed class ControlAction extends Equatable {
   /// Creates a [ControlAction].
-  const ControlAction();
+  const new();
 
   /// Parses a stored [key] back to an action, or `null` when it names
   /// nothing this build can do.
@@ -341,7 +341,7 @@ sealed class ControlAction extends Equatable {
 /// it without silently changing the assignment during a round trip.
 final class UnavailableAction extends ControlAction {
   /// Creates an unavailable action with its original [key].
-  const UnavailableAction(this.key);
+  const new(this.key);
 
   @override
   final String key;
@@ -363,7 +363,7 @@ final class UnavailableAction extends ControlAction {
 /// to prevent.
 final class ModeAction extends ControlAction {
   /// Creates a [ModeAction] entering [mode].
-  const ModeAction(this.mode);
+  const new(this.mode);
 
   /// The mode this action enters.
   final InteractionMode mode;
@@ -401,7 +401,7 @@ final class ModeAction extends ControlAction {
 /// Runs a whole-rig command.
 final class CommandAction extends ControlAction {
   /// Creates a [CommandAction] running [command].
-  const CommandAction(this.command);
+  const new(this.command);
 
   /// The command this action runs.
   final ControlCommand command;
@@ -425,7 +425,7 @@ final class CommandAction extends ControlAction {
 /// does, available to any control.
 final class TrackPedalAction extends ControlAction {
   /// Creates a [TrackPedalAction] on [channel].
-  const TrackPedalAction(this.channel);
+  const new(this.channel);
 
   /// The track this action drives.
   final int channel;
@@ -448,7 +448,7 @@ final class TrackPedalAction extends ControlAction {
 /// and one that also starts recording is the opposite of that.
 final class SelectTrackAction extends ControlAction {
   /// Creates a [SelectTrackAction] on [channel].
-  const SelectTrackAction(this.channel);
+  const new(this.channel);
 
   /// The track this action selects.
   final int channel;
@@ -466,7 +466,7 @@ final class SelectTrackAction extends ControlAction {
 /// Runs one per-track operation on one scope.
 final class TrackOperationAction extends ControlAction {
   /// Creates a [TrackOperationAction].
-  const TrackOperationAction({required this.operation, required this.scope});
+  const new({required this.operation, required this.scope});
 
   /// What to do.
   final TrackOperation operation;

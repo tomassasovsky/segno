@@ -12,7 +12,7 @@ import 'package:spawn_process/src/worker.dart';
 /// A program started by [startProcess]: the subset of `dart:io`'s [Process]
 /// that the app uses.
 final class SpawnedProcess {
-  SpawnedProcess._(this.pid, this._executable, this._arguments) {
+  new _(this.pid, this._executable, this._arguments) {
     // An exit code nobody awaits must not surface as an uncaught error.
     _exitCode.future.ignore();
   }
@@ -194,7 +194,7 @@ Future<SpawnedProcess> startProcess(
     events.close();
     rethrow;
   }
-  return started.future;
+  return await started.future;
 }
 
 /// Runs [executable] with [arguments] to completion, like `Process.run`: the
@@ -225,7 +225,7 @@ Future<ProcessResult> runProcess(
     return ProcessResult(process.pid, exitCode, await stdout, await stderr);
   }
 
-  if (timeout == null) return finish();
+  if (timeout == null) return await finish();
   final result = Completer<ProcessResult>();
   final timer = Timer(timeout, () {
     if (result.isCompleted) return;
@@ -246,7 +246,7 @@ Future<ProcessResult> runProcess(
         },
       )
       .ignore();
-  return result.future;
+  return await result.future;
 }
 
 Future<String> _collect(Stream<List<int>> stream) async {

@@ -5,7 +5,7 @@ import 'package:segno/looper/model/record_length.dart';
 /// Global record-behavior options applied to the [LooperRepository].
 class RecordOptions extends Equatable {
   /// Creates a [RecordOptions].
-  const RecordOptions({
+  const new({
     this.recDub = false,
     this.defaultMultiple = 0,
     this.defaultLengthBars = 0,

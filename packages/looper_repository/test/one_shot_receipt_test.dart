@@ -41,19 +41,13 @@ void main() {
     test('every request sends the whole vector in two grouped commands, '
         'and Custom false stays out of the default', () async {
       repository
-        ..setOneShotSnapshot(
-          defaultOneShot: false,
-          trackOverrides: {0: false},
-        )
+        ..setOneShotSnapshot(defaultOneShot: false, trackOverrides: {0: false})
         ..startEngine(const EngineConfig());
       await repository.settleOneShot();
       engine.choices.clear();
       repository.setDefaultOneShot(oneShot: true);
       await repository.settleOneShot();
-      expect(engine.choices, [
-        (mask: 1, once: false),
-        (mask: 254, once: true),
-      ]);
+      expect(engine.choices, [(mask: 1, once: false), (mask: 254, once: true)]);
       expect(engine.trackOneShot[0], isFalse);
     });
     test(
@@ -101,10 +95,7 @@ void main() {
       repository.stopEngine();
       engine.commandsAreSettled = true;
       repository
-        ..setOneShotSnapshot(
-          defaultOneShot: true,
-          trackOverrides: {0: false},
-        )
+        ..setOneShotSnapshot(defaultOneShot: true, trackOverrides: {0: false})
         ..startEngine(const EngineConfig());
       expect((await repository.settleOneShot()).isOk, isTrue);
       expect((await oldReceipt).isOk, isFalse);

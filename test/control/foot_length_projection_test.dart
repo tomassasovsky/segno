@@ -140,10 +140,7 @@ void main() {
       Track(channel: 1, state: TrackState.playing, lengthFrames: 48000),
     ]);
     expect(
-      projectFrame(
-        looper,
-        overlay.copyWith(mode: InteractionMode.divide),
-      ).mode,
+      projectFrame(looper, overlay.copyWith(mode: InteractionMode.divide)).mode,
       PedalMode.custom,
     );
     final frame = projectFrame(looper, overlay);
@@ -164,11 +161,7 @@ void main() {
           (1 << PedalButton.clear.index),
       0,
     );
-    final pressed = projectFrame(
-      looper,
-      overlay,
-      pressed: {PedalButton.undo},
-    );
+    final pressed = projectFrame(looper, overlay, pressed: {PedalButton.undo});
     expect(pressed.activeButtonMask & (1 << PedalButton.undo.index), isNonZero);
   });
 
@@ -183,11 +176,7 @@ void main() {
           lengthFrames: 24000,
           syncDivisor: 2,
         ),
-        Track(
-          channel: 3,
-          state: TrackState.overdubbing,
-          lengthFrames: 48000,
-        ),
+        Track(channel: 3, state: TrackState.overdubbing, lengthFrames: 48000),
         Track(
           channel: 4,
           state: TrackState.playing,
@@ -243,9 +232,7 @@ void main() {
           masterLengthFrames: 48000,
           loopBeats: 2,
         ),
-        tracks: [
-          Track(state: TrackState.playing, lengthFrames: 48000),
-        ],
+        tracks: [Track(state: TrackState.playing, lengthFrames: 48000)],
         status: EngineStatus(sampleRate: 48000),
       ),
       bank: 0,

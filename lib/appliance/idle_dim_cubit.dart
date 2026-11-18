@@ -7,7 +7,7 @@ import 'package:settings_repository/settings_repository.dart';
 /// The idle period and whether it has run out.
 class IdleDimState extends Equatable {
   /// Creates an [IdleDimState].
-  const IdleDimState({this.seconds = 0, this.dimmed = false});
+  const new({this.seconds = 0, this.dimmed = false});
 
   /// The idle period before both panels dim; `0` never dims.
   final int seconds;
@@ -29,13 +29,17 @@ class IdleDimState extends Equatable {
 /// music stops. Never is the default, as the console has always been.
 class IdleDimCubit extends Cubit<IdleDimState> {
   /// Creates an [IdleDimCubit].
-  IdleDimCubit({required SettingsRepository settings})
-    : _settings = settings,
-      super(const IdleDimState());
+  new({required this._settings}) : super(const IdleDimState());
 
   final SettingsRepository _settings;
   Timer? _timer;
   bool _busy = false;
+  final _activities = StreamController<void>.broadcast();
+
+  /// Every [activity]: a player is at the console. What waits for the
+  /// player to come back listens here (a capture that stopped on its own,
+  /// #1767).
+  Stream<void> get activities => _activities.stream;
 
   /// Restores the saved idle period and starts it.
   Future<void> load() async {
@@ -58,6 +62,7 @@ class IdleDimCubit extends Cubit<IdleDimState> {
   void activity() {
     if (state.dimmed) emit(IdleDimState(seconds: state.seconds));
     _restart();
+    if (!_activities.isClosed) _activities.add(null);
   }
 
   /// Whether music is playing or being recorded. While [busy] the panels
@@ -81,6 +86,7 @@ class IdleDimCubit extends Cubit<IdleDimState> {
   @override
   Future<void> close() {
     _timer?.cancel();
+    unawaited(_activities.close());
     return super.close();
   }
 }

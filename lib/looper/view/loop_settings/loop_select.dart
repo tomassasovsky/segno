@@ -1,11 +1,11 @@
-import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/theme/theme.dart';
 
 /// One choice in a [LoopSelect] or [LoopMenu].
 class LoopSelectItem<T> {
   /// Creates a choice. [key] lands on the menu row so tests can tap it.
-  const LoopSelectItem({
+  const new({
     required this.value,
     required this.label,
     this.enabled = true,
@@ -27,8 +27,10 @@ class LoopSelectItem<T> {
 
 /// Builds the control that opens a [LoopMenu]: toggle the menu, and read
 /// whether it is showing, through [controller].
-typedef LoopMenuAnchorBuilder =
-    Widget Function(BuildContext context, MenuController controller);
+typedef LoopMenuAnchorBuilder = Widget Function(
+  BuildContext context,
+  MenuController controller,
+);
 
 /// The app's one pick-one menu: Flutter's [MenuAnchor] drawn in the surface
 /// tokens, anchored below whatever [builder] draws.
@@ -39,7 +41,7 @@ typedef LoopMenuAnchorBuilder =
 /// chooses and Escape closes — the traversal the physical encoder will drive.
 class LoopMenu<T> extends StatefulWidget {
   /// Creates a menu anchored on [builder].
-  const LoopMenu({
+  const new({
     required this.value,
     required this.items,
     required this.onSelected,
@@ -102,22 +104,44 @@ class _LoopMenuState<T> extends State<LoopMenu<T>> {
         ),
       ),
       menuChildren: [
-        for (final item in widget.items) _row(context, item),
+        for (final item in widget.items)
+          _LoopMenuRow<T>(
+            item: item,
+            selected: item.value == widget.value,
+            onSelected: widget.onSelected,
+          ),
       ],
       builder: (context, controller, _) => widget.builder(context, controller),
     );
   }
+}
 
-  Widget _row(BuildContext context, LoopSelectItem<T> item) {
+/// One row of a [LoopMenu]: [item]'s label, filled and checked when it is
+/// the current choice.
+class _LoopMenuRow<T> extends StatelessWidget {
+  const new({
+    required this.item,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  final LoopSelectItem<T> item;
+
+  /// Whether [item] is the current choice.
+  final bool selected;
+
+  final ValueChanged<T> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
     final surface = context.surface;
-    final selected = item.value == widget.value;
     return Semantics(
       inMutuallyExclusiveGroup: true,
       checked: selected,
       child: MenuItemButton(
         key: item.key,
         autofocus: selected,
-        onPressed: item.enabled ? () => widget.onSelected(item.value) : null,
+        onPressed: item.enabled ? () => onSelected(item.value) : null,
         style: ButtonStyle(
           fixedSize: const WidgetStatePropertyAll(Size.fromHeight(64)),
           padding: const WidgetStatePropertyAll(
@@ -169,7 +193,7 @@ class _LoopMenuState<T> extends State<LoopMenu<T>> {
 /// chevron, opening a [LoopMenu] of the choices below itself.
 class LoopSelect<T> extends StatefulWidget {
   /// Creates a select showing [value]'s label.
-  const LoopSelect({
+  const new({
     required this.value,
     required this.items,
     required this.onSelected,

@@ -21,10 +21,7 @@ void main() {
 
   test('refuses instrument calls until the engine is configured', () {
     final fresh = MockAudioEngine();
-    expect(
-      fresh.setInstrument(slot: 0, patch: pad),
-      EngineResult.notRunning,
-    );
+    expect(fresh.setInstrument(slot: 0, patch: pad), EngineResult.notRunning);
     expect(fresh.setVoiceLimit(8), EngineResult.notRunning);
     expect(fresh.setInstrumentRoutes(const []), EngineResult.notRunning);
     // Attaching does not need a configured engine.
@@ -39,10 +36,7 @@ void main() {
 
   test('returns the catalogue and refuses unknown patches and bad slots', () {
     expect(engine.synthCatalogue(), referenceSynthCatalogue);
-    expect(
-      engine.setInstrument(slot: 0, patch: 19),
-      EngineResult.unknownPatch,
-    );
+    expect(engine.setInstrument(slot: 0, patch: 19), EngineResult.unknownPatch);
     expect(engine.setInstrument(slot: 8, patch: pad), EngineResult.invalid);
     expect(
       engine.setInstrument(slot: 0, patch: pad, params: const [1, 2]),

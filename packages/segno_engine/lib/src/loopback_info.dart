@@ -37,20 +37,20 @@ enum LoopbackKind {
 @immutable
 class LoopbackInfo {
   /// Creates a [LoopbackInfo].
-  const LoopbackInfo({
+  const new({
     required this.available,
     required this.kind,
     required this.deviceName,
   });
 
   /// A result indicating no loopback path is available.
-  const LoopbackInfo.none()
+  const new none()
     : available = false,
       kind = LoopbackKind.none,
       deviceName = '';
 
   /// Projects a native `le_loopback_info` (via its pointer) into a Dart value.
-  factory LoopbackInfo.fromNative(Pointer<le_loopback_info> ptr) {
+  factory fromNative(Pointer<le_loopback_info> ptr) {
     final ref = ptr.ref;
     // device_name is the trailing fixed 256-byte field; read it as a C string.
     const nameBytes = 256;

@@ -1,6 +1,6 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/app/app_notices.dart';
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/audio_setup/cubit/interface_inputs_cubit.dart';
@@ -69,9 +69,8 @@ _SetupValues _setupValues(
     // Only a jack with switches has anything to lock.
     interfaceLocked:
         interface.inputAt(input).hasSwitches &&
-        [
-          for (var jack = first; jack <= last; jack++) jack,
-        ].any((jack) => _inputLocked(state, jack)),
+        [for (var jack = first; jack <= last; jack++) jack]
+            .any((jack) => _inputLocked(state, jack)),
   );
 }
 
@@ -83,19 +82,19 @@ _SetupValues _setupValues(
 /// change made on the interface itself shows here.
 class InputSetupTab extends StatelessWidget {
   /// Creates an [InputSetupTab].
-  const InputSetupTab({super.key});
+  const new({super.key});
 
   @override
   Widget build(BuildContext context) => BlocProvider(
-    create: (context) => InterfaceInputsCubit(
-      repository: context.read<LooperRepository>(),
-    )..startWatching(),
+    create: (context) =>
+        InterfaceInputsCubit(repository: context.read<LooperRepository>())
+          ..startWatching(),
     child: const _InputSetupView(),
   );
 }
 
 class _InputSetupView extends StatefulWidget {
-  const _InputSetupView();
+  const new();
 
   @override
   State<_InputSetupView> createState() => _InputSetupTabState();
@@ -427,7 +426,7 @@ class _InputSetupTabState extends State<_InputSetupView> {
 }
 
 class _InputCards extends StatelessWidget {
-  const _InputCards({
+  const new({
     required this.count,
     required this.selected,
     required this.names,
@@ -455,10 +454,26 @@ class _InputCards extends StatelessWidget {
     );
   }
 
+  /// What the interface has set on [input], as the card's tags.
+  List<String> _tags(AppLocalizations l10n, int input) => [
+    if (interface.inputAt(input).level == InputLevel.inst) l10n.routingTagInst,
+    if (interface.phantomFor(input)?.on ?? false) l10n.routingTagPhantom,
+  ];
+
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final width = LoopSettingsFrame.contentWidthOf(context);
+    final tags = [for (var i = 0; i < count; i++) _tags(l10n, i)];
+    final tagLine = tags.any((t) => t.isNotEmpty);
+    // A card shows its ordinal over its name when the input has its own
+    // name; the others keep that line so every name sits on one line.
+    final ordinalLine =
+        tagLine ||
+        [
+          for (var i = 0; i < count; i++)
+            _ordinal(l10n, i) != l10n.inputName(names.names, i),
+        ].any((named) => named);
     return SizedBox(
       width: width,
       height: 112,
@@ -480,12 +495,9 @@ class _InputCards extends StatelessWidget {
           ordinal: _ordinal(l10n, index),
           name: l10n.inputName(names.names, index),
           selected: index == selected,
-          tags: [
-            if (interface.inputAt(index).level == InputLevel.inst)
-              l10n.routingTagInst,
-            if (interface.phantomFor(index)?.on ?? false)
-              l10n.routingTagPhantom,
-          ],
+          tags: tags[index],
+          ordinalLine: ordinalLine,
+          tagLine: tagLine,
           onTap: () => onSelected(index),
         ),
       ),
@@ -494,7 +506,7 @@ class _InputCards extends StatelessWidget {
 }
 
 class _FormatRow extends StatelessWidget {
-  const _FormatRow({
+  const new({
     required this.input,
     required this.inputCount,
     required this.paired,
@@ -568,7 +580,7 @@ class _FormatRow extends StatelessWidget {
 }
 
 class _PlacementColumn extends StatelessWidget {
-  const _PlacementColumn({
+  const new({
     required this.label,
     required this.value,
     required this.onChanged,
@@ -640,7 +652,7 @@ class _PlacementColumn extends StatelessWidget {
 }
 
 class _TrimColumn extends StatelessWidget {
-  const _TrimColumn({
+  const new({
     required this.side,
     required this.trimDb,
     required this.input,
@@ -779,10 +791,7 @@ class _TrimColumn extends StatelessWidget {
             Positioned(
               left: 0,
               top: 183,
-              child: LoopNote(
-                l10n.routingClipNote,
-                tone: LoopNoteTone.error,
-              ),
+              child: LoopNote(l10n.routingClipNote, tone: LoopNoteTone.error),
             ),
           // The meter reads the input before the trim, so it is where the
           // interface's gain knob is set: to the band (#1646).

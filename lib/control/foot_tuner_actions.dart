@@ -8,7 +8,7 @@ import 'package:settings_repository/settings_repository.dart';
 /// [FootTunerSelection]; this caches nothing.
 class FootTunerActions {
   /// Connects the shared repository and the tuner preferences.
-  const FootTunerActions({required this.repository, required this.settings});
+  const new({required this.repository, required this.settings});
 
   /// Owner of the engine's tuner.
   final LooperRepository repository;

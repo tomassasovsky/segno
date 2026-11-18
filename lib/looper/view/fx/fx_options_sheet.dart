@@ -1,5 +1,5 @@
-import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
@@ -8,7 +8,7 @@ import 'package:segno/theme/theme.dart';
 /// One row of an [showFxOptionsSheet].
 class FxOption {
   /// Creates an [FxOption].
-  const FxOption({required this.id, required this.label, this.enabled = true});
+  const new({required this.id, required this.label, this.enabled = true});
 
   /// What the sheet resolves to when this row is chosen.
   final String id;
@@ -37,20 +37,13 @@ Future<String?> showFxOptionsSheet(
   return showDialog<String>(
     context: context,
     barrierColor: surface.scrim.withValues(alpha: 0.86),
-    builder: (context) => _FxOptionsSheet(
-      title: title,
-      body: body,
-      options: options,
-    ),
+    builder: (context) =>
+        _FxOptionsSheet(title: title, body: body, options: options),
   );
 }
 
 class _FxOptionsSheet extends StatelessWidget {
-  const _FxOptionsSheet({
-    required this.title,
-    required this.body,
-    required this.options,
-  });
+  const new({required this.title, required this.body, required this.options});
 
   final String title;
   final String? body;
@@ -151,7 +144,7 @@ class _FxOptionsSheet extends StatelessWidget {
 }
 
 class _OptionRow extends StatelessWidget {
-  const _OptionRow({required this.option});
+  const new({required this.option});
 
   final FxOption option;
 

@@ -1,8 +1,8 @@
 import 'package:bloc_test/bloc_test.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/backing/cubit/backing_mix_cubit.dart';
 import 'package:segno/backing/model/backing_mix.dart';
@@ -21,18 +21,18 @@ import 'package:segno/looper/model/tempo_state.dart';
 
 import '../../helpers/helpers.dart';
 
-class _MockTempo extends MockCubit<TempoState> implements TempoCubit {}
+class _MockTempo extends MockCubit<TempoState> implements TempoCubit;
 
 class _MockPlayback extends MockCubit<PlaybackOptions>
-    implements PlaybackOptionsCubit {}
+    implements PlaybackOptionsCubit;
 
 class _MockRecord extends MockCubit<RecordOptionsViewState>
-    implements RecordOptionsCubit {}
+    implements RecordOptionsCubit;
 
 class _MockTiming extends MockCubit<RecordTimingState>
-    implements RecordTimingCubit {}
+    implements RecordTimingCubit;
 
-class _MockMix extends MockCubit<BackingMixState> implements BackingMixCubit {}
+class _MockMix extends MockCubit<BackingMixState> implements BackingMixCubit;
 
 void main() {
   late LooperRepository looper;
@@ -54,9 +54,8 @@ void main() {
     timing = _MockTiming();
     when(() => tempo.state).thenReturn(const TempoState());
     when(() => playback.state).thenReturn(const PlaybackOptions());
-    when(
-      () => record.state,
-    ).thenReturn(const RecordOptionsViewState(options: RecordOptions()));
+    when(() => record.state)
+        .thenReturn(const RecordOptionsViewState(options: RecordOptions()));
     when(() => timing.state).thenReturn(const RecordTimingState());
   });
 

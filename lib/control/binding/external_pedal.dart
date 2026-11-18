@@ -57,7 +57,7 @@ enum ExternalSwitchHardware {
 /// One external switch: what kind it is, and what it does.
 class ExternalSwitchSetup extends Equatable {
   /// Creates an [ExternalSwitchSetup].
-  const ExternalSwitchSetup({
+  const new({
     this.hardware = ExternalSwitchHardware.momentary,
     this.gestures = ControlGesturePair.empty,
     this.change,
@@ -65,7 +65,7 @@ class ExternalSwitchSetup extends Equatable {
   });
 
   /// Rebuilds a switch from its [toJson] map.
-  factory ExternalSwitchSetup.fromJson(Map<String, dynamic> json) {
+  factory fromJson(Map<String, dynamic> json) {
     final change = json['change'];
     final controls = json['controls'];
     final rawHardware = json['hardware'];
@@ -163,7 +163,7 @@ class ExternalSwitchSetup extends Equatable {
 /// one song.
 class ExternalJackSetup extends Equatable {
   /// Creates an [ExternalJackSetup].
-  const ExternalJackSetup({
+  const new({
     this.type = ExternalJackType.singleSwitch,
     this.single = ExternalSwitchSetup.empty,
     this.dualFirst = ExternalSwitchSetup.empty,
@@ -172,7 +172,7 @@ class ExternalJackSetup extends Equatable {
   });
 
   /// Rebuilds a jack from its [toJson] map.
-  factory ExternalJackSetup.fromJson(Map<String, dynamic> json) {
+  factory fromJson(Map<String, dynamic> json) {
     ExternalSwitchSetup read(String key) {
       final raw = json[key];
       if (json.containsKey(key) && raw is! Map<String, dynamic>) {
@@ -310,7 +310,7 @@ class ExternalJackSetup extends Equatable {
 /// One value, because the accepted screen saves both ports as one draft.
 class ExternalPedalSetup extends Equatable {
   /// Creates a detached map of the two physical jacks.
-  factory ExternalPedalSetup({
+  factory({
     Map<PedalCtrlJack, ExternalJackSetup> jacks = const {},
     Map<PedalCtrlInput, bool> logicalOn = const {},
   }) => ExternalPedalSetup._(
@@ -318,10 +318,10 @@ class ExternalPedalSetup extends Equatable {
     Map.unmodifiable(logicalOn),
   );
 
-  const ExternalPedalSetup._(this.jacks, this.logicalOn);
+  const new _(this.jacks, this.logicalOn);
 
   /// Rebuilds both jacks from their [toJson] map.
-  factory ExternalPedalSetup.fromJson(Map<String, dynamic> json) {
+  factory fromJson(Map<String, dynamic> json) {
     for (final key in json.keys) {
       if (key != 'on' &&
           !PedalCtrlJack.values.any((jack) => jack.name == key)) {

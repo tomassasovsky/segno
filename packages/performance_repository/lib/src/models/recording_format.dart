@@ -13,7 +13,7 @@ import 'package:wav_codec/wav_codec.dart';
 @immutable
 class RecordingFormat {
   /// Creates a [RecordingFormat].
-  RecordingFormat({
+  new({
     required this.sampleRate,
     required this.channels,
     this.partBytes = RecordedPartWriter.defaultPartBytes,
@@ -132,7 +132,7 @@ class RecordingFormat {
 @immutable
 class TakePart {
   /// Creates a [TakePart].
-  const TakePart({
+  const new({
     required this.stream,
     required this.index,
     required this.file,
@@ -147,7 +147,7 @@ class TakePart {
   ///
   /// Throws [FormatException] for a malformed entry: recovery must never
   /// guess at the shape of a take.
-  factory TakePart.fromJson(Map<String, dynamic> json, {int? stream}) {
+  factory fromJson(Map<String, dynamic> json, {int? stream}) {
     final s = json['stream'] ?? stream;
     final index = json['index'];
     final file = json['file'];
@@ -186,7 +186,8 @@ class TakePart {
 
   static final RegExp _sha256Hex = RegExp(r'^[0-9a-f]{64}$');
 
-  /// 0 for the main output, 1 + n for input n.
+  /// 0 for the main output, 1 + n for input n as heard,
+  /// `PerfTarget.rawStreamBase` + n for input n raw (#1805).
   final int stream;
 
   /// Position in the stream, from 1.
@@ -243,13 +244,14 @@ class TakePart {
 @immutable
 class TakeCheckpointStream {
   /// Creates a [TakeCheckpointStream].
-  const TakeCheckpointStream({
+  const new({
     required this.stream,
     required this.channels,
     required this.parts,
   });
 
-  /// 0 for the main output, 1 + n for input n.
+  /// 0 for the main output, 1 + n for input n as heard,
+  /// `PerfTarget.rawStreamBase` + n for input n raw (#1805).
   final int stream;
 
   /// Interleaved channels.
@@ -276,7 +278,7 @@ class TakeCheckpointStream {
 @immutable
 class TakeCheckpoint {
   /// Creates a [TakeCheckpoint].
-  const TakeCheckpoint({
+  const new({
     required this.sequence,
     required this.takeId,
     required this.bootId,
@@ -298,7 +300,7 @@ class TakeCheckpoint {
   /// slot is valid when its checksum matches and it parses; the valid slot
   /// with the higher sequence wins. Throws [FormatException] when neither
   /// is valid.
-  factory TakeCheckpoint.fromSlots(
+  factory fromSlots(
     Uint8List? a,
     Uint8List? b, {
     required String Function(Uint8List bytes) digest,
@@ -322,7 +324,7 @@ class TakeCheckpoint {
   ///
   /// Throws [FormatException] for a checksum that does not match, any other
   /// version or encoding, a malformed shape, or parts not numbered 1, 2, 3 …
-  factory TakeCheckpoint.fromSlot(
+  factory fromSlot(
     Uint8List bytes, {
     required String Function(Uint8List bytes) digest,
   }) {
@@ -343,7 +345,7 @@ class TakeCheckpoint {
     return TakeCheckpoint._fromJson(decoded);
   }
 
-  factory TakeCheckpoint._fromJson(Map<String, dynamic> json) {
+  factory _fromJson(Map<String, dynamic> json) {
     final sequence = json['sequence'];
     final takeId = json['take_id'];
     final bootId = json['boot_id'];

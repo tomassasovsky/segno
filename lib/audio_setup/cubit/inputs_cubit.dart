@@ -31,7 +31,7 @@ part 'inputs_state.dart';
 /// per-track lane list all read the same names through `l10n.inputName`.
 class InputsCubit extends Cubit<InputsState> {
   /// Creates an [InputsCubit] that follows [repository]'s open device.
-  InputsCubit({
+  new({
     required SettingsRepository settings,
     required LooperRepository repository,
   }) : super(const InputsState()) {

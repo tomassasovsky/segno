@@ -62,7 +62,7 @@ class ContentDecoder implements AudioDecoder {
   }) async {
     if (File(path).existsSync()) _register(path);
     await beforeDecode?.call();
-    return mock.decode(
+    return await mock.decode(
       path,
       sampleRate: sampleRate,
       startFrame: startFrame,
@@ -82,7 +82,7 @@ class ContentDecoder implements AudioDecoder {
 /// to write other bytes than the source.
 class FakeCopier {
   /// Creates a [FakeCopier] writing under [root].
-  FakeCopier(this.root);
+  new(this.root);
 
   /// The Internal root.
   final String root;
@@ -117,7 +117,7 @@ class FakeCopier {
 /// one retry.
 class NotReadyEngine implements BackingControl {
   /// Wraps [inner].
-  NotReadyEngine(this.inner);
+  new(this.inner);
 
   /// The engine doing the work.
   final MockAudioEngine inner;

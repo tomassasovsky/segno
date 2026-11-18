@@ -1,5 +1,5 @@
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/appliance/power_off/power_goodbye.dart';
 import 'package:segno/appliance/software_brightness.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -60,7 +60,7 @@ WaveformFrame waveformFrameFrom(
 /// because the 7" panel is a panel, not a window.
 class WaveformWindowApp extends StatelessWidget {
   /// Creates a [WaveformWindowApp] rendering [frame].
-  const WaveformWindowApp({
+  const new({
     required this.frame,
     required this.readout,
     this.onActivity = _noActivity,
@@ -103,63 +103,59 @@ class WaveformWindowApp extends StatelessWidget {
     return Listener(
       behavior: HitTestBehavior.translucent,
       onPointerDown: (_) => onActivity(),
-      child: _app(),
-    );
-  }
-
-  Widget _app() {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.neon,
-      localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: AppLocalizations.supportedLocales,
-      builder: (context, child) =>
-          AppTextDefaults(child: child ?? const SizedBox.shrink()),
-      // The Scaffold supplies the Material ancestor (the same job TracksView's
-      // Scaffold does in the main window): without it the readout renders
-      // bare, in the unthemed fallback style (yellow double-underlined text)
-      // once seen live on the appliance's 7".
-      home: Scaffold(
-        body: ValueListenableBuilder<PerformanceReadout>(
-          valueListenable: readout,
-          builder: (context, readoutData, _) {
-            final selected = readoutData.selected;
-            final waveform = ValueListenableBuilder<WaveformFrame>(
-              valueListenable: frame,
-              builder: (context, data, _) => WaveformView(
-                samples: data.samples,
-                progress: data.progress,
-                bars: selected?.bars ?? 0,
-                state: readoutMeterStateOf(selected),
-                semanticLabel: selected == null
-                    ? context.l10n.a11yReadoutNoTrack
-                    : context.l10n.a11ySelectedTrackWaveform(
-                        data.selectedTrack,
-                      ),
-              ),
-            );
-            // Full-bleed: the console view carries its own inset. Dimmed
-            // as its panel is set when the panel cannot dim itself. The power
-            // faces draw above the dim, as the main screen's do, so idle dim
-            // never hides them. Always the Stack: moving the view in and out
-            // of one would remount it as power-off begins.
-            return Stack(
-              fit: StackFit.expand,
-              children: [
-                SoftwareBrightness(
-                  brightness: readoutData.brightness,
-                  child: ReadoutControls(
-                    readout: readoutData,
-                    frame: frame,
-                    waveform: waveform,
-                    onCommand: onCommand,
-                    refusals: refusals,
-                  ),
+      child: MaterialApp(
+        debugShowCheckedModeBanner: false,
+        theme: AppTheme.readout,
+        localizationsDelegates: appLocalizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        builder: (context, child) =>
+            AppTextDefaults(child: child ?? const SizedBox.shrink()),
+        // The Scaffold supplies the Material ancestor (the same job
+        // TracksView's Scaffold does in the main window): without it the
+        // readout renders bare, in the unthemed fallback style (yellow
+        // double-underlined text) once seen live on the appliance's 7".
+        home: Scaffold(
+          body: ValueListenableBuilder<PerformanceReadout>(
+            valueListenable: readout,
+            builder: (context, readoutData, _) {
+              final selected = readoutData.selected;
+              final waveform = ValueListenableBuilder<WaveformFrame>(
+                valueListenable: frame,
+                builder: (context, data, _) => WaveformView(
+                  samples: data.samples,
+                  progress: data.progress,
+                  bars: selected?.bars ?? 0,
+                  state: readoutMeterStateOf(selected),
+                  semanticLabel: selected == null
+                      ? context.l10n.a11yReadoutNoTrack
+                      : context.l10n.a11ySelectedTrackWaveform(
+                          data.selectedTrack,
+                        ),
                 ),
-                ReadoutGoodbyeFace(readout: readoutData),
-              ],
-            );
-          },
+              );
+              // Full-bleed: the console view carries its own inset. Dimmed
+              // as its panel is set when the panel cannot dim itself. The power
+              // faces draw above the dim, as the main screen's do, so idle dim
+              // never hides them. Always the Stack: moving the view in and out
+              // of one would remount it as power-off begins.
+              return Stack(
+                fit: StackFit.expand,
+                children: [
+                  SoftwareBrightness(
+                    brightness: readoutData.brightness,
+                    child: ReadoutControls(
+                      readout: readoutData,
+                      frame: frame,
+                      waveform: waveform,
+                      onCommand: onCommand,
+                      refusals: refusals,
+                    ),
+                  ),
+                  ReadoutGoodbyeFace(readout: readoutData),
+                ],
+              );
+            },
+          ),
         ),
       ),
     );

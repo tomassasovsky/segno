@@ -40,7 +40,7 @@ enum FootFxRole {
 /// One switch on the FX face.
 class FootFxPedal extends Equatable {
   /// Creates one switch's projection.
-  const FootFxPedal({
+  const new({
     required this.button,
     required this.role,
     this.binding,
@@ -111,7 +111,7 @@ class FootFxPedal extends Equatable {
 /// what it draws changes, not on every meter tick.
 class FootFxProjection extends Equatable {
   /// Creates a complete projection.
-  const FootFxProjection(this.pedals);
+  const new(this.pedals);
 
   /// All ten switches.
   final Map<PedalButton, FootFxPedal> pedals;
@@ -174,7 +174,7 @@ FootFxPedal _project(
     final decoded = binding.decodeTarget();
     final target = decoded == null
         ? null
-        : _scoped(decoded, binding.scope, control.cursor);
+        : resolveBindingTarget(decoded, binding.scope, control.cursor);
     final hold = binding.decodeHoldTarget();
     return FootFxPedal(
       button: button,
@@ -205,20 +205,4 @@ FootFxPedal _project(
     lit: track?.chainEnabled ?? false,
     available: track != null,
   );
-}
-
-FxBindingTarget _scoped(
-  FxBindingTarget target,
-  BindingScope scope,
-  int cursor,
-) {
-  final address = resolveBindingAddress(target.address, scope, cursor);
-  if (address == target.address) return target;
-  return switch (target) {
-    FxChainTarget() => FxChainTarget(address),
-    FxSlotTarget(:final slotId) => FxSlotTarget(
-      address: address,
-      slotId: slotId,
-    ),
-  };
 }

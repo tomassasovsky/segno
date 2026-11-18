@@ -1,7 +1,7 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/audio_setup/cubit/outputs_cubit.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
@@ -42,7 +42,7 @@ _OutputValues _outputValues(LooperState state, int chosen) {
 /// format, level, balance and mute everything routed there is heard through.
 class OutputSetupTab extends StatefulWidget {
   /// Creates an [OutputSetupTab].
-  const OutputSetupTab({super.key});
+  const new({super.key});
 
   @override
   State<OutputSetupTab> createState() => _OutputSetupTabState();
@@ -169,11 +169,7 @@ class _OutputSetupTabState extends State<OutputSetupTab> {
           Positioned(
             left: 0,
             top: 425,
-            child: _FormatRow(
-              bus: selected,
-              mono: bus.mono,
-              muted: bus.muted,
-            ),
+            child: _FormatRow(bus: selected, mono: bus.mono, muted: bus.muted),
           ),
           Positioned(
             left: 0,
@@ -305,11 +301,7 @@ class _OutputSetupTabState extends State<OutputSetupTab> {
 
 /// The pen's `output-format-row`: Stereo or Mono, and the mute.
 class _FormatRow extends StatelessWidget {
-  const _FormatRow({
-    required this.bus,
-    required this.mono,
-    required this.muted,
-  });
+  const new({required this.bus, required this.mono, required this.muted});
 
   final int bus;
   final bool mono;
@@ -374,7 +366,7 @@ class _FormatRow extends StatelessWidget {
 
 /// The pen's left column: where a stereo destination sits between its jacks.
 class _BalanceColumn extends StatelessWidget {
-  const _BalanceColumn({
+  const new({
     required this.balance,
     required this.enabled,
     required this.onChanged,
@@ -441,7 +433,7 @@ class _BalanceColumn extends StatelessWidget {
 /// The pen's right column: how loud the destination is, and what it is
 /// putting out right now.
 class _LevelColumn extends StatelessWidget {
-  const _LevelColumn({
+  const new({
     required this.level,
     required this.muted,
     required this.bus,
@@ -532,7 +524,7 @@ class _LevelColumn extends StatelessWidget {
 
 /// One jack's meter and its reading.
 class _MeterRow extends StatelessWidget {
-  const _MeterRow({required this.side, required this.peak, super.key});
+  const new({required this.side, required this.peak, super.key});
 
   final String side;
   final double peak;

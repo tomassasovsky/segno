@@ -5,7 +5,7 @@ import 'package:segno_engine/segno_engine.dart';
 /// mapped back to asset digests, plus what the repository is doing.
 class BackingPlayerState extends Equatable {
   /// Creates a [BackingPlayerState].
-  const BackingPlayerState({
+  const new({
     this.loaded,
     this.staged,
     this.loading,

@@ -8,7 +8,7 @@ import 'package:settings_repository/settings_repository.dart';
 /// What each panel is set to and shows.
 class DisplayBrightnessState extends Equatable {
   /// Creates a [DisplayBrightnessState].
-  const DisplayBrightnessState({
+  const new({
     this.levels = const {
       DisplayRole.track: kDefaultDisplayBrightness,
       DisplayRole.main: kDefaultDisplayBrightness,
@@ -62,14 +62,11 @@ class DisplayBrightnessState extends Equatable {
 /// channel).
 class DisplayBrightnessCubit extends Cubit<DisplayBrightnessState> {
   /// Creates a [DisplayBrightnessCubit].
-  DisplayBrightnessCubit({
-    required SettingsRepository settings,
-    BrightnessClient client = const UnsupportedBrightnessClient(),
-    DisplayOutputs outputs = const UnknownDisplayOutputs(),
-  }) : _settings = settings,
-       _client = client,
-       _outputs = outputs,
-       super(const DisplayBrightnessState());
+  new({
+    required this._settings,
+    this._client = const UnsupportedBrightnessClient(),
+    this._outputs = const UnknownDisplayOutputs(),
+  }) : super(const DisplayBrightnessState());
 
   final SettingsRepository _settings;
   final BrightnessClient _client;

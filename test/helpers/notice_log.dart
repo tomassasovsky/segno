@@ -13,7 +13,7 @@ class NoticeLog {
   /// Starts recording [notices].
   ///
   /// What is up already counts as shown.
-  NoticeLog(this.notices) {
+  new(this.notices) {
     _record(notices.state);
     _subscription = notices.stream.listen(_record);
   }

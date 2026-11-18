@@ -5,6 +5,8 @@
 import 'dart:ffi';
 
 import 'package:meta/meta.dart';
+import 'package:segno_engine/src/fx_draining.dart';
+import 'package:segno_engine/src/fx_recipe.dart';
 import 'package:segno_engine/src/generated/segno_engine_bindings.dart';
 import 'package:segno_engine/src/instruments.dart';
 
@@ -390,7 +392,7 @@ enum SpeedFactor {
   /// Eight times the speed, three octaves up.
   eightfold(8, 1);
 
-  const SpeedFactor(this.numer, this.denom);
+  new(this.numer, this.denom);
 
   /// The factor's numerator.
   final int numer;
@@ -451,7 +453,7 @@ enum PitchMode {
   /// The pitch moves with the tempo ratio: faster raises it.
   followsSpeed(1);
 
-  const PitchMode(this.code);
+  new(this.code);
 
   /// The native value.
   final int code;
@@ -498,6 +500,25 @@ enum LooperModeGate {
   };
 }
 
+/// What a lane plays (#1713): its heard image, the input chain's output
+/// recorded with the take, or its clean take through its own chain.
+enum LaneSource {
+  /// The heard image where the live take has one (the default); a take
+  /// without one plays clean through its chain.
+  heard,
+
+  /// The clean take through the lane's chain: a take whose effects were
+  /// edited after it was recorded.
+  clean;
+
+  /// The native `LE_LANE_SOURCE_*` code.
+  int get code => index;
+
+  /// Decodes a native `LE_LANE_SOURCE_*` code; anything else reads as
+  /// [heard], the engine's default.
+  static LaneSource fromCode(int code) => code == 1 ? clean : heard;
+}
+
 /// An immutable per-lane projection of the native `le_lane_snapshot`.
 ///
 /// A lane is a track's fundamental recordable unit: it records one hardware
@@ -506,7 +527,7 @@ enum LooperModeGate {
 @immutable
 class LaneSnapshot {
   /// Creates a [LaneSnapshot].
-  const LaneSnapshot({
+  const new({
     required this.inputChannel,
     required this.outputMask,
     required this.volume,
@@ -516,10 +537,12 @@ class LaneSnapshot {
     required this.peak,
     this.recoverable = false,
     this.pan = 0,
+    this.heard = false,
+    this.source = LaneSource.heard,
   });
 
   /// An empty lane recording no input.
-  const LaneSnapshot.empty()
+  const new empty()
     : inputChannel = -1,
       outputMask = 0x3,
       volume = 1,
@@ -528,10 +551,12 @@ class LaneSnapshot {
       rms = 0,
       peak = 0,
       recoverable = false,
-      pan = 0;
+      pan = 0,
+      heard = false,
+      source = LaneSource.heard;
 
   /// Projects a native `le_lane_snapshot` into a [LaneSnapshot].
-  factory LaneSnapshot.fromNative(le_lane_snapshot native) => LaneSnapshot(
+  factory fromNative(le_lane_snapshot native) => LaneSnapshot(
     inputChannel: native.input_channel,
     outputMask: native.output_mask,
     volume: native.volume,
@@ -541,6 +566,8 @@ class LaneSnapshot {
     peak: native.peak,
     recoverable: native.recoverable != 0,
     pan: native.pan,
+    heard: native.heard != 0,
+    source: LaneSource.fromCode(native.source),
   );
 
   /// Hardware input channel this lane records (`-1` = none).
@@ -578,6 +605,14 @@ class LaneSnapshot {
   /// `EngineRouting.setLanePan` for the balance law.
   final double pan;
 
+  /// Whether the live take holds a heard image (#1713), the input chain's
+  /// output captured while it recorded. The lane plays it while [source] is
+  /// [LaneSource.heard].
+  final bool heard;
+
+  /// What the lane plays (`EffectsControl.setLaneSource`).
+  final LaneSource source;
+
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -591,7 +626,9 @@ class LaneSnapshot {
           rms == other.rms &&
           peak == other.peak &&
           recoverable == other.recoverable &&
-          pan == other.pan;
+          pan == other.pan &&
+          heard == other.heard &&
+          source == other.source;
 
   @override
   int get hashCode => Object.hash(
@@ -604,6 +641,8 @@ class LaneSnapshot {
     peak,
     recoverable,
     pan,
+    heard,
+    source,
   );
 }
 
@@ -631,7 +670,7 @@ enum PendingLaunchAction {
 @immutable
 class FadeImage {
   /// Creates one coherent, source-owned envelope image.
-  const FadeImage({
+  const new({
     this.amount = 1,
     this.target = 1,
     this.fullTravelSeconds = 0,
@@ -679,7 +718,7 @@ class FadeImage {
 @immutable
 class TrackSnapshot {
   /// Creates a [TrackSnapshot].
-  const TrackSnapshot({
+  const new({
     required this.state,
     required this.volume,
     required this.muted,
@@ -692,6 +731,7 @@ class TrackSnapshot {
     this.clearRestore = false,
     this.redoDepth = 0,
     this.peelDepth = 0,
+    this.historySeq = 0,
     this.multiple = 1,
     this.syncDivisor = 0,
     this.inputMask = 0x1,
@@ -725,7 +765,7 @@ class TrackSnapshot {
   });
 
   /// An empty track.
-  const TrackSnapshot.empty()
+  const new empty()
     : fade = const FadeImage(),
       fadeRevision = 0,
       state = TrackState.empty,
@@ -736,6 +776,7 @@ class TrackSnapshot {
       clearRestore = false,
       redoDepth = 0,
       peelDepth = 0,
+      historySeq = 0,
       rms = 0,
       peak = 0,
       multiple = 1,
@@ -774,7 +815,7 @@ class TrackSnapshot {
   /// [lanes] are read separately (via `le_engine_get_lane`, one per active
   /// lane) because this ffi version cannot index a native struct array; their
   /// length is `native.lane_count`.
-  factory TrackSnapshot.fromNative(
+  factory fromNative(
     le_track_snapshot native, [
     List<LaneSnapshot> lanes = const [],
   ]) => TrackSnapshot(
@@ -794,6 +835,7 @@ class TrackSnapshot {
     clearRestore: native.clear_restore != 0,
     redoDepth: native.redo_depth,
     peelDepth: native.peel_depth,
+    historySeq: native.history_seq,
     rms: native.rms,
     peak: native.peak,
     multiple: native.multiple,
@@ -875,9 +917,10 @@ class TrackSnapshot {
   final PitchMode? pitchModeOverride;
 
   /// The pitch a tempo retime puts on what the track sounds now, in cents
-  /// (#1179): 0 at its own tempo or once its time-stretched render plays,
-  /// the tempo ratio's shift while that render is pending or with
-  /// [PitchMode.followsSpeed]. Speed and Transpose are not included.
+  /// (#1179): 0 at its own tempo, while the pitch bridge keeps the pitch
+  /// until its time-stretched render lands (#1675) and once that render
+  /// plays; the tempo ratio's shift with [PitchMode.followsSpeed]. Speed and
+  /// Transpose are not included.
   final int pitchEffectiveCents;
 
   /// The shared-clock length this track's take was laid down against once a
@@ -932,6 +975,12 @@ class TrackSnapshot {
   /// cleared track, like [undoDepth]. A peel keeps [undoDepth] constant while
   /// a layer disappears, so the layer count derives from this.
   final int peelDepth;
+
+  /// Where the edit the next undo on this track takes back stands in the
+  /// engine's history order (#1707): numbered when it was filed, and again
+  /// when a redo files it back. 0 with nothing to undo but the take itself.
+  /// Larger is newer, across every track.
+  final int historySeq;
 
   /// Whether an overdub undo layer is still being captured or drained (the
   /// punch-tail window). Session capture waits this out before exporting.
@@ -1050,6 +1099,7 @@ class TrackSnapshot {
           undoDepth == other.undoDepth &&
           redoDepth == other.redoDepth &&
           peelDepth == other.peelDepth &&
+          historySeq == other.historySeq &&
           rms == other.rms &&
           peak == other.peak &&
           inputMask == other.inputMask &&
@@ -1092,6 +1142,7 @@ class TrackSnapshot {
     undoDepth,
     redoDepth,
     peelDepth,
+    historySeq,
     rms,
     peak,
     inputMask,
@@ -1146,7 +1197,16 @@ enum PerfStopReason {
 
   /// A capture ring overflowed because the storage fell behind; the take ends
   /// at the first frame it could not keep.
-  slowStorage;
+  slowStorage,
+
+  /// Nothing happened for `PerfTarget.idleStopSeconds` (#1767): no logged
+  /// event and no input over the playing level. Everything recorded is
+  /// kept.
+  idle,
+
+  /// The take reached its longest length (`PerfTarget.maxSeconds`, or what
+  /// the rendered master stem can hold), and every stream ends there.
+  lengthLimit;
 
   /// The reason for the native value [value], [none] for one this build
   /// does not know.
@@ -1190,7 +1250,7 @@ enum XrunKind {
 @immutable
 class CallbackWindowStats {
   /// Creates a [CallbackWindowStats].
-  const CallbackWindowStats({
+  const new({
     this.calls = 0,
     this.periods = 0,
     this.latePeriods = 0,
@@ -1204,19 +1264,18 @@ class CallbackWindowStats {
   });
 
   /// Projects a native `le_cb_window_snapshot`.
-  factory CallbackWindowStats.fromNative(le_cb_window_snapshot native) =>
-      CallbackWindowStats(
-        calls: native.calls,
-        periods: native.periods,
-        latePeriods: native.late_periods,
-        gapEvents: native.gap_events,
-        maxUs: native.max_us,
-        meanUs: native.mean_us,
-        maxGapUs: native.max_gap_us,
-        buckets: [for (var i = 0; i < LE_CB_BUCKETS; i++) native.buckets[i]],
-        xruns: [for (var i = 0; i < LE_XRUN_KINDS; i++) native.xruns[i]],
-        overSharePeriods: native.over_share_periods,
-      );
+  factory fromNative(le_cb_window_snapshot native) => CallbackWindowStats(
+    calls: native.calls,
+    periods: native.periods,
+    latePeriods: native.late_periods,
+    gapEvents: native.gap_events,
+    maxUs: native.max_us,
+    meanUs: native.mean_us,
+    maxGapUs: native.max_gap_us,
+    buckets: [for (var i = 0; i < LE_CB_BUCKETS; i++) native.buckets[i]],
+    xruns: [for (var i = 0; i < LE_XRUN_KINDS; i++) native.xruns[i]],
+    overSharePeriods: native.over_share_periods,
+  );
 
   /// The all-zero window: no device has run, so nothing was measured.
   static const CallbackWindowStats empty = CallbackWindowStats();
@@ -1298,10 +1357,11 @@ class CallbackWindowStats {
   /// dropping it would under-report reality.
   final List<int> xruns;
 
-  /// Services longer than the effects budget's share of their deadline (80 %,
+  /// Services longer than the effects budget's share of their deadline (77 %,
   /// `kFxBudgetShare`): blocks the effects admission promises never happen
-  /// (#1515). Every late period is one of these too. **Zero on a rig the
-  /// admission let in, on healthy hardware.**
+  /// (#1515). Every late period is one of these too. The share is set so the
+  /// p99.9 service fits it (#1724), so a rig the admission let in can still
+  /// show a few of these an hour; a steady count means the rig is over.
   final int overSharePeriods;
 
   /// Dropouts of [kind] in this window.
@@ -1374,19 +1434,18 @@ class CallbackWindowStats {
 @immutable
 class CallbackTelemetry {
   /// Creates a [CallbackTelemetry].
-  const CallbackTelemetry({
+  const new({
     this.budgetUs = 0,
     this.session = CallbackWindowStats.empty,
     this.armed = CallbackWindowStats.empty,
   });
 
   /// Projects a native `le_callback_telemetry`.
-  factory CallbackTelemetry.fromNative(le_callback_telemetry native) =>
-      CallbackTelemetry(
-        budgetUs: native.budget_us,
-        session: CallbackWindowStats.fromNative(native.session),
-        armed: CallbackWindowStats.fromNative(native.armed),
-      );
+  factory fromNative(le_callback_telemetry native) => CallbackTelemetry(
+    budgetUs: native.budget_us,
+    session: CallbackWindowStats.fromNative(native.session),
+    armed: CallbackWindowStats.fromNative(native.armed),
+  );
 
   /// Nothing measured: no device has run.
   static const CallbackTelemetry empty = CallbackTelemetry();
@@ -1434,7 +1493,7 @@ class CallbackTelemetry {
 @immutable
 class FxWorkerStats {
   /// Creates an [FxWorkerStats].
-  const FxWorkerStats({
+  const new({
     this.wakes = 0,
     this.wakeMeanNs = 0,
     this.wakeMaxNs = 0,
@@ -1446,19 +1505,18 @@ class FxWorkerStats {
   });
 
   /// Projects a native `le_fx_worker_snapshot`.
-  factory FxWorkerStats.fromNative(le_fx_worker_snapshot native) =>
-      FxWorkerStats(
-        wakes: native.wakes,
-        wakeMeanNs: native.wake_mean_ns,
-        wakeMaxNs: native.wake_max_ns,
-        wakeBuckets: [
-          for (var i = 0; i < LE_FX_WAKE_BUCKETS; i++) native.wake_buckets[i],
-        ],
-        jobs: native.jobs,
-        jobMeanNs: native.job_mean_ns,
-        jobMaxNs: native.job_max_ns,
-        jobTotalNs: native.job_total_ns,
-      );
+  factory fromNative(le_fx_worker_snapshot native) => FxWorkerStats(
+    wakes: native.wakes,
+    wakeMeanNs: native.wake_mean_ns,
+    wakeMaxNs: native.wake_max_ns,
+    wakeBuckets: [
+      for (var i = 0; i < LE_FX_WAKE_BUCKETS; i++) native.wake_buckets[i],
+    ],
+    jobs: native.jobs,
+    jobMeanNs: native.job_mean_ns,
+    jobMaxNs: native.job_max_ns,
+    jobTotalNs: native.job_total_ns,
+  );
 
   /// The rounds this worker woke for.
   final int wakes;
@@ -1518,7 +1576,7 @@ class FxWorkerStats {
 @immutable
 class FxWorkersTelemetry {
   /// Creates an [FxWorkersTelemetry].
-  const FxWorkersTelemetry({
+  const new({
     this.requested = 0,
     this.running = 0,
     this.rounds = 0,
@@ -1530,20 +1588,19 @@ class FxWorkersTelemetry {
   });
 
   /// Projects a native `le_fx_workers_telemetry`.
-  factory FxWorkersTelemetry.fromNative(le_fx_workers_telemetry native) =>
-      FxWorkersTelemetry(
-        requested: native.requested,
-        running: native.running,
-        rounds: native.rounds,
-        callbackJobs: native.callback_jobs,
-        joinWaits: native.join_waits,
-        joinWaitMeanNs: native.join_wait_mean_ns,
-        joinWaitMaxNs: native.join_wait_max_ns,
-        workers: [
-          for (var i = 0; i < LE_FX_WORKERS_MAX; i++)
-            FxWorkerStats.fromNative(native.worker[i]),
-        ],
-      );
+  factory fromNative(le_fx_workers_telemetry native) => FxWorkersTelemetry(
+    requested: native.requested,
+    running: native.running,
+    rounds: native.rounds,
+    callbackJobs: native.callback_jobs,
+    joinWaits: native.join_waits,
+    joinWaitMeanNs: native.join_wait_mean_ns,
+    joinWaitMaxNs: native.join_wait_max_ns,
+    workers: [
+      for (var i = 0; i < LE_FX_WORKERS_MAX; i++)
+        FxWorkerStats.fromNative(native.worker[i]),
+    ],
+  );
 
   /// No workers: the desktop, and every engine that was not asked for any.
   static const FxWorkersTelemetry empty = FxWorkersTelemetry();
@@ -1617,7 +1674,7 @@ class FxWorkersTelemetry {
 @immutable
 class EngineSnapshot {
   /// Creates an [EngineSnapshot] with explicit values.
-  const EngineSnapshot({
+  const new({
     required this.isRunning,
     required this.sampleRate,
     required this.bufferFrames,
@@ -1685,6 +1742,7 @@ class EngineSnapshot {
     this.songQueueProgress = 0,
     this.songLastSection = -1,
     this.songQueueRecord = false,
+    this.fxDraining = FxDraining.none,
     this.followTempo = false,
     this.tempoFollow = TempoFollowState.free,
     this.pitchMode = PitchMode.unchanged,
@@ -1715,7 +1773,7 @@ class EngineSnapshot {
   });
 
   /// The snapshot of an engine that has never started.
-  const EngineSnapshot.initial()
+  const new initial()
     : isRunning = false,
       devicePresent = false,
       sampleRate = 0,
@@ -1783,6 +1841,7 @@ class EngineSnapshot {
       songQueueProgress = 0,
       songLastSection = -1,
       songQueueRecord = false,
+      fxDraining = FxDraining.none,
       followTempo = false,
       tempoFollow = TempoFollowState.free,
       pitchMode = PitchMode.unchanged,
@@ -1821,10 +1880,7 @@ class EngineSnapshot {
   /// (clamped to the native `LE_MAX_CHANNELS` arrays), not to the arrays:
   /// this runs at render rate, and the entries past the device would only
   /// be zeros that every `==` and `hashCode` then walks.
-  factory EngineSnapshot.fromNative(
-    le_snapshot native,
-    List<TrackSnapshot> tracks,
-  ) {
+  factory fromNative(le_snapshot native, List<TrackSnapshot> tracks) {
     final inputs = native.input_channels.clamp(0, LE_MAX_CHANNELS);
     final outputs = native.output_channels.clamp(0, LE_MAX_CHANNELS);
     final buses = native.output_bus_count.clamp(0, LE_MAX_OUTPUT_BUSES);
@@ -1896,6 +1952,7 @@ class EngineSnapshot {
       songQueueProgress: native.song_queue_progress,
       songLastSection: native.song_last_section,
       songQueueRecord: native.song_queue_record != 0,
+      fxDraining: _fxDrainingOf(native),
       followTempo: native.follow_tempo != 0,
       tempoFollow: TempoFollowState.fromCode(native.tempo_follow),
       pitchMode: PitchMode.fromCode(native.pitch_follows_speed),
@@ -2002,6 +2059,7 @@ class EngineSnapshot {
     double? songQueueProgress,
     int? songLastSection,
     bool? songQueueRecord,
+    FxDraining? fxDraining,
     bool? followTempo,
     TempoFollowState? tempoFollow,
     PitchMode? pitchMode,
@@ -2097,6 +2155,7 @@ class EngineSnapshot {
     songQueueProgress: songQueueProgress ?? this.songQueueProgress,
     songLastSection: songLastSection ?? this.songLastSection,
     songQueueRecord: songQueueRecord ?? this.songQueueRecord,
+    fxDraining: fxDraining ?? this.fxDraining,
     followTempo: followTempo ?? this.followTempo,
     tempoFollow: tempoFollow ?? this.tempoFollow,
     pitchMode: pitchMode ?? this.pitchMode,
@@ -2293,8 +2352,9 @@ class EngineSnapshot {
   final int perfOvers;
 
   /// The streams the armed take captures, or the next arm would: the first
-  /// enabled output pair plus every monitored input (#1198). 0 when nothing
-  /// could be captured.
+  /// enabled output pair, every monitored input as heard (#1198), and every
+  /// input the device has and every instrument with a patch raw (#1805). 0
+  /// when nothing could be captured.
   final int perfCaptureStreams;
 
   /// The bytes one frame of every [perfCaptureStreams] stream takes.
@@ -2433,6 +2493,10 @@ class EngineSnapshot {
   /// section, or an overdub on a stopped one (from its top in Song, in
   /// phase with the primary in Band). `false` for a Play, or with none.
   final bool songQueueRecord;
+
+  /// The chain slots still running a tail after their switch went off
+  /// (#1733), which the effects budget keeps charging until they drain.
+  final FxDraining fxDraining;
 
   /// The Song section that sounded most recently (#1077), or `-1`. It
   /// survives a Stop and is forgotten when that track empties, on a mode
@@ -2645,6 +2709,7 @@ class EngineSnapshot {
           songQueueProgress == other.songQueueProgress &&
           songLastSection == other.songLastSection &&
           songQueueRecord == other.songQueueRecord &&
+          fxDraining == other.fxDraining &&
           followTempo == other.followTempo &&
           tempoFollow == other.tempoFollow &&
           pitchMode == other.pitchMode &&
@@ -2742,6 +2807,7 @@ class EngineSnapshot {
     songQueueProgress,
     songLastSection,
     songQueueRecord,
+    fxDraining,
     followTempo,
     tempoFollow,
     pitchMode,
@@ -2779,6 +2845,29 @@ class EngineSnapshot {
       'latencyRequest: $latencyRequest, '
       'master: $masterPositionFrames/$masterLengthFrames, '
       'latency: ${latencyState.name}/$measuredLatencyMs ms)';
+}
+
+/// The native snapshot's draining masks (#1733).
+FxDraining _fxDrainingOf(le_snapshot native) {
+  final masks = <(FxOwner, int, int), int>{};
+  void add(FxOwner owner, int channel, int lane, int mask) {
+    if (mask != 0) masks[(owner, channel, lane)] = mask;
+  }
+
+  for (var k = 0; k < LE_MAX_MONITORED_INPUTS; k++) {
+    add(FxOwner.monitor, k, 0, native.fx_draining_monitor[k]);
+  }
+  for (var t = 0; t < LE_MAX_TRACKS; t++) {
+    for (var l = 0; l < LE_MAX_LANES; l++) {
+      add(FxOwner.lane, t, l, native.fx_draining_lane[t][l]);
+    }
+    add(FxOwner.track, t, 0, native.fx_draining_track[t]);
+  }
+  add(FxOwner.allTracks, 0, 0, native.fx_draining_all_tracks);
+  for (var b = 0; b < LE_MAX_OUTPUT_BUSES; b++) {
+    add(FxOwner.output, b, 0, native.fx_draining_output[b]);
+  }
+  return masks.isEmpty ? FxDraining.none : FxDraining(masks);
 }
 
 bool _listEquals<T>(List<T> a, List<T> b) {

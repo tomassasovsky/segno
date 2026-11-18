@@ -1,15 +1,15 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/control/model/foot_fx.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
+import 'package:segno/looper/model/fx_names.dart';
 import 'package:segno/looper/view/foot_pedal_rows.dart';
 import 'package:segno/looper/view/foot_top_bar.dart';
-import 'package:segno/looper/view/fx_editor/fx_block_chip.dart';
 import 'package:segno/looper/view/performance_pedal.dart';
 import 'package:segno/theme/theme.dart';
 
@@ -20,7 +20,7 @@ import 'package:segno/theme/theme.dart';
 /// here and are drawn dimmed.
 class FootFxView extends StatelessWidget {
   /// Creates the performance surface within the real Tracks hierarchy.
-  const FootFxView({super.key});
+  const new({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -87,7 +87,7 @@ class FootFxView extends StatelessWidget {
 }
 
 class _FootFxPedal extends StatelessWidget {
-  const _FootFxPedal({required this.pedal});
+  const new({required this.pedal});
 
   final FootFxPedal pedal;
 
@@ -209,17 +209,16 @@ class _FootFxPedal extends StatelessWidget {
 /// several racks.
 String? _chainName(AppLocalizations l10n, List<TrackEffect> entries) {
   if (entries.isEmpty) return null;
-  final rack = entries.first.rack;
-  if (rack != null && entries.every((entry) => entry.rack?.id == rack.id)) {
-    return rack.name;
-  }
+  if (fxSoleRack(entries) case final rack?) return rack.name;
   if (entries.length == 1) return fxBlockName(l10n, entries.single);
   return null;
 }
 
 /// The name of what [target] drives: the chain's rack or effect for a chain
-/// target, the one effect a slot target names; null when [entries] (the
-/// chain the target reaches) is empty, gone or spans several racks.
+/// target, the rack a rack target names, the one effect a slot target names;
+/// null when [entries] (the chain the target reaches) is empty or gone, when
+/// a chain target's chain spans several racks, or when the named rack or
+/// effect is gone.
 String? _targetName(
   AppLocalizations l10n,
   FxBindingTarget target,
@@ -234,5 +233,9 @@ String? _targetName(
       final matches when matches.isNotEmpty => fxBlockName(l10n, matches.first),
       _ => null,
     },
+    FxRackTarget(:final rackId) => fxSoleRack([
+      for (final entry in entries)
+        if (entry.rack?.id == rackId) entry,
+    ])?.name,
   };
 }

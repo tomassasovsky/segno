@@ -7,34 +7,33 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:bloc_test/bloc_test.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
-import 'package:segno/library/application/removable_volumes.dart';
 import 'package:segno/library/view/library_page.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/session/session.dart';
 import 'package:session_repository/session_repository.dart';
+import 'package:storage_repository/storage_repository.dart';
 
 import '../helpers/helpers.dart';
 import '../library/helpers/fake_drive.dart';
 
-class _MockSessionCubit extends MockCubit<SessionState>
-    implements SessionCubit {}
+class _MockSessionCubit extends MockCubit<SessionState> implements SessionCubit;
 
-class _MockSessionRepository extends Mock implements SessionRepository {}
+class _MockSessionRepository extends Mock implements SessionRepository;
 
-class _MockPerformance extends Mock implements PerformanceRepository {}
+class _MockPerformance extends Mock implements PerformanceRepository;
 
-class _MockPedalRepository extends Mock implements PedalRepository {}
+class _MockPedalRepository extends Mock implements PedalRepository;
 
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+    implements LooperBloc;
 
 /// Images of Library > Audio to compare with pen 18/01 and 20/07 to 20/12.
 /// CI renders them into the `screenshots` artifact; nothing compares pixels.
@@ -99,7 +98,7 @@ void main() {
     );
   }
 
-  Future<void> pump(WidgetTester tester, {RemovableVolumes? volumes}) async {
+  Future<void> pump(WidgetTester tester, {StorageRepository? volumes}) async {
     tester.view
       ..physicalSize = const Size(1920, 1080)
       ..devicePixelRatio = 1;
@@ -157,7 +156,7 @@ void main() {
           RepositoryProvider<PerformanceRepository>.value(value: performance),
           RepositoryProvider<PedalRepository>.value(value: pedal),
           RepositoryProvider<GuardRegistry>.value(value: GuardRegistry()),
-          RepositoryProvider<RemovableVolumes>.value(value: volumes ?? drive),
+          RepositoryProvider<StorageRepository>.value(value: volumes ?? drive),
         ],
         child: MultiBlocProvider(
           providers: [
@@ -238,7 +237,7 @@ void main() {
   }, skip: !rendersScreenshots);
 
   testWidgets('20/10 connect a USB drive', (tester) async {
-    await pump(tester, volumes: const InternalOnlyVolumes());
+    await pump(tester, volumes: NoDrive());
     await exportFirst(tester);
     await tester.tap(find.byKey(const Key('library_export_choose_recording')));
     await tester.pumpAndSettle();
@@ -252,6 +251,21 @@ void main() {
     await tester.tap(find.byKey(const Key('library_export_choose_recording')));
     await tester.pumpAndSettle();
     await shot('full');
+  }, skip: !rendersScreenshots);
+
+  testWidgets('20/11 a file a FAT32 drive cannot hold (#1794)', (tester) async {
+    await drive.close();
+    drive = FakeDrive('${temp.path}/usb', fsType: 'vfat');
+    await pump(tester);
+    // Sparse: 4 GiB long, nothing written.
+    File('${temp.path}/exports/Evening loop - Take 1/master-001.wav')
+        .openSync(mode: FileMode.write)
+      ..truncateSync(1 << 32)
+      ..closeSync();
+    await exportFirst(tester);
+    await tester.tap(find.byKey(const Key('library_export_choose_recording')));
+    await tester.pumpAndSettle();
+    await shot('too_large');
   }, skip: !rendersScreenshots);
 
   testWidgets('20/12 exported', (tester) async {

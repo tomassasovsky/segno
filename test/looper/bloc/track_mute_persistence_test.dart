@@ -60,7 +60,7 @@ class _MuteStore extends FakeKeyValueStore {
 }
 
 class _RecordedMuteEngine extends FakeAudioEngine {
-  _RecordedMuteEngine() {
+  new() {
     laneExports[(0, 0)] = Float32List.fromList([0.1, 0.2, 0.3, 0.4]);
     _publishMute(false);
   }
@@ -527,75 +527,72 @@ void main() {
   });
 
   for (final wholeTrack in [false, true]) {
-    test(
-      '${wholeTrack ? 'whole-track mute' : 'lane mute control'} '
-      'survives cold boot',
-      () async {
-        final engine = _RecordedMuteEngine();
-        final repository = LooperRepository(
-          engine: engine,
-          ticker: const Stream<void>.empty(),
-        )..startEngine(const EngineConfig());
-        final settings = SettingsRepository(store: FakeKeyValueStore());
-        await settings.saveAudioConfig(
-          const StoredAudioConfig(sampleRate: 48000, bufferFrames: 128),
-        );
-        await settings.saveLaneMute(0, 0, muted: false);
-        final mix = testMixSettings(repository, settings: settings);
-        final fx = FxChainPersistence(looper: repository);
-        final bloc = LooperBloc(
-          repository: repository,
-          settings: settings,
-          mixSettings: mix,
-          fxPersistence: fx,
-        );
-        addTearDown(() async {
-          await bloc.close();
-          await fx.close();
-          await mix.close();
-          await repository.dispose();
-        });
-        if (wholeTrack) {
-          bloc.add(const LooperMuteToggled(0));
-        } else {
-          bloc.add(const LooperLaneMuteToggled(0, 0));
-        }
-        await pumpEventQueue();
-        expect(repository.trackMuted(0), isTrue);
-        expect(engine.laneMute[(0, 0)], isTrue);
-        final stored = await settings.loadLaneMute(0, 0);
-        final sessionDirectory = await Directory.systemTemp.createTemp(
-          'segno-mute-probe-',
-        );
-        addTearDown(() => sessionDirectory.delete(recursive: true));
-        final sessions = SessionRepository(
-          guards: GuardRegistry(),
-          engine: engine,
-        );
-        await sessions.save(
-          sessionDirectory.path,
-          settings: const SessionSettings(),
-        );
-        final bundle = await sessions.read(sessionDirectory.path);
-        expect(bundle.session.tracks.single.lanes.single.muted, isTrue);
-        final rebootEngine = FakeAudioEngine();
-        final rebooted = LooperRepository(
-          engine: rebootEngine,
-          ticker: const Stream<void>.empty(),
-        );
-        final rebootMix = testMixSettings(rebooted, settings: settings);
-        addTearDown(() async {
-          await rebootMix.close();
-          await rebooted.dispose();
-        });
-        final result = await tryAutoStartEngine(
-          repository: rebooted,
-          settings: settings,
-          mixSettings: rebootMix,
-        );
-        expect(result.started, isTrue);
-        expect((stored, rebootEngine.laneMute[(0, 0)]), (true, true));
-      },
-    );
+    test('${wholeTrack ? 'whole-track mute' : 'lane mute control'} '
+        'survives cold boot', () async {
+      final engine = _RecordedMuteEngine();
+      final repository = LooperRepository(
+        engine: engine,
+        ticker: const Stream<void>.empty(),
+      )..startEngine(const EngineConfig());
+      final settings = SettingsRepository(store: FakeKeyValueStore());
+      await settings.saveAudioConfig(
+        const StoredAudioConfig(sampleRate: 48000, bufferFrames: 128),
+      );
+      await settings.saveLaneMute(0, 0, muted: false);
+      final mix = testMixSettings(repository, settings: settings);
+      final fx = FxChainPersistence(looper: repository);
+      final bloc = LooperBloc(
+        repository: repository,
+        settings: settings,
+        mixSettings: mix,
+        fxPersistence: fx,
+      );
+      addTearDown(() async {
+        await bloc.close();
+        await fx.close();
+        await mix.close();
+        await repository.dispose();
+      });
+      if (wholeTrack) {
+        bloc.add(const LooperMuteToggled(0));
+      } else {
+        bloc.add(const LooperLaneMuteToggled(0, 0));
+      }
+      await pumpEventQueue();
+      expect(repository.trackMuted(0), isTrue);
+      expect(engine.laneMute[(0, 0)], isTrue);
+      final stored = await settings.loadLaneMute(0, 0);
+      final sessionDirectory = await Directory.systemTemp.createTemp(
+        'segno-mute-probe-',
+      );
+      addTearDown(() => sessionDirectory.delete(recursive: true));
+      final sessions = SessionRepository(
+        guards: GuardRegistry(),
+        engine: engine,
+      );
+      await sessions.save(
+        sessionDirectory.path,
+        settings: const SessionSettings(),
+      );
+      final bundle = await sessions.read(sessionDirectory.path);
+      expect(bundle.session.tracks.single.lanes.single.muted, isTrue);
+      final rebootEngine = FakeAudioEngine();
+      final rebooted = LooperRepository(
+        engine: rebootEngine,
+        ticker: const Stream<void>.empty(),
+      );
+      final rebootMix = testMixSettings(rebooted, settings: settings);
+      addTearDown(() async {
+        await rebootMix.close();
+        await rebooted.dispose();
+      });
+      final result = await tryAutoStartEngine(
+        repository: rebooted,
+        settings: settings,
+        mixSettings: rebootMix,
+      );
+      expect(result.started, isTrue);
+      expect((stored, rebootEngine.laneMute[(0, 0)]), (true, true));
+    });
   }
 }

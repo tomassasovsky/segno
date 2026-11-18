@@ -3,10 +3,10 @@ import 'dart:async';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:brightness_client/brightness_client.dart';
 import 'package:console_facts_client/console_facts_client.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
@@ -40,35 +40,35 @@ import 'destination_extra_providers.dart';
 
 /// A mock for the destination harness.
 class MockAudioSetupCubit extends MockCubit<AudioSetupState>
-    implements AudioSetupCubit {}
+    implements AudioSetupCubit;
 
 /// A mock for the destination harness.
-class MockInputsCubit extends MockCubit<InputsState> implements InputsCubit {}
+class MockInputsCubit extends MockCubit<InputsState> implements InputsCubit;
 
 /// A mock for the destination harness.
 class MockLooperBloc extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+    implements LooperBloc;
 
 /// A mock for the destination harness.
 class MockRecordOptionsCubit extends MockCubit<RecordOptionsViewState>
-    implements RecordOptionsCubit {}
+    implements RecordOptionsCubit;
 
 /// A mock for the destination harness.
-class MockTempoCubit extends MockCubit<TempoState> implements TempoCubit {}
+class MockTempoCubit extends MockCubit<TempoState> implements TempoCubit;
 
 /// A mock for the destination harness.
-class MockUpdateCubit extends MockCubit<UpdateState> implements UpdateCubit {}
+class MockUpdateCubit extends MockCubit<UpdateState> implements UpdateCubit;
 
 /// A mock for the destination harness.
 class MockWaveformWindowCubit extends MockCubit<WaveformWindowState>
-    implements WaveformWindowCubit {}
+    implements WaveformWindowCubit;
 
 /// A mock for the destination harness.
 class MockHighContrastCubit extends MockCubit<bool>
-    implements HighContrastCubit {}
+    implements HighContrastCubit;
 
 /// A mock for the destination harness.
-class MockRefreshRateCubit extends MockCubit<int> implements RefreshRateCubit {}
+class MockRefreshRateCubit extends MockCubit<int> implements RefreshRateCubit;
 
 /// Counts the radio reads, so a test can tell the page read the radio when it
 /// opened and not before.
@@ -104,7 +104,7 @@ class FakeDisplayOutputs implements DisplayOutputs {
 class DestinationHarness {
   /// Creates a harness with fresh settings (over [store], when a test needs
   /// writes to fail), a stubbed audio cubit and a counting Wi-Fi client.
-  DestinationHarness({KeyValueStore? store})
+  new({KeyValueStore? store})
     : settings = SettingsRepository(store: store ?? FakeKeyValueStore()) {
     when(audio.beginDeviceScan).thenReturn(null);
     when(audio.endDeviceScan).thenReturn(null);
@@ -272,7 +272,7 @@ class DestinationHarness {
               navigatorKey: segnoNavigatorKey,
               debugShowCheckedModeBanner: false,
               theme: AppTheme.neon,
-              localizationsDelegates: AppLocalizations.localizationsDelegates,
+              localizationsDelegates: appLocalizationsDelegates,
               supportedLocales: AppLocalizations.supportedLocales,
               home: Scaffold(body: home),
             ),

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/common/on_screen_keyboard/on_screen_keyboard.dart';
 
 /// Wraps the app and supplies an on-screen keyboard whenever a text field takes
@@ -23,11 +23,7 @@ import 'package:segno/common/on_screen_keyboard/on_screen_keyboard.dart';
 /// touched.
 class OnScreenKeyboardHost extends StatefulWidget {
   /// Creates an [OnScreenKeyboardHost] around [child].
-  const OnScreenKeyboardHost({
-    required this.child,
-    this.enabled = true,
-    super.key,
-  });
+  const new({required this.child, this.enabled = true, super.key});
 
   /// The app below the keyboard.
   final Widget child;
@@ -40,8 +36,16 @@ class OnScreenKeyboardHost extends StatefulWidget {
   State<OnScreenKeyboardHost> createState() => _OnScreenKeyboardHostState();
 }
 
+/// What the host keeps of the field it types into, read off its
+/// [EditableText] when focus lands there.
+typedef _Field = ({
+  TextEditingController controller,
+  bool readOnly,
+  TextInputType keyboardType,
+});
+
 class _OnScreenKeyboardHostState extends State<OnScreenKeyboardHost> {
-  EditableText? _field;
+  _Field? _field;
 
   @override
   void initState() {
@@ -56,7 +60,7 @@ class _OnScreenKeyboardHostState extends State<OnScreenKeyboardHost> {
   }
 
   void _onFocusChanged() {
-    final next = _focusedEditable();
+    final next = _focusedField();
     // Focus went somewhere that takes no text: a button, a scope, nothing at
     // all. Also the only signal there is when a focused field is DESTROYED
     // outright — a disposed node is detached before it can notify, so nothing
@@ -91,7 +95,7 @@ class _OnScreenKeyboardHostState extends State<OnScreenKeyboardHost> {
   void _dismissAfterFrame() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      if (_focusedEditable() != null) return;
+      if (_focusedField() != null) return;
       _dismiss();
     });
   }
@@ -101,8 +105,8 @@ class _OnScreenKeyboardHostState extends State<OnScreenKeyboardHost> {
     if (_field != null) setState(() => _field = null);
   }
 
-  /// The [EditableText] the primary focus sits inside, or `null` when focus is
-  /// somewhere that does not take text.
+  /// The field of the [EditableText] the primary focus sits inside, or `null`
+  /// when focus is somewhere that does not take text.
   ///
   /// Walks UP. A `TextField` gives its focus node to a `Focus` widget that
   /// `EditableText` builds BELOW itself, so the focused context is a
@@ -113,22 +117,30 @@ class _OnScreenKeyboardHostState extends State<OnScreenKeyboardHost> {
   /// nothing above it is an `EditableText`, so this reports "no field" rather
   /// than latching onto some unrelated one elsewhere in the tree — and "no
   /// field" is what asks the keyboard to close.
-  EditableText? _focusedEditable() {
+  _Field? _focusedField() {
     final context = FocusManager.instance.primaryFocus?.context;
     if (context is! Element || !context.mounted) return null;
 
-    final self = context.widget;
-    if (self is EditableText) return self;
-
-    EditableText? found;
-    context.visitAncestorElements((element) {
-      if (element.widget is EditableText) {
-        found = element.widget as EditableText;
-        return false;
-      }
-      return true;
-    });
-    return found;
+    var editable = context.widget is EditableText
+        ? context.widget as EditableText
+        : null;
+    if (editable == null) {
+      context.visitAncestorElements((element) {
+        if (element.widget case final EditableText found) {
+          editable = found;
+          return false;
+        }
+        return true;
+      });
+    }
+    return switch (editable) {
+      null => null,
+      final field => (
+        controller: field.controller,
+        readOnly: field.readOnly,
+        keyboardType: field.keyboardType,
+      ),
+    };
   }
 
   bool get _readOnly => _field?.readOnly ?? false;
@@ -189,11 +201,11 @@ class _OnScreenKeyboardHostState extends State<OnScreenKeyboardHost> {
     final open = widget.enabled && field != null && !_readOnly;
 
     final layout = layoutForInputType(field?.keyboardType);
-    // Five rows of 54px keys plus 3px padding either side, plus the panel's
-    // own 6px inset. Sized from the keys rather than guessed, so a key-height
-    // change cannot silently overflow the panel.
+    // The keyboard's rows, plus the panel's own 6px inset. Sized from the
+    // keys rather than guessed, so a key-height change cannot silently
+    // overflow the panel.
     final rows = layout == OnScreenKeyboardLayout.numeric ? 5 : 4;
-    final height = open ? rows * (OnScreenKeyboard.keyHeight + 6) + 12 : 0.0;
+    final height = open ? OnScreenKeyboard.heightOf(rows) + 12 : 0.0;
     final media = MediaQuery.of(context);
 
     // The SAME shape open or closed. Returning the child bare when closed

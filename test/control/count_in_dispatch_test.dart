@@ -63,7 +63,7 @@ class _Store extends FakeKeyValueStore {
 }
 
 class _Midi extends MidiDeviceRepository {
-  _Midi(SettingsRepository settings)
+  new(SettingsRepository settings)
     : super(captures: null, settings: settings, pollInterval: Duration.zero);
   final inputs = StreamController<MidiInputMessage>.broadcast();
   MidiInputSession get session => const MidiInputSession('count-in-test', 1);
@@ -89,7 +89,7 @@ class _Midi extends MidiDeviceRepository {
 }
 
 class _Rig {
-  _Rig(this.clock, this.engine, this.looper) {
+  new(this.clock, this.engine, this.looper) {
     store.values['pedal.setup'] = const PedalSetup()
         .copyWith(
           external: ExternalPedalSetup(
@@ -179,10 +179,8 @@ class _Rig {
     owner.recordStartOwner.durable.countInBars,
     owner.recordStartOwner.durable.soundStart,
   );
-  (Object?, Object?) get stored => (
-    store.values['tempo.count_in_bars'],
-    store.values['looper.auto_record'],
-  );
+  (Object?, Object?) get stored =>
+      (store.values['tempo.count_in_bars'], store.values['looper.auto_record']);
   void pump() {
     for (var i = 0; i < 20; i++) {
       clock
@@ -441,28 +439,25 @@ void main() {
     // A refused Held voids its whole gesture: the Released exists to undo the
     // press, and a press that never applied has nothing to undo (#1153).
     for (final edited in [false, true]) {
-      check(
-        '$name capture refuses Held, so its Released does nothing'
-        '${edited ? ' after an ordinary edit' : ''}',
-        (r) {
-          if (edited) r.ordinary(4);
-          r
-            ..bind()
-            ..capture(TrackState.recording);
-          final before = r.live;
-          expect(before, (edited ? 4 : 1, false));
-          press(r, high: true);
-          expect(r.live, before);
-          r.capture(TrackState.empty);
-          // No retry of the refused Held occurs on eligibility change.
-          expect(r.live, before);
-          press(r, high: false);
-          expect(r.live, before);
-          expect(r.durable, before);
-          r.retire();
-          expect(r.live, before);
-        },
-      );
+      check('$name capture refuses Held, so its Released does nothing'
+          '${edited ? ' after an ordinary edit' : ''}', (r) {
+        if (edited) r.ordinary(4);
+        r
+          ..bind()
+          ..capture(TrackState.recording);
+        final before = r.live;
+        expect(before, (edited ? 4 : 1, false));
+        press(r, high: true);
+        expect(r.live, before);
+        r.capture(TrackState.empty);
+        // No retry of the refused Held occurs on eligibility change.
+        expect(r.live, before);
+        press(r, high: false);
+        expect(r.live, before);
+        expect(r.durable, before);
+        r.retire();
+        expect(r.live, before);
+      });
     }
 
     check('$name release during capture remains owed until eligible', (r) {
@@ -474,11 +469,11 @@ void main() {
       expect(r.fakeEngine.stopCalls, 0);
       Object? failure;
       unawaited(
-        r.cubit.flushMidiConfiguration(retireControls: true).catchError(
-          (Object error) {
-            failure = error;
-          },
-        ),
+        r.cubit.flushMidiConfiguration(retireControls: true).catchError((
+          Object error,
+        ) {
+          failure = error;
+        }),
       );
       r.pump();
       expect(failure, isA<ControlCleanupPending>());
@@ -505,11 +500,11 @@ void main() {
       expect(r.live, (2, false));
       Object? failure;
       unawaited(
-        r.cubit.flushMidiConfiguration(retireControls: true).catchError(
-          (Object error) {
-            failure = error;
-          },
-        ),
+        r.cubit.flushMidiConfiguration(retireControls: true).catchError((
+          Object error,
+        ) {
+          failure = error;
+        }),
       );
       r.pump();
       expect(failure, isA<ControlCleanupPending>());
@@ -573,9 +568,7 @@ void main() {
     expect(r.live, (1, false));
   });
 
-  check('disconnect after a refused External Held writes no Released', (
-    r,
-  ) {
+  check('disconnect after a refused External Held writes no Released', (r) {
     r.fakeEngine.refuse = true;
     r.external(high: true);
     expect(r.live, (1, false));
@@ -646,44 +639,39 @@ void main() {
     )
     body,
   ) {
-    test(
-      name,
-      () {
-        fakeAsync((clock) {
-          final engine = PumpedNativeEngine();
-          final looper = LooperRepository(
-            engine: engine,
-            ticker: const Stream.empty(),
-          );
-          expect(
-            looper.startEngine(
-              const EngineConfig(
-                sampleRate: 8000,
-                inputChannels: 1,
-                outputChannels: 1,
-                maxLoopFrames: 32000,
-              ),
+    test(name, () {
+      fakeAsync((clock) {
+        final engine = PumpedNativeEngine();
+        final looper = LooperRepository(
+          engine: engine,
+          ticker: const Stream.empty(),
+        );
+        expect(
+          looper.startEngine(
+            const EngineConfig(
+              sampleRate: 8000,
+              inputChannels: 1,
+              outputChannels: 1,
+              maxLoopFrames: 32000,
             ),
-            EngineResult.ok,
-          );
-          var pumping = true;
-          final callback = Timer.periodic(const Duration(milliseconds: 5), (_) {
-            if (pumping) engine.pump(frames: 0);
-          });
-          final r = _Rig(clock, engine, looper);
-          try {
-            body(r, engine, ({required enabled}) => pumping = enabled);
-          } finally {
-            r.close();
-            callback.cancel();
-            unawaited(looper.dispose());
-            clock.flushMicrotasks();
-          }
+          ),
+          EngineResult.ok,
+        );
+        var pumping = true;
+        final callback = Timer.periodic(const Duration(milliseconds: 5), (_) {
+          if (pumping) engine.pump(frames: 0);
         });
-      },
-      tags: ['fuzz'],
-      skip: Platform.environment['SEGNO_ENGINE_LIB'] == null,
-    );
+        final r = _Rig(clock, engine, looper);
+        try {
+          body(r, engine, ({required enabled}) => pumping = enabled);
+        } finally {
+          r.close();
+          callback.cancel();
+          unawaited(looper.dispose());
+          clock.flushMicrotasks();
+        }
+      });
+    }, tags: ['fuzz']);
   }
 
   nativeCheck(

@@ -9,7 +9,7 @@ import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/helpers.dart';
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 class _FaultStore extends FakeKeyValueStore {
   Completer<void>? firstReadGate;
@@ -25,7 +25,7 @@ class _FaultStore extends FakeKeyValueStore {
       firstReadGate = null;
       await gate.future;
     }
-    return super.getString(key);
+    return await super.getString(key);
   }
 
   @override
@@ -331,12 +331,7 @@ void main() {
         final oldLifetime = cubit.state.lifetime;
         generation++;
         expect(
-          await renameResult(
-            cubit,
-            0,
-            'stale',
-            expectedLifetime: oldLifetime,
-          ),
+          await renameResult(cubit, 0, 'stale', expectedLifetime: oldLifetime),
           AliasRenameResult.refused,
         );
         expect(

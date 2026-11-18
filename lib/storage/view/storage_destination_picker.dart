@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/theme/theme.dart';
@@ -17,7 +17,7 @@ import 'package:storage_repository/storage_repository.dart';
 /// (pen 48 `FwjUV`).
 class StorageDestinationPicker extends StatelessWidget {
   /// Creates a [StorageDestinationPicker].
-  const StorageDestinationPicker({
+  const new({
     required this.volumes,
     required this.value,
     required this.onChanged,
@@ -87,9 +87,7 @@ class StorageDestinationPicker extends StatelessWidget {
                 .firstOrNull ??
             l10n.storageUsbTitle,
     };
-    final refusals = [
-      for (final volume in offered) ?_refusal(context, volume),
-    ];
+    final refusals = [for (final volume in offered) ?_refusal(context, volume)];
     return Column(
       key: const Key('save_to'),
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -151,7 +149,7 @@ class StorageDestinationPicker extends StatelessWidget {
 }
 
 class _SaveToHeading extends StatelessWidget {
-  const _SaveToHeading(this.text);
+  const new(this.text);
 
   final String text;
 
@@ -168,7 +166,7 @@ class _SaveToHeading extends StatelessWidget {
 
 /// The chosen destination's name while the choice is locked (pen `FwjUV`).
 class _SaveToChosen extends StatelessWidget {
-  const _SaveToChosen(this.text);
+  const new(this.text);
 
   final String text;
 
@@ -188,7 +186,7 @@ class _SaveToChosen extends StatelessWidget {
 /// One destination (pen `recorder:destination:*`): filled and edged in the
 /// accent when chosen, outlined when not, faded when it cannot be chosen.
 class _DestinationPill extends StatelessWidget {
-  const _DestinationPill({
+  const new({
     required this.label,
     required this.selected,
     required this.onTap,
@@ -257,11 +255,7 @@ class _DestinationPill extends StatelessWidget {
 /// that is already there, and `Cancel` leaves the choice on Internal.
 class ConnectUsbSheet extends StatelessWidget {
   /// Creates a [ConnectUsbSheet].
-  const ConnectUsbSheet({
-    required this.onTryAgain,
-    required this.onCancel,
-    super.key,
-  });
+  const new({required this.onTryAgain, required this.onCancel, super.key});
 
   /// `Try again`.
   final VoidCallback onTryAgain;

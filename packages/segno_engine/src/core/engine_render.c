@@ -46,6 +46,7 @@
 #include "engine_core.h"     /* le_lanes_active, le_effective_state, le_push_cmd */
 #include "engine_read_head.h" /* le_head_index, the live read law */
 #include "engine_fx.h"       /* fx_apply_chain(_with_gain), state teardown */
+#include "engine_heard.h"    /* the heard image (#1713) */
 #include "engine_wav.h"      /* the one native WAV writer */
 #include "segno_engine_api.h"
 
@@ -59,8 +60,11 @@ enum {
 
 typedef struct le_render_lane {
   float* dry;  /* staged frames [0, len) */
-  float* pre;  /* the Pre print (2 x len), or NULL */
+  float* pre;  /* the Pre print (2 x len), or NULL; a heard lane's image */
   float vol, gl, gr;
+  /* The lane plays its heard image (#1713): staged into `pre` at level, with
+   * no chain (the image is what the chain made). */
+  int heard;
   le_fx_frozen_chain chain;
   le_fx_state* fx; /* the Post stage, NULL without Post entries */
   int32_t post_bits[LE_FX_MAX];
@@ -391,7 +395,9 @@ static int64_t le_render_job_bytes(const le_render_job* j) {
     const int64_t len = s->len;
     for (int32_t l = 0; l < s->lanes; ++l) {
       bytes += len * 4;                               /* staged dry */
-      if (s->lane[l].has_pre) bytes += 2 * len * 4;   /* Pre print */
+      if (s->lane[l].has_pre || s->lane[l].heard) {
+        bytes += 2 * len * 4; /* Pre print, or the heard image */
+      }
     }
     if (s->track_printed) bytes += 4 * len * 4; /* assembly + track print */
   }
@@ -413,9 +419,20 @@ static int64_t le_render_job_bytes(const le_render_job* j) {
     pitch += le_render_pitch_entries(&s->track);
     states += 2;
     for (int32_t l = 0; l < s->lanes; ++l) {
-      entries += le_render_ring_entries(&s->lane[l].chain);
-      duals += le_render_dual_octavers(&s->lane[l].chain);
-      pitch += le_render_pitch_entries(&s->lane[l].chain);
+      /* A heard lane runs its Post entries alone (#1741): the image stands
+       * for its Pre run. */
+      const le_fx_frozen_chain* c = &s->lane[l].chain;
+      le_fx_frozen_chain post;
+      if (s->lane[l].heard && c->pre > 0) {
+        post.count = c->count > c->pre ? c->count - c->pre : 0;
+        for (int32_t k = 0; k < post.count && c->pre + k < LE_FX_MAX; ++k) {
+          post.type[k] = c->type[c->pre + k];
+        }
+        c = &post;
+      }
+      entries += le_render_ring_entries(c);
+      duals += le_render_dual_octavers(c);
+      pitch += le_render_pitch_entries(c);
       states += 2;
     }
   }
@@ -510,10 +527,14 @@ int32_t le_engine_render_begin(le_engine* engine,
       le_lane* src = &tr->lanes[l];
       le_render_lane* ln = &s->lane[l];
       LE_FX_FROZEN_CAPTURE(&ln->chain, src);
+      /* A lane playing its heard image plays it for its Pre run, so that
+       * is not printed; its Post entries run over it (#1741). */
+      ln->heard = le_heard_lane_plays(engine, t, l);
       ln->vol = load_f32(&src->a_vol_bits);
       ln->gl = load_f32(&src->a_pan_gl_bits);
       ln->gr = load_f32(&src->a_pan_gr_bits);
-      ln->has_pre = le_fx_frozen_has(&ln->chain, 0, ln->chain.pre, LE_FX_NONE);
+      ln->has_pre = !ln->heard &&
+                    le_fx_frozen_has(&ln->chain, 0, ln->chain.pre, LE_FX_NONE);
       ln->has_post = le_fx_frozen_has(&ln->chain, ln->chain.pre,
                                       ln->chain.count, LE_FX_NONE);
       le_fx_frozen_bits(&ln->chain, ln->chain.pre, ln->chain.count,
@@ -609,6 +630,20 @@ static void le_render_after_freeze(le_engine* e, le_render_job* j) {
         le_render_fail(j, LE_ERR_CAPACITY);
         return;
       }
+      /* The lane must play what it played at begin, its image or its
+       * clean take (a source switch or an attach since begin re-renders),
+       * and the frozen slot hold that image. */
+      if (le_heard_lane_plays(e, s->channel, l) != s->lane[l].heard ||
+          (s->lane[l].heard && !le_heard_has(e, s->channel, l, s->slot))) {
+        le_render_fail(j, LE_ERR_TRACKS_CHANGED);
+        return;
+      }
+      if (!s->lane[l].heard) continue;
+      s->lane[l].pre = (float*)calloc((size_t)s->len * 2, sizeof(float));
+      if (s->lane[l].pre == NULL) {
+        le_render_fail(j, LE_ERR_CAPACITY);
+        return;
+      }
     }
   }
   j->stage_total = 0;
@@ -672,6 +707,21 @@ static void le_render_stage(le_engine* e, le_render_job* j) {
       }
       memcpy(s->lane[j->stage_lane].dry + j->stage_pos, pcm + j->stage_pos,
              (size_t)n * sizeof(float));
+      le_render_lane* rl = &s->lane[j->stage_lane];
+      float* pl;
+      float* pr;
+      if (le_heard_lane_plays(e, s->channel, j->stage_lane) != rl->heard) {
+        le_render_fail(j, LE_ERR_TRACKS_CHANGED); /* its source switched */
+        return;
+      }
+      if (rl->heard &&
+          le_heard_planes(e, s->channel, j->stage_lane, s->slot, &pl, &pr)) {
+        /* The heard image (#1713), at level like a print. */
+        for (int32_t f = j->stage_pos; f < j->stage_pos + n; ++f) {
+          rl->pre[2 * f] = pl[f] * rl->vol;
+          rl->pre[2 * f + 1] = pr[f] * rl->vol;
+        }
+      }
     } /* a lane with no buffer plays silence: the calloc'd zeros */
     j->stage_pos += n;
     j->staged += n;
@@ -863,6 +913,15 @@ static void le_render_setup_unit(le_render_job* j) {
           const float t = d[a];
           d[a] = d[b];
           d[b] = t;
+        }
+        /* A heard image is a recording too: read backward, as live. */
+        float* h = s->lane[l].heard ? s->lane[l].pre : NULL;
+        for (int32_t a = 0, b = s->len - 1; h != NULL && a < b; ++a, --b) {
+          for (int c = 0; c < 2; ++c) {
+            const float t = h[2 * a + c];
+            h[2 * a + c] = h[2 * b + c];
+            h[2 * b + c] = t;
+          }
         }
       }
     }

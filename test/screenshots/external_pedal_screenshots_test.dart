@@ -3,11 +3,11 @@ library;
 
 import 'dart:async';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
@@ -46,7 +46,7 @@ import '../helpers/helpers.dart';
 import '../helpers/mock_click_tempo_settings.dart';
 import '../helpers/mock_decay_playback_settings.dart';
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 /// The accepted External pedals screen, drawn at the console's own size.
 void main() {
@@ -66,6 +66,8 @@ void main() {
 
   setUp(() {
     looper = _MockLooperRepository();
+    registerFallbackValue(<FxControlReach>[]);
+    when(() => looper.fxReachFits(any())).thenReturn(true);
     confirmedTiming = RecordTiming.immediately;
     rememberedDivision = GridDivision.off;
     when(() => looper.sessionRevision).thenReturn(0);
@@ -75,9 +77,8 @@ void main() {
     when(() => looper.mixSettingsSnapshot).thenReturn(MixSettingsSnapshot());
     looperStates = StreamController<LooperState>.broadcast();
     when(() => looper.looperState).thenAnswer((_) => looperStates.stream);
-    when(
-      () => looper.mixSettingsFailures,
-    ).thenAnswer((_) => const Stream.empty());
+    when(() => looper.mixSettingsFailures)
+        .thenAnswer((_) => const Stream.empty());
     when(() => looper.state).thenReturn(
       LooperState(
         tracks: [for (var i = 0; i < 8; i++) Track(channel: i)],
@@ -93,9 +94,8 @@ void main() {
     when(() => looper.allLaneChains()).thenReturn(const {});
     // One recorded track carries two effects, so the pickers have a chain
     // to offer and a parameter list to show.
-    when(
-      () => looper.allTrackChains(),
-    ).thenReturn(const {0: FxChainEnvelope()});
+    when(() => looper.allTrackChains())
+        .thenReturn(const {0: FxChainEnvelope()});
     // One factory rack, so the rows draw the pictures the Effects page does:
     // each pedal's own, and the rack's for the chain as a whole.
     const rack = FxRack(id: 'rack-1', name: 'Clean Rhythm', art: 'guitar');
@@ -115,13 +115,11 @@ void main() {
     ]);
     when(() => looper.trackChainEnabled(any())).thenReturn(true);
     when(() => looper.setMasterGain(any())).thenReturn(EngineResult.ok);
-    when(() => looper.lengthSettingsFailures).thenAnswer(
-      (_) => const Stream<EngineResult>.empty(),
-    );
+    when(() => looper.lengthSettingsFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
     when(() => looper.recordLengthCaptureLocked).thenReturn(false);
-    when(() => looper.recordTimingFailures).thenAnswer(
-      (_) => const Stream<EngineResult>.empty(),
-    );
+    when(() => looper.recordTimingFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
     when(() => looper.recordTimingCaptureLocked).thenReturn(false);
     when(() => looper.recordTimingSettingsSettled).thenReturn(true);
     when(() => looper.recordTimingRecoveryRequired).thenReturn(false);
@@ -134,9 +132,8 @@ void main() {
         trackOverrides: const <int, RecordTiming>{},
       ),
     );
-    when(() => looper.settleRecordTimingSettings()).thenAnswer(
-      (_) async => EngineResult.ok,
-    );
+    when(() => looper.settleRecordTimingSettings())
+        .thenAnswer((_) async => EngineResult.ok);
     when(
       () => looper.setRecordTimingSettings(
         defaultTiming: any(named: 'defaultTiming'),
@@ -160,9 +157,8 @@ void main() {
         quantizeDiv: rememberedDivision,
       ),
     );
-    when(() => looper.settleLengthSettings()).thenAnswer(
-      (_) async => EngineResult.ok,
-    );
+    when(() => looper.settleLengthSettings())
+        .thenAnswer((_) async => EngineResult.ok);
     when(
       () => looper.setLengthSettings(
         defaultBars: any(named: 'defaultBars'),
@@ -171,12 +167,10 @@ void main() {
         mode: any(named: 'mode'),
       ),
     ).thenReturn(EngineResult.ok);
-    when(
-      () => looper.setRecDub(enabled: any(named: 'enabled')),
-    ).thenReturn(EngineResult.ok);
-    when(
-      () => looper.setDefaultMultiple(multiple: any(named: 'multiple')),
-    ).thenReturn(EngineResult.ok);
+    when(() => looper.setRecDub(enabled: any(named: 'enabled')))
+        .thenReturn(EngineResult.ok);
+    when(() => looper.setDefaultMultiple(multiple: any(named: 'multiple')))
+        .thenReturn(EngineResult.ok);
     when(
       () => looper.setTrackEffectParam(
         channel: any(named: 'channel'),
@@ -185,9 +179,8 @@ void main() {
         value: any(named: 'value'),
       ),
     ).thenReturn(EngineResult.ok);
-    when(
-      () => looper.setVolume(any(), channel: any(named: 'channel')),
-    ).thenReturn(EngineResult.ok);
+    when(() => looper.setVolume(any(), channel: any(named: 'channel')))
+        .thenReturn(EngineResult.ok);
   });
 
   setUpAll(() {
@@ -310,10 +303,7 @@ void main() {
     if (jack != null) {
       await control.setPedalSetup(
         control.state.pedalSetup.copyWith(
-          external: ExternalPedalSetup().withJack(
-            PedalCtrlJack.ctrl1,
-            jack,
-          ),
+          external: ExternalPedalSetup().withJack(PedalCtrlJack.ctrl1, jack),
         ),
       );
     }
@@ -321,7 +311,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         debugShowCheckedModeBanner: false,
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        localizationsDelegates: appLocalizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         theme: ThemeData(
           fontFamily: SurfaceTheme.displayFont,
@@ -555,6 +545,68 @@ void main() {
     await shot(tester, 'controls_pick');
   }, skip: !rendersScreenshots);
 
+  group('two racks on one chain (#1711)', () {
+    const reverb = FxRack(id: 'rack-a', name: 'Reverb + Delay', art: 'guitar');
+    const chords = FxRack(id: 'rack-b', name: 'Soft Chords', art: 'guitar');
+    const address = FxAddress(stage: FxStage.track);
+    setUp(() {
+      when(() => looper.trackEffects(0)).thenReturn([
+        BuiltInEffect(
+          type: TrackEffectType.reverb,
+          slotId: 'reverb-1',
+          rack: reverb,
+          module: 'Reverb',
+        ),
+        BuiltInEffect(
+          type: TrackEffectType.delay,
+          slotId: 'delay-1',
+          rack: reverb,
+          module: 'Delay',
+        ),
+        BuiltInEffect(
+          type: TrackEffectType.drive,
+          slotId: 'chords-1',
+          rack: chords.copyWith(bypassed: true),
+          module: 'Overdrive',
+        ),
+      ]);
+    });
+
+    screenshotTestWidgets('each rack is offered on its own', (tester) async {
+      await pump(tester, jack: controlled);
+      await tap(tester, 'external_panel_controls');
+      await tap(tester, 'external_add_control');
+      await tap(tester, 'expression_kind_recordedTrack');
+      await tap(tester, 'expression_destination_track:0');
+      await shot(tester, 'controls_pick_racks');
+    }, skip: !rendersScreenshots);
+
+    screenshotTestWidgets('one button alternates the two racks', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        jack: ExternalJackSetup(
+          single: ExternalSwitchSetup(
+            controls: ExternalControls(
+              activations: const [
+                ExternalActivation(
+                  target: FxRackTarget(address: address, rackId: 'rack-a'),
+                ),
+                ExternalActivation(
+                  target: FxRackTarget(address: address, rackId: 'rack-b'),
+                  condition: ExternalCondition.off,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tap(tester, 'external_panel_controls');
+      await shot(tester, 'controls_rack_ab');
+    }, skip: !rendersScreenshots);
+  });
+
   screenshotTestWidgets('a button sets track pan while held', (tester) async {
     await pump(
       tester,
@@ -600,9 +652,7 @@ void main() {
     );
     await tap(tester, 'external_panel_controls');
     final clickRow = externalControlKey(const ClickVolumeTarget());
-    await tester.tap(
-      find.byKey(Key('external_control_value_$clickRow')),
-    );
+    await tester.tap(find.byKey(Key('external_control_value_$clickRow')));
     await tester.pumpAndSettle();
     expect(find.text('100%'), findsWidgets);
     expect(find.text('200%'), findsWidgets);
@@ -863,10 +913,7 @@ void main() {
         expression: ExternalExpressionSetup(
           calibration: ExpressionCalibration(heel: 0, toe: 255),
           mappings: [
-            ExpressionMapping(
-              target: const TrackVolumeTarget(0),
-              heel: 0.5,
-            ),
+            ExpressionMapping(target: const TrackVolumeTarget(0), heel: 0.5),
           ],
         ),
       ),

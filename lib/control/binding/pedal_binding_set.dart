@@ -30,7 +30,7 @@ import 'package:segno/control/binding/pedal_binding.dart';
 class PedalBindingSet extends Equatable {
   /// Creates a set from [bindings], keeping the LAST entry for a repeated key
   /// and dropping any binding on an unbindable control.
-  factory PedalBindingSet(Iterable<PedalBinding> bindings) {
+  factory(Iterable<PedalBinding> bindings) {
     final byKey = <PedalBindingKey, PedalBinding>{};
     for (final binding in bindings) {
       if (PedalBindingKey.unbindable.contains(binding.key.button)) continue;
@@ -39,7 +39,7 @@ class PedalBindingSet extends Equatable {
     return PedalBindingSet._(Map.unmodifiable(byKey));
   }
 
-  const PedalBindingSet._(this._byKey);
+  const new _(this._byKey);
 
   /// Rebuilds a set from its [encode] string.
   ///
@@ -48,7 +48,7 @@ class PedalBindingSet extends Equatable {
   /// bindings that DID decode (possibly none). A remap is an optional
   /// convenience layered over working contextual defaults — losing it must
   /// never be able to block a session load or a boot.
-  factory PedalBindingSet.decode(String encoded) {
+  factory decode(String encoded) {
     if (encoded.isEmpty) return empty;
     final Object? raw;
     try {

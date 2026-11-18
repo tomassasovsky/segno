@@ -8,7 +8,7 @@ import 'package:session_repository/src/models/session_summary.dart';
 @immutable
 class SessionPreview {
   /// Creates a [SessionPreview].
-  const SessionPreview({
+  const new({
     required this.summary,
     required this.tracks,
     required this.fxCount,
@@ -42,7 +42,7 @@ class SessionPreview {
 @immutable
 class SessionPreviewTrack {
   /// Creates a [SessionPreviewTrack].
-  const SessionPreviewTrack({
+  const new({
     required this.channel,
     required this.lengthFrames,
     required this.baseLengthFrames,

@@ -11,9 +11,7 @@ String midiSourceName(AppLocalizations l10n, MidiSource source) {
     MidiProtocol.standard => switch (source.kind) {
       ControllerSourceKind.midiCc => l10n.midiSourceCc(source.number),
       ControllerSourceKind.midiNote => l10n.midiSourceNote(source.number),
-      ControllerSourceKind.midiProgram => l10n.midiSourceProgram(
-        source.number,
-      ),
+      ControllerSourceKind.midiProgram => l10n.midiSourceProgram(source.number),
       ControllerSourceKind.consoleSwitch ||
       ControllerSourceKind.consoleExpression => throw StateError(
         'Console CTRL is not a MIDI source',

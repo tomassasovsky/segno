@@ -1,9 +1,9 @@
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:routing_graph/routing_graph.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/theme/theme.dart';
@@ -26,9 +26,7 @@ void main() {
 
   group('ConsoleRow layout', () {
     testWidgets('the title takes twice the share of the value, and a long '
-        'subtitle keeps all its words (#1590 DEV-1)', (
-      tester,
-    ) async {
+        'subtitle keeps all its words (#1590 DEV-1)', (tester) async {
       // The console's own width: the test font's square glyphs make the
       // sentence far wider than it is on the console.
       tester.view
@@ -68,9 +66,7 @@ void main() {
 
   testWidgets(
     'a row is drawn at the scale of the full-size pages (#1590 DEV-2)',
-    (
-      tester,
-    ) async {
+    (tester) async {
       await pumpRows(tester, [
         ConsoleRow(
           key: const Key('row'),
@@ -359,9 +355,7 @@ void main() {
       expect(find.byKey(const Key('console_caption_explain')), findsNothing);
     });
 
-    testWidgets('opening the answer moves nothing on the face', (
-      tester,
-    ) async {
+    testWidgets('opening the answer moves nothing on the face', (tester) async {
       await pumpCaption(tester, explain: 'Whether you hear it.');
       final shut = tester.getRect(find.byType(ConsoleCaption));
 
@@ -538,9 +532,7 @@ void main() {
 
     testWidgets(
       'a keyboard cannot walk past the answer, and Escape closes it',
-      (
-        tester,
-      ) async {
+      (tester) async {
         // The barrier blocks POINTERS. Tab went straight through it to the
         // control the answer was describing and Enter operated it — an
         // explanation you can use the rig behind is the panel this design
@@ -768,17 +760,12 @@ void main() {
 
     testWidgets('the reader hears the name, not the glyph', (tester) async {
       final handle = tester.ensureSemantics();
-      await pumpCaption(
-        tester,
-        explain: 'Whether you hear it.',
-      );
+      await pumpCaption(tester, explain: 'Whether you hear it.');
 
       // Without excluding the subtree the node reads "What "in the mix" does
       // \n in the mix \n ?" — the reader announces the question mark.
       expect(
-        tester.getSemantics(
-          find.byKey(const Key('console_caption_explain')),
-        ),
+        tester.getSemantics(find.byKey(const Key('console_caption_explain'))),
         matchesSemantics(
           label: 'What "in the mix" does',
           isButton: true,
@@ -797,17 +784,14 @@ void main() {
       final handle = tester.ensureSemantics();
       const explain = 'Whether you hear it.';
       final announced = <String>[];
-      tester.binding.defaultBinaryMessenger
-          .setMockDecodedMessageHandler<Object?>(
-            SystemChannels.accessibility,
-            (message) async {
-              final data = (message! as Map<Object?, Object?>)['data'];
-              final text =
-                  (data as Map<Object?, Object?>?)?['message'] as String?;
-              if (text != null) announced.add(text);
-              return null;
-            },
-          );
+      tester.binding.defaultBinaryMessenger.setMockDecodedMessageHandler<
+        Object?
+      >(SystemChannels.accessibility, (message) async {
+        final data = (message! as Map<Object?, Object?>)['data'];
+        final text = (data as Map<Object?, Object?>?)?['message'] as String?;
+        if (text != null) announced.add(text);
+        return null;
+      });
       final messenger = tester.binding.defaultBinaryMessenger;
       addTearDown(
         () => messenger.setMockDecodedMessageHandler<Object?>(

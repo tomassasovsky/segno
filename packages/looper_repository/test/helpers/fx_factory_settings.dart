@@ -22,9 +22,7 @@ String fxFactorySettingsInc({
   String presetsDir = '../fx_catalogue/assets/presets',
 }) {
   final out = StringBuffer()
-    ..writeln(
-      '/* GENERATED from packages/fx_catalogue/assets/presets by',
-    )
+    ..writeln('/* GENERATED from packages/fx_catalogue/assets/presets by')
     ..writeln(
       ' * packages/looper_repository/tool/generate_fx_factory_settings.dart.',
     )
@@ -60,9 +58,7 @@ String fxFactorySettingsInc({
             '$family / ${preset.name} / ${entry.module ?? entry.type.name}'
                 .replaceAll(r'\', r'\\')
                 .replaceAll('"', r'\"');
-        out.writeln(
-          '{"$name", ${entry.type.code}, {${values.join(', ')}}},',
-        );
+        out.writeln('{"$name", ${entry.type.code}, {${values.join(', ')}}},');
       }
     }
   }

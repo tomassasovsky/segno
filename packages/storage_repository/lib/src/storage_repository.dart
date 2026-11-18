@@ -22,19 +22,18 @@ import 'package:usb_storage_client/usb_storage_client.dart';
 /// returns true. A failure to open or read the SOURCE is thrown as a
 /// [SourceReadFailure], so it is never blamed on the destination. The default
 /// is [StorageRepository.copyChunks]; tests inject failures through it.
-typedef CopyBytes =
-    Future<void> Function(
-      File source,
-      File part,
-      bool Function() shouldAbort,
-    );
+typedef CopyBytes = Future<void> Function(
+  File source,
+  File part,
+  bool Function() shouldAbort,
+);
 
 /// The source of a copy could not be opened or read. Nothing about the
 /// destination is implied: the copy reports it as `StorageFailure.io` at
 /// once, without waiting to see whether a drive went away.
 class SourceReadFailure implements Exception {
   /// Creates a [SourceReadFailure] for [cause].
-  const SourceReadFailure(this.cause);
+  const new(this.cause);
 
   /// What the read met.
   final FileSystemException cause;
@@ -61,10 +60,10 @@ class SourceReadFailure implements Exception {
 class StorageRepository implements ActiveOperationSource {
   /// Creates a [StorageRepository].
   ///
-  /// [exportsRoot] is the resolver the performance repository is wired with:
+  /// [_exportsRoot] is the resolver the performance repository is wired with:
   /// Internal is measured there and Internal copies land under it.
-  /// [volumeSpace] is the engine's `statvfs` (synchronous, microseconds on a
-  /// local volume; null when the path cannot be measured). [storageIo] is
+  /// [_volumeSpace] is the engine's `statvfs` (synchronous, microseconds on a
+  /// local volume; null when the path cannot be measured). [_storageIo] is
   /// the engine's durable-publication primitives (#1198): a rename that never
   /// replaces and a directory sync, both things Dart cannot do itself (see
   /// [copyFile]). It defaults to the engine's own, opened on the first copy,
@@ -72,21 +71,17 @@ class StorageRepository implements ActiveOperationSource {
   /// [guards] is the app's one guard table; the repository registers itself
   /// with it as a source, so the table sees its leases and eject however the
   /// table was made.
-  StorageRepository({
-    required UsbStorageClient client,
-    required Future<String> Function() exportsRoot,
-    required VolumeSpace? Function(String path) volumeSpace,
+  new({
+    required this._client,
+    required this._exportsRoot,
+    required this._volumeSpace,
     required GuardRegistry guards,
-    engine.StorageIo? storageIo,
+    this._storageIo,
     this.ejectTimeout = const Duration(seconds: 20),
     this.ejectServedTimeout = const Duration(minutes: 2),
     this.volumeLossGrace = const Duration(seconds: 10),
     @visibleForTesting CopyBytes? copyBytes,
-  }) : _client = client,
-       _exportsRoot = exportsRoot,
-       _volumeSpace = volumeSpace,
-       _storageIo = storageIo,
-       _guards = guards,
+  }) : _guards = guards,
        _copyBytes = copyBytes ?? copyChunks {
     _subscription = _client.volumes.listen(_onRecords);
     guards.addSource(this);
@@ -122,7 +117,7 @@ class StorageRepository implements ActiveOperationSource {
   final Future<String> Function() _exportsRoot;
   final VolumeSpace? Function(String path) _volumeSpace;
   engine.StorageIo? _storageIo;
-  engine.StorageIo get _io => _storageIo ??= engine.NativeStorageIo();
+  engine.StorageIo get _io => _storageIo ??= const engine.NativeStorageIo();
   final GuardRegistry _guards;
   final CopyBytes _copyBytes;
 
@@ -442,7 +437,7 @@ class StorageRepository implements ActiveOperationSource {
           // Taken: the helper is syncing and unmounting, and its answer is
           // coming. Saying "failed" now would be followed by the drive being
           // ejected anyway.
-          return answer.timeout(
+          return await answer.timeout(
             ejectServedTimeout,
             onTimeout: () {
               _unanswered[generation] = eject.requestId!;
@@ -542,10 +537,7 @@ class StorageRepository implements ActiveOperationSource {
   ///
   /// `freeBytes` is the filesystem's available figure, with NO reserve taken
   /// off: the Internal reserve ([internalReserveBytes]) applies only to
-  /// [recordingTimeRemaining] and [lowInternalSpace]. (The Library's
-  /// `RemovableVolumes` port documents free as "after any reserve the
-  /// service keeps"; for a removable volume that is the same figure, and the
-  /// port never asks about Internal.)
+  /// [recordingTimeRemaining] and [lowInternalSpace].
   Future<VolumeSpace?> space(StorageDestination destination) async {
     final path = switch (destination) {
       InternalDestination() => _nearestExisting(await _exportsRoot()),
@@ -591,6 +583,29 @@ class StorageRepository implements ActiveOperationSource {
   static bool isLowInternalSpace(VolumeSpace? internal) =>
       internal != null && internal.freeBytes < internalReserveBytes;
 
+  /// Refuses a write to [destination] of files of [fileBytes] when one is
+  /// larger than its filesystem holds (#1794): a FAT32 stick holds no file
+  /// of 4 GiB or more ([RemovableVolume.maxFileBytes]). Throws
+  /// [StorageFileTooLarge] naming the largest such file, so a writer that
+  /// calls it before its first write refuses with nothing written. Internal
+  /// has no such limit, and a volume that is not listed is left to the
+  /// write's own checks.
+  void checkFileSizes(StorageDestination destination, Iterable<int> fileBytes) {
+    if (destination is! RemovableDestination) return;
+    final record = _records[destination.generation];
+    if (record == null) return;
+    final limit = RemovableVolume.maxFileBytesOf(record.fsType);
+    if (limit == null) return;
+    final largest = fileBytes.fold<int>(0, max);
+    if (largest > limit) {
+      throw StorageFailure.fileTooLarge(
+        fsType: record.fsType,
+        maxFileBytes: limit,
+        fileBytes: largest,
+      );
+    }
+  }
+
   String? _mountedPath(int generation) {
     final record = _records[generation];
     return switch (record?.status) {
@@ -619,10 +634,14 @@ class StorageRepository implements ActiveOperationSource {
   /// The bytes go to a part file of the copy's own (`.<name>.<random>.part`,
   /// hidden, so neither the Library nor a computer lists it, and never shared
   /// with another copy in flight), are fsynced, and are renamed to the final
-  /// name; then the directory is synced so the rename itself is durable, and
-  /// so is every parent the copy created, bottom up, so a new directory's own
-  /// entry survives too. A sync the device refuses fails the copy as `io`:
-  /// the file is in place but not known to be durable, and "copied" is not
+  /// name; then the whole volume is synced (`syncfs`, then a flush of the
+  /// device's cache, on the appliance's Linux: see `StorageIo.syncVolume`
+  /// for elsewhere), so the rename, every directory the copy created and
+  /// the file's size in its new entry are on the device before the copy
+  /// returns. A directory sync would not do: on vfat a rename writes the new
+  /// entry with size 0, and only the file's inode, written back later, fills
+  /// it in (#1797). A sync the device refuses fails the copy as `io`: the
+  /// file is in place but not known to be durable, and "copied" is not
   /// claimed. The destination never holds a half-written file under its final
   /// name, and on any failure the part is deleted and the source is not
   /// touched. Parts a crash left behind are swept by the first copy into each
@@ -641,8 +660,10 @@ class StorageRepository implements ActiveOperationSource {
   ///
   /// Failures are typed [StorageFailure]s: `full` (ENOSPC), `readOnly` (EROFS,
   /// or a read-only volume), `volumeLost` when the volume goes away before or
-  /// during the copy, `unsupported` for a volume that cannot be written, `io`
-  /// for the rest, a source that cannot be read included. A lease with
+  /// during the copy, `unsupported` for a volume that cannot be written,
+  /// `fileTooLarge` before anything is written for a source larger than the
+  /// destination's filesystem holds ([checkFileSizes]), `io` for the rest, a
+  /// source that cannot be read included. A lease with
   /// purpose `copy` is held throughout, so eject and shutdown wait for it.
   ///
   /// [relativePath] must stay inside the root: not empty, not absolute, and
@@ -653,17 +674,12 @@ class StorageRepository implements ActiveOperationSource {
     String relativePath, {
     required ConflictPolicy onConflict,
   }) async {
-    final segments = relativePath.split('/');
-    if (segments.any((s) => s.isEmpty || s == '.' || s == '..')) {
-      throw ArgumentError.value(
-        relativePath,
-        'relativePath',
-        'must be a relative path inside the destination',
-      );
-    }
+    final segments = _insideRoot(relativePath);
     final held = acquire(destination, WritePurpose.copy);
     try {
-      final wanted = '${await _writeRoot(destination)}/$relativePath';
+      checkFileSizes(destination, [_lengthOf(sourcePath)]);
+      final root = await _writeRoot(destination);
+      final wanted = '$root/$relativePath';
       if (onConflict == ConflictPolicy.ask && _taken(wanted)) {
         throw NameConflict(wanted);
       }
@@ -673,16 +689,13 @@ class StorageRepository implements ActiveOperationSource {
       );
       _liveParts.add(part.path);
       try {
-        final created = _createDirectories(directory);
+        directory.createSync(recursive: true);
         _sweepStaleParts(directory);
         await _copyBytes(File(sourcePath), part, () => held.isLost);
         if (held.isLost) throw const FileSystemException('volume lost');
         final target = _publish(part, wanted, onConflict);
         try {
-          _io.syncDirectory(directory.path);
-          for (final made in created) {
-            _io.syncDirectory(made.parent.path);
-          }
+          _io.syncVolume(root);
         } on FileSystemException catch (e) {
           // The file is in place and complete; only its durability is in
           // doubt. A pulled drive is still a lost volume (the sync carries
@@ -708,6 +721,45 @@ class StorageRepository implements ActiveOperationSource {
     } finally {
       held.release();
     }
+  }
+
+  /// Makes everything written to [destination] durable, as [copyFile] does
+  /// after its own rename: the whole volume is synced and the device's cache
+  /// flushed. For a writer that renames or deletes on the volume after its
+  /// copies (the Library's export swap and its clean-up), so it reports
+  /// nothing as written before it would survive a pulled drive. A `copy`
+  /// lease is held for the sync, as for a copy.
+  ///
+  /// Fails as [copyFile] does: `volumeLost` when the volume is gone or goes
+  /// with the sync, `readOnly` or `unsupported` for a volume that cannot be
+  /// written, `io` when the device refuses the sync or lost an earlier
+  /// write.
+  Future<void> syncVolume(StorageDestination destination) async {
+    final held = acquire(destination, WritePurpose.copy);
+    try {
+      final root = await _writeRoot(destination);
+      try {
+        _io.syncVolume(root);
+      } on FileSystemException catch (e) {
+        throw await _classify(e, destination, held);
+      }
+    } finally {
+      held.release();
+    }
+  }
+
+  /// [relativePath]'s segments, or an [ArgumentError] when it is empty,
+  /// absolute, or has an empty, `.` or `..` segment.
+  static List<String> _insideRoot(String relativePath) {
+    final segments = relativePath.split('/');
+    if (segments.any((s) => s.isEmpty || s == '.' || s == '..')) {
+      throw ArgumentError.value(
+        relativePath,
+        'relativePath',
+        'must be a relative path inside the destination',
+      );
+    }
+    return segments;
   }
 
   /// Copies the update package at [sourcePath], on removable volume
@@ -785,6 +837,16 @@ class StorageRepository implements ActiveOperationSource {
     }
   }
 
+  /// [path]'s length, or 0 when it cannot be read (the copy then reports
+  /// the source as unreadable).
+  static int _lengthOf(String path) {
+    try {
+      return File(path).lengthSync();
+    } on FileSystemException {
+      return 0;
+    }
+  }
+
   /// Whether anything (a file, a directory, a link) is at [path].
   static bool _taken(String path) =>
       FileSystemEntity.typeSync(path, followLinks: false) !=
@@ -797,21 +859,6 @@ class StorageRepository implements ActiveOperationSource {
   ].join();
 
   static final _partName = RegExp(r'^\..+\.[0-9a-f]{16}\.part$');
-
-  /// Creates [directory] and the parents it lacks, and returns the ones it
-  /// created, deepest first.
-  static List<Directory> _createDirectories(Directory directory) {
-    final missing = <Directory>[];
-    for (
-      var dir = directory;
-      !_taken(dir.path) && dir.parent.path != dir.path;
-      dir = dir.parent
-    ) {
-      missing.add(dir);
-    }
-    directory.createSync(recursive: true);
-    return missing;
-  }
 
   /// Deletes the part files a crash left in [directory]; never one a copy in
   /// flight is writing. Once per directory per run: a crash leaves its parts
@@ -998,7 +1045,7 @@ class StorageRepository implements ActiveOperationSource {
 
 /// One eject in flight.
 class _Eject {
-  _Eject(this.generation, this.request);
+  new(this.generation, this.request);
 
   final int generation;
 

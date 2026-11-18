@@ -239,10 +239,7 @@ void main() {
       final result = await settings.remove('id0');
       expect(result.refusal, RemoveRefusal.capturing);
       expect(stored().byId('id0'), isNotNull);
-      expect(
-        (await settings.remove('nobody')).refusal,
-        RemoveRefusal.unknown,
-      );
+      expect((await settings.remove('nobody')).refusal, RemoveRefusal.unknown);
     });
 
     test('keeps a tombstone while recorded material names it', () async {

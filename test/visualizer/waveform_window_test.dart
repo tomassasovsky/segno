@@ -1,7 +1,8 @@
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/appliance/power_off/power_goodbye.dart';
+import 'package:segno/theme/theme.dart';
 import 'package:segno/visualizer/console_readout_view.dart';
 import 'package:segno/visualizer/performance_readout.dart';
 import 'package:segno/visualizer/waveform_window.dart';
@@ -74,10 +75,10 @@ void main() {
     test('a progress-only frame HOLDS the samples already on screen', () {
       final previous = frameOf([0.1, 0.2, 0.3]);
 
-      final next = waveformFrameFrom(
-        {'progress': 0.75, 'selectedTrack': 'Drums'},
-        previous,
-      );
+      final next = waveformFrameFrom({
+        'progress': 0.75,
+        'selectedTrack': 'Drums',
+      }, previous);
 
       expect(
         next.samples,
@@ -88,14 +89,11 @@ void main() {
     });
 
     test('a frame that carries samples replaces them', () {
-      final next = waveformFrameFrom(
-        {
-          'samples': Float32List.fromList([0.4, 0.5]),
-          'progress': 0.1,
-          'selectedTrack': 'Bass',
-        },
-        frameOf([0.1, 0.2, 0.3]),
-      );
+      final next = waveformFrameFrom({
+        'samples': Float32List.fromList([0.4, 0.5]),
+        'progress': 0.1,
+        'selectedTrack': 'Bass',
+      }, frameOf([0.1, 0.2, 0.3]));
 
       expect(next.samples, Float32List.fromList([0.4, 0.5]));
       expect(next.selectedTrack, 'Bass');
@@ -108,10 +106,11 @@ void main() {
       // — the one outcome the hold exists to prevent.
       final previous = frameOf([0.1, 0.2, 0.3]);
 
-      final next = waveformFrameFrom(
-        {'samples': 'nope', 'progress': 0.4, 'selectedTrack': 'Drums'},
-        previous,
-      );
+      final next = waveformFrameFrom({
+        'samples': 'nope',
+        'progress': 0.4,
+        'selectedTrack': 'Drums',
+      }, previous);
 
       expect(next.samples, previous.samples);
       expect(next.progress, 0.4);
@@ -140,10 +139,10 @@ void main() {
       // not go down mid-set on a garbled frame. `as String?` would have
       // thrown here — a present-but-wrong value is the shape a garbled frame
       // actually takes; an absent key is the easy case.
-      final next = waveformFrameFrom(
-        {'progress': 0.2, 'selectedTrack': 7},
-        frameOf([0.1, 0.2]),
-      );
+      final next = waveformFrameFrom({
+        'progress': 0.2,
+        'selectedTrack': 7,
+      }, frameOf([0.1, 0.2]));
 
       expect(next.selectedTrack, 'Drums');
       expect(next.progress, 0.2);
@@ -152,19 +151,18 @@ void main() {
 
   group('WaveformWindowApp', () {
     Future<void> pump(WidgetTester tester) async {
-      final frame = ValueNotifier<WaveformFrame>(
-        (samples: Float32List(0), progress: 0, selectedTrack: ''),
-      );
+      final frame = ValueNotifier<WaveformFrame>((
+        samples: Float32List(0),
+        progress: 0,
+        selectedTrack: '',
+      ));
       final readout = ValueNotifier<PerformanceReadout>(
         const PerformanceReadout(tempoBpm: 120),
       );
       addTearDown(frame.dispose);
       addTearDown(readout.dispose);
       await tester.pumpWidget(
-        WaveformWindowApp(
-          frame: frame,
-          readout: readout,
-        ),
+        WaveformWindowApp(frame: frame, readout: readout),
       );
     }
 
@@ -180,19 +178,18 @@ void main() {
     testWidgets('PerformanceReadout.goodbye covers the panel with its face', (
       tester,
     ) async {
-      final frame = ValueNotifier<WaveformFrame>(
-        (samples: Float32List(0), progress: 0, selectedTrack: ''),
-      );
+      final frame = ValueNotifier<WaveformFrame>((
+        samples: Float32List(0),
+        progress: 0,
+        selectedTrack: '',
+      ));
       final readout = ValueNotifier<PerformanceReadout>(
         const PerformanceReadout(goodbye: ReadoutGoodbye.safeToSwitchOff),
       );
       addTearDown(frame.dispose);
       addTearDown(readout.dispose);
       await tester.pumpWidget(
-        WaveformWindowApp(
-          frame: frame,
-          readout: readout,
-        ),
+        WaveformWindowApp(frame: frame, readout: readout),
       );
       addTearDown(() => tester.pumpWidget(const SizedBox.shrink()));
 
@@ -206,19 +203,18 @@ void main() {
     testWidgets('PerformanceReadout.brightness dims the panel in software', (
       tester,
     ) async {
-      final frame = ValueNotifier<WaveformFrame>(
-        (samples: Float32List(0), progress: 0, selectedTrack: ''),
-      );
+      final frame = ValueNotifier<WaveformFrame>((
+        samples: Float32List(0),
+        progress: 0,
+        selectedTrack: '',
+      ));
       final readout = ValueNotifier<PerformanceReadout>(
         const PerformanceReadout(),
       );
       addTearDown(frame.dispose);
       addTearDown(readout.dispose);
       await tester.pumpWidget(
-        WaveformWindowApp(
-          frame: frame,
-          readout: readout,
-        ),
+        WaveformWindowApp(frame: frame, readout: readout),
       );
       addTearDown(() => tester.pumpWidget(const SizedBox.shrink()));
       expect(find.byType(ColorFiltered), findsNothing);
@@ -236,9 +232,11 @@ void main() {
 
     testWidgets('the power faces stay above the dim, and the readout is '
         'never remounted', (tester) async {
-      final frame = ValueNotifier<WaveformFrame>(
-        (samples: Float32List(0), progress: 0, selectedTrack: ''),
-      );
+      final frame = ValueNotifier<WaveformFrame>((
+        samples: Float32List(0),
+        progress: 0,
+        selectedTrack: '',
+      ));
       final readout = ValueNotifier<PerformanceReadout>(
         const PerformanceReadout(brightness: 0.3),
       );
@@ -281,6 +279,24 @@ void main() {
         findsWidgets,
       );
       expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('draws in the readout palette (#1674)', (tester) async {
+      await pump(tester);
+      final context = tester.element(find.byType(ConsoleReadoutView));
+      expect(Theme.of(context).extension<SurfaceTheme>(), SurfaceTheme.readout);
+      // Muted text and the footer's border take the lifted tiers.
+      final noTrack = tester.widget<AppText>(
+        find.byKey(const Key('console_readout_noTrack')),
+      );
+      expect(noTrack.style!.color, SurfaceTheme.dark.textTertiary);
+      final strip = tester.widget<Material>(
+        find.byKey(const Key('console_readout_strip')),
+      );
+      expect(
+        (strip.shape! as RoundedRectangleBorder).side.color,
+        SurfaceTheme.readout.borderSubtle,
+      );
     });
   });
 }

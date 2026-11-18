@@ -1,11 +1,11 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
 
 /// One option of a [MidiChoiceGrid].
 class MidiChoice<T> {
   /// Creates a [MidiChoice].
-  const MidiChoice({
+  const new({
     required this.value,
     required this.id,
     required this.label,
@@ -28,7 +28,7 @@ class MidiChoice<T> {
 /// A whole-page grid of choices: the receive channel and the message format.
 class MidiChoiceGrid<T> extends StatefulWidget {
   /// Creates a [MidiChoiceGrid].
-  const MidiChoiceGrid({
+  const new({
     required this.choices,
     required this.selected,
     required this.onPick,

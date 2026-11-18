@@ -23,9 +23,7 @@ Map<String, PedalLinkMessage> _enumPins() {
       'enum_global_${g.name}': StateMessage(blank.copyWith(globalColor: g)),
     for (final led in PedalTrackLed.values)
       'enum_led_${led.name}': StateMessage(
-        blank.copyWith(
-          trackLeds: [led, ...blank.trackLeds.skip(1)],
-        ),
+        blank.copyWith(trackLeds: [led, ...blank.trackLeds.skip(1)]),
       ),
   };
   return pins;

@@ -72,20 +72,15 @@ BootAudio bootAudioOf({
 /// samples counted it, and `audio` was not `refused` or `stalled` in both.
 class BootReadiness {
   /// Creates a [BootReadiness]; nothing is sent until [start].
-  BootReadiness({
-    required SystemdNotify notify,
-    required Future<void> firstFrame,
-    required BootAudio Function() audio,
-    required int Function() audioFrames,
-    required Future<bool> Function() readoutConnected,
-    required Future<bool> Function() pingReadout,
+  new({
+    required this._notify,
+    required this._firstFrame,
+    required this._audio,
+    required this._audioFrames,
+    required this._readoutConnected,
+    required this._pingReadout,
     this.interval = const Duration(seconds: 5),
-  }) : _notify = notify,
-       _firstFrame = firstFrame,
-       _audio = audio,
-       _audioFrames = audioFrames,
-       _readoutConnected = readoutConnected,
-       _pingReadout = pingReadout;
+  });
 
   final SystemdNotify _notify;
   final Future<void> _firstFrame;

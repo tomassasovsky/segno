@@ -6,7 +6,7 @@ import 'package:meta/meta.dart';
 @immutable
 class UnfinalizedCapture {
   /// Creates an [UnfinalizedCapture].
-  const UnfinalizedCapture({required this.directory, required this.slug});
+  const new({required this.directory, required this.slug});
 
   /// The capture's full directory path.
   final String directory;

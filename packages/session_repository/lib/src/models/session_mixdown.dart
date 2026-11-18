@@ -5,7 +5,7 @@ import 'package:meta/meta.dart';
 @immutable
 class SessionMixdown {
   /// Creates a [SessionMixdown].
-  const SessionMixdown({
+  const new({
     required this.frames,
     required this.sampleRate,
     required this.bytes,

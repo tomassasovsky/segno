@@ -6,7 +6,7 @@
 /// so the remedy is a restart, not another download.
 class BootPartitionReadOnlyException implements Exception {
   /// Creates a [BootPartitionReadOnlyException] carrying the helper's [detail].
-  const BootPartitionReadOnlyException(this.detail);
+  const new(this.detail);
 
   /// What the helper logged, for diagnostics.
   final String detail;

@@ -2,7 +2,6 @@
 library;
 
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -55,14 +54,7 @@ class _CaptureImageEngine extends PumpedNativeEngine {
 /// in between (the widest race window) and asserts the take's lane chain equals
 /// the monitored one after a single drain.
 ///
-/// Self-skips when `SEGNO_ENGINE_LIB` is unset; build it first:
-///   export SEGNO_ENGINE_LIB="$(bash packages/segno_engine/tool/build_test_lib.sh)"
 void main() {
-  final lib = Platform.environment['SEGNO_ENGINE_LIB'];
-  final skip = lib == null || lib.isEmpty
-      ? 'SEGNO_ENGINE_LIB not set — run tool/build_test_lib.sh'
-      : null;
-
   late _CaptureImageEngine engine;
   late LooperRepository repo;
   late StreamController<void> ticker;
@@ -272,5 +264,5 @@ void main() {
       expect(repo.laneChainFingerprint(0, 0), staged);
       expect(repo.laneEffects(0, 0), hasLength(1));
     });
-  }, skip: skip);
+  });
 }

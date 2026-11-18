@@ -17,27 +17,18 @@ import 'package:settings_repository/settings_repository.dart';
 /// It borrows those owners; it does not retain a second durable settings cache.
 class SessionSettingsCoordinator {
   /// Uses the same concrete application owners as UI and controller commands.
-  const SessionSettingsCoordinator({
-    required LooperRepository looper,
-    required MixSettingsCoordinator mix,
-    required FxChainPersistence fx,
-    required SettingsOwners owners,
-    required TempoSettings tempo,
-    required PlaybackSettings playback,
-    required RecordSettings record,
-    required RecordTimingSettings timing,
-    required FadeSettings fade,
-    SessionBackingPort? backing,
-  }) : _looper = looper,
-       _mix = mix,
-       _fx = fx,
-       _owners = owners,
-       _tempo = tempo,
-       _playback = playback,
-       _record = record,
-       _timing = timing,
-       _fade = fade,
-       _backing = backing;
+  const new({
+    required this._looper,
+    required this._mix,
+    required this._fx,
+    required this._owners,
+    required this._tempo,
+    required this._playback,
+    required this._record,
+    required this._timing,
+    required this._fade,
+    this._backing,
+  });
 
   final LooperRepository _looper;
   final MixSettingsCoordinator _mix;

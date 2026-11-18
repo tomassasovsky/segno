@@ -5,7 +5,7 @@ import 'package:equatable/equatable.dart';
 /// display name (plan D9: a missing item can still be named).
 class BackingItem extends Equatable {
   /// Creates a [BackingItem].
-  const BackingItem({required this.digest, required this.name});
+  const new({required this.digest, required this.name});
 
   /// The asset's `sha256:<64 hex>`.
   final String digest;
@@ -22,7 +22,7 @@ class BackingItem extends Equatable {
 /// which prepared items have no file, and the voice itself.
 class BackingState extends Equatable {
   /// Creates a [BackingState].
-  const BackingState({
+  const new({
     this.prepared = const [],
     this.selected,
     this.loaded,

@@ -12,7 +12,7 @@ import 'package:settings_repository/settings_repository.dart';
 class BackingSettings {
   /// Builds both owners over [repository]'s lifetime, [settings]' records
   /// and the [backing] repository they drive.
-  BackingSettings({
+  new({
     required LooperRepository repository,
     required SettingsRepository settings,
     required BackingRepository backing,

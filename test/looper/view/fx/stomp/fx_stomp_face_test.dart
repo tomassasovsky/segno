@@ -35,10 +35,73 @@ void main() {
     );
   }
 
-  test('every catalogue module has a look, and only they do', () {
+  test('every catalogue module and every standalone built-in has a look, '
+      'and only they do', () {
+    expect(kFxStompSpecs.keys.toSet(), {
+      ...kFxModules.map((m) => m.name),
+      ...kFxBuiltInLooks.values,
+    });
+  });
+
+  test('every standalone built-in is drawn with its look and shows its own '
+      'controls (#1730)', () {
+    final singles = [
+      for (final type in TrackEffectType.values)
+        if (type != TrackEffectType.none && !type.isRackKind) type,
+    ];
+    expect(kFxBuiltInLooks.keys.toSet(), singles.toSet());
+    for (final type in singles) {
+      final entry = BuiltInEffect(type: type);
+      final face = faceOf(entry);
+      expect(face.spec, kFxStompSpecs[kFxBuiltInLooks[type]], reason: '$type');
+      expect(face.knobs.map((k) => k.label), [
+        for (final p in type.params) label(p.key),
+      ], reason: '$type');
+      expect(face.knobs.map((k) => k.setting), [
+        for (var i = 0; i < type.params.length; i++) entry.params[i],
+      ], reason: '$type');
+    }
+  });
+
+  test("every standalone built-in's face prints its own English name, in "
+      "its look's case (#1754)", () {
+    final want = {
+      TrackEffectType.drive: 'Drive',
+      TrackEffectType.filter: 'FILTER',
+      TrackEffectType.delay: 'DELAY',
+      TrackEffectType.tremolo: 'Tremolo',
+      TrackEffectType.octaver: 'OCTAVER',
+      TrackEffectType.echo: 'ECHO',
+      TrackEffectType.reverb: 'REVERB',
+    };
+    expect(want.keys.toSet(), kFxBuiltInLooks.keys.toSet());
+    for (final MapEntry(key: type, value: name) in want.entries) {
+      expect(faceOf(BuiltInEffect(type: type)).name, name, reason: '$type');
+    }
+  });
+
+  test("a rack's pedal keeps its look's own name, also where a built-in "
+      'shares the look', () {
+    for (final module in ['Overdrive', 'Low-pass filter', 'Octaver']) {
+      final entry = BuiltInEffect(
+        type: TrackEffectType.overdrive,
+        module: module,
+      );
+      expect(faceOf(entry).name, kFxStompSpecs[module]!.name, reason: module);
+    }
+  });
+
+  test('an entry that names a catalogue module is drawn as the module, '
+      "not as its engine type's look", () {
+    final entry = BuiltInEffect(
+      type: TrackEffectType.reverb,
+      module: 'Ambience',
+    );
+    expect(faceOf(entry).spec, kFxStompSpecs['Ambience']);
+    // A module name the catalogue does not have is no pedal at all.
     expect(
-      kFxStompSpecs.keys.toSet(),
-      kFxModules.map((m) => m.name).toSet(),
+      fxEntryArt(entry.copyWith(module: 'Removed module'), live: true),
+      isNull,
     );
   });
 
@@ -137,10 +200,14 @@ void main() {
         ],
       );
 
-      expect(
-        fxStompKnobs('Four-band EQ', controls, room: 6),
-        [0, 1, 2, 3, 5, 7],
-      );
+      expect(fxStompKnobs('Four-band EQ', controls, room: 6), [
+        0,
+        1,
+        2,
+        3,
+        5,
+        7,
+      ]);
     });
 
     test('otherwise shows the first ones the rack editor lists', () {
@@ -207,10 +274,7 @@ void main() {
       fxEntryArt(turned, live: true),
       isNot(fxEntryArt(entry, live: true)),
     );
-    expect(
-      faceOf(turned, live: false).knobs,
-      faceOf(entry, live: false).knobs,
-    );
+    expect(faceOf(turned, live: false).knobs, faceOf(entry, live: false).knobs);
   });
 
   test('a module the engine cannot build has no knobs, never dead ones', () {

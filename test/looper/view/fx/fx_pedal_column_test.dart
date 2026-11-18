@@ -1,7 +1,7 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/looper/view/fx/fx_rack_editor.dart';
 
 import '../../../helpers/helpers.dart';
@@ -48,7 +48,7 @@ void main() {
       expect(find.text('Mid'), findsOneWidget);
       expect(find.text('Mid freq'), findsOneWidget);
       expect(find.text('Lo mid'), findsNothing);
-      // The kind's own units, with no "Scale unverified" on a measured range.
+      // The kind's own units.
       expect(find.text('0.0 dB'), findsNWidgets(3));
     });
 

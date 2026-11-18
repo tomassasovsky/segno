@@ -12,7 +12,7 @@ import 'package:equatable/equatable.dart';
 /// Every level is an absolute sample peak for the most recent block, `0..1`.
 class MeterLevels extends Equatable {
   /// Creates [MeterLevels].
-  const MeterLevels({
+  const new({
     this.outputPeak = 0,
     this.inputPeaks = const [],
     this.monitorPeaks = const [],
@@ -72,7 +72,7 @@ class MeterLevels extends Equatable {
 /// One track's levels.
 class TrackLevels extends Equatable {
   /// Creates [TrackLevels].
-  const TrackLevels({this.peak = 0, this.peakL = 0, this.peakR = 0});
+  const new({this.peak = 0, this.peakL = 0, this.peakR = 0});
 
   /// No signal.
   static const silent = TrackLevels();

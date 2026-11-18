@@ -25,13 +25,9 @@ enum UseAsBackingOutcome {
 /// The repository drives the voice and knows nothing about the order; this
 /// owner decides which file is loaded and which one is staged after it.
 class BackingPlayer {
-  /// Creates the owner over [repository] (and its store) and the backing
-  /// mix owner in [settings], whose End decides the staging.
-  BackingPlayer({
-    required BackingRepository repository,
-    required BackingSettings settings,
-  }) : _repository = repository,
-       _settings = settings;
+  /// Creates the owner over [_repository] (and its store) and the backing
+  /// mix owner in [_settings], whose End decides the staging.
+  new({required this._repository, required this._settings});
 
   final BackingRepository _repository;
   final BackingSettings _settings;
@@ -298,10 +294,7 @@ class BackingPlayer {
       return;
     }
     _emit(
-      _state.copyWith(
-        failure: failure,
-        failureCount: _state.failureCount + 1,
-      ),
+      _state.copyWith(failure: failure, failureCount: _state.failureCount + 1),
     );
   }
 

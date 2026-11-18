@@ -8,9 +8,9 @@ import 'package:flutter_test/flutter_test.dart';
 /// The font families the app bundles, from the font manifest the test build
 /// writes from the pubspec, each with its asset paths.
 Future<Map<String, List<String>>> bundledFontFiles() async {
-  final manifest =
-      jsonDecode(await rootBundle.loadString('FontManifest.json'))
-          as List<dynamic>;
+  final manifest = jsonDecode(
+    await rootBundle.loadString('FontManifest.json'),
+  ) as List<dynamic>;
   return {
     for (final entry in manifest.cast<Map<String, dynamic>>())
       entry['family'] as String: [

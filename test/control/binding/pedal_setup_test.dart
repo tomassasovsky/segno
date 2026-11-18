@@ -125,9 +125,8 @@ void main() {
             PedalLedState.pressed,
             const PedalColor(1, 2, 3),
           );
-      final setup = const PedalSetup(
-        trackHold: TrackHold.clearTrack,
-      ).copyWith(leds: leds);
+      final setup = const PedalSetup(trackHold: TrackHold.clearTrack)
+          .copyWith(leds: leds);
       final decoded = PedalSetup.decode(setup.encode());
       expect(decoded, setup);
       expect(decoded.encode(), setup.encode());

@@ -30,14 +30,7 @@ import 'package:settings_repository/settings_repository.dart';
 /// Save-capture and load-apply go through the SAME bloc-layer mapping the
 /// SessionCubit uses (session_mapping.dart).
 ///
-/// Self-skips when `SEGNO_ENGINE_LIB` is unset:
-///   export SEGNO_ENGINE_LIB="$(bash packages/segno_engine/tool/build_test_lib.sh)"
 void main() {
-  final lib = Platform.environment['SEGNO_ENGINE_LIB'];
-  final skip = lib == null || lib.isEmpty
-      ? 'SEGNO_ENGINE_LIB not set — run packages/segno_engine/tool/build_test_lib.sh'
-      : null;
-
   late PumpedNativeEngine engine;
   late LooperRepository looper;
   late SessionRepository session;
@@ -225,35 +218,53 @@ void main() {
       engine.pump(frames: 0);
       expect(engine.snapshot().tracks.first.undoDepth, 1);
     },
-    skip: skip,
   );
 
-  test(
-    'a take of several loops keeps the lap it was played on through save '
-    'and load (#854)',
-    () async {
-      expect(looper.record(), EngineResult.ok);
-      engine.pump(frames: loopFrames, input: 0.25);
-      expect(looper.record(), EngineResult.ok); // the one-loop master
-      engine.pump(frames: loopFrames); // into the master's second lap
-      expect(looper.record(channel: 1), EngineResult.ok);
-      for (var lap = 0; lap < 2; lap++) {
-        engine.pump(frames: loopFrames, input: 0.75);
-      }
-      expect(looper.record(channel: 1), EngineResult.ok);
-      engine.pump(frames: 0);
-      final before = engine.snapshot().tracks[1];
-      expect(before.multiple, greaterThan(1));
-      expect(before.anchorLap, 1);
+  test('a take of several loops keeps the lap it was played on through save '
+      'and load (#854)', () async {
+    expect(looper.record(), EngineResult.ok);
+    engine.pump(frames: loopFrames, input: 0.25);
+    expect(looper.record(), EngineResult.ok); // the one-loop master
+    engine.pump(frames: loopFrames); // into the master's second lap
+    expect(looper.record(channel: 1), EngineResult.ok);
+    for (var lap = 0; lap < 2; lap++) {
+      engine.pump(frames: loopFrames, input: 0.75);
+    }
+    expect(looper.record(channel: 1), EngineResult.ok);
+    engine.pump(frames: 0);
+    final before = engine.snapshot().tracks[1];
+    expect(before.multiple, greaterThan(1));
+    expect(before.anchorLap, 1);
 
-      await saveThenLoad('${tempDir.path}/anchor');
+    await saveThenLoad('${tempDir.path}/anchor');
 
-      final after = engine.snapshot().tracks[1];
-      expect(after.multiple, before.multiple);
-      expect(after.anchorLap, 1);
-    },
-    skip: skip,
-  );
+    final after = engine.snapshot().tracks[1];
+    expect(after.multiple, before.multiple);
+    expect(after.anchorLap, 1);
+  });
+
+  test('a take keeps the input it was captured from through save and load, '
+      "apart from its lane's input setting (#1678)", () async {
+    expect(looper.record(), EngineResult.ok);
+    engine.pump(frames: loopFrames, input: 0.25);
+    expect(looper.record(), EngineResult.ok);
+    engine.pump(frames: 0);
+    ticker.add(null); // observe the published take image
+    expect(looper.state.tracks[0].lanes[0].recordedInput, 0);
+    // The next take would record nothing; this one still came from 0.
+    expect(
+      looper.setLaneInput(channel: 0, lane: 0, inputChannel: -1),
+      EngineResult.ok,
+    );
+
+    await saveThenLoad('${tempDir.path}/recorded_input');
+    ticker.add(null);
+
+    final lane = looper.state.tracks[0].lanes[0];
+    expect(lane.hasContent, isTrue);
+    expect(lane.recordedInput, 0);
+    expect(looper.state.laneInputs[(0, 0)], -1);
+  });
 
   test(
     'fuzz: random overdub/undo histories all round-trip identically',
@@ -314,7 +325,6 @@ void main() {
         }
       }
     },
-    skip: skip,
   );
   test(
     'the session fingerprint follows every audio write on the real engine',
@@ -339,6 +349,5 @@ void main() {
       engine.pump(frames: 0);
       expect(fingerprint(), isNot(overdubbed), reason: 'an undo is a write');
     },
-    skip: skip,
   );
 }

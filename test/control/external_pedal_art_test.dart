@@ -1,7 +1,7 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/control/binding/external_pedal.dart';
 import 'package:segno/control/view/pedal_setup/external_pedal_art.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -55,11 +55,10 @@ void main() {
 
   test('the study and the app measure the same pedals', () {
     final measured = studyArtwork();
-    expect(
-      measured.keys.toSet(),
-      {'single', 'dual'},
-      reason: 'a pedal added to the study needs one here too',
-    );
+    expect(measured.keys.toSet(), {
+      'single',
+      'dual',
+    }, reason: 'a pedal added to the study needs one here too');
   }, skip: studySkip);
 
   test('every switch and indicator sits where the study measured it', () {
@@ -105,7 +104,7 @@ void main() {
     ]) {
       await tester.pumpWidget(
         MaterialApp(
-          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          localizationsDelegates: appLocalizationsDelegates,
           supportedLocales: AppLocalizations.supportedLocales,
           theme: ThemeData(
             extensions: const [

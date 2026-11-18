@@ -127,9 +127,7 @@ void main() {
         final dir = Directory.systemTemp.createTempSync('cpu_load');
         addTearDown(() => dir.deleteSync(recursive: true));
         final file = File('${dir.path}/stat')..writeAsStringSync(stat(0, 0));
-        final repository = CpuLoadRepository.system(
-          path: file.path,
-        );
+        final repository = CpuLoadRepository.system(path: file.path);
         expect(repository.isSupported, isTrue);
         expect(repository.interval, const Duration(seconds: 1));
       });

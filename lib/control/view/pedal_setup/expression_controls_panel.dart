@@ -1,5 +1,5 @@
-import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/external_expression.dart';
 import 'package:segno/control/view/control_value_readout.dart';
@@ -14,7 +14,7 @@ import 'package:segno/theme/theme.dart';
 /// How one mapping reads: what it points at, and whether the rig still has it.
 class ExpressionRow {
   /// Creates an [ExpressionRow].
-  const ExpressionRow({
+  const new({
     required this.mapping,
     required this.destination,
     required this.control,
@@ -47,7 +47,7 @@ class ExpressionRow {
 /// edited.
 class ExpressionControlsPanel extends StatelessWidget {
   /// Creates an [ExpressionControlsPanel].
-  const ExpressionControlsPanel({
+  const new({
     required this.rows,
     required this.selected,
     required this.position,
@@ -143,10 +143,27 @@ class ExpressionControlsPanel extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 24),
-          SizedBox(height: _listHeight, child: _list(context)),
+          SizedBox(
+            height: _listHeight,
+            child: _ExpressionList(
+              rows: rows,
+              selected: selected,
+              position: position,
+              onSelect: onSelect,
+            ),
+          ),
           if (open != null) ...[
             const SizedBox(height: 24),
-            SizedBox(height: _rangeHeight, child: _range(context, open)),
+            SizedBox(
+              height: _rangeHeight,
+              child: _ExpressionRange(
+                row: open,
+                onChange: onChange,
+                onRemove: onRemove,
+                onEndpoint: onEndpoint,
+                onEndpointCancel: onEndpointCancel,
+              ),
+            ),
           ],
         ],
       ),
@@ -159,8 +176,24 @@ class ExpressionControlsPanel extends StatelessWidget {
     }
     return null;
   }
+}
 
-  Widget _list(BuildContext context) {
+/// The mappings as rows, or the invitation to add one when there are none.
+class _ExpressionList extends StatelessWidget {
+  const new({
+    required this.rows,
+    required this.selected,
+    required this.position,
+    required this.onSelect,
+  });
+
+  final List<ExpressionRow> rows;
+  final ControlValueTarget? selected;
+  final double? position;
+  final ValueChanged<ControlValueTarget> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
     final l10n = context.l10n;
     final surface = context.surface;
     if (rows.isEmpty) {
@@ -176,9 +209,7 @@ class ExpressionControlsPanel extends StatelessWidget {
         ),
       );
     }
-    final openIndex = rows.indexWhere(
-      (row) => row.mapping.target == selected,
-    );
+    final openIndex = rows.indexWhere((row) => row.mapping.target == selected);
     final at = position;
     return ControlRowList(
       itemCount: rows.length,
@@ -211,8 +242,27 @@ class ExpressionControlsPanel extends StatelessWidget {
       },
     );
   }
+}
 
-  Widget _range(BuildContext context, ExpressionRow row) {
+/// The open row's range: its title, Change and Remove, and its two endpoints.
+class _ExpressionRange extends StatelessWidget {
+  const new({
+    required this.row,
+    required this.onChange,
+    required this.onRemove,
+    required this.onEndpoint,
+    required this.onEndpointCancel,
+  });
+
+  final ExpressionRow row;
+  final VoidCallback onChange;
+  final VoidCallback onRemove;
+  final void Function({required bool isHeel, required double value}) onEndpoint;
+  final void Function({required bool isHeel, required double value})
+  onEndpointCancel;
+
+  @override
+  Widget build(BuildContext context) {
     final l10n = context.l10n;
     final surface = context.surface;
     final compactChoices =
@@ -261,20 +311,46 @@ class ExpressionControlsPanel extends StatelessWidget {
         SizedBox(height: compactChoices ? 10 : 30),
         Row(
           children: [
-            _endpoint(context, row, isHeel: true),
+            _ExpressionEndpoint(
+              row: row,
+              isHeel: true,
+              onEndpoint: onEndpoint,
+              onEndpointCancel: onEndpointCancel,
+            ),
             const SizedBox(width: 40),
-            _endpoint(context, row, isHeel: false),
+            _ExpressionEndpoint(
+              row: row,
+              isHeel: false,
+              onEndpoint: onEndpoint,
+              onEndpointCancel: onEndpointCancel,
+            ),
           ],
         ),
       ],
     );
   }
+}
 
-  Widget _endpoint(
-    BuildContext context,
-    ExpressionRow row, {
-    required bool isHeel,
-  }) {
+/// One endpoint of the open row: its name, its value, and the control that
+/// moves it.
+class _ExpressionEndpoint extends StatelessWidget {
+  const new({
+    required this.row,
+    required this.isHeel,
+    required this.onEndpoint,
+    required this.onEndpointCancel,
+  });
+
+  final ExpressionRow row;
+
+  /// Whether this is the heel endpoint; otherwise the toe.
+  final bool isHeel;
+  final void Function({required bool isHeel, required double value}) onEndpoint;
+  final void Function({required bool isHeel, required double value})
+  onEndpointCancel;
+
+  @override
+  Widget build(BuildContext context) {
     final l10n = context.l10n;
     final surface = context.surface;
     final value = isHeel ? row.mapping.heel : row.mapping.toe;
@@ -333,9 +409,7 @@ class ExpressionControlsPanel extends StatelessWidget {
             )
           else if (row.mapping.target is OneShotValueTarget)
             PlaybackEndpointChoice(
-              key: Key(
-                'expression_endpoint_${endpointId}_$targetKey',
-              ),
+              key: Key('expression_endpoint_${endpointId}_$targetKey'),
               value: value,
               width: 625,
               enabled: row.available && row.disabledReason == null,
@@ -348,11 +422,8 @@ class ExpressionControlsPanel extends StatelessWidget {
               value: value,
               width: 625,
               semanticLabel: '${row.control} $name',
-              semanticValueBuilder: (normalized) => controlValueReadout(
-                l10n,
-                row.mapping.target,
-                normalized,
-              ),
+              semanticValueBuilder: (normalized) =>
+                  controlValueReadout(l10n, row.mapping.target, normalized),
               // A control the rig no longer has cannot be auditioned, so its
               // endpoints are shown and not movable: the row is there to be
               // repointed or removed, not tuned.

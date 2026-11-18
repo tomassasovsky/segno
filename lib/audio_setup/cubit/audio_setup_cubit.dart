@@ -24,21 +24,16 @@ part 'audio_setup_state.dart';
 /// device, rate and buffer, or, when an open owes one that was never saved,
 /// one measured through the interface's own loopback and saved.
 class AudioSetupCubit extends Cubit<AudioSetupState> {
-  /// Creates an [AudioSetupCubit] backed by [repository], persisting the
-  /// config through [settings]. [guards] is the app's operation table, and
-  /// [backing] the backing player an apply stops along with the tracks.
-  AudioSetupCubit({
-    required LooperRepository repository,
-    required SettingsRepository settings,
-    required GuardRegistry guards,
-    required BackingRepository backing,
-    Duration deviceRefreshInterval = const Duration(seconds: 1),
-  }) : _repository = repository,
-       _settings = settings,
-       _guards = guards,
-       _backing = backing,
-       _deviceRefreshInterval = deviceRefreshInterval,
-       super(const AudioSetupState()) {
+  /// Creates an [AudioSetupCubit] backed by [_repository], persisting the
+  /// config through [_settings]. [_guards] is the app's operation table, and
+  /// [_backing] the backing player an apply stops along with the tracks.
+  new({
+    required this._repository,
+    required this._settings,
+    required this._guards,
+    required this._backing,
+    this._deviceRefreshInterval = const Duration(seconds: 1),
+  }) : super(const AudioSetupState()) {
     _subscription = _repository.looperState.listen(_onLooperState);
 
     // Hydrate from the repository immediately — [looperState] is a broadcast
@@ -467,8 +462,9 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
 
   /// The refusal for a change that would leave the effects no room (#887,
   /// owner's Q5 answer, D19), or `null`. Only a change that shrinks the room
-  /// is refused: a higher rate, or a buffer below the 64-frame block the
-  /// per-frame costs were measured at (32, #1529). A change that leaves the
+  /// is refused: a rate or a buffer whose charges ([fxCostSetting]) or budget
+  /// leave less room (a higher rate, a 32-frame buffer, #1529; a lower rate
+  /// can too, #1724). A change that leaves the
   /// room as it is or frees some is never refused, as an effects removal
   /// never is. The room now is the running device's, which can differ from
   /// the selection when the device negotiated an off-list period. When both
@@ -483,7 +479,7 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     final room = _repository.fxRoomAt(next.sampleRate, next.bufferFrames);
     if (room >= 0) return null;
     if (room >= _repository.fxRoomAt(rate, buffer)) return null;
-    final rateAlone = next.sampleRate > rate
+    final rateAlone = next.sampleRate != rate
         ? _repository.fxRoomAt(next.sampleRate, buffer)
         : 0;
     return rateAlone < 0

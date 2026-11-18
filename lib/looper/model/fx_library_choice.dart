@@ -3,13 +3,13 @@ import 'package:looper_repository/looper_repository.dart';
 
 /// The effect or saved sound selected in the library.
 sealed class FxLibraryChoice {
-  const FxLibraryChoice();
+  const new();
 }
 
 /// A factory rack preset, instantiated as a run of chain entries.
 final class FxRackChoice extends FxLibraryChoice {
   /// Creates an [FxRackChoice].
-  const FxRackChoice(this.preset);
+  const new(this.preset);
 
   /// The selected factory preset.
   final FxPreset preset;
@@ -18,7 +18,7 @@ final class FxRackChoice extends FxLibraryChoice {
 /// A standalone built-in effect.
 final class FxSingleChoice extends FxLibraryChoice {
   /// Creates an [FxSingleChoice].
-  const FxSingleChoice(this.type);
+  const new(this.type);
 
   /// The selected effect type.
   final TrackEffectType type;
@@ -27,7 +27,7 @@ final class FxSingleChoice extends FxLibraryChoice {
 /// A player's saved sound.
 final class FxSavedChoice extends FxLibraryChoice {
   /// Creates an [FxSavedChoice].
-  const FxSavedChoice(this.preset);
+  const new(this.preset);
 
   /// The saved preset.
   final FxUserPreset preset;

@@ -10,7 +10,7 @@ import 'package:controller_repository/src/controller_source.dart';
 /// assignment dispatcher here.
 class ControllerRepository {
   /// Subscribes once and takes ownership of every supplied source.
-  ControllerRepository({required List<ControllerSource> sources})
+  new({required List<ControllerSource> sources})
     : _sources = List.unmodifiable(sources) {
     for (final source in _sources) {
       _subscriptions.add(source.inputs.listen(_onInput));

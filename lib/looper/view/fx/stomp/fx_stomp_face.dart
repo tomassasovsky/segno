@@ -9,18 +9,24 @@ import 'package:segno/looper/view/fx/stomp/fx_stomp_spec.dart';
 /// What one pedal shows: how it looks ([spec]), its knobs and its LED.
 class FxStompFace extends Equatable {
   /// Creates an [FxStompFace].
-  FxStompFace({
+  new({
     required this.spec,
     required this.knobs,
     this.led = FxStompLed.on,
     this.live = true,
-  }) : assert(
+    String? name,
+  }) : name = name ?? spec.name,
+       assert(
          knobs.length <= spec.face.maxKnobs,
          'a face draws at most its maxKnobs knobs',
        );
 
   /// How the pedal looks.
   final FxStompSpec spec;
+
+  /// The name printed on it: the look's own ([FxStompSpec.name]) unless the
+  /// pedal names itself ([FxPedalPicture.name]).
+  final String name;
 
   /// The knobs, in reading order: at most the face's
   /// [FxStompFaceKind.maxKnobs].
@@ -34,7 +40,7 @@ class FxStompFace extends Equatable {
   final bool live;
 
   @override
-  List<Object?> get props => [spec, knobs, led, live];
+  List<Object?> get props => [spec, name, knobs, led, live];
 }
 
 /// What a pedal's LED shows.
@@ -53,7 +59,7 @@ enum FxStompLed {
 /// One knob on a pedal.
 class FxStompKnob extends Equatable {
   /// Creates an [FxStompKnob].
-  const FxStompKnob({required this.label, required this.setting});
+  const new({required this.label, required this.setting});
 
   /// The label under the knob.
   final String label;
@@ -65,20 +71,20 @@ class FxStompKnob extends Equatable {
   List<Object?> get props => [label, setting];
 }
 
-/// The controls a pedal of [module] shows as knobs on a face with room for
+/// The controls a pedal of [look] shows as knobs on a face with room for
 /// [room], as positions into [controls] (an entry's [fxEntryControls]).
 ///
 /// Every control while they fit. A variant with more shows the first [room]
 /// in the order the rack editor lists them, except where [kFxStompKnobKeys]
-/// names the ones a module's pedal shows instead.
+/// names the ones a look's pedal shows instead.
 List<int> fxStompKnobs(
-  String module,
+  String look,
   ({List<int> params, List<String> keys}) controls, {
   required int room,
 }) {
   final count = controls.keys.length;
   if (count <= room) return [for (var i = 0; i < count; i++) i];
-  final preferred = kFxStompKnobKeys[module] ?? const <String>{};
+  final preferred = kFxStompKnobKeys[look] ?? const <String>{};
   final picked = [
     for (var i = 0; i < count; i++)
       if (preferred.contains(controls.keys[i])) i,
@@ -125,7 +131,7 @@ const List<double> _kRestingSettings = [
   .5 - 100 / 270,
 ];
 
-/// The face [pedal] is drawn with, or `null` for a module with no look in
+/// The face [pedal] is drawn with, or `null` for a look missing from
 /// [kFxStompSpecs].
 ///
 /// The knobs are the entry's own controls ([fxStompKnobs]), so a pedal never
@@ -133,17 +139,21 @@ const List<double> _kRestingSettings = [
 /// when the pedal is live. A live pedal's LED is on while the effect is
 /// engaged; a still pedal shows no state ([FxStompLed.still]).
 FxStompFace? fxStompFace(AppLocalizations l10n, FxPedalPicture pedal) {
-  final FxPedalPicture(:effect, :module, :controls, :live) = pedal;
-  final spec = kFxStompSpecs[module.name];
-  // A module with no look draws no pedal; a test keeps the table complete.
+  final FxPedalPicture(:effect, :look, :controls, :live) = pedal;
+  final spec = kFxStompSpecs[look];
+  // A look missing from the table draws no pedal; a test keeps the table
+  // complete.
   if (spec == null) return null;
-  final knobs = fxStompKnobs(
-    module.name,
-    controls,
-    room: spec.face.maxKnobs,
-  );
+  final knobs = fxStompKnobs(look, controls, room: spec.face.maxKnobs);
+  final name = pedal.name;
   return FxStompFace(
     spec: spec,
+    // In the look's own case: an upper-case face prints its name in capitals.
+    name: name == null
+        ? null
+        : spec.name == spec.name.toUpperCase()
+        ? name.toUpperCase()
+        : name,
     live: live,
     led: !live
         ? FxStompLed.still

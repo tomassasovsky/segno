@@ -6,7 +6,7 @@ import 'package:storage_repository/storage_repository.dart';
 /// capacity, the recording time Internal still holds, and the eject state.
 class StorageState extends Equatable {
   /// Creates a [StorageState].
-  const StorageState({
+  const new({
     this.removableSupported = false,
     this.volumes = const [],
     this.internalSpace,

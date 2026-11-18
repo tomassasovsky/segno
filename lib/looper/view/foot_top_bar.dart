@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/common/top_bar_layout.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -17,7 +17,7 @@ import 'package:segno/theme/theme.dart';
 /// here too.
 class FootTopBar extends StatelessWidget {
   /// Creates a [FootTopBar].
-  const FootTopBar({
+  const new({
     required this.exitKey,
     required this.onExit,
     this.status,
@@ -47,9 +47,7 @@ class FootTopBar extends StatelessWidget {
       height: height,
       child: NoticeBar(
         child: Padding(
-          padding: const EdgeInsetsDirectional.symmetric(
-            horizontal: sideInset,
-          ),
+          padding: const EdgeInsetsDirectional.symmetric(horizontal: sideInset),
           child: TopBarLayout(
             leading: IconButton.outlined(
               key: exitKey,

@@ -39,7 +39,7 @@ const _keys = MidiDevice(id: 'keys', name: 'Keyboard');
 /// those (#1040): a real `MidiDeviceRepository` over fake captures drives a
 /// real `ControlCubit`, with Decay as the mapped value.
 class _Rig {
-  _Rig(this.clock, this.engine, this.looper) {
+  new(this.clock, this.engine, this.looper) {
     settings = SettingsRepository(store: store);
     owner = PlaybackSettings(repository: looper, settings: settings);
     unawaited(owner.load());

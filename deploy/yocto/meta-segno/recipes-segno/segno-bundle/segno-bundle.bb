@@ -398,8 +398,8 @@ do_install() {
     install -m 0644 ${UNPACKDIR}/dropbear-segno.conf \
         ${D}${sysconfdir}/systemd/system/dropbearkey.service.d/segno.conf
 
-    # brcmfmac: roamoff=1 — without this, WPA2 associates then never completes
-    # the 4-way handshake on many APs (no EAPOL M1).
+    # brcmfmac: Raspberry Pi OS's options, roamoff=1 and
+    # feature_disable=0x282000. The file says why each one is set.
     install -d ${D}${sysconfdir}/modprobe.d
     install -m 0644 ${UNPACKDIR}/brcmfmac.conf \
         ${D}${sysconfdir}/modprobe.d/brcmfmac.conf
@@ -429,7 +429,8 @@ do_install[vardeps] += "SEGNO_BUILD_VERSION SEGNO_UPDATE_CHANNEL FLUTTER_ENGINE_
 # ships, here, where it costs seconds instead of a bench session.
 segno_check_bundle_engine() {
     bundle="$1"
-    for f in data/flutter_assets lib/libapp.so lib/libsegno_engine.so flutter-version.json; do
+    for f in data/flutter_assets data/flutter_assets/NativeAssetsManifest.json \
+             lib/libapp.so lib/libsegno_engine.so flutter-version.json; do
         [ -e "${bundle}/$f" ] || bbfatal "SEGNO_BUNDLE_DIR=${bundle} has no $f"
     done
     revision=$(sed -n 's/.*"engineRevision"[[:space:]]*:[[:space:]]*"\([0-9a-f]*\)".*/\1/p' \

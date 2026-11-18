@@ -16,7 +16,7 @@ import 'package:segno/logging/app_log.dart';
 /// fragment shaders. A pedal draws without its texture until they have
 /// loaded, then repaints.
 class FxStompTextures {
-  FxStompTextures._();
+  new _();
 
   /// The one set of tiles.
   static final FxStompTextures instance = FxStompTextures._();

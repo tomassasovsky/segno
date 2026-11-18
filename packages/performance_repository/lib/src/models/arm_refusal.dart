@@ -14,14 +14,14 @@ enum PerformanceArmBusy {
 /// repository publishes every refusal on `armRefusals`, whoever pressed
 /// (the recorder, a pedal, a MIDI control), so one listener can say why.
 sealed class PerformanceArmRefusal {
-  const PerformanceArmRefusal();
+  const new();
 }
 
 /// Refused because [busy] is still in flight. Capture is available again
 /// when it ends.
 final class PerformanceArmBusyRefusal extends PerformanceArmRefusal {
   /// Creates a [PerformanceArmBusyRefusal] for [busy].
-  const PerformanceArmBusyRefusal(this.busy);
+  const new(this.busy);
 
   /// The work holding the arm off.
   final PerformanceArmBusy busy;
@@ -31,7 +31,7 @@ final class PerformanceArmBusyRefusal extends PerformanceArmRefusal {
 /// operation in flight (accepted behaviour 6.12).
 final class PerformanceArmGuardRefusal extends PerformanceArmRefusal {
   /// Creates a [PerformanceArmGuardRefusal] for [refusal].
-  const PerformanceArmGuardRefusal(this.refusal);
+  const new(this.refusal);
 
   /// What the guard table refused the take with.
   final GuardRefused refusal;

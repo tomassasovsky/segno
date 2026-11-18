@@ -1,17 +1,29 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
-/// Fade + subtle scale-up (96% → 100%) transition math shared by
+/// Fade + subtle scale-up (96% → 100%) transition shared by
 /// [FadeScalePageTransitionsBuilder] (the app-wide theme default) and
 /// [desktopPageRoute] (Segno's own asymmetric desktop timing).
-Widget buildFadeScaleTransition(Animation<double> animation, Widget child) {
-  final curved = CurvedAnimation(parent: animation, curve: Curves.easeInOut);
-  return FadeTransition(
-    opacity: curved,
-    child: ScaleTransition(
-      scale: Tween<double>(begin: 0.96, end: 1).animate(curved),
-      child: child,
-    ),
-  );
+class FadeScaleTransition extends StatelessWidget {
+  /// Fades and scales [child] in as [animation] runs.
+  const new({required this.animation, required this.child, super.key});
+
+  /// The route's animation, 0 to 1 as it opens.
+  final Animation<double> animation;
+
+  /// The page.
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final curved = CurvedAnimation(parent: animation, curve: Curves.easeInOut);
+    return FadeTransition(
+      opacity: curved,
+      child: ScaleTransition(
+        scale: Tween<double>(begin: 0.96, end: 1).animate(curved),
+        child: child,
+      ),
+    );
+  }
 }
 
 /// A plain fade + subtle scale-up route transition, wired into
@@ -26,7 +38,7 @@ Widget buildFadeScaleTransition(Animation<double> animation, Widget child) {
 /// — no extra package.
 class FadeScalePageTransitionsBuilder extends PageTransitionsBuilder {
   /// Creates a [FadeScalePageTransitionsBuilder].
-  const FadeScalePageTransitionsBuilder();
+  const new();
 
   @override
   Widget buildTransitions<T>(
@@ -35,7 +47,7 @@ class FadeScalePageTransitionsBuilder extends PageTransitionsBuilder {
     Animation<double> animation,
     Animation<double> secondaryAnimation,
     Widget child,
-  ) => buildFadeScaleTransition(animation, child);
+  ) => FadeScaleTransition(animation: animation, child: child);
 }
 
 /// Pushes [builder] with the same fade + scale-up transition as
@@ -53,5 +65,5 @@ PageRouteBuilder<T> desktopPageRoute<T>(
   reverseTransitionDuration: const Duration(milliseconds: 150),
   pageBuilder: (context, animation, secondaryAnimation) => builder(context),
   transitionsBuilder: (context, animation, secondaryAnimation, child) =>
-      buildFadeScaleTransition(animation, child),
+      FadeScaleTransition(animation: animation, child: child),
 );

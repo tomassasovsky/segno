@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/theme/theme.dart';
 
 /// How much recording Internal still holds (pen 31 `storage-recording-time`):
@@ -7,7 +7,7 @@ import 'package:segno/theme/theme.dart';
 /// It spans the same width as the Internal and USB cards around it (#1590).
 class StorageRecordingTime extends StatelessWidget {
   /// Creates a [StorageRecordingTime].
-  const StorageRecordingTime({
+  const new({
     required this.headline,
     required this.note,
     this.format,
@@ -91,7 +91,7 @@ class StorageRecordingTime extends StatelessWidget {
 /// recording panel.
 class StorageNotice extends StatelessWidget {
   /// Creates a [StorageNotice].
-  const StorageNotice(this.message, {super.key});
+  const new(this.message, {super.key});
 
   /// The sentence.
   final String message;

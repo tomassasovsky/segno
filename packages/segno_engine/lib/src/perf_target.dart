@@ -9,7 +9,7 @@ import 'package:meta/meta.dart';
 class PerfTarget {
   /// Creates a [PerfTarget]. [takeId] is the take's 16-byte identity, minted
   /// when recording starts; it is copied.
-  PerfTarget({
+  new({
     required this.captureDir,
     required Uint8List takeId,
     this.liveSidecarDir,
@@ -19,6 +19,8 @@ class PerfTarget {
     this.reserveBytes,
     this.mirrorDir,
     this.checkpointMs = defaultCheckpointMs,
+    this.idleStopSeconds = 0,
+    this.maxSeconds = 0,
   }) : takeId = Uint8List.fromList(takeId) {
     if (takeId.length != takeIdBytes) {
       throw ArgumentError.value(takeId, 'takeId', 'must be 16 bytes');
@@ -33,6 +35,12 @@ class PerfTarget {
     if (checkpointMs < 0 || checkpointMs > 0x7fffffff) {
       throw ArgumentError.value(checkpointMs, 'checkpointMs');
     }
+    if (idleStopSeconds < 0 || idleStopSeconds > 0x7fffffff) {
+      throw ArgumentError.value(idleStopSeconds, 'idleStopSeconds');
+    }
+    if (maxSeconds < 0 || maxSeconds > 0x7fffffff) {
+      throw ArgumentError.value(maxSeconds, 'maxSeconds');
+    }
   }
 
   /// The length of a take id.
@@ -41,6 +49,11 @@ class PerfTarget {
   /// The length of a part's header: RIFF, `fmt `, the 32-byte `sgno` chunk
   /// and the `data` chunk header. Mirrors `LE_PERF_PART_HEADER_BYTES`.
   static const int partHeaderBytes = 84;
+
+  /// The stream number of input `n`'s raw recording (#1805) is this plus
+  /// `n`; input `n` as heard is stream `1 + n`, the master stream 0.
+  /// Mirrors `LE_PERF_RAW_STREAM_BASE`.
+  static const int rawStreamBase = 100;
 
   /// How often a take is made durable: at most this much is lost to a
   /// power cut (#1198 D4).
@@ -91,4 +104,16 @@ class PerfTarget {
   /// How often the engine makes the take durable, in ms; 0 checkpoints only
   /// when the take stops.
   final int checkpointMs;
+
+  /// Seconds with nothing happening after which the take stops on its own
+  /// (`PerfStopReason.idle`, #1767): no logged event (a press, a transport
+  /// change, an edit) and no captured input over the playing level. 0 never
+  /// stops it.
+  final int idleStopSeconds;
+
+  /// The longest the take runs, in seconds, before it stops on its own
+  /// (`PerfStopReason.lengthLimit`); never past what the rendered master
+  /// stem can hold in one file on FAT32 (4 GiB less one byte, header
+  /// included). 0 sets no limit.
+  final int maxSeconds;
 }

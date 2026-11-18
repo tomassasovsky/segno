@@ -13,7 +13,7 @@ import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/helpers.dart';
 
-class _MockSettings extends Mock implements RecordSettings {}
+class _MockSettings extends Mock implements RecordSettings;
 
 class _Store extends FakeKeyValueStore {
   Completer<void>? writeGate;

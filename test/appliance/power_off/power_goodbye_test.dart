@@ -1,5 +1,5 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/appliance/power_off/power_cubit.dart';
 import 'package:segno/appliance/power_off/power_gate.dart';
 import 'package:segno/appliance/power_off/power_goodbye.dart';
@@ -176,7 +176,7 @@ void main() {
           MaterialApp(
             theme: AppTheme.neon,
             locale: const Locale('es'),
-            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            localizationsDelegates: appLocalizationsDelegates,
             supportedLocales: AppLocalizations.supportedLocales,
             home: PowerGoodbye(state: goodbye(PowerAction.shutDown)),
           ),
@@ -206,9 +206,7 @@ void main() {
 
       testWidgets('a plain restart is the bare field, no Restarting face '
           '(#1553)', (tester) async {
-        await tester.pumpApp(
-          PowerGoodbye(state: goodbye(PowerAction.restart)),
-        );
+        await tester.pumpApp(PowerGoodbye(state: goodbye(PowerAction.restart)));
         final box = tester.widget<ColoredBox>(
           find.byKey(const Key('power_goodbye')),
         );
@@ -277,9 +275,7 @@ void main() {
       expect(bar.value, 0.5);
     });
 
-    testWidgets('Safe to switch off: the check ring, no logo', (
-      tester,
-    ) async {
+    testWidgets('Safe to switch off: the check ring, no logo', (tester) async {
       await pumpFace(
         tester,
         const PerformanceReadout(goodbye: ReadoutGoodbye.safeToSwitchOff),
@@ -331,10 +327,7 @@ void main() {
 
     test('a slow save and the goodbye take over', () {
       expect(of(saving(PowerStep.saveSettings)), ReadoutGoodbye.saving);
-      expect(
-        of(goodbye(PowerAction.shutDown)),
-        ReadoutGoodbye.safeToSwitchOff,
-      );
+      expect(of(goodbye(PowerAction.shutDown)), ReadoutGoodbye.safeToSwitchOff);
     });
 
     test('Restarting only while an update installs', () {

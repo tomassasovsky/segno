@@ -40,7 +40,7 @@ enum LoopbackKind {
 /// engine's `AudioDevice`.
 class AudioDevice extends Equatable {
   /// Creates an [AudioDevice].
-  const AudioDevice({
+  const new({
     required this.id,
     required this.name,
     required this.isDefault,
@@ -89,7 +89,7 @@ const int kWarmUpBufferFrames = 512;
 /// `EngineConfig`; any field left at `0`/empty defers to the device default.
 class EngineConfig extends Equatable {
   /// Creates an [EngineConfig].
-  const EngineConfig({
+  const new({
     this.sampleRate = 0,
     this.bufferFrames = 0,
     this.inputChannels = 0,
@@ -158,14 +158,14 @@ class EngineConfig extends Equatable {
 /// `LoopbackInfo`.
 class LoopbackInfo extends Equatable {
   /// Creates a [LoopbackInfo].
-  const LoopbackInfo({
+  const new({
     required this.available,
     required this.kind,
     required this.deviceName,
   });
 
   /// A result indicating no loopback path is available.
-  const LoopbackInfo.none()
+  const new none()
     : available = false,
       kind = LoopbackKind.none,
       deviceName = '';

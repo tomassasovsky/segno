@@ -16,7 +16,7 @@ import 'package:segno/theme/theme.dart';
 /// it needs, so nothing a message says is lost.
 class NoticeSentence extends StatelessWidget {
   /// Creates a [NoticeSentence].
-  const NoticeSentence({
+  const new({
     required this.title,
     required this.titleStyle,
     this.body,
@@ -104,9 +104,7 @@ class NoticeSentence extends StatelessWidget {
             // the message itself keeps the room.
             if (source != null) ...[
               ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxWidth: constraints.maxWidth / 3,
-                ),
+                constraints: BoxConstraints(maxWidth: constraints.maxWidth / 3),
                 child: AppText(
                   source,
                   key: const Key('notice_sentence_source'),

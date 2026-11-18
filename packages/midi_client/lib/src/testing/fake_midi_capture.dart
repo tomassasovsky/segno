@@ -12,7 +12,7 @@ import 'package:midi_client/src/midi_device.dart';
 /// [MidiInputSession] epoch, as the native capture does.
 class FakeMidiCapture implements MidiControllerSource {
   /// Creates a capture over the host inputs [devices] lists.
-  FakeMidiCapture({List<MidiDevice> Function()? devices})
+  new({List<MidiDevice> Function()? devices})
     : _devices = devices ?? (() => const []);
 
   final List<MidiDevice> Function() _devices;

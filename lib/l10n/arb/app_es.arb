@@ -447,6 +447,8 @@
     "paramSustain": "Sostenido",
     "paramHighpass": "Pasaaltos",
     "paramGateThreshold": "Umbral de puerta",
+    "paramGateRelease": "Liberación de puerta",
+    "paramGateDetector": "Detector de puerta",
     "effectDoubler": "Doblador",
     "effectChorus": "Chorus",
     "effectWah": "Wah",
@@ -476,6 +478,34 @@
     "paramTailEr": "Cola/ER",
     "paramDensity": "Densidad",
     "effectSmartTune": "Smart Tune",
+    "fxModuleAmbience": "Ambiente",
+    "fxModuleAmp": "Amplificador",
+    "fxModuleChorus": "Chorus",
+    "fxModuleCompressor": "Compresor",
+    "fxModuleDegrade": "Degradación",
+    "fxModuleDelay": "Delay",
+    "fxModuleDistortion": "Distorsión",
+    "fxModuleDoubler": "Doblador",
+    "fxModuleDubDelay": "Delay dub",
+    "fxModuleDubReverb": "Reverb dub",
+    "fxModuleFourBandEq": "EQ de 4 bandas",
+    "fxModuleHarmonizer": "Armonizador",
+    "fxModuleHighPassGate": "Pasaaltos y puerta",
+    "fxModuleLowPassFilter": "Filtro pasabajos",
+    "fxModuleModulation": "Modulación",
+    "fxModuleOctaver": "Octaver",
+    "fxModuleOverdrive": "Overdrive",
+    "fxModuleParametricEq": "EQ paramétrico",
+    "fxModulePitchShift": "Cambio de tono",
+    "fxModulePumper": "Pumper",
+    "fxModuleReverb": "Reverb",
+    "fxModuleSlicer": "Slicer",
+    "fxModuleSmartTune": "Smart Tune",
+    "fxModuleSpringReverb": "Reverb de resorte",
+    "fxModuleTransient": "Transitorios",
+    "fxModuleVinyl": "Vinilo",
+    "fxModuleWah": "Wah",
+    "fxModuleWhammy": "Whammy",
     "paramSpeed": "Velocidad",
     "paramScaleRoot": "Tónica",
     "paramScaleType": "Tipo de escala",
@@ -942,17 +972,53 @@
     "@wifiConnectFailedPassword": {
         "description": "Shown when WPA authentication fails while joining a network."
     },
-    "wifiConnectFailedTimeout": "No se pudo unir — la red no terminó de conectar.",
-    "@wifiConnectFailedTimeout": {
-        "description": "Shown when WiFi association times out before COMPLETED."
+    "networkJoinWrongPassword": "La contraseña de {ssid} es incorrecta.",
+    "@networkJoinWrongPassword": {
+        "description": "A join failed because the access point tested the key and refused it (iwd's 4-way handshake failed, #1817). The only failure worded as a password problem.",
+        "placeholders": {
+            "ssid": {
+                "type": "String"
+            }
+        }
     },
-    "wifiConnectFailedGeneric": "No se pudo unir a esa red.",
-    "@wifiConnectFailedGeneric": {
-        "description": "Fallback error when WiFi connect fails for an unknown reason."
+    "networkJoinNoConnection": "No se pudo conectar a {ssid}.",
+    "@networkJoinNoConnection": {
+        "description": "A join failed before the key was tested: the access point rejected or timed out the authentication or association, or the join ran out of time (#1817). Never worded as a password problem; Try again sits beside it.",
+        "placeholders": {
+            "ssid": {
+                "type": "String"
+            }
+        }
     },
-    "wifiConnectFailedBackend": "No se pudo conectar — error de red, no es un problema de contraseña.",
-    "@wifiConnectFailedBackend": {
-        "description": "Shown when a join fails for backend/transient reasons (iwd race, NM no-secrets on a saved network) after automatic retries — explicitly not a credentials problem, so the owner does not forget the network and re-type the password (#829)."
+    "networkJoinNotFound": "No se encontró {ssid}. Puede estar fuera de alcance.",
+    "@networkJoinNotFound": {
+        "description": "A join failed because the network is not in range (#1817).",
+        "placeholders": {
+            "ssid": {
+                "type": "String"
+            }
+        }
+    },
+    "networkJoinNoAddress": "{ssid} no le dio una dirección IP a Segno.",
+    "@networkJoinNoAddress": {
+        "description": "A join came up but no IPv4 address came (DHCP, #1817).",
+        "placeholders": {
+            "ssid": {
+                "type": "String"
+            }
+        }
+    },
+    "networkTryAgain": "Reintentar",
+    "@networkTryAgain": {
+        "description": "Joins the network whose join just failed again, with the same key (#1817)."
+    },
+    "networkActionFailed": "El Wi-Fi no respondió.",
+    "@networkActionFailed": {
+        "description": "A Wi-Fi action other than a join (scan, disconnect, forget, the radio switch) failed."
+    },
+    "networkListNoOthers": "No se encontraron otras redes.",
+    "@networkListNoOthers": {
+        "description": "Network list when the only network in range is the one the console is on."
     },
     "consoleKeepIt": "Conservar",
     "@consoleKeepIt": {
@@ -1107,7 +1173,7 @@
     "@networkConnectingChecking": {
         "description": "Connecting dialog note when nothing was connected before."
     },
-    "networkRetrying": "Error de red. Reintentando…",
+    "networkRetrying": "No se pudo conectar. Reintentando…",
     "@networkRetrying": {
         "description": "Connecting dialog note while the console re-activates after a backend failure (#829). Never worded as a password problem."
     },
@@ -2026,8 +2092,7 @@
     "fxChainFull": "Esta cadena está llena",
     "fxRackTooLong": "{name} necesita {needed} espacios y aquí quedan {free}",
     "fxOverBudget": "No queda procesamiento para agregar esto",
-    "fxTakeHeldToast": "Los efectos de esta toma están apagados",
-    "fxTakeHeldBody": "No entran en el equipo. Quita un efecto para encenderlos.",
+    "fxBindOverBudget": "No queda procesamiento para lo que este interruptor puede encender",
     "fxHeldBanner": "{count, plural, =1{Apagado} other{Apagados}}: {chains}",
     "outputFxWaitingTitle": "Efectos guardados para una salida que falta",
     "outputFxWaitingBody": "{outputs} no {count, plural, =1{está} other{están}} en esta interfaz. Sus efectos se guardan y se aplican al conectar una interfaz que {count, plural, =1{la tenga} other{las tenga}}.",
@@ -2057,7 +2122,6 @@
     "fxCentre": "Centro",
     "fxLeft": "Izquierda",
     "fxRight": "Derecha",
-    "fxScaleUnverified": "Escala sin verificar",
     "fxValuePercent": "{percent}%",
     "fxValueMs": "{milliseconds} ms",
     "fxValueDb": "{decibels} dB",
@@ -2072,8 +2136,11 @@
     "fxValueRatio": "{ratio}:1",
     "fxValueQ": "{q}",
     "fxValueOff": "Apagado",
+    "fxPartNamedOrdinal": "{input} · parte {number}",
     "fxPartOrdinal": "Parte {number}",
     "fxUnassigned": "Sin asignar",
+    "fxAssignedControlPart": "{control} · {part}",
+    "fxAssignedMore": "{name} +{count}",
     "fxModuleCount": "{count, plural, =1{1 efecto} other{{count} efectos}}",
     "fxRackOptions": "Opciones del rack",
     "fxRackRename": "Renombrar",
@@ -2084,7 +2151,7 @@
     "fxRemoveRackTitle": "¿Quitar {name}?",
     "fxRemoveRackBody": "Los sonidos que guardaste desde él quedan en Mis presets.",
     "fxReAddRackTitle": "¿Reemplazar {name}?",
-    "fxReAddRackBody": "{count, plural, =1{Al agregarlo de nuevo, sus efectos reciben identidades nuevas, así que se quitará 1 asignación de MIDI o pedal.} other{Al agregarlo de nuevo, sus efectos reciben identidades nuevas, así que se quitarán {count} asignaciones de MIDI y pedal.}}",
+    "fxReAddRackBody": "{count, plural, =1{Al agregarlo de nuevo, el rack y sus efectos reciben identidades nuevas, así que se quitará 1 asignación de MIDI o pedal a ellos.} other{Al agregarlo de nuevo, el rack y sus efectos reciben identidades nuevas, así que se quitarán {count} asignaciones de MIDI y pedal a ellos.}}",
     "fxReAddRack": "Reemplazar rack",
     "fxRemoveEffect": "Quitar {name}",
     "fxBypassRack": "Rack",
@@ -2165,7 +2232,8 @@
     "a11yMixerLevel": "Nivel de la pista {number}",
     "a11yMixerReset": "Restablecer todos los niveles a la unidad y los panoramas al centro",
     "pedalSetupContextLeds": "Colores LED",
-    "pedalLedMode": "Modo: {mode}",
+    "pedalLedModeRecord": "Grabación",
+    "pedalLedModeMute": "Silencio",
     "pedalLedReset": "Restablecer",
     "pedalLedStateRecording": "Grabando",
     "pedalLedStateOverdubbing": "Sobregrabando",
@@ -2303,6 +2371,7 @@
     "expressionControlGain": "Ganancia",
     "expressionNoControls": "Todavía no hay controles ajustables acá.",
     "externalActivationChain": "Todos los efectos",
+    "externalActivationRack": "Rack",
     "externalActivationRow": "{name} · Activación",
     "externalPanelActions": "Acciones",
     "externalPanelControls": "Controles",
@@ -2435,7 +2504,6 @@
     "noticeOverdubRefused": "Sobregrabación rechazada",
     "noticeNoInput": "Sin entrada",
     "noticeLengthUnchanged": "Duración sin cambios",
-    "noticeEffectsOff": "Efectos apagados",
     "monitorRestoreFailedTitle": "La monitorización necesita recuperarse",
     "mixSettingsRecoveryTitle": "Hay que recuperar los ajustes de mezcla",
     "mixSettingsStoppedBody": "El audio está detenido",
@@ -2669,6 +2737,7 @@
     "libraryAudioTryAgain": "Reintentar",
     "libraryAudioNotEnoughSpace": "No hay espacio suficiente. Libera espacio e inténtalo de nuevo.",
     "libraryAudioReadOnly": "Esta unidad USB es de solo lectura. No se escribió nada.",
+    "libraryAudioTooLargeForDrive": "FAT32 no admite archivos de más de 4 GB. Usa una unidad exFAT.",
     "libraryAudioExportFailed": "No se pudo exportar. No quedó nada en la unidad.",
     "libraryAudioDawProjectFailed": "No se pudo escribir el proyecto DAW.",
     "libraryAudioDeleteBusy": "No mientras se graba o procesa una actuación.",
@@ -2710,7 +2779,13 @@
     "footFxTargetMissing": "Destino ausente",
     "perfStoppedReserve": "Se alcanzó la reserva de almacenamiento. Se conserva la parte grabada de esta toma.",
     "perfStoppedSlowStorage": "La grabación se detuvo porque el almacenamiento no pudo seguir el ritmo. Se conserva la parte grabada de esta toma.",
-    "perfTakesNotRecovered": "{count, plural, =1{No se pudo recuperar esta toma. Se conservan sus archivos.} other{No se pudieron recuperar {count} tomas. Se conservan sus archivos.}}",
+    "perfStoppedIdle": "{minutes, plural, =1{Captura detenida tras 1 minuto sin tocar.} other{Captura detenida tras {minutes} minutos sin tocar.}}",
+    "perfStoppedLengthLimit": "La captura llegó a su duración máxima.",
+    "perfStoppedKept": "Se conserva todo lo grabado.",
+    "perfTakesNotRecovered": "{count, plural, =1{No se pudo recuperar esta toma.} other{No se pudieron recuperar {count} tomas.}}",
+    "perfTakesNotRecoveredBody": "Se conservan sus archivos.",
+    "perfTakesRecovering": "{count, plural, =1{Recuperando la toma.} other{Recuperando {count} tomas.}}",
+    "perfTakesRecovered": "{count, plural, =1{Se recuperó la toma.} other{Se recuperaron las tomas.}}",
     "storageInternalTitle": "Interno",
     "storageInternalSubtitle": "Sesiones y audio",
     "storageOpenLibrary": "Abrir biblioteca",
@@ -2869,6 +2944,7 @@
     "readoutPanelLonger": "Más largo",
     "readoutTimingNow": "Ahora",
     "readoutTimingLoopTop": "Inicio del loop",
+    "readoutButtonLoopTop": "Inicio",
     "readoutStripStart": "Entrada {timing}",
     "readoutPanelRetimes": "Cambiar el tempo reajusta los loops grabados.",
     "readoutPanelNoGrid": "Bloqueado: los loops no tienen grilla de compases.",

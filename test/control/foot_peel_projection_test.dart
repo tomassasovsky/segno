@@ -85,11 +85,7 @@ void main() {
       0,
     );
     // A slot-less pedal lights only while held.
-    final pressed = projectFrame(
-      looper,
-      overlay,
-      pressed: {PedalButton.stop},
-    );
+    final pressed = projectFrame(looper, overlay, pressed: {PedalButton.stop});
     expect(pressed.activeButtonMask & (1 << PedalButton.stop.index), isNonZero);
   });
 

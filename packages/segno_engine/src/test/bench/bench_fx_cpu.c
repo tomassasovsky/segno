@@ -47,6 +47,7 @@
  *   ./bench_fx_cpu.sh --racks              # each rack as built today on one
  *                                          # input, against its budget
  *   ./bench_fx_cpu.sh --table              # each kind's admission charge
+ *   ./bench_fx_cpu.sh --table --only octaver,psola  # some kinds' alone
  *   ./bench_fx_cpu.sh --kind comp          # or transient, hpgate, doubler,
  *                                          # chorus, wah, overdrive,
  *                                          # distortion, vinyl, degrade,
@@ -242,6 +243,8 @@ static float* source_for(int32_t kind, float* src) {
  *  - the Amp+Cab for Ed's and the Guitar racks' Amp, at heavy drive on the
  *    4x12" cabinet.
  *  - Smart Tune for the Vocal Tuner's.
+ *  - the Overdrive for the Lo-Fi Rack's Distort (#1737), the Amp+Cab for
+ *    the Studio Rack's Dist (#1743).
  * Left out, not built yet: the Harmonizer.
  * Each list ends at the first LE_FX_NONE. */
 typedef struct {
@@ -257,7 +260,7 @@ static const rack_spec k_racks[] = {
      {LE_FX_DOUBLER, LE_FX_MODE_DELAY, LE_FX_DUB_VERB, LE_FX_AMB_VERB,
       LE_FX_COMPRESSOR, LE_FX_EQ}},
     {"lofi", 60.0,
-     {LE_FX_LPF, LE_FX_VINYL, LE_FX_DEGRADE, LE_FX_DISTORTION, LE_FX_EQ,
+     {LE_FX_LPF, LE_FX_VINYL, LE_FX_DEGRADE, LE_FX_OVERDRIVE, LE_FX_EQ,
       LE_FX_MODE_DELAY}},
     {"rhythmic", 60.0,
      {LE_FX_LPF, LE_FX_SLICER, LE_FX_PUMPER, LE_FX_EQ, LE_FX_MODE_DELAY,
@@ -269,7 +272,7 @@ static const rack_spec k_racks[] = {
      {LE_FX_WHAMMY, LE_FX_OVERDRIVE, LE_FX_WAH, LE_FX_AMP_CAB, LE_FX_MOD,
       LE_FX_SPRING, LE_FX_MODE_DELAY}},
     {"studio", 200.0,
-     {LE_FX_OCTAVER, LE_FX_DISTORTION, LE_FX_DOUBLER, LE_FX_MOD,
+     {LE_FX_OCTAVER, LE_FX_AMP_CAB, LE_FX_DOUBLER, LE_FX_MOD,
       LE_FX_MODE_DELAY, LE_FX_ROOM_VERB, LE_FX_COMPRESSOR, LE_FX_EQ}},
     {"vocal", 200.0,
      {LE_FX_HP_GATE, LE_FX_OCTAVER, LE_FX_DOUBLER, LE_FX_MODE_DELAY, LE_FX_ROOM_VERB,
@@ -525,15 +528,14 @@ static int run_racks(const bench_opts* o, float* src, int32_t frames,
  * vocoder, PSOLA) can land a whole frame in one block, so it is charged the
  * larger of that and one instance's own p99 increment (p99 rather than the
  * racks' p99.9: a share of eight is steadier there). Prints a row per kind,
- * then the charges (looper_repository, fx_cost.dart). Each charge there is
- * the largest of runs at 44.1, 48, 88.2 and 96 kHz, each at 32 and 64
- * frames (#1508). The phase vocoder's go to kFxHopCostUs per hop quarter,
- * from the runs where a block takes one (not 44.1 kHz / 64). PSOLA, the
- * Smart Tune and the kinds that run oversampled (the Overdrive, Distortion,
- * Vinyl and Amp+Cab, #1547) charge by the rate, to kFxPsolaCostNs and
- * kFxOversampledCostNs: `low` from 44.1 and 48 kHz, `high` from 88.2 and
- * 96 kHz. Run it paced on the console; elsewhere the numbers are only a
- * proxy. */
+ * then the charges (looper_repository, fx_cost.dart, #1508, #1724), each
+ * per frame at this run's rate and period. The kinds whose work depends on
+ * the setting (the phase vocoder's, the oversampled Overdrive, Distortion,
+ * Vinyl and Amp+Cab, #1547) go to kFxSettingCostNs at this setting's
+ * column, PSOLA and the Smart Tune to kFxPsolaCostNs; every other kind
+ * charges kFxKindCostNs, the largest of its runs at the settings the Device
+ * page offers. Run it paced on the console; elsewhere the numbers are only
+ * a proxy. */
 typedef struct {
   const char* name;
   int32_t type;
@@ -561,6 +563,23 @@ static const table_kind k_table[] = {
     {"ampcab", LE_FX_AMP_CAB, 0},       {"mod", LE_FX_MOD, 0},
     {"roomverb", LE_FX_ROOM_VERB, 0},  {"smarttune", LE_FX_SMART_TUNE, 0},
 };
+
+/* --only: a comma-separated list of the table's kind names to run (all
+ * when unset), so one family's rows can be re-measured alone. */
+static const char* g_only;
+
+static int table_wants(const char* name) {
+  if (g_only == NULL) return 1;
+  const size_t len = strlen(name);
+  for (const char* at = g_only; *at != '\0';) {
+    const char* end = strchr(at, ',');
+    const size_t n = end != NULL ? (size_t)(end - at) : strlen(at);
+    if (n == len && strncmp(at, name, n) == 0) return 1;
+    if (end == NULL) break;
+    at = end + 1;
+  }
+  return 0;
+}
 
 /* The monitor rig with [n] instances of [kind] in one chain, timed. */
 static int time_kinds(const bench_opts* o, float* src, int32_t frames,
@@ -609,6 +628,8 @@ static int run_table(const bench_opts* o, float* src, int32_t frames,
   int have_base_bass = 0;
   for (size_t k = 0; k < sizeof(k_table) / sizeof(k_table[0]); ++k) {
     const table_kind* kind = &k_table[k];
+    ns[k] = -1.0;
+    if (!table_wants(kind->name)) continue;
     stats one, eight;
     float* in = source_for(kind->type, src);
     if (in == g_bass && !have_base_bass) { /* the rig alone on the bass */
@@ -635,18 +656,17 @@ static int run_table(const bench_opts* o, float* src, int32_t frames,
            ns[k] <= 0.0 ? " lost in the noise: rerun" : "");
     fflush(stdout);
   }
-  /* kFxKindCostNs takes these per frame; the phase-vocoder kinds go to
-   * kFxHopCostUs per hop quarter (1 x +us, from a run where a block takes
-   * one quarter); PSOLA and the Smart Tune go to kFxPsolaCostNs per frame,
-   * and the oversampled kinds to kFxOversampledCostNs, at this rate's end
-   * of each. */
+  /* fx_cost.dart takes these per frame: kFxSettingCostNs and
+   * kFxPsolaCostNs at this rate and period's column, kFxKindCostNs as the
+   * largest across the offered settings. */
   printf("charges, ns per frame:");
   for (size_t k = 0; k < sizeof(k_table) / sizeof(k_table[0]); ++k) {
-    printf(" %s=%.0f", k_table[k].name, ns[k]);
+    if (ns[k] >= 0.0) printf(" %s=%.0f", k_table[k].name, ns[k]);
   }
-  printf("\n(overdrive, distortion, vinyl and ampcab: kFxOversampledCostNs, "
-         "%s at %d Hz)\n",
-         o->rate < 88200 ? "low" : "high", o->rate);
+  printf("\n(octaver, whammy, dualoct, overdrive, distortion, vinyl and "
+         "ampcab: kFxSettingCostNs at %d Hz / %d; psola and smarttune: "
+         "kFxPsolaCostNs)\n",
+         o->rate, (int)o->period);
   printf("timed loops ran at: %s\n", g_timed_sched);
   return 0;
 }
@@ -669,6 +689,8 @@ int main(int argc, char** argv) {
       g_racks = 1;
     } else if (!strcmp(argv[i], "--table")) {
       table = 1;
+    } else if (!strcmp(argv[i], "--only") && i + 1 < argc) {
+      g_only = argv[++i];
     } else if (!strcmp(argv[i], "--kind") && i + 1 < argc) {
       const char* kind = argv[++i];
       if (!strcmp(kind, "octaver")) {
@@ -784,7 +806,7 @@ int main(int argc, char** argv) {
               "wah|overdrive|distortion|vinyl|degrade|lpf|lpflfo|spring|drive|filter|"
               "delay|tremolo|echo|reverb|dubverb|ambverb|whammy|"
               "pumper|slicer|modedelay|drumdelay|dubdelay|dualoct|roomverb] "
-              "[--table]\n",
+              "[--table [--only KIND,KIND...]]\n",
               argv[0]);
       return 2;
     }

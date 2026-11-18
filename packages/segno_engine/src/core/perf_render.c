@@ -7,15 +7,20 @@
  * perf_render.c — see perf_render.h.
  *
  * CONTROL-THREAD OWNERSHIP for le_perf_render_begin/poll/track_status/cancel
- * (the only callers touching `engine->perf.render`). Everything between
+ * (the only callers touching `engine->perf_render`). Everything between
  * begin and done/cancel runs on the dedicated render worker thread this file
  * spawns; the worker never touches the audio callback, the command ring, or
  * any live engine state — it reads exclusively from the capture directory on
  * disk (see perf_render.h), so a render has no live-engine dependency at all
- * beyond the `engine*` handle used to reach `engine->perf.render` from the
+ * beyond the `engine*` handle used to reach `engine->perf_render` from the
  * control-thread API calls.
  *
- * Dry pass (part 7): a per-track stem is reconstructed as unity-gain loop
+ * Every lane of a track has its own stems (#1824): `stems/dry/track<c>-
+ * lane<l>.wav` and `stems/wet/track<c>-lane<l>.wav`, listed in
+ * `stems/stems.json`. The lanes share the track's transport, so each is
+ * rebuilt from the same facts with its own images, mix and chain.
+ *
+ * Dry pass (part 7): a per-lane stem is reconstructed as unity-gain loop
  * content — volume/mute are NOT baked into the stem's samples. They remain
  * expressed only in the arm/disarm snapshots + events.log, for the `.als`
  * generator (parts 9-10) to turn into mixer/track-activator automation on
@@ -25,7 +30,7 @@
  *
  * Wet pass + master reconstruction (part 8): mirrors what the live engine's
  * mix_tracks_frame/output_bus_frame (engine_process.c) actually computed —
- * lane-0 volume/mute gate the dry content *before* the logged FX chain (the
+ * each lane's volume/mute gate its dry content *before* its logged FX chain (the
  * live mix order: `wl = audible ? loopsample*vol : 0`, then fx_apply_chain),
  * summed across channels, then the capture bus's output chain (and, under
  * Follow output, its level and mute). The capture taps sit before the global
@@ -40,6 +45,12 @@
  * chain data recorded in the manifest (already carrying each plugin entry's
  * `type`/`plugin` fields, part 6) is what part 10's `.als` generator reads to
  * surface the passthrough.
+ *
+ * Memory (#1747): every channel renders together a block of
+ * LE_PR_BLOCK_FRAMES at a time, its stems written as they go, so the render
+ * holds the work (each channel's images and segment table, its chains, one
+ * block of each signal) and never a buffer the capture's length. A cancel
+ * is seen at the next block, and removes the files it had begun.
  */
 #include "perf_render.h"
 
@@ -49,8 +60,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h> /* nanosleep (le_perf_render_hold_for_test) */
 
-#include "engine_wav.h"      /* le_wav_write_file: the one WAV writer */
+#include "engine_wav.h"      /* le_wav_open/append/seal: the one WAV writer,
+                              * whose output is byte-identical to
+                              * wav_codec's encodeFloat32 */
 #include "engine_fx.h"       /* fx_apply_chain, le_fx_prepare, le_fx_entry_reset,
                               * le_fx_free_octaver — reused verbatim for the wet
                               * pass, not reimplemented */
@@ -62,9 +76,11 @@
 #if defined(_WIN32)
 #include <direct.h> /* _mkdir */
 #include <windows.h>
+#include <io.h> /* _commit */
 #else
 #include <pthread.h>
 #include <sys/stat.h> /* mkdir */
+#include <unistd.h>   /* fsync */
 #endif
 
 /* ---- tuning ---- */
@@ -148,7 +164,7 @@ struct le_perf_render {
   le_pr_thread_t thread;
 
   _Atomic int running; /* cleared by le_perf_render_cancel to end the loop
-                        * early, between tracks */
+                        * early, at the next block (#1747) */
   _Atomic int done;
   _Atomic int progress_pct;
   _Atomic int track_count; /* number of valid entries in results[] so far */
@@ -163,7 +179,28 @@ struct le_perf_render {
  * only: a 44-byte header, format code 3 = IEEE float, fmt chunk size 16, no
  * extra chunks before `data` — see packages/wav_codec/lib/src/wav.dart. Not a
  * general WAV parser. ---- */
-static float* le_pr_read_wav_mono(const char* path, int32_t* out_frames) {
+/* The frame count of a WAV in the fixed format le_pr_read_wav_channel
+ * reads, from its header alone; -1 when it does not read. */
+static int32_t le_pr_wav_frames(const char* path) {
+  FILE* f = fopen(path, "rb");
+  if (f == NULL) return -1;
+  unsigned char header[44];
+  const int ok = fread(header, 1, sizeof(header), f) == sizeof(header);
+  fclose(f);
+  if (!ok || memcmp(header, "RIFF", 4) != 0 ||
+      memcmp(header + 36, "data", 4) != 0) {
+    return -1;
+  }
+  const uint16_t channels = (uint16_t)(header[22] | (header[23] << 8));
+  const uint32_t data_bytes =
+      (uint32_t)header[40] | ((uint32_t)header[41] << 8) |
+      ((uint32_t)header[42] << 16) | ((uint32_t)header[43] << 24);
+  if (channels == 0) return -1;
+  return (int32_t)(data_bytes / sizeof(float) / channels);
+}
+
+static float* le_pr_read_wav_channel(const char* path, int32_t channel,
+                                     int32_t* out_frames) {
   *out_frames = 0;
   FILE* f = fopen(path, "rb");
   if (f == NULL) return NULL;
@@ -179,7 +216,8 @@ static float* le_pr_read_wav_mono(const char* path, int32_t* out_frames) {
   const uint32_t data_bytes = (uint32_t)header[40] | ((uint32_t)header[41] << 8) |
                              ((uint32_t)header[42] << 16) |
                              ((uint32_t)header[43] << 24);
-  if (format != 3 || channels == 0 || data_bytes == 0) {
+  if (format != 3 || channels == 0 || data_bytes == 0 || channel < 0 ||
+      channel >= channels) {
     fclose(f);
     return NULL;
   }
@@ -190,9 +228,8 @@ static float* le_pr_read_wav_mono(const char* path, int32_t* out_frames) {
     fclose(f);
     return NULL;
   }
-  /* This part renders lane-0 stems only (matching this codebase's existing
-   * lane-0 export precedent elsewhere, e.g. session_repository); a mono
-   * source reads straight through, a multi-channel one reads channel 0. */
+  /* A mono source reads straight through, a multi-channel one reads
+   * [channel] (0 for a clean take, 0 or 1 for a heard image's side). */
   float* scratch = (float*)malloc((size_t)channels * sizeof(float));
   if (scratch == NULL) {
     free(mono);
@@ -206,7 +243,7 @@ static float* le_pr_read_wav_mono(const char* path, int32_t* out_frames) {
       ok = 0;
       break;
     }
-    mono[i] = scratch[0];
+    mono[i] = scratch[channel];
   }
   free(scratch);
   fclose(f);
@@ -219,54 +256,60 @@ static float* le_pr_read_wav_mono(const char* path, int32_t* out_frames) {
 }
 
 /* Reads a retired-layer raw PCM file (part 5: interleaved by lane, no
- * header) and returns lane 0's samples only, matching the lane-0-stem scope
- * above. */
-static float* le_pr_read_layer_lane0(const char* path, int32_t frame_count,
-                                     int32_t lane_count) {
+ * header; #1713: then the heard images of the lanes in [heard_mask], a
+ * (L, R) pair per lane, interleaved the same way) and returns [lane]'s
+ * samples (#1824): its clean take for [plane] 0, its heard image's left or
+ * right side for 1 or 2 (NULL when the lane has none). A lane past the
+ * file's [lane_count] (it was not active when the layer retired) reads as
+ * silence of the layer's length: the lane held nothing the pass wrote. */
+static float* le_pr_read_layer_lane(const char* path, int32_t frame_count,
+                                    int32_t lane_count, uint32_t heard_mask,
+                                    int32_t lane, int plane) {
+  int32_t heard_n = 0;
+  for (uint32_t b = heard_mask; b != 0u; b &= b - 1u) ++heard_n;
   if (frame_count <= 0 || lane_count <= 0 || lane_count > LE_MAX_LANES ||
-      (size_t)frame_count > SIZE_MAX / (sizeof(float) * (size_t)lane_count)) return NULL;
+      lane < 0 || lane >= LE_MAX_LANES ||
+      (heard_mask >> lane_count) != 0u || plane < 0 || plane > 2 ||
+      (plane > 0 && !((heard_mask >> lane) & 1u))) {
+    return NULL;
+  }
+  if (lane >= lane_count) {
+    return (float*)calloc((size_t)frame_count, sizeof(float));
+  }
+  const size_t width = (size_t)lane_count + 2 * (size_t)heard_n;
+  if ((size_t)frame_count > SIZE_MAX / (sizeof(float) * width)) return NULL;
   FILE* f = fopen(path, "rb");
   if (f == NULL) return NULL;
-  float* interleaved =
-      (float*)malloc((size_t)frame_count * (size_t)lane_count * sizeof(float));
-  if (interleaved == NULL) {
+  float* all = (float*)malloc((size_t)frame_count * width * sizeof(float));
+  if (all == NULL) {
     fclose(f);
     return NULL;
   }
-  const size_t want = (size_t)frame_count * (size_t)lane_count;
-  const size_t got = fread(interleaved, sizeof(float), want, f);
+  const size_t want = (size_t)frame_count * width;
+  const size_t got = fread(all, sizeof(float), want, f);
   const int complete = got == want && fgetc(f) == EOF && !ferror(f);
   fclose(f);
   if (!complete) {
-    free(interleaved);
+    free(all);
     return NULL;
   }
   float* mono = (float*)malloc((size_t)frame_count * sizeof(float));
   if (mono == NULL) {
-    free(interleaved);
+    free(all);
     return NULL;
   }
-  for (int32_t i = 0; i < frame_count; ++i) {
-    mono[i] = interleaved[(size_t)i * (size_t)lane_count];
-  }
-  free(interleaved);
+  /* The lane's image is its pair in the heard section, after the pairs of
+   * the lanes below it that have one. */
+  int32_t pair = 0;
+  for (int32_t l = 0; l < lane; ++l) pair += (int32_t)((heard_mask >> l) & 1u);
+  const float* from =
+      plane == 0 ? all + (size_t)lane
+                 : all + (size_t)frame_count * (size_t)lane_count +
+                       2 * (size_t)pair + (size_t)(plane - 1);
+  const size_t stride = plane == 0 ? (size_t)lane_count : 2 * (size_t)heard_n;
+  for (int32_t i = 0; i < frame_count; ++i) mono[i] = from[(size_t)i * stride];
+  free(all);
   return mono;
-}
-
-/* Writes `samples` as a sealed 32-bit float WAV at `sample_rate` through the
- * engine's one native WAV writer (engine_wav.c), whose output is
- * byte-identical to wav_codec's encodeFloat32. */
-static int le_pr_write_wav(const char* path, const float* samples,
-                           int32_t frame_count, int32_t sample_rate,
-                           uint16_t channels) {
-  return le_wav_write_file(path, samples,
-                           frame_count > 0 ? (uint64_t)frame_count : 0,
-                           sample_rate, channels);
-}
-
-static int le_pr_write_wav_mono(const char* path, const float* samples,
-                                int32_t frames, int32_t sr) {
-  return le_pr_write_wav(path, samples, frames, sr, 1);
 }
 
 /* ---- performance.json access ---- */
@@ -308,6 +351,9 @@ typedef struct le_pr_manifest {
   uint32_t capture_mask;
   const le_json_value* arm_output;
   uint32_t output_enabled_mask;
+  /* armSnapshot.latencyOffsetFrames: the record offset an overdub's write
+   * head trails the read head by (#1808), 0 when absent. */
+  int32_t latency_offset;
 } le_pr_manifest;
 
 /* Loads and validates performance.json. Returns LE_OK, LE_ERR_INVALID for a
@@ -426,6 +472,12 @@ static int32_t le_pr_load_manifest(const char* dir, char** out_text,
     free(text);
     return LE_ERR_INVALID;
   }
+  const double offset_number =
+      le_json_number(le_json_get(arm, "latencyOffsetFrames"), 0);
+  out->latency_offset = isfinite(offset_number) && offset_number > 0 &&
+                                offset_number < INT32_MAX
+                            ? (int32_t)offset_number
+                            : 0;
   out->arm_output_level = (float)level_number;
   out->arm_output_muted = le_json_bool(muted, 0);
   out->output_enabled_mask = (uint32_t)enabled_number;
@@ -438,7 +490,7 @@ static int32_t le_pr_load_manifest(const char* dir, char** out_text,
 /* Finds channel `channel`'s track entry within a `tracks` array (either
  * armSnapshot's or disarmSnapshot's), or NULL if the channel is absent. The
  * wet pass needs the track-level `volume`/`muted` fields this returns
- * directly, alongside the lane-0 lookup below (which shares this scan). */
+ * directly, alongside the lane lookup below (which shares this scan). */
 static const le_json_value* le_pr_find_track(const le_json_value* tracks,
                                              int32_t channel) {
   if (tracks == NULL) return NULL;
@@ -452,18 +504,18 @@ static const le_json_value* le_pr_find_track(const le_json_value* tracks,
   return NULL;
 }
 
-/* Finds channel `channel`'s lane-0 entry within a `tracks` array, or NULL if
- * the channel is absent or has no lane 0. */
-static const le_json_value* le_pr_find_lane0(const le_json_value* tracks,
-                                             int32_t channel) {
+/* Finds channel `channel`'s entry for lane [lane] within a `tracks` array,
+ * or NULL if the channel is absent or has no such lane. */
+static const le_json_value* le_pr_find_lane(const le_json_value* tracks,
+                                            int32_t channel, int32_t lane) {
   const le_json_value* track = le_pr_find_track(tracks, channel);
   if (track == NULL) return NULL;
   const le_json_value* lanes = le_json_get(track, "lanes");
   const int lane_n = le_json_length(lanes);
   for (int l = 0; l < lane_n; ++l) {
-    const le_json_value* lane = le_json_at(lanes, l);
-    if ((int32_t)le_json_number(le_json_get(lane, "lane"), -1) == 0) {
-      return lane;
+    const le_json_value* entry = le_json_at(lanes, l);
+    if ((int32_t)le_json_number(le_json_get(entry, "lane"), -1) == lane) {
+      return entry;
     }
   }
   return NULL;
@@ -512,6 +564,37 @@ static int le_pr_collect_channels(const le_pr_manifest* m,
     if (!seen) out[n++] = channel;
   }
   return n;
+}
+
+/* How many lanes [channel] renders (#1824): up to the last lane that holds
+ * material somewhere, a snapshot's take or a layer's lane, so a lane added
+ * during the take renders too, and a lane that never held any (listed empty
+ * at the arm, or counted active) does not. At least lane 0. */
+static int32_t le_pr_channel_lanes(const le_pr_manifest* m,
+                                   int32_t channel) {
+  int32_t n = 1;
+  for (int pass = 0; pass < 2; ++pass) {
+    const le_json_value* track =
+        le_pr_find_track(pass == 0 ? m->arm_tracks : m->disarm_tracks, channel);
+    const le_json_value* lanes = le_json_get(track, "lanes");
+    for (int i = 0; i < le_json_length(lanes); ++i) {
+      const le_json_value* entry = le_json_at(lanes, i);
+      if (le_json_get(entry, "pcmRef") == NULL) continue;
+      const int32_t lane =
+          (int32_t)le_json_number(le_json_get(entry, "lane"), -1);
+      if (lane + 1 > n) n = lane + 1;
+    }
+  }
+  for (int i = 0; i < le_json_length(m->layers); ++i) {
+    const le_json_value* v = le_json_at(m->layers, i);
+    if ((int32_t)le_json_number(le_json_get(v, "channel"), -1) != channel) {
+      continue;
+    }
+    const int32_t count =
+        (int32_t)le_json_number(le_json_get(v, "lane_count"), 1);
+    if (count > n) n = count;
+  }
+  return n > LE_MAX_LANES ? LE_MAX_LANES : n;
 }
 
 /* ---- events.log access ---- */
@@ -613,10 +696,22 @@ static void le_pr_fill_perf_armed(const le_pr_log_entry* log, int log_count,
   }
 }
 
+/* [lane]'s material of a layer file for [plane] (le_pr_read_layer_lane):
+ * its heard image's side when the layer has one for the lane and [plane]
+ * asks for it (*heard 1), else its clean take (*heard 0). */
+static float* le_pr_read_layer_plane(const char* path, int32_t frame_count,
+                                     int32_t lane_count, uint32_t heard_mask,
+                                     int32_t lane, int plane, int* heard) {
+  *heard = plane > 0 && lane < lane_count && ((heard_mask >> lane) & 1u);
+  return le_pr_read_layer_lane(path, frame_count, lane_count, heard_mask, lane,
+                               *heard ? plane : 0);
+}
+
 /* Resolve the typed image once. Duplicate or missing identity is corruption,
  * not an invitation to substitute the arm image or a recycled layer slot. */
 static float* le_pr_restore_image(const char* dir, const le_pr_manifest* m,
-                                  int channel, uint32_t id, int32_t* len) {
+                                  int channel, int32_t lane, uint32_t id,
+                                  int32_t* len, int plane, int* heard) {
   const le_json_value* found = NULL;
   if (!id) return NULL;
   for (int i = 0; i < le_json_length(m->layers); ++i) {
@@ -636,7 +731,10 @@ static float* le_pr_restore_image(const char* dir, const le_pr_manifest* m,
   if (!le_json_string(le_json_get(found, "filename"), filename, sizeof(filename))) return NULL;
   snprintf(path, sizeof(path), "%s/%s", dir, filename);
   *len = (int32_t)frames;
-  return le_pr_read_layer_lane0(path, *len, (int32_t)lanes);
+  return le_pr_read_layer_plane(
+      path, *len, (int32_t)lanes,
+      (uint32_t)le_json_number(le_json_get(found, "heard_mask"), 0), lane,
+      plane, heard);
 }
 
 /* ---- per-track segment reconstruction ---- */
@@ -684,9 +782,8 @@ typedef struct le_pr_segment {
   int owns_src;
   /* A segment the callback switches to without a fade (#1400): a
    * finalize's take (RECORD_END) starts at full gain, and a Cut stops at
-   * once. Here,
-   * in owns_src's padding, so the per-track build (LE_PR_MAX_SEGMENTS of
-   * these, on the render worker's stack) does not grow. */
+   * once. Here, in owns_src's padding, so the per-track build
+   * (LE_PR_MAX_SEGMENTS of these) does not grow. */
   int snap_in;
   const float* turn_src;
   int turn_power;
@@ -694,7 +791,26 @@ typedef struct le_pr_segment {
    * render is not the image's length and is read mapped
    * (le_head_read_scaled); 0 = the image's. */
   int32_t src_len, turn_src_len;
+  /* The pitch bridge (#1675, LE_PLOG_SOURCE_LEN's `bridge`), in the last
+   * word's padding so the table does not grow: LE_PR_BRIDGE_ON when this
+   * segment's source plays through it, _TURN when a swap's old source did,
+   * _RESTART when this swap starts it (its grains are laid on the head
+   * again), and the Speed's numer << 8 | denom << 16, the grain rate. */
+  int32_t bridge_bits;
 } le_pr_segment;
+
+#define LE_PR_BRIDGE_ON 1
+#define LE_PR_BRIDGE_TURN 2
+#define LE_PR_BRIDGE_RESTART 4
+
+/* What the render loop carries for a track's bridge: the lane's grains and
+ * the clock they step on. */
+typedef struct le_pr_bridge_run {
+  le_bridge lane;
+  uint32_t clock0; /* the engine frame of capture frame 0 */
+  uint32_t offset;
+  int32_t hop, sample_rate;
+} le_pr_bridge_run;
 
 /* The head segment `seg` reads through, its origin anchored at start_frame. */
 static le_read_head le_pr_segment_head(const le_pr_segment* seg) {
@@ -716,16 +832,37 @@ static double le_pr_segment_index(const le_pr_segment* seg, uint64_t f) {
  * heard. A direction turn mixes the old head out with the callback's
  * equal-gain law for its window. A Stop's fade-out (#1400) reads the last
  * sounding segment on past its end the same way. */
-static float le_pr_segment_sample(const le_pr_segment* seg, uint64_t f) {
+static float le_pr_segment_sample(const le_pr_segment* seg, uint64_t f,
+                                  le_pr_bridge_run* br, int tail) {
   const le_read_head head = le_pr_segment_head(seg);
   const int64_t into = (int64_t)(f - seg->start_frame);
   const float* rb = seg->src != NULL ? seg->src : seg->image;
   const int32_t rl =
       seg->src != NULL && seg->src_len > 0 ? seg->src_len : seg->image_len;
-  float x = le_head_read_scaled(rb, rl, seg->image_len, &head,
-                                le_head_index(&head, into, seg->image_len));
+  const double index = le_head_index(&head, into, seg->image_len);
   const int64_t mixed = into + seg->turn_into0;
-  if (seg->turn_frames > 0 && mixed < seg->turn_frames) {
+  const int turning = seg->turn_frames > 0 && mixed < seg->turn_frames;
+  /* The pitch bridge (#1675), as mix_tracks_frame runs it: le_bridge_frame
+   * steps the grains and reads each bridged side. A Stop's fade (`tail` 1)
+   * reads them only while they go on from the frame before and nothing else
+   * plays the track (`tail` 2 reads plainly), as the callback's does. */
+  const uint32_t clock = br->clock0 + (uint32_t)f;
+  const int on = (seg->bridge_bits & LE_PR_BRIDGE_ON) &&
+                 (tail == 0 ||
+                  (tail == 1 && le_bridge_continues(&br->lane, clock)));
+  const int old_on =
+      !tail && turning && (seg->bridge_bits & LE_PR_BRIDGE_TURN);
+  const int32_t numer = (seg->bridge_bits >> 8) & 0xff;
+  const int32_t denom = (seg->bridge_bits >> 16) & 0xff;
+  const double g = denom > 0 ? (double)numer / (double)denom : 1.0;
+  const float* ob = seg->turn_src != NULL ? seg->turn_src : seg->image;
+  float bx = 0.0f, by = 0.0f;
+  le_bridge_frame(&br->lane, on, old_on, rb, ob, seg->image_len, &head, g,
+                  index, into, clock, br->offset, br->hop, br->sample_rate,
+                  &bx, &by);
+  float x =
+      on ? bx : le_head_read_scaled(rb, rl, seg->image_len, &head, index);
+  if (turning) {
     const double old = le_head_index(&seg->turn, into, seg->image_len);
     const float a = le_head_turn_mix((int32_t)mixed, seg->turn_frames,
                                      seg->turn_power);
@@ -734,11 +871,13 @@ static float le_pr_segment_sample(const le_pr_segment* seg, uint64_t f) {
             ? le_head_turn_mix(seg->turn_frames - (int32_t)mixed,
                                seg->turn_frames, 1)
             : 1.0f - a;
-    const float* ob = seg->turn_src != NULL ? seg->turn_src : seg->image;
     const int32_t ol = seg->turn_src != NULL && seg->turn_src_len > 0
                            ? seg->turn_src_len
                            : seg->image_len;
-    x = x * a + le_head_read_scaled(ob, ol, seg->image_len, &seg->turn, old) * b;
+    const float y =
+        old_on ? by
+               : le_head_read_scaled(ob, ol, seg->image_len, &seg->turn, old);
+    x = x * a + y * b;
   }
   return x;
 }
@@ -751,12 +890,30 @@ typedef struct le_pr_track_build {
    * take's own): a segment reads at le_head_rate of them and its image. */
   int32_t numer, denom, play_len;
   int32_t next_src_len; /* the last LE_PLOG_SOURCE_LEN, for the next 328 */
+  int32_t next_bridge;  /* and its bridge flag (#1675) */
+  /* #1713: the segments whose own image is a heard image's side (a
+   * borrowing segment plays its owner's), by segment index. */
+  uint64_t heard_bits[LE_PR_MAX_SEGMENTS / 64];
   int load_failed; /* 1 if a pcmRef/layer file this track's manifest entries
                     * NAME could not actually be read — the per-stem failure
                     * the "partial success" acceptance criterion means. A
                     * genuinely contentless channel (nothing in either
                     * snapshot at all) is NOT a failure — le_pr_collect_
                     * channels never even calls this function for one. */
+  /* Where le_pr_track_render left off, so a stem renders a block at a time
+   * (#1747): the play and tail gains (#1400), the stopped material, the
+   * segment playing and the one last entered, and the lane's pitch bridge
+   * (#1675). */
+  float gate_step;
+  int32_t gate_min;
+  float play_gain;
+  float tail_gain;
+  const le_pr_segment* tail_seg;
+  int seg_heard;  /* #1713: whether the segment plays a heard image */
+  int tail_heard; /* and the stopped material */
+  int seg_index;
+  int entered;
+  le_pr_bridge_run bridge;
 } le_pr_track_build;
 
 /* The rate a segment over an image of `image_len` frames reads at: the
@@ -776,7 +933,7 @@ static void le_pr_append_segment(le_pr_track_build* b, uint64_t start_frame,
   /* A later transition can only ever move forward in time; if two events
    * land on the exact same frame, the later one (processed later, since the
    * log is frame-sorted) simply supersedes the earlier by starting at the
-   * same instant — le_pr_render_track's lookup (last segment with
+   * same instant — le_pr_track_render's lookup (last segment with
    * start_frame <= f) already resolves that correctly without special-casing
    * it here. */
   /* Direction is a property of the material (#1162): a segment inherits the
@@ -788,6 +945,17 @@ static void le_pr_append_segment(le_pr_track_build* b, uint64_t start_frame,
       b->segment_count > 0 ? b->segments[b->segment_count - 1].src : NULL;
   const int32_t src_len =
       b->segment_count > 0 ? b->segments[b->segment_count - 1].src_len : 0;
+  /* ...and so is the bridge over that source, until the next 328; a
+   * restart logged at this same frame stays with the segment that
+   * supersedes it. */
+  const le_pr_segment* prior =
+      b->segment_count > 0 ? &b->segments[b->segment_count - 1] : NULL;
+  const int32_t bridge =
+      prior == NULL ? 0
+      : (prior->bridge_bits & LE_PR_BRIDGE_ON) |
+            (prior->start_frame == start_frame
+                 ? prior->bridge_bits & LE_PR_BRIDGE_RESTART
+                 : 0);
   le_pr_segment* seg = &b->segments[b->segment_count++];
   seg->owns_image = 1;
   seg->silent = 0;
@@ -807,6 +975,107 @@ static void le_pr_append_segment(le_pr_track_build* b, uint64_t start_frame,
   seg->turn_power = 0;
   seg->src_len = src_len;
   seg->turn_src_len = 0;
+  seg->bridge_bits = bridge | (b->numer & 0xff) << 8 | (b->denom & 0xff) << 16;
+}
+
+/* Marks the last segment's own image a heard image's side (#1713). */
+static void le_pr_mark_heard(le_pr_track_build* b, int heard) {
+  if (!heard || b->load_failed || b->segment_count <= 0) return;
+  const int i = b->segment_count - 1;
+  b->heard_bits[i / 64] |= UINT64_C(1) << (i % 64);
+}
+
+/* Whether segment [i] plays a heard image: its own, or, borrowing, the
+ * image of the segment that owns it. */
+static int le_pr_segment_heard(const le_pr_track_build* b, int i) {
+  const le_pr_segment* seg = &b->segments[i];
+  if (seg->image == NULL) return 0;
+  int j = i;
+  while (j >= 0 && !(b->segments[j].owns_image &&
+                     b->segments[j].image == seg->image)) {
+    --j;
+  }
+  return j >= 0 && ((b->heard_bits[j / 64] >> (j % 64)) & 1u);
+}
+
+/* An arm or disarm lane's image for [plane] (#1713): its heard image's side
+ * from `heardPcmRef` when it has one and [plane] asks for it (*heard 1),
+ * else its clean take from `pcmRef`. NULL with *present 0 when the lane
+ * names neither; NULL with *present 1 is a read failure. */
+static float* le_pr_snapshot_image(const char* dir, const le_json_value* lane,
+                                   int plane, int32_t* frames, int* heard,
+                                   int* present) {
+  const le_json_value* href =
+      plane > 0 ? le_json_get(lane, "heardPcmRef") : NULL;
+  const le_json_value* ref = href != NULL ? href : le_json_get(lane, "pcmRef");
+  *heard = href != NULL;
+  *present = ref != NULL;
+  *frames = 0;
+  if (ref == NULL) return NULL;
+  char name[128];
+  if (!le_json_string(ref, name, sizeof(name))) return NULL;
+  char path[LE_PR_FULL_PATH_MAX];
+  snprintf(path, sizeof(path), "%s/%s", dir, name);
+  float* image = le_pr_read_wav_channel(path, href != NULL ? plane - 1 : 0,
+                                        frames);
+  if (image == NULL || href == NULL) return image;
+  /* The heard image must stand frame for frame beside the clean take, or
+   * its segments would drift from the dry stem's: a mismatch fails the
+   * stem. */
+  const le_json_value* cref = le_json_get(lane, "pcmRef");
+  char cname[128];
+  int32_t clean_frames = -1;
+  if (cref != NULL && le_json_string(cref, cname, sizeof(cname))) {
+    char cpath[LE_PR_FULL_PATH_MAX];
+    snprintf(cpath, sizeof(cpath), "%s/%s", dir, cname);
+    clean_frames = le_pr_wav_frames(cpath);
+  }
+  if (clean_frames != *frames) {
+    free(image);
+    *frames = 0;
+    return NULL;
+  }
+  return image;
+}
+
+/* Lane [lane] of [channel]'s image in a snapshot's [tracks] for [plane],
+ * as le_pr_snapshot_image returns one (#1824). A snapshot lists a lane only
+ * with a length of its own, and the engine removes only a lane that holds
+ * nothing (le_mix_valid refuses one whose take could come back). So a lane
+ * the snapshot does not list, or lists with no take, while lane 0 has one:
+ *  - with [silence] (a take's own image) held nothing of that take, and
+ *    reads as silence of lane 0's length, so its segments keep the track's
+ *    timing (the lanes share one transport);
+ *  - without (a pass's result) is a lane added after the take, which an
+ *    overdub writes while its length stays 0 (#1825): nothing is named
+ *    (*present 0), and the lane keeps what it played before the pass. */
+static float* le_pr_snapshot_lane_image(const char* dir,
+                                        const le_json_value* tracks,
+                                        int32_t channel, int32_t lane,
+                                        int plane, int silence,
+                                        int32_t* frames, int* heard,
+                                        int* present) {
+  const le_json_value* own = le_pr_find_lane(tracks, channel, lane);
+  *frames = 0;
+  *heard = 0;
+  *present = 0;
+  if (own != NULL && le_json_get(own, "pcmRef") != NULL) {
+    return le_pr_snapshot_image(dir, own, plane, frames, heard, present);
+  }
+  if (lane == 0 || !silence) return NULL;
+  /* Lane 0's take's length, from its header. */
+  const le_json_value* first = le_pr_find_lane(tracks, channel, 0);
+  const le_json_value* ref = le_json_get(first, "pcmRef");
+  char name[128];
+  if (ref == NULL) return NULL;
+  *present = 1;
+  if (!le_json_string(ref, name, sizeof(name))) return NULL;
+  char path[LE_PR_FULL_PATH_MAX];
+  snprintf(path, sizeof(path), "%s/%s", dir, name);
+  const int32_t len = le_pr_wav_frames(path);
+  if (len <= 0) return NULL;
+  *frames = len;
+  return (float*)calloc((size_t)len, sizeof(float));
 }
 
 /* The loop phase (image index) the CURRENT last segment would play at
@@ -859,6 +1128,8 @@ static void le_pr_reanchor(le_pr_track_build* b, uint64_t frame, int reversed,
   const float* carried_src = last->turn_src;
   const int32_t carried_src_len = last->turn_src_len;
   const int carried_power = last->turn_power;
+  const int carried_bridge_turn = (last->bridge_bits & LE_PR_BRIDGE_TURN) != 0;
+  const int was_bridged = (last->bridge_bits & LE_PR_BRIDGE_ON) != 0;
   if (carry) {
     old = last->turn;
     old_index = le_head_index(&last->turn,
@@ -886,6 +1157,12 @@ static void le_pr_reanchor(le_pr_track_build* b, uint64_t frame, int reversed,
   seg->turn_src = carry ? carried_src : seg->src;
   seg->turn_src_len = carry ? carried_src_len : seg->src_len;
   seg->turn_power = carry ? carried_power : 0;
+  /* ...through the pitch bridge if it did (#1675): the callback's turn
+   * keeps the bridge it opened with (le_turn_begin) */
+  seg->bridge_bits &= ~LE_PR_BRIDGE_TURN;
+  if (carry ? carried_bridge_turn : turn_frames > 0 && was_bridged) {
+    seg->bridge_bits |= LE_PR_BRIDGE_TURN;
+  }
 }
 
 /* A direction fact (LE_PLOG_REVERSE, #1162) on this channel. A toggle or
@@ -924,7 +1201,10 @@ static int le_pr_apply_transpose(le_pr_track_build* b, uint64_t frame,
   const int32_t st = cmd->transpose_log.effective;
   const int32_t out_len =
       b->next_src_len > 0 ? b->next_src_len : last->image_len;
+  const int32_t bridge = b->next_bridge != 0;
+  const int32_t was_bridged = (last->bridge_bits & LE_PR_BRIDGE_ON) != 0;
   b->next_src_len = 0;
+  b->next_bridge = 0;
   if (st != 0 || out_len != last->image_len) {
     rendered = (float*)malloc((size_t)out_len * sizeof(float));
     if (rendered == NULL ||
@@ -951,6 +1231,11 @@ static int le_pr_apply_transpose(le_pr_track_build* b, uint64_t frame,
   seg->owns_src = rendered != NULL;
   seg->src_len = rendered != NULL ? out_len : 0;
   seg->turn_power = 1;
+  seg->bridge_bits &=
+      ~(LE_PR_BRIDGE_ON | LE_PR_BRIDGE_TURN | LE_PR_BRIDGE_RESTART);
+  if (bridge) seg->bridge_bits |= LE_PR_BRIDGE_ON;
+  if (was_bridged) seg->bridge_bits |= LE_PR_BRIDGE_TURN;
+  if (bridge && !was_bridged) seg->bridge_bits |= LE_PR_BRIDGE_RESTART;
   return 1;
 }
 
@@ -1086,12 +1371,6 @@ static uint64_t le_pr_record_end_phase(const le_pr_manifest* m,
   return (start_pos + (end_frame - start_frame)) % (uint64_t)image_len;
 }
 
-/* Renders channel `channel`'s full-length dry stem into a freshly malloc'd
- * buffer of `capture_frames` samples (caller frees), or NULL with
- * `*out_failed` set if a pcmRef/layer file this channel's manifest entries
- * actually name could not be read (the per-stem "partial success" failure
- * this part's acceptance criteria describe) or the stem buffer itself could
- * not be allocated. Channels can come from either snapshot or an applied restoration fact. */
 /* Where a channel's audibility fades engage (#1400): the callback fades a
  * mute, a solo or a transport change only on a take at least two fades long
  * and snaps on a shorter one, so the dry pass records, from each listed
@@ -1103,16 +1382,505 @@ typedef struct le_pr_gate_runs {
   uint8_t on[LE_PR_MAX_SEGMENTS];
 } le_pr_gate_runs;
 
-static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
-                                 const le_pr_log_entry* log, int log_count,
-                                 int32_t channel, int32_t* out_failed,
-                                 le_pr_gate_runs* runs) {
-  *out_failed = 0;
-  le_pr_track_build build = {0};
-  build.numer = 1;
-  build.denom = 1;
-  build.play_len = 0;
-  build.next_src_len = 0;
+/* Whether any image [channel]'s stem of [lane] can play carries a heard
+ * image for the lane (#1713): a layer's (heard_mask), or the arm or disarm
+ * snapshot's (heardPcmRef). */
+static int le_pr_channel_has_heard(const le_pr_manifest* m, int32_t channel,
+                                   int32_t lane) {
+  for (int i = 0; i < le_json_length(m->layers); ++i) {
+    const le_json_value* v = le_json_at(m->layers, i);
+    if (le_json_number(le_json_get(v, "channel"), -1) == channel &&
+        (((uint32_t)le_json_number(le_json_get(v, "heard_mask"), 0) >> lane) &
+         1u)) {
+      return 1;
+    }
+  }
+  const le_json_value* arm = le_pr_find_lane(m->arm_tracks, channel, lane);
+  const le_json_value* disarm =
+      le_pr_find_lane(m->disarm_tracks, channel, lane);
+  return (arm != NULL && le_json_get(arm, "heardPcmRef") != NULL) ||
+         (disarm != NULL && le_json_get(disarm, "heardPcmRef") != NULL);
+}
+
+/* The kind-0 `layers` entry of [channel]'s retire of (slot, generation), or
+ * -1 when the manifest lists none. */
+static int le_pr_find_layer(const le_pr_manifest* m, int32_t channel,
+                            int32_t slot, uint32_t generation) {
+  const int n = le_json_length(m->layers);
+  for (int i = 0; i < n; ++i) {
+    const le_json_value* layer = le_json_at(m->layers, i);
+    if (le_json_number(le_json_get(layer, "kind"), 0) != 0) continue;
+    if ((int32_t)le_json_number(le_json_get(layer, "channel"), -1) ==
+            channel &&
+        (int32_t)le_json_number(le_json_get(layer, "slot"), -1) == slot &&
+        (uint32_t)le_json_number(le_json_get(layer, "generation"), 0) ==
+            generation) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+/* Lane [lane]'s image of `layers` entry [index] for [plane], its length in
+ * *frames and whether it is a heard image's side in *heard. *named is 0
+ * when the entry names no file (a writer bug, not this stem's failure);
+ * NULL with *named 1 means the file cannot be read. */
+static float* le_pr_load_layer(const char* dir, const le_pr_manifest* m,
+                               int index, int32_t lane, int plane,
+                               int32_t* frames, int* heard, int* named) {
+  const le_json_value* layer = le_json_at(m->layers, index);
+  *heard = 0;
+  *frames = (int32_t)le_json_number(le_json_get(layer, "frame_count"), 0);
+  const le_json_value* name = le_json_get(layer, "filename");
+  *named = name != NULL;
+  if (name == NULL) return NULL;
+  char filename[64];
+  if (!le_json_string(name, filename, sizeof(filename))) return NULL;
+  char path[LE_PR_FULL_PATH_MAX];
+  snprintf(path, sizeof(path), "%s/%s", dir, filename);
+  return le_pr_read_layer_plane(
+      path, *frames,
+      (int32_t)le_json_number(le_json_get(layer, "lane_count"), 1),
+      (uint32_t)le_json_number(le_json_get(layer, "heard_mask"), 0), lane,
+      plane, heard);
+}
+
+/* ---- overdub passes (#1808) ----
+ *
+ * An overdub writes the live buffer in place and backs the old value up into
+ * a shadow, so the image a pass retires is the loop as it was BEFORE that
+ * pass. The write head trails the read head by the record offset d
+ * (le_dub_write_index), so pass j's writes are first read L - d frames after
+ * it starts: with a_j the frame of the pass's first write and L the loop
+ * length, the track plays
+ *
+ *   the take                   until a_1 + L - d,
+ *   pass j's result            over [a_j + L - d, a_(j+1) + L - d),
+ *   the last pass's result     from a_n + L - d,
+ *
+ * and pass j's result is the image the NEXT pass retires; the last pass's is
+ * the disarm image, when the take it was laid on is the one the disarm
+ * snapshot holds. A complete pass retires on its last write
+ * (le_dub_boundary), so its a_j is r - L + 1 and the next pass of the same
+ * session starts on r + 1, or whole loops later when a boundary with no
+ * spare shadow merged passes. A pass that a punch-out cut short retires
+ * once its remainder has drained, at no fixed distance from its start: it
+ * starts where its session's previous pass ended, or on what began the
+ * session, the press that punched in (LE_CMD_RECORD, logged as it applies,
+ * so the one a later press punched out) or the finalize the take went on
+ * from (RECORD_END, the record/dub toggle). A quantized punch-in fires
+ * unlogged; its pass is taken to be complete. A track the arm found
+ * overdubbing (a deferred arm lane) plays its first retired image from
+ * frame 0.
+ *
+ * le_pr_plan_dubs reads a channel's log once and lists these switches, so
+ * the segment walk can place each one at its frame, which may come before
+ * the retire that names its image. */
+
+#define LE_PR_DUB_NONE (-1)   /* no image: the track keeps what it played */
+#define LE_PR_DUB_DISARM (-2) /* the disarm snapshot's image of the lane */
+
+typedef struct le_pr_dub_edge {
+  uint64_t frame;
+  int32_t image; /* a `layers` index, LE_PR_DUB_DISARM or LE_PR_DUB_NONE */
+} le_pr_dub_edge;
+
+typedef struct le_pr_dub_plan {
+  le_pr_dub_edge* edges; /* in frame order */
+  int edge_count;
+  /* By log index, the image a RECORD_END's take plays from its finalize:
+   * the first pass's retired image when it was overdubbed, the disarm image
+   * when it is the settled take, else LE_PR_DUB_NONE (no segment). */
+  int32_t* take_image;
+  int failed; /* an unlisted retire in a capture that dropped images */
+} le_pr_dub_plan;
+
+#define LE_PR_DUB_PRESSES 8 /* the presses a pass's start is read from */
+
+typedef struct le_pr_dub_walk {
+  /* The take the passes are laid on: open from a RECORD_END (take_log, its
+   * log index) or from the arm (take_log -1), closed by anything that
+   * replaces the material. */
+  int open, take_log, settled;
+  int retires;    /* passes retired on it so far */
+  int first_edge; /* its first switch, an index into the plan's edges */
+  int last_edge;  /* the switch whose image the next retire names */
+  /* Where the next pass starts: in a session after a complete pass (start),
+   * after the take's finalize (take_frame, cont), or idle. */
+  enum { LE_PR_DUB_IDLE, LE_PR_DUB_TAKE, LE_PR_DUB_SESSION } state;
+  int64_t start, take_frame, cont;
+  /* The Record and Stop presses on the channel since the last retire, the
+   * latest LE_PR_DUB_PRESSES of them. Every press is logged as it applies,
+   * one that starts nothing included. */
+  int presses;
+  int64_t press_frame[LE_PR_DUB_PRESSES];
+  uint8_t press_record[LE_PR_DUB_PRESSES];
+} le_pr_dub_walk;
+
+static void le_pr_dub_press(le_pr_dub_walk* w, uint64_t frame, int record) {
+  if (w->presses == LE_PR_DUB_PRESSES) {
+    memmove(w->press_frame, w->press_frame + 1,
+            (LE_PR_DUB_PRESSES - 1) * sizeof(w->press_frame[0]));
+    memmove(w->press_record, w->press_record + 1,
+            (LE_PR_DUB_PRESSES - 1) * sizeof(w->press_record[0]));
+    w->presses--;
+  }
+  w->press_frame[w->presses] = (int64_t)frame;
+  w->press_record[w->presses] = (uint8_t)record;
+  w->presses++;
+}
+
+/* Whether a Record press applied on `frame`. */
+static int le_pr_dub_record_at(const le_pr_dub_walk* w, int64_t frame) {
+  for (int k = 0; k < w->presses; ++k) {
+    if (w->press_record[k] && w->press_frame[k] == frame) return 1;
+  }
+  return 0;
+}
+
+/* The latest Record press, or, when a press follows one, the latest one a
+ * press follows: the punch-in of a session a press punched out. -1 when
+ * there is none. */
+static int64_t le_pr_dub_punch_in(const le_pr_dub_walk* w) {
+  int64_t latest = -1;
+  for (int k = w->presses - 1; k >= 0; --k) {
+    if (!w->press_record[k]) continue;
+    if (k < w->presses - 1) return w->press_frame[k];
+    if (latest < 0) latest = w->press_frame[k];
+  }
+  return latest;
+}
+
+/* Ends the take's run of passes at `frame`: its last pass's result is the
+ * disarm image if the take is the settled one (or nothing), a switch at or
+ * after `frame` never happened, and a take never overdubbed plays the disarm
+ * image from its finalize if it is the settled one. */
+static void le_pr_dub_close(le_pr_dub_plan* p, le_pr_dub_walk* w,
+                            uint64_t frame) {
+  if (!w->open) return;
+  if (w->last_edge >= 0) {
+    p->edges[w->last_edge].image =
+        w->settled ? LE_PR_DUB_DISARM : LE_PR_DUB_NONE;
+  }
+  while (p->edge_count > 0 && p->edges[p->edge_count - 1].frame >= frame) {
+    p->edge_count--;
+  }
+  if (w->retires == 0 && w->take_log >= 0 && w->settled) {
+    p->take_image[w->take_log] = LE_PR_DUB_DISARM;
+  }
+  w->open = 0;
+  w->last_edge = -1;
+  w->state = LE_PR_DUB_IDLE;
+  w->presses = 0;
+}
+
+/* The frame of the first write of the pass that retired at `r`, `len` frames
+ * long; before the capture (negative) for a pass the arm found running. A
+ * complete pass started `len - 1` frames before its retire, so a press on
+ * that frame began it. Otherwise (see the section comment): */
+static int64_t le_pr_dub_pass_start(const le_pr_dub_walk* w, uint64_t r,
+                                    int32_t len) {
+  const int64_t full = (int64_t)r + 1 - len;
+  if (w->state == LE_PR_DUB_SESSION) {
+    /* The session went on: this pass starts where the last one ended, or,
+     * after passes that retired nothing (a boundary with no spare shadow
+     * merges them), a whole number of loops later. A punch-in a later press
+     * punched out began a new session after one that ended on a boundary. */
+    if (full >= w->start && (full - w->start) % len == 0) return full;
+    if (le_pr_dub_record_at(w, full)) return full;
+    for (int k = 0; k + 1 < w->presses; ++k) {
+      if (w->press_record[k]) return le_pr_dub_punch_in(w);
+    }
+    return w->start;
+  }
+  if (le_pr_dub_record_at(w, full)) return full;
+  if (w->state == LE_PR_DUB_TAKE) {
+    /* A punch-in after the finalize, punched out by a later press. */
+    for (int k = 0; k + 1 < w->presses; ++k) {
+      if (w->press_record[k]) return le_pr_dub_punch_in(w);
+    }
+    /* The dub went on from the finalize: a complete first pass, or one a
+     * press (or an unlogged quantized punch-out) cut short. */
+    if (full == w->take_frame || full == w->cont) return full;
+    if (w->presses > 0 || full < w->take_frame) return w->cont;
+    return full; /* an unlogged punch-in, taken to start a complete pass */
+  }
+  const int64_t in = le_pr_dub_punch_in(w);
+  return in >= 0 ? in : full;
+}
+
+static void le_pr_dub_plan_free(le_pr_dub_plan* p) {
+  free(p->edges);
+  free(p->take_image);
+}
+
+/* Lists [channel]'s overdub switches (see the section comment). [arm] is 1
+ * when an arm image plays from frame 0, 2 when the arm found the track
+ * capturing (a deferred lane: its first retire names what it played).
+ * Returns 0 when the plan cannot be allocated. */
+static int le_pr_plan_dubs(const le_pr_manifest* m, const le_pr_log_entry* log,
+                           int log_count, int32_t channel,
+                           int32_t disarm_take_id, int arm, le_pr_dub_plan* p) {
+  memset(p, 0, sizeof(*p));
+  /* One switch per retire, and the deferred arm's. */
+  const size_t n = (size_t)(log_count > 0 ? log_count : 0) + 1;
+  p->edges = (le_pr_dub_edge*)malloc(n * sizeof(le_pr_dub_edge));
+  p->take_image = (int32_t*)malloc(n * sizeof(int32_t));
+  if (p->edges == NULL || p->take_image == NULL) {
+    le_pr_dub_plan_free(p);
+    return 0;
+  }
+  for (int i = 0; i < log_count; ++i) p->take_image[i] = LE_PR_DUB_NONE;
+
+  /* A take that predates the capture is the settled one unless a take
+   * recorded in the capture is. */
+  int recorded = 0, settled_recorded = 0;
+  for (int i = 0; i < log_count; ++i) {
+    const le_pr_log_entry* e = &log[i];
+    if (e->cmd.code == LE_PLOG_RECORD_START && e->cmd.arg_i == channel) {
+      recorded = 1;
+    }
+    if (e->cmd.code == LE_PLOG_RECORD_END && e->cmd.take.channel == channel &&
+        disarm_take_id != 0 && e->cmd.take.take_id == disarm_take_id) {
+      settled_recorded = 1;
+    }
+  }
+  le_pr_dub_walk w;
+  memset(&w, 0, sizeof(w));
+  w.last_edge = -1;
+  w.take_log = -1;
+  w.state = LE_PR_DUB_IDLE;
+  w.open = arm != 0;
+  w.settled = w.open && !recorded && !settled_recorded && disarm_take_id != 0;
+  if (arm == 2) {
+    /* Nothing names what a deferred lane plays at frame 0 but its first
+     * retire, the loop before the pass the arm found running. */
+    p->edges[0] = (le_pr_dub_edge){.frame = 0, .image = LE_PR_DUB_NONE};
+    p->edge_count = 1;
+    w.last_edge = 0;
+  }
+
+  for (int i = 0; i < log_count; ++i) {
+    const le_pr_log_entry* e = &log[i];
+    const int32_t code = e->cmd.code;
+    if (code == LE_PLOG_RECORD_START && e->cmd.arg_i == channel) {
+      le_pr_dub_close(p, &w, e->frame);
+    } else if (code == LE_PLOG_RECORD_END && e->cmd.take.channel == channel) {
+      le_pr_dub_close(p, &w, e->frame);
+      w.open = 1;
+      w.take_log = i;
+      w.settled =
+          disarm_take_id != 0 && e->cmd.take.take_id == disarm_take_id;
+      w.retires = 0;
+      w.first_edge = p->edge_count;
+      w.state = LE_PR_DUB_TAKE;
+      w.take_frame = (int64_t)e->frame;
+      /* A dub that goes on from a finalize starts on its frame when a press
+       * applied it, before the frame's mix, and on the next frame when the
+       * frame loop did, after the mix: a defining take's deferred seam
+       * crossfade, an auto-finalize, a quantized finish. */
+      int pressed = 0;
+      for (int j = i - 1; j >= 0 && log[j].frame == e->frame; --j) {
+        if (log[j].cmd.code == LE_CMD_RECORD && log[j].cmd.arg_i == channel) {
+          pressed = 1;
+        }
+      }
+      w.cont = w.take_frame + !pressed;
+    } else if ((code == LE_CMD_RECORD || code == LE_CMD_STOP) &&
+               e->cmd.arg_i == channel) {
+      if (w.open) le_pr_dub_press(&w, e->frame, code == LE_CMD_RECORD);
+    } else if (((code == LE_CMD_CLEAR || code == LE_CMD_UNDO_TO_EMPTY) &&
+                e->cmd.arg_i == channel) ||
+               (code == LE_PLOG_SOURCE_APPLIED &&
+                e->cmd.restore_log.channel == channel)) {
+      /* Material from a 322 is never overdubbed in a stem: the callback
+       * logs 323/0 at the first write over it, which fails the stem. */
+      le_pr_dub_close(p, &w, e->frame);
+    } else if (code == LE_PLOG_LAYER_RETIRED &&
+               e->cmd.evt.channel == channel) {
+      const int layer = le_pr_find_layer(m, channel, e->cmd.evt.slot,
+                                         e->cmd.evt.generation);
+      /* In a capture whose manifest dropped images an unlisted retire fails
+       * the stem rather than replaying a stale image; otherwise a retire
+       * handled at a disarm or a Clear may be unstaged, and the track keeps
+       * what it played. */
+      if (layer < 0 && m->layers_dropped) {
+        p->failed = 1;
+        return 1;
+      }
+      if (!w.open) continue;
+      const int32_t len =
+          layer >= 0 ? (int32_t)le_json_number(
+                           le_json_get(le_json_at(m->layers, layer),
+                                       "frame_count"),
+                           0)
+                     : 0;
+      /* This pass's pre-pass image is what the previous switch plays. */
+      if (w.last_edge >= 0) {
+        p->edges[w.last_edge].image = layer >= 0 ? layer : LE_PR_DUB_NONE;
+      } else if (w.retires == 0 && w.take_log >= 0) {
+        p->take_image[w.take_log] =
+            layer >= 0 ? layer
+                       : (w.settled ? LE_PR_DUB_DISARM : LE_PR_DUB_NONE);
+      }
+      w.retires++;
+      w.last_edge = -1;
+      if (len <= 0) { /* no length to place this pass by */
+        w.state = LE_PR_DUB_IDLE;
+        w.presses = 0;
+        continue;
+      }
+      const int64_t a = le_pr_dub_pass_start(&w, e->frame, len);
+      int64_t heard = a + len - m->latency_offset % len;
+      /* Never before the take: a pass is first heard after its finalize
+       * (or at the arm, for a take the arm found). */
+      const int64_t floor_frame = w.take_log >= 0 ? w.take_frame + 1 : 0;
+      if (heard < floor_frame) heard = floor_frame;
+      /* A switch on or before the take's last one supersedes it. */
+      if (p->edge_count > w.first_edge &&
+          (uint64_t)heard <= p->edges[p->edge_count - 1].frame) {
+        w.last_edge = p->edge_count - 1;
+      } else {
+        p->edges[p->edge_count] = (le_pr_dub_edge){
+            .frame = (uint64_t)heard, .image = LE_PR_DUB_NONE};
+        w.last_edge = p->edge_count++;
+      }
+      if ((int64_t)e->frame == a + len - 1) {
+        w.state = LE_PR_DUB_SESSION; /* the next pass goes on from here */
+        w.start = (int64_t)e->frame + 1;
+      } else {
+        w.state = LE_PR_DUB_IDLE; /* cut short: the session ended */
+      }
+      w.presses = 0;
+    }
+  }
+  le_pr_dub_close(p, &w, UINT64_MAX);
+  return 1;
+}
+
+/* Frees a track's images, its renders and the build itself. */
+static void le_pr_track_close(le_pr_track_build* build) {
+  if (build == NULL) return;
+  for (int i = 0; i < build->segment_count; ++i) {
+    if (build->segments[i].owns_image) free(build->segments[i].image);
+    if (build->segments[i].owns_src) free(build->segments[i].src);
+  }
+  free(build);
+}
+
+/* The loop phase [arm_track]'s image of `frames` frames plays from at
+ * capture frame 0 (see le_pr_track_open's arm segment). */
+static uint64_t le_pr_arm_phase(const le_pr_manifest* m,
+                                const le_json_value* arm_track,
+                                int32_t frames) {
+  if (!m->perf_arm_present) return 0;
+  const int64_t anchor =
+      arm_track != NULL
+          ? (int64_t)le_json_number(le_json_get(arm_track, "anchorLap"), 0)
+          : 0;
+  const int64_t multiple =
+      arm_track != NULL
+          ? (int64_t)le_json_number(le_json_get(arm_track, "multiple"), 1)
+          : 1;
+  /* The anchor's laps in the image's own segments (a take laid down at
+   * another tempo is not multiple * master frames long), taken off modulo
+   * the image so the phase stays non-negative (le_pr_append_segment reduces
+   * it). */
+  const uint64_t anchor_frames =
+      frames > 0 && anchor > 0 && multiple > 1
+          ? (uint64_t)(anchor % multiple) * (uint64_t)(frames / multiple)
+          : 0;
+  return (uint64_t)m->perf_arm_iteration * (uint64_t)m->perf_arm_master_len +
+         (uint64_t)m->perf_arm_position +
+         (anchor_frames > 0 ? (uint64_t)frames - anchor_frames : 0);
+}
+
+/* The image a plan names (a `layers` index or LE_PR_DUB_DISARM) for lane
+ * [lane] and [plane], as le_pr_snapshot_image returns one: *present 0 when
+ * nothing is named, NULL with *present 1 when it cannot be read. [silence]
+ * as le_pr_snapshot_lane_image takes it: 1 for a take's own image, 0 for a
+ * pass's result. */
+static float* le_pr_dub_image(const char* dir, const le_pr_manifest* m,
+                              int32_t channel, int32_t lane, int32_t image,
+                              int plane, int silence, int32_t* frames,
+                              int* heard, int* present) {
+  *frames = 0;
+  *heard = 0;
+  *present = 0;
+  if (image == LE_PR_DUB_DISARM) {
+    return le_pr_snapshot_lane_image(dir, m->disarm_tracks, channel, lane,
+                                     plane, silence, frames, heard, present);
+  }
+  if (image < 0) return NULL;
+  return le_pr_load_layer(dir, m, image, lane, plane, frames, heard, present);
+}
+
+/* Places an overdub switch (#1808): the track plays [edge]'s image from its
+ * frame on, from the loop phase it has reached (#255): a layer image is
+ * loop-position-indexed, and live playback kept its position running while
+ * the buffer changed under it. A track the arm found capturing has no phase
+ * yet: its first image plays from the arm's. Returns 1 when it appended a
+ * segment; a named image that cannot be read fails the stem. */
+static int le_pr_apply_dub(le_pr_track_build* b, const char* dir,
+                           const le_pr_manifest* m,
+                           const le_json_value* arm_track, int32_t channel,
+                           int32_t lane, int plane,
+                           const le_pr_dub_edge* edge) {
+  int32_t frames;
+  int heard, present;
+  float* image = le_pr_dub_image(dir, m, channel, lane, edge->image, plane, 0,
+                                 &frames, &heard, &present);
+  if (!present) return 0;
+  if (image == NULL) {
+    b->load_failed = 1;
+    return 0;
+  }
+  const le_pr_segment* last = &b->segments[b->segment_count - 1];
+  const double phase = last->image != NULL
+                           ? le_pr_build_phase_at(b, edge->frame)
+                           : (double)le_pr_arm_phase(m, arm_track, frames);
+  const int stopped = last->silent;
+  le_pr_append_segment(b, edge->frame, phase, image, frames);
+  le_pr_mark_heard(b, heard);
+  /* A pass that retires after its track stopped (the drain completes after
+   * the Stop) stays silent (#1170). */
+  if (!b->load_failed) b->segments[b->segment_count - 1].silent = stopped;
+  return !b->load_failed;
+}
+
+/* Builds channel `channel`'s reconstruction (its segments, from the
+ * snapshots and the log), ready for le_pr_track_render to play it a block
+ * at a time, or NULL if a pcmRef/layer file this channel's manifest entries
+ * actually name could not be read (the per-stem "partial success" failure
+ * this part's acceptance criteria describe) or the build could not be
+ * allocated. Channels can come from either snapshot or an applied
+ * restoration fact. What it holds is the work (the images it plays and the
+ * segment table), never the capture's length (#1747).
+ *
+ * [lane] is the lane it plays (#1824). The lanes of a track share one
+ * transport, so every lane's build has the same segments, from the same
+ * facts, and reads its own images in them: lane [lane] of each layer and
+ * snapshot, silence where the lane held nothing of the take. The track's
+ * arm state and settled take are lane 0's, which every lane shares.
+ *
+ * [plane] 0 is the clean take; 1 and 2 are the left and right sides of
+ * the lane's heard image (#1713), read wherever the material has one and
+ * the clean take elsewhere, through the same segments. */
+static le_pr_track_build* le_pr_track_open(const char* dir,
+                                           const le_pr_manifest* m,
+                                           const le_pr_log_entry* log,
+                                           int log_count, int32_t channel,
+                                           int32_t lane, int plane) {
+  /* On the heap: LE_PR_MAX_SEGMENTS segments are more than a worker
+   * thread's default stack holds with room to spare (512 KiB on macOS). */
+  le_pr_track_build* build =
+      (le_pr_track_build*)calloc(1, sizeof(le_pr_track_build));
+  if (build == NULL) return NULL;
+  build->numer = 1;
+  build->denom = 1;
+  build->play_len = 0;
+  build->next_src_len = 0;
+  build->next_bridge = 0;
   /* A baseline silence segment at frame 0 always exists first — even a
    * track absent from armSnapshot entirely (recorded fresh later, or
    * mid-overdub/deferred at arm) needs SOMETHING covering [0, first real
@@ -1121,7 +1889,7 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
    * A real arm-time image, when present, simply appends its own segment
    * right after this one at the same frame 0 (superseding it immediately —
    * see le_pr_append_segment's "later transition supersedes" note). */
-  le_pr_append_segment(&build, 0, 0, NULL, 0);
+  le_pr_append_segment(build, 0, 0, NULL, 0);
 
   /* An arm-image segment anchors at the master loop phase the PERF_ARMED fact
    * recorded (#262): the exact clock.position (within loop_iteration) the
@@ -1139,71 +1907,52 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
    * multiple k played from lap `anchorLap` (the arm snapshot's, absent = 0)
    * reads segment (iteration - anchorLap) mod k, as the callback does. */
   const le_json_value* arm_track = le_pr_find_track(m->arm_tracks, channel);
-  const int64_t arm_anchor =
-      arm_track != NULL
-          ? (int64_t)le_json_number(le_json_get(arm_track, "anchorLap"), 0)
-          : 0;
-  const int64_t arm_multiple =
-      arm_track != NULL
-          ? (int64_t)le_json_number(le_json_get(arm_track, "multiple"), 1)
-          : 1;
-  const le_json_value* arm_lane = le_pr_find_lane0(m->arm_tracks, channel);
+  const le_json_value* arm_lane = le_pr_find_lane(m->arm_tracks, channel, 0);
+  /* 1: an arm image plays from frame 0; 2: the arm found the track
+   * capturing (le_pr_plan_dubs). Lane 0's, the track's. */
+  int arm_take = 0;
   if (arm_lane != NULL &&
-      le_json_bool(le_json_get(arm_lane, "deferred"), 0) == 0) {
-    const le_json_value* pcm_ref_value = le_json_get(arm_lane, "pcmRef");
-    char pcm_ref[128];
-    if (pcm_ref_value != NULL) {
-      if (le_json_string(pcm_ref_value, pcm_ref, sizeof(pcm_ref))) {
-        char path[LE_PR_FULL_PATH_MAX];
-        snprintf(path, sizeof(path), "%s/%s", dir, pcm_ref);
-        int32_t frames = 0;
-        float* image = le_pr_read_wav_mono(path, &frames);
-        if (image != NULL) {
-          /* The anchor's laps in the image's own segments (a take laid
-           * down at another tempo is not multiple * master frames long),
-           * taken off modulo the image so the phase stays non-negative
-           * (le_pr_append_segment reduces it). */
-          const uint64_t anchor_frames =
-              frames > 0 && arm_anchor > 0 && arm_multiple > 1
-                  ? (uint64_t)(arm_anchor % arm_multiple) *
-                        (uint64_t)(frames / arm_multiple)
-                  : 0;
-          const uint64_t arm_phase =
-              m->perf_arm_present
-                  ? (uint64_t)m->perf_arm_iteration *
-                            (uint64_t)m->perf_arm_master_len +
-                        (uint64_t)m->perf_arm_position +
-                        (anchor_frames > 0 ? (uint64_t)frames - anchor_frames
-                                           : 0)
-                  : 0;
-          le_pr_append_segment(&build, 0, arm_phase, image, frames);
-        } else {
-          build.load_failed = 1;
-        }
+      le_json_bool(le_json_get(arm_lane, "deferred"), 0) != 0) {
+    arm_take = 2;
+  } else if (arm_lane != NULL) {
+    int32_t frames = 0;
+    int arm_heard = 0;
+    int present = 0;
+    float* image = le_pr_snapshot_lane_image(dir, m->arm_tracks, channel, lane,
+                                             plane, 1, &frames, &arm_heard,
+                                             &present);
+    if (present) {
+      if (image != NULL) {
+        le_pr_append_segment(build, 0, le_pr_arm_phase(m, arm_track, frames),
+                             image, frames);
+        le_pr_mark_heard(build, arm_heard);
+        arm_take = 1;
       } else {
-        /* A `pcmRef` key exists but couldn't be extracted (e.g. a value
-         * longer than this buffer, or a non-string) — a real data-integrity
-         * problem, not "no content here": surface it as a per-stem failure
-         * rather than silently treating it as absent. */
-        build.load_failed = 1;
+        /* A `pcmRef` key exists but couldn't be read or extracted (e.g. a
+         * value longer than the name buffer, or a non-string) — a real
+         * data-integrity problem, not "no content here": surface it as a
+         * per-stem failure rather than silently treating it as absent. */
+        build->load_failed = 1;
       }
     }
   }
 
-  /* The disarm image's anchor, by TAKE IDENTITY (#819): disarmSnapshot's
-   * lane-0 image is placed at the RECORD_END whose logged take id matches the
-   * settled take id the manifest recorded for this channel (`takeId`). That
-   * id crossed the FFI boundary from the engine snapshot (le_track_snapshot.
-   * settled_take_id) into performance.json, so the renderer names the exact
-   * finalize the image is the result of — no longer inferring it from "the
-   * FIRST RECORD_END while the channel is still content-free". That ordinal
-   * proxy (deleted here, no fallback) mis-anchored whenever a finalize logged
-   * a RECORD_END before content existed (#264) or a clear-then-re-record put
-   * the settled take AFTER an earlier END on the same channel. A settled take
-   * that predates the capture leaves no matching RECORD_END in this log, so no
-   * disarm segment is placed — the arm image already covers it. */
+  /* The disarm image's take, by TAKE IDENTITY (#819): disarmSnapshot's
+   * lane-0 image is the result of the RECORD_END whose logged take id matches
+   * the settled take id the manifest recorded for this channel (`takeId`).
+   * That id crossed the FFI boundary from the engine snapshot
+   * (le_track_snapshot.settled_take_id) into performance.json, so the
+   * renderer names the exact finalize the image is the result of — no longer
+   * inferring it from "the FIRST RECORD_END while the channel is still
+   * content-free". That ordinal proxy (deleted, no fallback) mis-anchored
+   * whenever a finalize logged a RECORD_END before content existed (#264) or
+   * a clear-then-re-record put the settled take AFTER an earlier END on the
+   * same channel. The image plays from that finalize, or, when the take was
+   * overdubbed, from where its last pass was first heard (#1808,
+   * le_pr_plan_dubs); a settled take that predates the capture plays it after
+   * its last pass in the capture, and the arm image before. */
   const le_json_value* disarm_lane =
-      le_pr_find_lane0(m->disarm_tracks, channel);
+      le_pr_find_lane(m->disarm_tracks, channel, 0);
   const int32_t disarm_take_id =
       disarm_lane != NULL
           ? (int32_t)le_json_number(le_json_get(disarm_lane, "takeId"), 0)
@@ -1215,12 +1964,32 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
    * image it loaded itself. */
   uint32_t restore_id = 0;
   float* restore_image = NULL; /* owned by its initial source segment */
+  int restore_heard = 0;       /* whether it is a heard image's side */
   int32_t restore_len = 0;
   /* The frame of the last Cut: the callback stops a track there without a
    * fade (#1400), so a 323 STOPPED on it snaps. */
   uint64_t cut_frame = UINT64_MAX;
-  for (int i = 0; i < log_count; ++i) {
+  /* Overdub passes (#1808): where each take plays which image. */
+  le_pr_dub_plan dubs;
+  if (!le_pr_plan_dubs(m, log, log_count, channel, disarm_take_id, arm_take,
+                       &dubs)) {
+    le_pr_track_close(build);
+    return NULL;
+  }
+  if (dubs.failed) build->load_failed = 1;
+  int next_dub = 0;
+  for (int i = 0; i < log_count && !build->load_failed; ++i) {
     const le_pr_log_entry* e = &log[i];
+    /* A pass's switch lands before anything logged on its frame. */
+    while (next_dub < dubs.edge_count &&
+           dubs.edges[next_dub].frame <= e->frame && !build->load_failed) {
+      if (le_pr_apply_dub(build, dir, m, arm_track, channel, lane, plane,
+                          &dubs.edges[next_dub])) {
+        restore_id = 0;
+      }
+      next_dub++;
+    }
+    if (build->load_failed) break;
     if (e->cmd.code == LE_CMD_CUT_SOUND) cut_frame = e->frame;
     if (e->cmd.code == LE_PLOG_SOURCE_TRANSPORT &&
         e->cmd.restore_log.channel == channel &&
@@ -1229,27 +1998,27 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
       /* The snapshot source's Stop or Play (#1170): the material sounding
        * now, whichever fact loaded it, goes silent or sounds again from the
        * logged phase. An image source names its own id. */
-      const le_pr_segment* last = &build.segments[build.segment_count - 1];
+      const le_pr_segment* last = &build->segments[build->segment_count - 1];
       const int32_t state = e->cmd.restore_log.state;
       const int32_t phase = e->cmd.restore_log.phase;
       if (restore_id != 0 ||
           (state != LE_TRACK_PLAYING && state != LE_TRACK_STOPPED) ||
           (last->image != NULL &&
            (phase < 0 || phase >= last->image_len))) {
-        build.load_failed = 1;
+        build->load_failed = 1;
         break;
       }
       float* const image = last->image;
       const int32_t image_len = last->image_len;
       const double anchor =
-          image != NULL ? le_pr_anchor(&build, e->frame, phase) : 0.0;
-      le_pr_append_segment(&build, e->frame, 0, NULL, 0);
-      if (build.load_failed) break;
-      le_pr_segment* seg = &build.segments[build.segment_count - 1];
+          image != NULL ? le_pr_anchor(build, e->frame, phase) : 0.0;
+      le_pr_append_segment(build, e->frame, 0, NULL, 0);
+      if (build->load_failed) break;
+      le_pr_segment* seg = &build->segments[build->segment_count - 1];
       seg->owns_image = 0;
       seg->image = image;
       seg->image_len = image_len;
-      seg->rate = le_pr_rate(&build, image_len);
+      seg->rate = le_pr_rate(build, image_len);
       seg->phase0 = anchor;
       seg->silent = state == LE_TRACK_STOPPED;
       seg->snap_in = seg->silent && e->frame == cut_frame;
@@ -1259,211 +2028,119 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
       const uint32_t id = e->cmd.restore_log.image_id;
       const int32_t state = e->cmd.restore_log.state, phase = e->cmd.restore_log.phase;
       if (initial) {
-        restore_image = le_pr_restore_image(dir, m, channel, id, &restore_len);
+        restore_image = le_pr_restore_image(dir, m, channel, lane, id,
+                                            &restore_len, plane,
+                                            &restore_heard);
         restore_id = id;
       }
       if (!restore_image || !id || id != restore_id || phase < 0 || phase >= restore_len ||
           (state != LE_TRACK_PLAYING && state != LE_TRACK_STOPPED)) {
         if (initial) free(restore_image);
-        build.load_failed = 1;
+        build->load_failed = 1;
         break;
       }
-      const double anchor = le_pr_anchor(&build, e->frame, phase);
-      le_pr_append_segment(&build, e->frame, anchor,
+      const double anchor = le_pr_anchor(build, e->frame, phase);
+      le_pr_append_segment(build, e->frame, anchor,
                            initial ? restore_image : NULL, initial ? restore_len : 0);
-      if (build.load_failed) break;
-      le_pr_segment* seg = &build.segments[build.segment_count - 1];
+      if (initial) le_pr_mark_heard(build, restore_heard);
+      if (build->load_failed) break;
+      le_pr_segment* seg = &build->segments[build->segment_count - 1];
       seg->silent = state == LE_TRACK_STOPPED;
       seg->snap_in = seg->silent && e->frame == cut_frame;
       if (!initial) {
         seg->owns_image = 0;
         seg->image = restore_image;
         seg->image_len = restore_len;
-        seg->rate = le_pr_rate(&build, restore_len);
+        seg->rate = le_pr_rate(build, restore_len);
         seg->phase0 = anchor;
       }
-    } else if (e->cmd.code == LE_PLOG_RECORD_END && e->cmd.take.channel == channel &&
-        disarm_lane != NULL && disarm_take_id != 0 &&
-        e->cmd.take.take_id == disarm_take_id) {
+    } else if (e->cmd.code == LE_PLOG_RECORD_END &&
+               e->cmd.take.channel == channel &&
+               dubs.take_image[i] != LE_PR_DUB_NONE) {
+      /* A take plays from its finalize: the image its first overdub pass
+       * retired, the loop as it was before that pass (#1808), or, never
+       * overdubbed, the disarm image when it is the settled take. */
       restore_id = 0;
-      {
-        const le_json_value* pcm_ref_value =
-            le_json_get(disarm_lane, "pcmRef");
-        char pcm_ref[128];
-        if (pcm_ref_value != NULL) {
-          if (le_json_string(pcm_ref_value, pcm_ref, sizeof(pcm_ref))) {
-            char path[LE_PR_FULL_PATH_MAX];
-            snprintf(path, sizeof(path), "%s/%s", dir, pcm_ref);
-            int32_t frames = 0;
-            float* image = le_pr_read_wav_mono(path, &frames);
-            if (image != NULL) {
-              /* The segment anchors at the TRACK's epoch — the master
-               * position at its logged RECORD_START plus the continuous
-               * run to this finalize — NOT always 0, and NOT the master
-               * lock's epoch mod the image length. Only the DEFINING
-               * track's finalize (finalize_master, engine_process.c)
-               * resets the loop clock; a track recorded fresh while the
-               * master already runs finalizes via finalize_new_track,
-               * which never touches the clock, and its buffer was WRITTEN
-               * phase-locked from the master position at the record-start
-               * press — a multi-loop take (k > 1) additionally cycles
-               * relative to its own start iteration, which the RECORD_START
-               * anchor captures and a lock-epoch derivation would not.
-               * le_pr_record_end_phase (above) holds the full derivation,
-               * including the defining-take and pre-arm-lock cases. */
-              le_pr_append_segment(
-                  &build, e->frame,
-                  le_pr_record_end_phase(m, log, log_count, channel, e->frame,
-                                         frames),
-                  image, frames);
-              /* A fresh take reads forward (#1162): its direction reset is
-               * logged with the finalize, whichever lands first in the file. */
-              if (!build.load_failed) {
-                build.segments[build.segment_count - 1].reversed = 0;
-                build.segments[build.segment_count - 1].snap_in = 1;
-              }
-            } else {
-              build.load_failed = 1;
-            }
-          } else {
-            build.load_failed = 1; /* present but unreadable, see above */
-          }
-        }
-      }
-    } else if (e->cmd.code == LE_PLOG_LAYER_RETIRED &&
-              e->cmd.evt.channel == channel) {
-      restore_id = 0;
-      const int layer_n = le_json_length(m->layers);
-      /* In a capture whose full manifest dropped images, an unlisted retire
-       * fails this stem rather than replaying the stale image. Otherwise the
-       * existing tolerance stands: a retire handled at a disarm or Clear edge
-       * may be unstaged, and keeps the prior image for that short tail. */
-      int listed = 0;
-      for (int li = 0; li < layer_n; ++li) {
-        const le_json_value* layer = le_json_at(m->layers, li);
-        if (le_json_number(le_json_get(layer, "kind"), 0) != 0) continue;
-        const int32_t l_channel =
-            (int32_t)le_json_number(le_json_get(layer, "channel"), -1);
-        const int32_t l_slot =
-            (int32_t)le_json_number(le_json_get(layer, "slot"), -1);
-        const uint32_t l_gen =
-            (uint32_t)le_json_number(le_json_get(layer, "generation"), 0);
-        if (l_channel != channel || l_slot != e->cmd.evt.slot ||
-            l_gen != e->cmd.evt.generation) {
-          continue;
-        }
-        listed = 1;
-        const int32_t frame_count =
-            (int32_t)le_json_number(le_json_get(layer, "frame_count"), 0);
-        const int32_t lane_count =
-            (int32_t)le_json_number(le_json_get(layer, "lane_count"), 1);
-        const le_json_value* filename_value = le_json_get(layer, "filename");
-        char filename[64];
-        if (filename_value == NULL) {
-          break; /* no filename to even attempt: not this part's failure to
-                  * report (a manifest entry with no filename is a part-5
-                  * writer bug, not a stem-render concern) */
-        }
-        if (le_json_string(filename_value, filename, sizeof(filename))) {
-          char path[LE_PR_FULL_PATH_MAX];
-          snprintf(path, sizeof(path), "%s/%s", dir, filename);
-          float* image = le_pr_read_layer_lane0(path, frame_count, lane_count);
-          if (image != NULL) {
-            /* The new image becomes active at the LOGGED retire frame
-             * itself, not a derived "punch-in" frame one cycle earlier.
-             * Deriving punch-in as `retire_frame - frame_count` is only
-             * correct for a pass that retires exactly at its own loop-cycle
-             * boundary (le_dub_boundary, engine_process.c) — a punch-out
-             * mid-cycle instead retires via an asynchronous, chunked
-             * live->shadow drain (le_dub_block_update) that can complete
-             * many audio callbacks after the true punch-in, so the retire
-             * frame has no fixed offset from it in that (very common) case.
-             * By construction the retiring shadow is ALWAYS a complete,
-             * correct loop image by the time it retires (the drain fills in
-             * every position the live overdub didn't touch from the
-             * previous image first) — so using the retire frame directly as
-             * the switch point is exact where the data actually is
-             * sample-accurate, at the cost of not modeling the sub-cycle
-             * moment a live listener would have heard the transition
-             * (which isn't logged anywhere and can't be reconstructed from
-             * this capture).
-             *
-             * The segment inherits the loop phase the track had reached at
-             * the retire frame (#255): a layer image is loop-position-
-             * indexed, and live playback simply kept its position counter
-             * running when the shadow swapped in — a retire at loop phase p
-             * continued from image[p], so restarting the render at image[0]
-             * would rotate the stem by p frames relative to what the
-             * performer heard for every mid-cycle punch-out. Boundary
-             * retires (p == 0) were already exact. */
-            const int stopped =
-                build.segments[build.segment_count - 1].silent;
-            le_pr_append_segment(&build, e->frame,
-                                 le_pr_build_phase_at(&build, e->frame), image,
-                                 frame_count);
-            /* A pass that retires after its track stopped (the drain
-             * completes after the Stop) stays silent (#1170). */
-            if (!build.load_failed) {
-              build.segments[build.segment_count - 1].silent = stopped;
-            }
-          } else {
-            build.load_failed = 1;
+      int32_t frames;
+      int heard, present;
+      float* image = le_pr_dub_image(dir, m, channel, lane,
+                                     dubs.take_image[i], plane, 1, &frames,
+                                     &heard, &present);
+      if (present) {
+        if (image != NULL) {
+          /* The segment anchors at the TRACK's epoch — the master
+           * position at its logged RECORD_START plus the continuous
+           * run to this finalize — NOT always 0, and NOT the master
+           * lock's epoch mod the image length. Only the DEFINING
+           * track's finalize (finalize_master, engine_process.c)
+           * resets the loop clock; a track recorded fresh while the
+           * master already runs finalizes via finalize_new_track,
+           * which never touches the clock, and its buffer was WRITTEN
+           * phase-locked from the master position at the record-start
+           * press — a multi-loop take (k > 1) additionally cycles
+           * relative to its own start iteration, which the RECORD_START
+           * anchor captures and a lock-epoch derivation would not.
+           * le_pr_record_end_phase (above) holds the full derivation,
+           * including the defining-take and pre-arm-lock cases. */
+          le_pr_append_segment(
+              build, e->frame,
+              le_pr_record_end_phase(m, log, log_count, channel, e->frame,
+                                     frames),
+              image, frames);
+          le_pr_mark_heard(build, heard);
+          /* A fresh take reads forward (#1162): its direction reset is
+           * logged with the finalize, whichever lands first in the file. */
+          if (!build->load_failed) {
+            build->segments[build->segment_count - 1].reversed = 0;
+            build->segments[build->segment_count - 1].snap_in = 1;
           }
         } else {
-          build.load_failed = 1; /* filename present but unreadable */
+          build->load_failed = 1; /* present but unreadable, see above */
         }
-        break;
       }
-      if (!listed && m->layers_dropped) build.load_failed = 1;
     } else if ((e->cmd.code == LE_CMD_CLEAR || e->cmd.code == LE_CMD_UNDO_TO_EMPTY) &&
                e->cmd.arg_i == channel) {
       /* Both empty the track at their logged frame: exact silence from here
        * (39 is raw-logged from events.log version 6, #1143). Any image source
        * ends with it; the next content supplies its own 322 or RECORD_END. */
       restore_id = 0;
-      le_pr_append_segment(&build, e->frame, 0, NULL, 0);
-      if (!build.load_failed) {
-        build.segments[build.segment_count - 1].reversed = 0; /* #1162 */
+      le_pr_append_segment(build, e->frame, 0, NULL, 0);
+      if (!build->load_failed) {
+        build->segments[build->segment_count - 1].reversed = 0; /* #1162 */
       }
     } else if (e->cmd.code == LE_PLOG_SPEED &&
                e->cmd.speed_log.channel == channel) {
-      le_pr_apply_speed(&build, e->frame, &e->cmd);
+      le_pr_apply_speed(build, e->frame, &e->cmd);
     } else if (e->cmd.code == LE_PLOG_SOURCE_LEN &&
                e->cmd.lanei.channel == channel) {
-      build.next_src_len = e->cmd.lanei.value;
+      build->next_src_len = e->cmd.lanei.value;
+      build->next_bridge = e->cmd.lanei.lane;
     } else if (e->cmd.code == LE_PLOG_HEAD_SPAN &&
                e->cmd.span_log.channel == channel) {
-      le_pr_apply_span(&build, e->frame, &e->cmd);
+      le_pr_apply_span(build, e->frame, &e->cmd);
     } else if (e->cmd.code == LE_PLOG_TRANSPOSE &&
                e->cmd.transpose_log.channel == channel) {
-      if (!le_pr_apply_transpose(&build, e->frame, &e->cmd, m->sample_rate)) {
-        build.load_failed = 1;
+      if (!le_pr_apply_transpose(build, e->frame, &e->cmd, m->sample_rate)) {
+        build->load_failed = 1;
       }
     } else if (e->cmd.code == LE_PLOG_REVERSE &&
                e->cmd.reverse_log.channel == channel) {
-      le_pr_apply_direction(&build, e->frame, e->cmd.reverse_log.reversed != 0,
+      le_pr_apply_direction(build, e->frame, e->cmd.reverse_log.reversed != 0,
                             e->cmd.reverse_log.read_index,
                             e->cmd.reverse_log.turn_frames);
     }
-    if (build.load_failed) break;
+    if (build->load_failed) break;
   }
-
-  if (build.load_failed) {
-    *out_failed = 1;
-    for (int i = 0; i < build.segment_count; ++i) {
-      if (build.segments[i].owns_image) free(build.segments[i].image);
-      if (build.segments[i].owns_src) free(build.segments[i].src);
-    }
-    return NULL;
+  /* The switches after the last logged fact: the last pass's, typically. */
+  while (next_dub < dubs.edge_count && !build->load_failed) {
+    le_pr_apply_dub(build, dir, m, arm_track, channel, lane, plane,
+                    &dubs.edges[next_dub]);
+    next_dub++;
   }
+  le_pr_dub_plan_free(&dubs);
 
-  float* stem = (float*)calloc((size_t)m->capture_frames, sizeof(float));
-  if (stem == NULL) {
-    *out_failed = 1;
-    for (int i = 0; i < build.segment_count; ++i) {
-      if (build.segments[i].owns_image) free(build.segments[i].image);
-      if (build.segments[i].owns_src) free(build.segments[i].src);
-    }
+  if (build->load_failed) {
+    le_pr_track_close(build);
     return NULL;
   }
 
@@ -1473,26 +2150,56 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
    * material on and fades out, an emptying cuts at once, and a finalize's
    * take starts at full gain. At capture frame 0 the track already sounds
    * the way the arm found it. */
-  const float gate_step = le_gate_step_size(m->sample_rate);
-  const int32_t gate_min =
-      2 * (m->sample_rate / 100 > 0 ? m->sample_rate / 100 : 1);
-  float play_gain = 0.0f;
-  float tail_gain = 0.0f;
-  const le_pr_segment* tail_seg = NULL; /* the stopped material */
-  int seg_index = 0;
-  int entered = -1;
-  for (uint64_t f = 0; f < m->capture_frames; ++f) {
-    while (seg_index + 1 < build.segment_count &&
-          build.segments[seg_index + 1].start_frame <= f) {
+  build->gate_step = le_gate_step_size(m->sample_rate);
+  build->gate_min = 2 * (m->sample_rate / 100 > 0 ? m->sample_rate / 100 : 1);
+  build->play_gain = 0.0f;
+  build->tail_gain = 0.0f;
+  build->tail_seg = NULL; /* the stopped material */
+  build->seg_heard = 0;
+  build->tail_heard = 0;
+  build->seg_index = 0;
+  build->entered = -1;
+  /* The lane's pitch bridge (#1675), laid on the head at capture frame 0 as
+   * the callback lays it at the arm. */
+  memset(&build->bridge, 0, sizeof(build->bridge));
+  build->bridge.clock0 = m->perf_arm_fx_clock;
+  build->bridge.hop = le_bridge_hop(m->sample_rate);
+  build->bridge.offset = le_bridge_offset(channel, lane, build->bridge.hop);
+  build->bridge.sample_rate = m->sample_rate;
+  return build;
+}
+
+/* Renders capture frames [f0, f0 + n) of [build]'s stem into out[0..n),
+ * going on from where the previous call stopped (calls cover the capture in
+ * order). With [heard_out], it notes each frame whose material is a heard
+ * image. [runs] only from the clean pass. */
+static void le_pr_track_render(le_pr_track_build* build, uint64_t f0,
+                               int32_t n, float* out, le_pr_gate_runs* runs,
+                               uint8_t* heard_out) {
+  const float gate_step = build->gate_step;
+  const int32_t gate_min = build->gate_min;
+  float play_gain = build->play_gain;
+  float tail_gain = build->tail_gain;
+  const le_pr_segment* tail_seg = build->tail_seg;
+  int seg_heard = build->seg_heard;
+  int tail_heard = build->tail_heard;
+  int seg_index = build->seg_index;
+  int entered = build->entered;
+  le_pr_bridge_run* const bridge = &build->bridge;
+  for (uint64_t f = f0; f < f0 + (uint64_t)n; ++f) {
+    while (seg_index + 1 < build->segment_count &&
+          build->segments[seg_index + 1].start_frame <= f) {
       seg_index++;
     }
-    const le_pr_segment* seg = &build.segments[seg_index];
+    const le_pr_segment* seg = &build->segments[seg_index];
     const int has_image = seg->image != NULL && seg->image_len > 0;
     const int audible = has_image && !seg->silent;
     if (seg_index != entered) {
       const le_pr_segment* was =
-          entered >= 0 ? &build.segments[entered] : NULL;
+          entered >= 0 ? &build->segments[entered] : NULL;
       entered = seg_index;
+      seg_heard = heard_out != NULL && le_pr_segment_heard(build, seg_index);
+      if (seg->bridge_bits & LE_PR_BRIDGE_RESTART) bridge->lane.live = 0;
       const uint8_t on = has_image && seg->image_len >= gate_min;
       if (runs != NULL && runs->count < LE_PR_MAX_SEGMENTS &&
           (runs->count == 0 || runs->on[runs->count - 1] != on)) {
@@ -1514,6 +2221,8 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
         if (play_gain >= tail_gain) { /* the Stop; the louder voice stays */
           tail_gain = play_gain;
           tail_seg = was;
+          tail_heard = heard_out != NULL &&
+                       le_pr_segment_heard(build, (int)(was - build->segments));
         }
         play_gain = 0.0f;
       }
@@ -1521,18 +2230,31 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
     play_gain = le_gate_step(play_gain, audible ? 1.0f : 0.0f, gate_step);
     tail_gain = le_gate_step(tail_gain, 0.0f, gate_step);
     float x = 0.0f;
-    if (audible) x = le_pr_segment_sample(seg, f) * play_gain;
+    if (audible) x = le_pr_segment_sample(seg, f, bridge, 0) * play_gain;
     if (tail_gain > 0.0f && tail_seg != NULL) {
-      x += le_pr_segment_sample(tail_seg, f) * tail_gain;
+      x += le_pr_segment_sample(tail_seg, f, bridge, audible ? 2 : 1) *
+           tail_gain;
     }
-    stem[f] = x;
+    out[f - f0] = x;
+    /* Whether the lane's material is a heard image (#1713): the segment's
+     * (sounding or stopped: the callback keeps playing the image while its
+     * slot holds one), or, emptied, the tail still fading out. */
+    /* 2: a finalize's take with an image, which the callback already
+     * plays at full image (its lane crossfaded in while it recorded). */
+    if (heard_out != NULL) {
+      heard_out[f - f0] = (uint8_t)(seg_heard
+                                        ? (seg->snap_in ? 2 : 1)
+                                        : (!has_image && tail_gain > 0.0f &&
+                                           tail_seg != NULL && tail_heard));
+    }
   }
-
-  for (int i = 0; i < build.segment_count; ++i) {
-    if (build.segments[i].owns_image) free(build.segments[i].image);
-    if (build.segments[i].owns_src) free(build.segments[i].src);
-  }
-  return stem;
+  build->play_gain = play_gain;
+  build->tail_gain = tail_gain;
+  build->tail_seg = tail_seg;
+  build->seg_heard = seg_heard;
+  build->tail_heard = tail_heard;
+  build->seg_index = seg_index;
+  build->entered = entered;
 }
 
 /* ---- wet pass + master reconstruction (part 8) ---- */
@@ -1548,7 +2270,7 @@ static float le_pr_bits_to_f32(uint32_t bits) {
   return f;
 }
 
-/* One channel's lane-0 effects chain, mirroring `le_lane`'s
+/* One lane's effects chain, mirroring `le_lane`'s
  * a_fx_count/a_fx_type/a_fx_param fields — plus the two enable-flag levels
  * (a_fx_enabled / a_fx_chain_enabled) — closely enough to drive
  * fx_apply_chain directly. The enable bits seed all-1 at arm: the manifest
@@ -1557,6 +2279,7 @@ static float le_pr_bits_to_f32(uint32_t bits) {
  * arms from a default-enabled engine). */
 typedef struct le_pr_fx_chain {
   int32_t count;
+  int32_t pre; /* leading Pre entries (#1741: what a heard image stands for) */
   int32_t type[LE_FX_MAX];
   float params[LE_FX_MAX][LE_FX_PARAMS];
   int32_t enabled[LE_FX_MAX];
@@ -1565,6 +2288,7 @@ typedef struct le_pr_fx_chain {
 
 static void le_pr_fx_chain_init_empty(le_pr_fx_chain* c) {
   c->count = 0;
+  c->pre = 0;
   c->chain_enabled = 1;
   for (int i = 0; i < LE_FX_MAX; ++i) {
     c->type[i] = LE_FX_NONE;
@@ -1573,8 +2297,8 @@ static void le_pr_fx_chain_init_empty(le_pr_fx_chain* c) {
   }
 }
 
-/* Seeds a chain from a lane's `effects` array (the arm-snapshot's lane-0
- * entry, or NULL for a channel with no arm-time presence — starts empty,
+/* Seeds a chain from a lane's `effects` array (the arm-snapshot's entry
+ * for the lane, or NULL for a lane with no arm-time presence — starts empty,
  * exactly like a freshly recorded track's live chain before any FX command
  * has ever touched it). A malformed manifest entry with more than LE_FX_MAX
  * effects is truncated rather than overrunning the fixed arrays. */
@@ -1594,6 +2318,14 @@ static void le_pr_fx_chain_init_from_lane(le_pr_fx_chain* c,
     const le_json_value* params = le_json_get(entry, "params");
     for (int p = 0; p < LE_FX_PARAMS; ++p) {
       c->params[i][p] = (float)le_json_number(le_json_at(params, p), 0.0);
+    }
+    /* The Pre run leads the chain (an entry's "placement", absent = Post). */
+    char placement[8];
+    if (c->pre == i &&
+        le_json_string(le_json_get(entry, "placement"), placement,
+                       sizeof(placement)) &&
+        strcmp(placement, "pre") == 0) {
+      c->pre = i + 1;
     }
   }
 }
@@ -1718,12 +2450,11 @@ static void le_pr_seed_channels(le_fx_state* fx, const le_json_value* effects,
  * (le_fx_state_free_buffers, engine_fx.c) — a future heap-owning effect adds
  * its free there once and this renderer inherits it. */
 
-/* Renders channel `channel`'s wet stem into a freshly malloc'd buffer of
- * `capture_frames` samples (caller frees), or NULL with `*out_failed` set on
- * allocation failure. `dry` is that channel's already-reconstructed dry
- * content (le_pr_render_track's output — same content, not recomputed) at
- * unity gain; this replays the SAME per-frame mix order the live engine's
- * mix_tracks_frame uses: lane-0 volume scales the sample, THEN the logged
+/* The wet pass (le_pr_wet_open, le_pr_wet_render) renders one lane's wet
+ * stem a block at a time from its dry content (the dry pass's output for
+ * the same frames, not recomputed) at unity gain; it replays the SAME
+ * per-frame mix order the live engine's mix_tracks_frame uses for each
+ * lane: the lane's volume scales the sample, THEN the logged
  * FX chain processes it, THEN the mute and solo gains scale what the chain
  * sends, fading as the callback fades them (#1400; a muted lane feeds its
  * chain nothing and sends nothing, its tail included) — the chain runs
@@ -1739,14 +2470,17 @@ static void le_pr_seed_channels(le_fx_state* fx, const le_json_value* effects,
  * fold-down is the same one this render uses for a pair routed to a single
  * output, and it is exactly L wherever the two sides are equal.
  *
- * Scope note: this reconstructs lane-0 volume/mute and the lane-0 FX chain
- * from events.log (LE_CMD_SET_LANE_FX/_FX_COUNT, LE_PLOG_SET_LANE_FX_PARAM,
- * LE_CMD_SET_LANE_VOLUME/_MUTE, and their track-addressed LE_CMD_SET_VOLUME/
- * _MUTE equivalents, which map to lane 0 — engine_process.c). The track's
- * transport arrives through `dry`, which replays every logged Stop and Play
- * (322/323, the snapshot source's included, #1170) with their play and tail
- * fades: content presence is this render's only audibility gate beyond
- * mute, solo and Cut (which silences at once, live and here). Monitor
+ * Scope note: this reconstructs the lane's volume/mute/pan/route and its FX
+ * chain from events.log (LE_CMD_SET_LANE_FX/_FX_COUNT,
+ * LE_PLOG_SET_LANE_FX_PARAM, LE_CMD_SET_LANE_VOLUME/_MUTE/_PAN/_OUTPUT for
+ * the lane, the track-addressed LE_CMD_SET_MUTE and LE_CMD_SET_OUTPUT_MASK,
+ * which map to lane 0, and the track gain LE_CMD_SET_VOLUME, which scales
+ * every lane — engine_process.c). The Track stage chain (le_fx_bus) the
+ * lanes sum into is not replayed (its commands are manifest-only). The
+ * track's transport arrives through `dry`, which replays every logged Stop
+ * and Play (322/323, the snapshot source's included, #1170) with their play
+ * and tail fades: content presence is this render's only audibility gate
+ * beyond mute, solo and Cut (which silences at once, live and here). Monitor
  * inputs, plugin slots and pre-arm FX tails stay out of its parity protocol
  * by construction. */
 /* The render's chains' musical time (le_fx_tempo, #887 part 10): what the
@@ -1776,6 +2510,16 @@ static void le_pr_tempo_at_zero(le_fx_tempo* t, const le_pr_manifest* m,
   }
 }
 
+/* The live chain's settle on leaving the heard image (le_heard_lane_wet):
+ * every slot force-bypassed and its rack reset, so it comes back through its
+ * re-enable ramp. */
+static void le_pr_settle_chain(le_fx_state* fx, int32_t count) {
+  for (int32_t s = 0; s < count && s < LE_FX_MAX; ++s) {
+    le_fx_enable_force_bypass(fx, s);
+    le_fx_rack_reset(fx, s);
+  }
+}
+
 /* Moves [t] to a logged anchor at the frame whose FX clock is [clock]. */
 static void le_pr_tempo_apply(le_fx_tempo* t, const le_log_command* cmd,
                               uint32_t clock) {
@@ -1790,45 +2534,115 @@ static void le_pr_tempo_apply(le_fx_tempo* t, const le_log_command* cmd,
   t->den = cmd->fx_tempo_log.den;
 }
 
-static float* le_pr_render_wet_track(const le_pr_manifest* m,
-                                     const le_pr_log_entry* log, int log_count,
-                                     int32_t channel, const float* dry,
-                                     const le_pr_gate_runs* runs,
-                                     int32_t* out_failed, float* routed) {
-  *out_failed = 0;
-  const le_json_value* arm_track = le_pr_find_track(m->arm_tracks, channel);
-  const le_json_value* arm_lane = le_pr_find_lane0(m->arm_tracks, channel);
-
+/* A channel's wet pass between blocks (le_pr_wet_open, le_pr_wet_render):
+ * its chain and the live state the replay moves, read from the arm
+ * snapshot and then the log. */
+typedef struct le_pr_wet_run {
+  int32_t lane; /* the lane of the channel this run renders (#1824) */
   le_pr_fx_chain chain;
-  le_pr_fx_chain_init_from_lane(&chain, arm_lane);
-  le_fade fade = {1, 1, 0};
-  float track_gain = (float)le_json_number(
-      arm_track != NULL ? le_json_get(arm_track, "volume") : NULL, 1.0);
-  float volume = (float)le_json_number(le_json_get(arm_lane, "volume"), 1.0);
-  int muted = le_json_bool(le_json_get(arm_lane, "muted"),
-      le_json_bool(le_json_get(arm_track, "muted"), 0));
-  float pan = (float)le_json_number(le_json_get(arm_lane, "pan"), 0);
-  uint32_t route = (uint32_t)le_json_number(le_json_get(arm_lane, "outputMask"), 1);
-  uint32_t output_enabled = m->output_enabled_mask;
-  int cut_silenced = 0;
+  le_fade fade;
+  float track_gain;
+  float volume;
+  int muted;
+  float pan;
+  uint32_t route;
+  uint32_t output_enabled;
+  int cut_silenced;
   /* Solo (slice 3) is an audibility gate across EVERY track: while any is
    * soloed only soloed tracks route. Seeded from the arm manifest (a track
    * absent there reads 0) and moved by the logged LE_CMD_SET_TRACK_SOLO of
    * every channel, not only this one. */
-  int solo[LE_MAX_TRACKS] = {0};
+  int solo[LE_MAX_TRACKS];
+  le_fx_state* fx;
+  le_fx_tempo tempo; /* fx->tempo points here */
+  /* A slot whose buffers could not be allocated, at arm or at a logged type
+   * change: the stem fails (see le_pr_wet_open). */
+  int prepare_failed;
+  /* Per-slot EFFECTIVE enable bits (D-EFFBITS), exactly as snapshot_lane_fx
+   * computes them live. Recomputed only when a replayed log entry lands —
+   * the bits cannot change between log entries. */
+  int32_t effective[LE_FX_MAX];
+  /* The callback's audibility fades (#1400), stepped the way
+   * mix_tracks_frame steps them: the lane's mute gain and the track's solo
+   * gain scale what the chain sends (tail included), and Cut's stop fades
+   * the feed out as the callback's play gain does. Each starts at its gate:
+   * at capture frame 0 the track sounds as the arm found it. */
+  float gate_step;
+  float mute_gain;
+  float solo_gain;
+  float cut_gain;
+  int run_index;
+  int gates_fade;
+  int log_index;
+  /* The heard image (#1713), as le_heard_lane_wet plays it: where a heard
+   * image sounds ([heard]) and the lane's source is HEARD (the logged 333,
+   * HEARD until one says otherwise), the image plays at level and the chain
+   * idles; a source switch crossfades over 10 ms, the clean side through the
+   * chain, and leaving the image settles the chain to bypass. */
+  int heard_src;
+  int was_image;
+  float heard_mix;
+  float heard_step;
+} le_pr_wet_run;
+
+static void le_pr_wet_close(le_pr_wet_run* w) {
+  if (w == NULL) return;
+  le_fx_state_free_buffers(w->fx);
+  free(w->fx);
+  free(w);
+}
+
+/* Sets up channel `channel`'s wet pass at capture frame 0, or NULL when it
+ * cannot run: its state could not be allocated, or a slot's buffers at arm
+ * (a prepare failure, OOM on a delay ring / octaver's phase-vocoder heap,
+ * is NOT let through as a silent dry-passthrough degradation: fx_delay/
+ * fx_octaver already handle a NULL buffer gracefully at the DSP level,
+ * matching the live engine's own OOM posture, but this render treats it as
+ * a genuine per-stem failure, the same "partial success, not silent drift"
+ * posture load_failed already gives pcmRef/layer read failures, rather than
+ * quietly rendering a track's FX chain as if a slot were bypassed). */
+static le_pr_wet_run* le_pr_wet_open(const le_pr_manifest* m,
+                                     const le_pr_log_entry* log, int log_count,
+                                     int32_t channel, int32_t lane) {
+  le_pr_wet_run* w = (le_pr_wet_run*)calloc(1, sizeof(le_pr_wet_run));
+  if (w == NULL) return NULL;
+  w->lane = lane;
+  const le_json_value* arm_track = le_pr_find_track(m->arm_tracks, channel);
+  const le_json_value* arm_lane =
+      le_pr_find_lane(m->arm_tracks, channel, lane);
+
+  le_pr_fx_chain* const chain = &w->chain;
+  le_pr_fx_chain_init_from_lane(chain, arm_lane);
+  w->fade = (le_fade){1, 1, 0};
+  w->track_gain = (float)le_json_number(
+      arm_track != NULL ? le_json_get(arm_track, "volume") : NULL, 1.0);
+  w->volume = (float)le_json_number(le_json_get(arm_lane, "volume"), 1.0);
+  /* A track's own mute is lane 0's (LE_CMD_SET_MUTE). */
+  w->muted = le_json_bool(
+      le_json_get(arm_lane, "muted"),
+      lane == 0 ? le_json_bool(le_json_get(arm_track, "muted"), 0) : 0);
+  w->pan = (float)le_json_number(le_json_get(arm_lane, "pan"), 0);
+  /* A lane the arm did not list starts as le_lane_reset leaves it: routed
+   * to the first pair. (The snapshot writes every listed lane's mask; a
+   * listed lane without one reads output 0, as it always has.) */
+  w->route = (uint32_t)le_json_number(le_json_get(arm_lane, "outputMask"),
+                                      arm_lane != NULL ? 1 : 3);
+  w->output_enabled = m->output_enabled_mask;
+  w->cut_silenced = 0;
   for (int32_t t = 0; t < LE_MAX_TRACKS; ++t) {
     const le_json_value* track = le_pr_find_track(m->arm_tracks, t);
-    solo[t] = le_json_bool(track != NULL ? le_json_get(track, "solo") : NULL,
-                           0);
+    w->solo[t] = le_json_bool(track != NULL ? le_json_get(track, "solo") : NULL,
+                              0);
   }
 
   le_fx_state* fx = (le_fx_state*)calloc(1, sizeof(le_fx_state));
   if (fx == NULL) {
-    *out_failed = 1;
+    free(w);
     return NULL;
   }
-  /* The live lane's hop-stagger seed (#915; this render reconstructs lane 0
-   * of track [channel]), set BEFORE any octaver's hop counter is seeded from
+  w->fx = fx;
+  /* The live lane's hop-stagger seed (#915; this render reconstructs lane
+   * [lane] of track [channel]), set BEFORE any octaver's hop counter is seeded from
    * it. EXACT for an octaver that lands during the capture through a logged
    * command (LE_CMD_SET_LANE_FX): the replay below runs le_fx_entry_reset at
    * the logged frame the audio thread ran it, so both chains start the counter
@@ -1839,85 +2653,96 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
    * heavy ticks follow the clock set below); its signal history is
    * approximated, like every arm-time slot here (an empty delay ring, a cold
    * reverb). */
-  fx->hop_seed = le_fx_lane_hop_seed(channel, 0);
+  fx->hop_seed = le_fx_lane_hop_seed(channel, lane);
   /* ...and its FX clock at capture frame 0 (#941), so arm-time resets
    * anchor octaver hops where the live chain did. */
   fx->clock = m->perf_arm_fx_clock;
   fx->clocked = 1;
-  le_fx_tempo tempo;
-  le_pr_tempo_init(&tempo, m);
-  fx->tempo = &tempo;
-  le_pr_tempo_at_zero(&tempo, m, log, log_count);
+  le_pr_tempo_init(&w->tempo, m);
+  fx->tempo = &w->tempo;
+  le_pr_tempo_at_zero(&w->tempo, m, log, log_count);
   /* Seed the enable-crossfade runtime SETTLED at each slot's effective arm
    * bit, as the wet cache does (le_fx_frozen_state_init): a calloc'd zero
    * state would fade the whole chain in over the ramp window at frame 0, and
    * an enabled seed on a slot the arm marks disabled would fade an effect out
    * that was never heard. */
   for (int s = 0; s < LE_FX_MAX; ++s) {
-    le_fx_enable_seed_at(fx, s, chain.chain_enabled && chain.enabled[s]);
+    le_fx_enable_seed_at(fx, s, chain->chain_enabled && chain->enabled[s]);
   }
   /* Each entry's channel handling and the rack edges, as the live lane had
    * them at arm: a rack's level reaches the stem. */
   le_pr_seed_channels(fx, arm_lane != NULL ? le_json_get(arm_lane, "effects")
                                            : NULL,
-                      chain.count);
-  /* A prepare failure (OOM on a delay ring / octaver's phase-vocoder heap)
-   * is NOT let through as a silent dry-passthrough degradation: fx_delay/
-   * fx_octaver already handle a NULL buffer gracefully at the DSP level
-   * (matching the live engine's own OOM posture), but this render treats it
-   * as a genuine per-stem failure — the same "partial success, not silent
-   * drift" posture load_failed already gives pcmRef/layer read failures
-   * below — rather than quietly rendering a track's FX chain as if a slot
-   * were bypassed. */
-  int prepare_failed = 0;
-  for (int s = 0; s < chain.count; ++s) {
-    if (chain.type[s] == LE_FX_NONE) continue;
-    if (!le_pr_arm_slot(fx, s, chain.type[s], chain.params[s],
+                      chain->count);
+  for (int s = 0; s < chain->count; ++s) {
+    if (chain->type[s] == LE_FX_NONE) continue;
+    if (!le_pr_arm_slot(fx, s, chain->type[s], chain->params[s],
                         m->sample_rate)) {
-      prepare_failed = 1;
+      w->prepare_failed = 1;
     }
   }
-
-  float* wet = (float*)calloc((size_t)m->capture_frames, sizeof(float));
-  if (wet == NULL) {
-    le_fx_state_free_buffers(fx);
-    free(fx);
-    *out_failed = 1;
+  if (w->prepare_failed) {
+    le_pr_wet_close(w);
     return NULL;
   }
-
-  /* Per-slot EFFECTIVE enable bits (D-EFFBITS), exactly as snapshot_lane_fx
-   * computes them live. Recomputed only when a replayed log entry lands —
-   * the bits cannot change between log entries. */
-  int32_t effective[LE_FX_MAX];
   for (int s = 0; s < LE_FX_MAX; ++s) {
-    effective[s] = chain.chain_enabled && chain.enabled[s];
+    w->effective[s] = chain->chain_enabled && chain->enabled[s];
   }
+  w->gate_step = le_gate_step_size(m->sample_rate);
+  w->mute_gain = 1.0f;
+  w->solo_gain = 1.0f;
+  w->cut_gain = 1.0f;
+  w->run_index = -1;
+  w->gates_fade = 0;
+  w->log_index = 0;
+  w->heard_src = LE_PLOG_HEARD_IMAGE;
+  w->was_image = 0;
+  w->heard_mix = 0.0f;
+  w->heard_step =
+      1.0f / (float)(m->sample_rate / 100 > 0 ? m->sample_rate / 100 : 1);
+  return w;
+}
 
-  /* The callback's audibility fades (#1400), stepped the way
-   * mix_tracks_frame steps them: the lane's mute gain and the track's solo
-   * gain scale what the chain sends (tail included), and Cut's stop fades
-   * the feed out as the callback's play gain does. Each starts at its gate:
-   * at capture frame 0 the track sounds as the arm found it. */
-  const float gate_step = le_gate_step_size(m->sample_rate);
-  float mute_gain = 1.0f;
-  float solo_gain = 1.0f;
-  float cut_gain = 1.0f;
-  int run_index = -1;
-  int gates_fade = 0;
-  int log_index = 0;
-  for (uint64_t f = 0; f < m->capture_frames; ++f) {
+/* Renders capture frames [f0, f0 + n) of lane w->lane of channel
+ * `channel`: its wet stem into
+ * wet_out[0..n) and its routed stereo contribution to the capture bus into
+ * routed_out[0..2n), going on from where the previous call stopped (calls
+ * cover the capture in order). `dry` is that channel's dry content for the
+ * same frames (le_pr_track_render's output — same content, not recomputed)
+ * at unity gain; [heard_l], [heard_r] and [heard] its heard image's sides
+ * and where one sounds, or NULL; [active] whether the lane is among the
+ * track's active lanes at each frame (le_pr_lane_activity), or NULL for
+ * always. A slot that cannot be prepared at a logged type change sets
+ * w->prepare_failed, which fails the stem. */
+static void le_pr_wet_render(le_pr_wet_run* w, const le_pr_manifest* m,
+                             const le_pr_log_entry* log, int log_count,
+                             int32_t channel, uint64_t f0, int32_t n,
+                             const float* dry, const float* heard_l,
+                             const float* heard_r, const uint8_t* heard,
+                             const le_pr_gate_runs* runs,
+                             const uint8_t* active, float* wet_out,
+                             float* routed_out) {
+  const int32_t lane = w->lane;
+  le_pr_fx_chain* const chain = &w->chain;
+  le_fx_state* const fx = w->fx;
+  int32_t* const effective = w->effective;
+  int* const solo = w->solo;
+  const float gate_step = w->gate_step;
+  const float heard_step = w->heard_step;
+  memset(routed_out, 0, (size_t)n * 2 * sizeof(float));
+  for (uint64_t f = f0; f < f0 + (uint64_t)n; ++f) {
+    const uint64_t i = f - f0; /* the frame's place in this block */
     /* The live frame this one stands for, before any logged reset below. */
     fx->clock = m->perf_arm_fx_clock + (uint32_t)f;
-    /* Apply every logged mutation for this channel's lane 0 at or before
+    /* Apply every logged mutation for this lane at or before
      * this frame, in log order (already frame-sorted by le_pr_load_log),
      * before rendering it — mirrors mix_tracks_frame's per-frame (not
      * per-block) re-read of lane volume/mute/FX state. */
-    while (log_index < log_count && log[log_index].frame <= f) {
-      const le_log_command* cmd = &log[log_index].cmd;
+    while (w->log_index < log_count && log[w->log_index].frame <= f) {
+      const le_log_command* cmd = &log[w->log_index].cmd;
       switch (cmd->code) {
         case LE_CMD_SET_LANE_FX:
-          if (cmd->fx.channel == channel && cmd->fx.lane == 0 &&
+          if (cmd->fx.channel == channel && cmd->fx.lane == lane &&
               cmd->fx.index >= 0 && cmd->fx.index < LE_FX_MAX) {
             /* Mirrors le_engine_set_lane_fx's control-side behavior
              * (engine_commands.c: le_fx_prepare_entry), not just the
@@ -1931,108 +2756,109 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
              * this instant. Guarded on an ACTUAL change, matching
              * le_fx_prepare_entry's own `!= type` check (a reorder back to
              * the same type must not wipe a listener's tweaks). */
-            if (chain.type[cmd->fx.index] != cmd->fx.type) {
-              le_fx_defaults(cmd->fx.type, chain.params[cmd->fx.index]);
+            if (chain->type[cmd->fx.index] != cmd->fx.type) {
+              le_fx_defaults(cmd->fx.type, chain->params[cmd->fx.index]);
               /* D-ENSEED mirror: an ACTUAL type change also re-seeds the
                * slot's enabled flag to 1 on the control side (silently, like
                * the defaults — no events.log entry of its own). */
-              chain.enabled[cmd->fx.index] = 1;
+              chain->enabled[cmd->fx.index] = 1;
             }
-            chain.type[cmd->fx.index] = cmd->fx.type;
+            chain->type[cmd->fx.index] = cmd->fx.type;
             if (!le_pr_reset_slot(fx, cmd->fx.index, cmd->fx.type,
                                   m->sample_rate)) {
-              prepare_failed = 1;
+              w->prepare_failed = 1;
             }
           }
           break;
         case LE_CMD_SET_LANE_FX_COUNT:
-          if (cmd->fxcount.channel == channel && cmd->fxcount.lane == 0) {
+          if (cmd->fxcount.channel == channel && cmd->fxcount.lane == lane) {
             int32_t count = cmd->fxcount.count;
             if (count < 0) count = 0;
             if (count > LE_FX_MAX) count = LE_FX_MAX;
             /* D-ENSEED mirror (le_fx_seed_entering_slots): a slot entering
              * the active window re-seeds enabled=1, silently, like the
              * defaults above. */
-            for (int32_t s = chain.count; s < count; ++s) {
-              chain.enabled[s] = 1;
+            for (int32_t s = chain->count; s < count; ++s) {
+              chain->enabled[s] = 1;
             }
-            chain.count = count;
+            chain->count = count;
           }
           break;
         case LE_PLOG_SET_LANE_FX_PARAM:
-          if (cmd->fx.channel == channel && cmd->fx.lane == 0) {
+          if (cmd->fx.channel == channel && cmd->fx.lane == lane) {
             const int32_t index = LE_PLOG_FX_PARAM_INDEX(cmd->fx.index);
             const int32_t param = LE_PLOG_FX_PARAM_PARAM(cmd->fx.index);
             if (index >= 0 && index < LE_FX_MAX && param >= 0 &&
                 param < LE_FX_PARAMS) {
-              chain.params[index][param] =
+              chain->params[index][param] =
                   le_pr_bits_to_f32((uint32_t)cmd->fx.type);
             }
           }
           break;
         case LE_PLOG_SET_LANE_FX_ENABLED:
-          if (cmd->fx.channel == channel && cmd->fx.lane == 0 &&
+          if (cmd->fx.channel == channel && cmd->fx.lane == lane &&
               cmd->fx.index >= 0 && cmd->fx.index < LE_FX_MAX) {
-            chain.enabled[cmd->fx.index] = cmd->fx.type != 0;
+            chain->enabled[cmd->fx.index] = cmd->fx.type != 0;
           }
           break;
         case LE_PLOG_SET_LANE_FX_CHAIN_ENABLED:
-          if (cmd->lanef.channel == channel && cmd->lanef.lane == 0) {
-            chain.chain_enabled = cmd->lanef.value != 0.0f;
+          if (cmd->lanef.channel == channel && cmd->lanef.lane == lane) {
+            chain->chain_enabled = cmd->lanef.value != 0.0f;
           }
           break;
         case LE_CMD_SET_LANE_PAN:
-          if (cmd->lanef.channel == channel && cmd->lanef.lane == 0)
-            pan = cmd->lanef.value;
+          if (cmd->lanef.channel == channel && cmd->lanef.lane == lane)
+            w->pan = cmd->lanef.value;
           break;
-        case LE_CMD_SET_OUTPUT_MASK:
-          if (cmd->trackmask.channel == channel) route = cmd->trackmask.mask;
+        case LE_CMD_SET_OUTPUT_MASK: /* lane 0's */
+          if (lane == 0 && cmd->trackmask.channel == channel)
+            w->route = cmd->trackmask.mask;
           break;
         case LE_CMD_SET_LANE_OUTPUT:
-          if (cmd->lanei.channel == channel && cmd->lanei.lane == 0) route = (uint32_t)cmd->lanei.value;
+          if (cmd->lanei.channel == channel && cmd->lanei.lane == lane) w->route = (uint32_t)cmd->lanei.value;
           break;
         case LE_CMD_SET_OUTPUT_ENABLED:
           if (cmd->arg_i >= 0 && cmd->arg_i < 32) {
-            if (cmd->arg_f != 0) output_enabled |= 1u << cmd->arg_i;
-            else output_enabled &= ~(1u << cmd->arg_i);
+            if (cmd->arg_f != 0) w->output_enabled |= 1u << cmd->arg_i;
+            else w->output_enabled &= ~(1u << cmd->arg_i);
           }
           break;
         case LE_CMD_PLAY:
-          if (cmd->arg_i == channel) cut_silenced = 0;
+          if (cmd->arg_i == channel) w->cut_silenced = 0;
           break;
         case LE_PLOG_RECORD_START:
-          if (cmd->arg_i == channel) cut_silenced = 0;
+          if (cmd->arg_i == channel) w->cut_silenced = 0;
           break;
         case LE_CMD_CUT_SOUND:
-          cut_silenced = 1;
-          cut_gain = 0.0f; /* at once, as the callback cuts (#1400) */
-          for (int i = 0; i < LE_FX_MAX; ++i) {
+          w->cut_silenced = 1;
+          w->cut_gain = 0.0f; /* at once, as the callback cuts (#1400) */
+          for (int s = 0; s < LE_FX_MAX; ++s) {
             /* An empty slot is left alone, as the callback's Cut leaves it
              * (le_fx_state_clear_tails). */
-            if (chain.type[i] == LE_FX_NONE) continue;
-            le_fx_entry_reset(fx, i, chain.type[i]);
-            le_fx_entry_clear_rings(fx, i, m->sample_rate, chain.type[i]);
+            if (chain->type[s] == LE_FX_NONE) continue;
+            le_fx_entry_reset(fx, s, chain->type[s]);
+            le_fx_entry_clear_rings(fx, s, m->sample_rate, chain->type[s]);
           }
           break;
         case LE_CMD_SET_LANE_VOLUME:
-          if (cmd->lanef.channel == channel && cmd->lanef.lane == 0) {
-            volume = cmd->lanef.value;
+          if (cmd->lanef.channel == channel && cmd->lanef.lane == lane) {
+            w->volume = cmd->lanef.value;
           }
           break;
         case LE_PLOG_FADE:
           if (cmd->fade_log.channel == channel)
-            fade = (le_fade){cmd->fade_log.amount, cmd->fade_log.target, cmd->fade_log.seconds};
+            w->fade = (le_fade){cmd->fade_log.amount, cmd->fade_log.target, cmd->fade_log.seconds};
           break;
         case LE_CMD_SET_VOLUME:
-          if (cmd->arg_i == channel) track_gain = cmd->arg_f;
+          if (cmd->arg_i == channel) w->track_gain = cmd->arg_f;
           break;
         case LE_CMD_SET_LANE_MUTE:
-          if (cmd->lanef.channel == channel && cmd->lanef.lane == 0) {
-            muted = cmd->lanef.value != 0.0f;
+          if (cmd->lanef.channel == channel && cmd->lanef.lane == lane) {
+            w->muted = cmd->lanef.value != 0.0f;
           }
           break;
-        case LE_CMD_SET_MUTE:
-          if (cmd->arg_i == channel) muted = cmd->arg_f != 0.0f;
+        case LE_CMD_SET_MUTE: /* lane 0's */
+          if (lane == 0 && cmd->arg_i == channel) w->muted = cmd->arg_f != 0.0f;
           break;
         case LE_CMD_SET_TRACK_SOLO:
           if (cmd->arg_i >= 0 && cmd->arg_i < LE_MAX_TRACKS) {
@@ -2040,19 +2866,24 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
           }
           break;
         case LE_PLOG_FX_TEMPO:
-          le_pr_tempo_apply(&tempo, cmd, fx->clock);
+          le_pr_tempo_apply(&w->tempo, cmd, fx->clock);
+          break;
+        case LE_PLOG_HEARD_SOURCE:
+          if (cmd->lanei.channel == channel && cmd->lanei.lane == lane) {
+            w->heard_src = cmd->lanei.value;
+          }
           break;
         default:
           break;
       }
-      log_index++;
+      w->log_index++;
       for (int s = 0; s < LE_FX_MAX; ++s) {
-        effective[s] = chain.chain_enabled && chain.enabled[s];
+        effective[s] = chain->chain_enabled && chain->enabled[s];
         /* Mirror of the live snapshots' gap rule (snapshot_lane_fx): a slot
          * the chain no longer processes settles at bypass while its
          * effective bit is 0, so a later re-entry goes through the clean
          * settled-edge reset exactly as it does live. */
-        if ((s >= chain.count || chain.type[s] == LE_FX_NONE) &&
+        if ((s >= chain->count || chain->type[s] == LE_FX_NONE) &&
             !effective[s]) {
           le_fx_enable_force_bypass(fx, s);
         }
@@ -2061,165 +2892,256 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
 
     int any_solo = 0;
     for (int32_t t = 0; t < LE_MAX_TRACKS; ++t) any_solo |= solo[t];
-    while (runs != NULL && run_index + 1 < runs->count &&
-           runs->frame[run_index + 1] <= f) {
-      gates_fade = runs->on[++run_index];
+    while (runs != NULL && w->run_index + 1 < runs->count &&
+           runs->frame[w->run_index + 1] <= f) {
+      w->gates_fade = runs->on[++w->run_index];
     }
-    const float mute_target = muted ? 0.0f : 1.0f;
+    const int gates_fade = w->gates_fade;
+    const float mute_target = w->muted ? 0.0f : 1.0f;
     const float solo_target = !any_solo || solo[channel] ? 1.0f : 0.0f;
-    const float cut_target = cut_silenced ? 0.0f : 1.0f;
+    const float cut_target = w->cut_silenced ? 0.0f : 1.0f;
+    const int lane_on = active == NULL || active[i];
     if (f == 0 || !gates_fade) {
-      mute_gain = mute_target;
-      solo_gain = solo_target;
-      if (!gates_fade) cut_gain = cut_target;
+      if (lane_on) w->mute_gain = mute_target;
+      w->solo_gain = solo_target;
+      if (!gates_fade) w->cut_gain = cut_target;
     } else {
-      mute_gain = le_gate_step(mute_gain, mute_target, gate_step);
-      solo_gain = le_gate_step(solo_gain, solo_target, gate_step);
+      if (lane_on) {
+        w->mute_gain = le_gate_step(w->mute_gain, mute_target, gate_step);
+      }
+      w->solo_gain = le_gate_step(w->solo_gain, solo_target, gate_step);
     }
-    if (gates_fade) cut_gain = le_gate_step(cut_gain, cut_target, gate_step);
-    const float gate = mute_gain * solo_gain;
+    if (gates_fade) w->cut_gain = le_gate_step(w->cut_gain, cut_target, gate_step);
+    if (!lane_on) {
+      /* A lane past the track's lane count is not mixed (#1824): no chain
+       * runs and nothing routes, and its mute gain holds, as the
+       * callback's lane loop leaves it. The track's gains go on. */
+      (void)le_fade_tick(&w->fade, m->sample_rate);
+      w->was_image = 0;
+      wet_out[i] = 0.0f;
+      continue;
+    }
+    const float cut_gain = w->cut_gain;
+    const float volume = w->volume;
+    const float gate = w->mute_gain * w->solo_gain;
     const int fed = cut_gain > 0.0f && gate > 0.0f;
-    const float in = fed ? dry[f] * cut_gain * volume : 0.0f;
+    const float in = fed ? dry[i] * cut_gain * volume : 0.0f;
     float l = in;
     float r = in;
-    fx_apply_chain(fx, m->sample_rate, m->sample_rate, &l, &r, chain.count,
-                   chain.type, chain.params, effective);
+    /* An image to play: the material holds one and the lane's renders can
+     * play it at the track's pitch. */
+    const int image = heard != NULL && heard[i];
+    /* UNAVAILABLE fades to the clean take as CLEAN does: the callback fades
+     * a lane whose render cannot play its image yet. */
+    const int to_image = w->heard_src == LE_PLOG_HEARD_IMAGE;
+    if (f == 0 || (image && heard[i] == 2 && !w->was_image)) {
+      /* At capture frame 0 the lane plays as the arm found it, settled (a
+       * crossfade still running at the arm is not in the log); a fresh take
+       * starts on its image as the callback's does. */
+      w->heard_mix = image && to_image ? 1.0f : 0.0f;
+    }
+    w->was_image = image;
+    /* The image is the take's Pre run (#1741): the Post entries play over
+     * it, so only the Pre run idles and settles. */
+    const int32_t post_from =
+        chain->pre < chain->count ? chain->pre : chain->count;
+    if (!image) {
+      if (w->heard_mix > 0.0f) le_pr_settle_chain(fx, post_from);
+      w->heard_mix = 0.0f;
+    } else {
+      if (!to_image && w->heard_mix >= 1.0f) le_pr_settle_chain(fx, post_from);
+      w->heard_mix += to_image ? heard_step : -heard_step;
+      w->heard_mix = w->heard_mix > 1.0f ? 1.0f : w->heard_mix < 0.0f ? 0.0f : w->heard_mix;
+    }
+    const float heard_mix = w->heard_mix;
+    if (heard_mix < 1.0f) {
+      fx_apply_chain(fx, m->sample_rate, m->sample_rate, &l, &r,
+                     heard_mix > 0.0f ? post_from : chain->count, chain->type,
+                     chain->params, effective);
+    }
+    if (heard_mix > 0.0f) {
+      /* Fading out because the render cannot play the image: the
+       * callback's image side reads the clean render meanwhile. */
+      const int unpitched = w->heard_src == LE_PLOG_HEARD_UNAVAILABLE;
+      const float hl =
+          fed ? (unpitched ? dry[i] : heard_l[i]) * cut_gain * volume : 0.0f;
+      const float hr =
+          fed ? (unpitched ? dry[i] : heard_r[i]) * cut_gain * volume : 0.0f;
+      l = heard_mix * hl + (1.0f - heard_mix) * l;
+      r = heard_mix * hr + (1.0f - heard_mix) * r;
+      fx_apply_chain_from(fx, m->sample_rate, m->sample_rate, &l, &r,
+                          post_from, chain->count, chain->type, chain->params,
+                          effective, heard_mix < 1.0f);
+    }
     const float gain =
-        track_gain * le_fade_tick(&fade, m->sample_rate) * gate;
+        w->track_gain * le_fade_tick(&w->fade, m->sample_rate) * gate;
     l *= gain;
     r *= gain;
-    wet[f] = 0.5f * (l + r);
+    wet_out[i] = 0.5f * (l + r);
+    const float pan = w->pan;
     const float far = fabsf(pan) >= 1 ? 0 : cosf(fabsf(pan) * 1.57079632679f);
     l *= pan > 0 ? far : 1;
     r *= pan < 0 ? far : 1;
-    const uint32_t mask = route & output_enabled;
+    const uint32_t mask = w->route & w->output_enabled;
     int count = 0;
     for (int c = 0; c < LE_MAX_CHANNELS; ++c) if (mask & (1u << c)) count++;
     int index = 0;
     for (int c = 0; c < LE_MAX_CHANNELS; ++c) {
       if (!(mask & (1u << c))) continue;
       const float value = count == 1 ? 0.5f * (l + r) : index == 0 ? l : index == 1 ? r : 0.5f * (l + r);
-      if (c / 2 == m->arm_capture_bus) routed[2*f + c%2] += value;
+      if (c / 2 == m->arm_capture_bus) routed_out[2*i + c%2] += value;
       index++;
     }
   }
-
-  le_fx_state_free_buffers(fx);
-  free(fx);
-  if (prepare_failed) {
-    *out_failed = 1;
-    free(wet);
-    return NULL;
-  }
-  return wet;
 }
 
-/* Replays the capture bus's output chain over `master` (in place, stereo,
- * `capture_frames` frames — already the sum of every channel's wet
- * contribution), then, under Follow output, that bus's level and mute: the
- * same stages output_bus_frame (engine_process.c) runs before the capture
- * tap. Neither tap includes the global master gain or the master limiter
- * (master_bus_frame runs after the buses), so neither is replayed here; an
- * export carries no limiter, live or offline. Uses its own fresh
- * `le_fx_state`, never the live engine's (this render has no live-engine
- * dependency, see the file header). */
-static int le_pr_render_master(const le_pr_manifest* m,
-                                const le_pr_log_entry* log, int log_count,
-                                float* master) {
+/* The capture bus's output stages between blocks (le_pr_master_open,
+ * le_pr_master_render): its chain and the level, mute and log position the
+ * replay has reached. */
+typedef struct le_pr_master_run {
   le_pr_fx_chain chain;
-  le_pr_fx_chain_init_empty(&chain);
+  le_fx_state* fx;
+  le_fx_tempo tempo; /* fx->tempo points here */
+  float level;
+  int muted;
+  int at;
+  int ok; /* 0 once a slot could not be prepared or a count read wrong */
+} le_pr_master_run;
+
+static void le_pr_master_close(le_pr_master_run* run) {
+  if (run == NULL) return;
+  le_fx_state_free_buffers(run->fx);
+  free(run->fx);
+  free(run);
+}
+
+/* Sets up the replay of the capture bus's output chain over the sum of every
+ * channel's wet contribution, then, under Follow output, that bus's level
+ * and mute: the same stages output_bus_frame (engine_process.c) runs before
+ * the capture tap. Neither tap includes the global master gain or the
+ * master limiter (master_bus_frame runs after the buses), so neither is
+ * replayed here; an export carries no limiter, live or offline. Uses its
+ * own fresh `le_fx_state`, never the live engine's (this render has no
+ * live-engine dependency, see the file header). NULL when the arm's chain
+ * does not read (more than LE_FX_MAX entries) or the state cannot be
+ * allocated: the master fails. */
+static le_pr_master_run* le_pr_master_open(const le_pr_manifest* m,
+                                           const le_pr_log_entry* log,
+                                           int log_count) {
+  le_pr_master_run* run =
+      (le_pr_master_run*)calloc(1, sizeof(le_pr_master_run));
+  if (run == NULL) return NULL;
+  le_pr_fx_chain* const chain = &run->chain;
+  le_pr_fx_chain_init_empty(chain);
   const le_json_value* effects = le_json_get(m->arm_output, "outputEffects");
-  chain.count = le_json_length(effects);
-  if (chain.count > LE_FX_MAX) return 0;
-  chain.chain_enabled = le_json_bool(le_json_get(m->arm_output, "outputChainEnabled"), 1);
-  for (int i = 0; i < chain.count; ++i) {
+  chain->count = le_json_length(effects);
+  if (chain->count > LE_FX_MAX) {
+    free(run);
+    return NULL;
+  }
+  chain->chain_enabled = le_json_bool(le_json_get(m->arm_output, "outputChainEnabled"), 1);
+  for (int i = 0; i < chain->count; ++i) {
     const le_json_value* entry = le_json_at(effects, i);
-    chain.type[i] = (int32_t)le_json_number(le_json_get(entry, "type"), 0);
-    chain.enabled[i] = le_json_bool(le_json_get(entry, "enabled"), 1);
+    chain->type[i] = (int32_t)le_json_number(le_json_get(entry, "type"), 0);
+    chain->enabled[i] = le_json_bool(le_json_get(entry, "enabled"), 1);
     for (int p = 0; p < LE_FX_PARAMS; ++p)
-      chain.params[i][p] = (float)le_json_number(le_json_at(le_json_get(entry, "params"), p), 0);
+      chain->params[i][p] = (float)le_json_number(le_json_at(le_json_get(entry, "params"), p), 0);
   }
   le_fx_state* fx = calloc(1, sizeof(*fx));
-  if (!fx) return 0;
+  if (!fx) {
+    free(run);
+    return NULL;
+  }
+  run->fx = fx;
   /* The captured output bus's hop-stagger seed (#915), and the reset each
-   * arm-time slot got when its type landed (see le_pr_render_wet_track). */
+   * arm-time slot got when its type landed (see le_pr_wet_open). */
   fx->hop_seed = le_fx_output_hop_seed(m->arm_capture_bus);
-  fx->clock = m->perf_arm_fx_clock; /* see le_pr_render_wet_track */
+  fx->clock = m->perf_arm_fx_clock; /* see le_pr_wet_open */
   fx->clocked = 1;
-  le_fx_tempo tempo;
-  le_pr_tempo_init(&tempo, m);
-  fx->tempo = &tempo;
-  le_pr_tempo_at_zero(&tempo, m, log, log_count);
-  le_pr_seed_channels(fx, effects, chain.count); /* see le_pr_render_wet_track */
-  int ok = 1;
+  le_pr_tempo_init(&run->tempo, m);
+  fx->tempo = &run->tempo;
+  le_pr_tempo_at_zero(&run->tempo, m, log, log_count);
+  le_pr_seed_channels(fx, effects, chain->count); /* see le_pr_wet_open */
+  run->ok = 1;
   for (int i = 0; i < LE_FX_MAX; ++i) {
-    le_fx_enable_seed_at(fx, i, chain.chain_enabled && chain.enabled[i]);
-    if (chain.type[i] == LE_FX_NONE) continue;
-    if (!le_pr_arm_slot(fx, i, chain.type[i], chain.params[i],
+    le_fx_enable_seed_at(fx, i, chain->chain_enabled && chain->enabled[i]);
+    if (chain->type[i] == LE_FX_NONE) continue;
+    if (!le_pr_arm_slot(fx, i, chain->type[i], chain->params[i],
                         m->sample_rate)) {
-      ok = 0;
+      run->ok = 0;
     }
   }
-  float level = m->arm_output_level;
-  int muted = m->arm_output_muted;
-  int at = 0;
-  for (uint64_t f = 0; f < m->capture_frames; ++f) {
+  run->level = m->arm_output_level;
+  run->muted = m->arm_output_muted;
+  run->at = 0;
+  return run;
+}
+
+/* Runs the output stages over capture frames [f0, f0 + n) of `master` (in
+ * place, stereo interleaved, master[0..2n)), going on from where the
+ * previous call stopped (calls cover the capture in order). */
+static void le_pr_master_render(le_pr_master_run* run, const le_pr_manifest* m,
+                                const le_pr_log_entry* log, int log_count,
+                                uint64_t f0, int32_t n, float* master) {
+  le_pr_fx_chain* const chain = &run->chain;
+  le_fx_state* const fx = run->fx;
+  for (uint64_t f = f0; f < f0 + (uint64_t)n; ++f) {
+    const uint64_t j = f - f0; /* the frame's place in this block */
     fx->clock = m->perf_arm_fx_clock + (uint32_t)f; /* the live frame */
-    while (at < log_count && log[at].frame <= f) {
-      const le_log_command* cmd = &log[at++].cmd;
+    while (run->at < log_count && log[run->at].frame <= f) {
+      const le_log_command* cmd = &log[run->at++].cmd;
       if (cmd->code == LE_PLOG_FX_TEMPO)
-        le_pr_tempo_apply(&tempo, cmd, fx->clock);
+        le_pr_tempo_apply(&run->tempo, cmd, fx->clock);
       else if (cmd->code == LE_CMD_SET_OUTPUT_LEVEL && cmd->lanef.channel == m->arm_capture_bus)
-        level = cmd->lanef.value;
+        run->level = cmd->lanef.value;
       else if (cmd->code == LE_CMD_SET_OUTPUT_MUTE && cmd->lanef.channel == m->arm_capture_bus)
-        muted = cmd->lanef.value != 0;
+        run->muted = cmd->lanef.value != 0;
       else if (cmd->code == LE_CMD_SET_OUTPUT_FX && cmd->fx.channel == m->arm_capture_bus && cmd->fx.index >= 0 && cmd->fx.index < LE_FX_MAX) {
         int i = cmd->fx.index;
-        if (chain.type[i] != cmd->fx.type) {
-          le_fx_defaults(cmd->fx.type, chain.params[i]);
-          chain.enabled[i] = 1;
+        if (chain->type[i] != cmd->fx.type) {
+          le_fx_defaults(cmd->fx.type, chain->params[i]);
+          chain->enabled[i] = 1;
         }
-        chain.type[i] = cmd->fx.type;
+        chain->type[i] = cmd->fx.type;
         /* lane 1: a recipe kept the entry there (same identity and type),
          * so its state goes on; otherwise the slot renews, as live. */
         if (cmd->fx.lane != 1 &&
-            !le_pr_renew_slot(fx, i, chain.type[i], i < chain.count,
+            !le_pr_renew_slot(fx, i, chain->type[i], i < chain->count,
                               m->sample_rate)) {
-          ok = 0;
+          run->ok = 0;
         }
       } else if (cmd->code == LE_CMD_SET_OUTPUT_FX_COUNT && cmd->fxcount.channel == m->arm_capture_bus) {
         int count = cmd->fxcount.count;
-        if (count < 0 || count > LE_FX_MAX) { ok = 0; continue; }
-        for (int i = chain.count; i < count; ++i) chain.enabled[i] = 1;
-        chain.count = count;
+        if (count < 0 || count > LE_FX_MAX) { run->ok = 0; continue; }
+        for (int i = chain->count; i < count; ++i) chain->enabled[i] = 1;
+        chain->count = count;
       } else if (cmd->code == LE_PLOG_SET_OUTPUT_FX_PARAM && cmd->fx.channel == m->arm_capture_bus) {
         int i = LE_PLOG_FX_PARAM_INDEX(cmd->fx.index), p = LE_PLOG_FX_PARAM_PARAM(cmd->fx.index);
         if (i >= 0 && i < LE_FX_MAX && p >= 0 && p < LE_FX_PARAMS)
-          chain.params[i][p] = le_pr_bits_to_f32((uint32_t)cmd->fx.type);
+          chain->params[i][p] = le_pr_bits_to_f32((uint32_t)cmd->fx.type);
       } else if (cmd->code == LE_PLOG_SET_OUTPUT_FX_ENABLED && cmd->fx.channel == m->arm_capture_bus && cmd->fx.index >= 0 && cmd->fx.index < LE_FX_MAX)
-        chain.enabled[cmd->fx.index] = cmd->fx.type != 0;
+        chain->enabled[cmd->fx.index] = cmd->fx.type != 0;
       else if (cmd->code == LE_PLOG_SET_OUTPUT_FX_CHAIN_ENABLED && cmd->arg_i == m->arm_capture_bus)
-        chain.chain_enabled = cmd->arg_f != 0;
+        chain->chain_enabled = cmd->arg_f != 0;
       else if (cmd->code == LE_CMD_CUT_SOUND)
         for (int i = 0; i < LE_FX_MAX; ++i) {
           /* An empty slot is left alone, as the callback's Cut leaves it
            * (le_fx_state_clear_tails). */
-          if (chain.type[i] == LE_FX_NONE) continue;
-          le_fx_entry_reset(fx, i, chain.type[i]);
-          le_fx_entry_clear_rings(fx, i, m->sample_rate, chain.type[i]);
+          if (chain->type[i] == LE_FX_NONE) continue;
+          le_fx_entry_reset(fx, i, chain->type[i]);
+          le_fx_entry_clear_rings(fx, i, m->sample_rate, chain->type[i]);
         }
     }
     int32_t effective[LE_FX_MAX];
-    for (int i = 0; i < LE_FX_MAX; ++i) effective[i] = chain.chain_enabled && chain.enabled[i];
-    float l = master[2*f], r = master[2*f+1];
+    for (int i = 0; i < LE_FX_MAX; ++i) effective[i] = chain->chain_enabled && chain->enabled[i];
+    float l = master[2*j], r = master[2*j+1];
     fx_apply_chain(fx, m->sample_rate, m->sample_rate, &l, &r,
-      chain.count, chain.type, chain.params, effective);
-    const float gain = m->arm_follow_output ? (muted ? 0 : level) : 1;
-    master[2*f] = l * gain; master[2*f+1] = r * gain;
+      chain->count, chain->type, chain->params, effective);
+    const float gain = m->arm_follow_output ? (run->muted ? 0 : run->level) : 1;
+    master[2*j] = l * gain; master[2*j+1] = r * gain;
   }
-  le_fx_state_free_buffers(fx); free(fx);
-  return ok;
 }
+
 
 /* ---- worker thread ---- */
 
@@ -2236,6 +3158,354 @@ void le_perf_render_force_dry_write_failure_for_test(int32_t channel) {
                         memory_order_relaxed);
 }
 
+/* Test-only: while set, the render worker waits after each block (a cancel
+ * still ends it), so a test acts on a render known to be mid-way.
+ * g_pr_held_for_test reads 1 once a worker is waiting. */
+static _Atomic int g_pr_hold_for_test = 0;
+static _Atomic int g_pr_held_for_test = 0;
+
+void le_perf_render_hold_for_test(int hold) {
+  if (hold) atomic_store_explicit(&g_pr_held_for_test, 0, memory_order_release);
+  atomic_store_explicit(&g_pr_hold_for_test, hold, memory_order_release);
+}
+
+int le_perf_render_held_for_test(void) {
+  return atomic_load_explicit(&g_pr_held_for_test, memory_order_acquire);
+}
+
+static void le_pr_sleep_ms(int ms) {
+#if defined(_WIN32)
+  Sleep((DWORD)ms);
+#else
+  struct timespec ts = {ms / 1000, (long)(ms % 1000) * 1000000L};
+  nanosleep(&ts, NULL);
+#endif
+}
+
+/* The frames a render works on at once (#1747): every buffer the render
+ * holds is this long, whatever the capture's length, so a capture of hours
+ * renders in the memory a capture of seconds does. */
+#define LE_PR_BLOCK_FRAMES 65536
+
+/* One stem file while it is written: under `<path>.part`, published over
+ * `path` once it seals, so a stem on disk is always a whole one, and a
+ * render that stops early (a cancel, a failure) leaves an earlier render's
+ * stem where it was. */
+typedef struct le_pr_stem_file {
+  le_wav_writer w;
+  int open;
+  int published; /* this render's stem is at `path` */
+  char path[LE_PR_FULL_PATH_MAX];
+  char part[LE_PR_FULL_PATH_MAX + 8];
+} le_pr_stem_file;
+
+static int le_pr_stem_open(le_pr_stem_file* s, const char* path,
+                           int32_t sample_rate, int32_t channels) {
+  snprintf(s->path, sizeof(s->path), "%s", path);
+  snprintf(s->part, sizeof(s->part), "%s.part", path);
+  s->open = le_wav_open(&s->w, s->part, sample_rate, channels, NULL, NULL, 0);
+  if (!s->open) {
+    le_wav_abandon(&s->w);
+    remove(s->part);
+  }
+  return s->open;
+}
+
+/* Closes a stem that did not complete and removes what it wrote. */
+static void le_pr_stem_drop(le_pr_stem_file* s) {
+  if (!s->open) return;
+  le_wav_abandon(&s->w);
+  remove(s->part);
+  s->open = 0;
+}
+
+/* Seals the stem (its data synced first, so a power cut after the rename
+ * cannot leave a stem shorter than its header says) and publishes it at its
+ * path. Returns 1 when it is there. */
+static int le_pr_stem_seal(le_pr_stem_file* s) {
+  if (!s->open) return 0;
+  s->open = 0;
+  if (!le_wav_seal(&s->w, 1) || le_wav_publish(s->part, s->path) == 0) {
+    remove(s->part);
+    return 0;
+  }
+  s->published = 1;
+  return 1;
+}
+
+/* After a render that ran to its end: a stem it did not publish is removed,
+ * so what is on disk is this render's alone, never an earlier render's stem
+ * beside this one's. */
+static void le_pr_stem_settle(const le_pr_stem_file* s, const char* path) {
+  if (!s->published) remove(path);
+}
+
+/* Which of a track's lanes the callback mixes (#1824): those below its
+ * lane count, which the log carries (LE_CMD_SET_LANE_COUNT, events.log
+ * version 17) at the arm and at every change. A capture whose log has no
+ * count for the track (an older one) mixes every lane throughout. */
+typedef struct le_pr_lane_activity {
+  int32_t lane;
+  int logged; /* the log carries the track's count */
+  int active;
+  int at;     /* the next log entry to read */
+} le_pr_lane_activity;
+
+static void le_pr_lane_activity_init(le_pr_lane_activity* a,
+                                     const le_pr_log_entry* log, int log_count,
+                                     int32_t channel, int32_t lane) {
+  a->lane = lane;
+  a->logged = 0;
+  a->active = 1;
+  a->at = 0;
+  for (int i = 0; i < log_count && !a->logged; ++i) {
+    a->logged = log[i].cmd.code == LE_CMD_SET_LANE_COUNT &&
+                log[i].cmd.lanei.channel == channel;
+  }
+}
+
+/* Fills active[0..n) for capture frames [f0, f0 + n), going on from where
+ * the previous call stopped. */
+static void le_pr_lane_activity_render(le_pr_lane_activity* a,
+                                       const le_pr_log_entry* log,
+                                       int log_count, int32_t channel,
+                                       uint64_t f0, int32_t n,
+                                       uint8_t* active) {
+  for (int32_t i = 0; i < n; ++i) {
+    while (a->at < log_count && log[a->at].frame <= f0 + (uint64_t)i) {
+      const le_log_command* cmd = &log[a->at++].cmd;
+      if (cmd->code == LE_CMD_SET_LANE_COUNT && cmd->lanei.channel == channel) {
+        a->active = a->lane < cmd->lanei.value;
+      }
+    }
+    active[i] = (uint8_t)(!a->logged || a->active);
+  }
+}
+
+/* One lane's stems while the render runs: its reconstruction (dry, and the
+ * heard image's sides when it has one), its wet pass, the two files it
+ * writes and a block of each signal. */
+typedef struct le_pr_channel_run {
+  int32_t channel;
+  int32_t lane;
+  le_pr_lane_activity activity;
+  le_pr_gate_runs* runs;
+  le_pr_track_build* dry;     /* NULL: the stem failed before a frame */
+  le_pr_track_build* heard_l; /* the heard image's sides (#1713), or NULL */
+  le_pr_track_build* heard_r;
+  le_pr_wet_run* wet;         /* NULL: no wet stem is written */
+  le_pr_stem_file dry_file;
+  le_pr_stem_file wet_file;
+  char dry_path[LE_PR_FULL_PATH_MAX]; /* where its stems go, opened or not */
+  char wet_path[LE_PR_FULL_PATH_MAX];
+  int ok;        /* both stems are on course */
+  int in_master; /* its routed contribution is summed into the master */
+  int summed;    /* and some of it already is */
+  float* dry_buf;
+  float* heard_l_buf;
+  float* heard_r_buf;
+  float* wet_buf;
+  float* routed_buf; /* stereo */
+  uint8_t* heard_buf;
+  uint8_t* active_buf;
+  void* block; /* the one allocation the buffers above point into */
+} le_pr_channel_run;
+
+/* Sets up lane [lane] of channel `channel`'s stems at capture frame 0. A
+ * stem that cannot start (its material does not read, a file does not open,
+ * a slot cannot be prepared) leaves the lane failed and out of the master;
+ * the other stem still renders where it can, as each did when they were
+ * rendered whole. */
+static void le_pr_channel_open(le_pr_channel_run* c, const char* dir,
+                               const char* dry_dir, const char* wet_dir,
+                               const le_pr_manifest* m,
+                               const le_pr_log_entry* log, int log_count,
+                               int32_t channel, int32_t lane) {
+  memset(c, 0, sizeof(*c));
+  c->channel = channel;
+  c->lane = lane;
+  le_pr_lane_activity_init(&c->activity, log, log_count, channel, lane);
+  snprintf(c->dry_path, sizeof(c->dry_path), "%s/track%d-lane%d.wav",
+           dry_dir, channel, lane);
+  snprintf(c->wet_path, sizeof(c->wet_path), "%s/track%d-lane%d.wav",
+           wet_dir, channel, lane);
+  c->runs = (le_pr_gate_runs*)calloc(1, sizeof(le_pr_gate_runs));
+  c->dry = c->runs == NULL
+               ? NULL
+               : le_pr_track_open(dir, m, log, log_count, channel, lane, 0);
+  if (c->dry == NULL) return;
+  /* The heard images' two sides (#1713) through the same reconstruction,
+   * and the frames where one sounds, for a lane that recorded any. */
+  const int has_heard = le_pr_channel_has_heard(m, channel, lane);
+  int heard_failed = 0;
+  if (has_heard) {
+    c->heard_l = le_pr_track_open(dir, m, log, log_count, channel, lane, 1);
+    c->heard_r =
+        c->heard_l == NULL
+            ? NULL
+            : le_pr_track_open(dir, m, log, log_count, channel, lane, 2);
+    heard_failed = c->heard_r == NULL;
+    if (heard_failed) {
+      le_pr_track_close(c->heard_l);
+      c->heard_l = NULL;
+    }
+  }
+  const size_t b = LE_PR_BLOCK_FRAMES;
+  const int heard = c->heard_l != NULL;
+  c->block = malloc(b * sizeof(float) * (heard ? 6 : 4) + (heard ? b : 0) + b);
+  if (c->block == NULL) {
+    le_pr_track_close(c->heard_r);
+    le_pr_track_close(c->heard_l);
+    le_pr_track_close(c->dry);
+    c->heard_r = c->heard_l = c->dry = NULL;
+    return;
+  }
+  float* p = (float*)c->block;
+  c->dry_buf = p;
+  c->wet_buf = p + b;
+  c->routed_buf = p + 2 * b;
+  if (heard) {
+    c->heard_l_buf = p + 4 * b;
+    c->heard_r_buf = p + 5 * b;
+    c->heard_buf = (uint8_t*)(p + 6 * b);
+  }
+  c->active_buf = (uint8_t*)(p + (heard ? 6 : 4) * b) + (heard ? b : 0);
+  int dry_ok = 0;
+  if (atomic_load_explicit(&g_pr_force_dry_write_failure_channel,
+                           memory_order_relaxed) != channel) {
+    dry_ok = le_pr_stem_open(&c->dry_file, c->dry_path, m->sample_rate, 1);
+  }
+  /* else test-only: a dry-write I/O failure on this one channel without
+   * touching the filesystem (le_perf_render_force_dry_write_failure_for_test,
+   * above). */
+  if (!heard_failed) c->wet = le_pr_wet_open(m, log, log_count, channel, lane);
+  if (c->wet != NULL) {
+    if (!le_pr_stem_open(&c->wet_file, c->wet_path, m->sample_rate, 1)) {
+      le_pr_wet_close(c->wet);
+      c->wet = NULL;
+    }
+  }
+  /* Either stem failing (dry OR wet) leaves this channel out of the master
+   * sum with no separate flag on master.wav itself — the signal is `ok`,
+   * surfaced via this channel's own `le_perf_render_track_status.succeeded
+   * == 0`, the same partial-success contract every other per-stem failure in
+   * this file uses; a consumer checking every track's status before trusting
+   * master.wav as complete already has everything it needs. A dry failure
+   * excludes the channel's wet content from master.wav too, even though the
+   * wet stem itself is written, so master.wav never holds audio for a
+   * channel the render reports as failed. */
+  c->ok = dry_ok && c->wet != NULL;
+  c->in_master = c->ok;
+}
+
+/* Frees what le_pr_channel_open set up; stems still open are dropped. */
+static void le_pr_channel_close(le_pr_channel_run* c) {
+  le_pr_stem_drop(&c->dry_file);
+  le_pr_stem_drop(&c->wet_file);
+  le_pr_wet_close(c->wet);
+  le_pr_track_close(c->heard_r);
+  le_pr_track_close(c->heard_l);
+  le_pr_track_close(c->dry);
+  free(c->block);
+  free(c->runs);
+  memset(c, 0, sizeof(*c));
+}
+
+/* Renders and writes capture frames [f0, f0 + n) of lane [c]'s stems. A
+ * stem that fails here (a write, or a slot a logged type change could not
+ * prepare) is dropped and fails the lane. */
+static void le_pr_channel_render(le_pr_channel_run* c, const le_pr_manifest* m,
+                                 const le_pr_log_entry* log, int log_count,
+                                 uint64_t f0, int32_t n) {
+  if (!c->dry_file.open && c->wet == NULL) return; /* nothing left to write */
+  le_pr_track_render(c->dry, f0, n, c->dry_buf, c->runs, NULL);
+  /* A lane the track does not mix sounds nothing (#1824). */
+  le_pr_lane_activity_render(&c->activity, log, log_count, c->channel, f0, n,
+                             c->active_buf);
+  for (int32_t i = 0; i < n; ++i) {
+    if (!c->active_buf[i]) c->dry_buf[i] = 0.0f;
+  }
+  if (c->dry_file.open &&
+      !le_wav_append(&c->dry_file.w, c->dry_buf, (uint64_t)n)) {
+    le_pr_stem_drop(&c->dry_file);
+    c->ok = 0;
+  }
+  if (c->wet == NULL) return;
+  if (c->heard_l != NULL) {
+    le_pr_track_render(c->heard_l, f0, n, c->heard_l_buf, NULL, c->heard_buf);
+    le_pr_track_render(c->heard_r, f0, n, c->heard_r_buf, NULL, NULL);
+  }
+  le_pr_wet_render(c->wet, m, log, log_count, c->channel, f0, n, c->dry_buf,
+                   c->heard_l_buf, c->heard_r_buf, c->heard_buf, c->runs,
+                   c->active_buf, c->wet_buf, c->routed_buf);
+  if (c->wet->prepare_failed ||
+      !le_wav_append(&c->wet_file.w, c->wet_buf, (uint64_t)n)) {
+    le_pr_stem_drop(&c->wet_file);
+    le_pr_wet_close(c->wet);
+    c->wet = NULL;
+    c->ok = 0;
+  }
+}
+
+/* Seals and publishes lane [c]'s stems; one that does not is dropped and
+ * fails the lane. */
+static void le_pr_channel_seal(le_pr_channel_run* c) {
+  if (c->dry_file.open && !le_pr_stem_seal(&c->dry_file)) c->ok = 0;
+  if (c->wet_file.open && !le_pr_stem_seal(&c->wet_file)) c->ok = 0;
+  le_pr_stem_settle(&c->dry_file, c->dry_path);
+  le_pr_stem_settle(&c->wet_file, c->wet_path);
+}
+
+/* Writes `stems/stems.json` (#1824, docs/formats/performance-manifest-
+ * format.md): every lane stem this render published, by track and lane, so
+ * a reader lists them rather than guessing which lanes a track had. Written
+ * under `.part`, synced and published like a stem. Returns 0 when it could
+ * not be written: then there is none, a reader finds no stems, and the
+ * render reports every track failed. */
+static int le_pr_write_stem_index(const char* capture_dir,
+                                  const le_pr_channel_run* runs, int count) {
+  char path[LE_PR_FULL_PATH_MAX];
+  char part[LE_PR_FULL_PATH_MAX + 8];
+  snprintf(path, sizeof(path), "%s/stems/stems.json", capture_dir);
+  snprintf(part, sizeof(part), "%s.part", path);
+  FILE* f = fopen(part, "wb");
+  if (f == NULL) {
+    remove(path);
+    return 0;
+  }
+  int ok = fprintf(f, "{\"version\":1,\"lanes\":[") > 0;
+  int first = 1;
+  for (int i = 0; i < count && ok; ++i) {
+    const le_pr_channel_run* c = &runs[i];
+    if (!c->dry_file.published && !c->wet_file.published) continue;
+    ok = fprintf(f, "%s{\"channel\":%d,\"lane\":%d", first ? "" : ",",
+                 c->channel, c->lane) > 0;
+    if (ok && c->dry_file.published) {
+      ok = fprintf(f, ",\"dry\":\"stems/dry/track%d-lane%d.wav\"",
+                   c->channel, c->lane) > 0;
+    }
+    if (ok && c->wet_file.published) {
+      ok = fprintf(f, ",\"wet\":\"stems/wet/track%d-lane%d.wav\"",
+                   c->channel, c->lane) > 0;
+    }
+    ok = ok && fputc('}', f) != EOF;
+    first = 0;
+  }
+  ok = ok && fprintf(f, "]}\n") > 0 && fflush(f) == 0;
+#if defined(_WIN32)
+  ok = ok && _commit(_fileno(f)) == 0;
+#else
+  ok = ok && fsync(fileno(f)) == 0;
+#endif
+  ok = fclose(f) == 0 && ok;
+  if (!ok || le_wav_publish(part, path) == 0) {
+    remove(part);
+    remove(path);
+    return 0;
+  }
+  return 1;
+}
+
 static void le_pr_worker_main(void* arg) {
   le_perf_render* r = (le_perf_render*)arg;
   le_platform_name_thread("segno-render");
@@ -2245,7 +3515,7 @@ static void le_pr_worker_main(void* arg) {
   le_json_value* root = NULL;
   le_json_arena arena = {0};
   le_pr_manifest manifest = {0};
-  const int32_t status =
+  int32_t status =
       le_pr_load_manifest(r->capture_dir, &text, &arena, &root, &manifest);
   const int loaded = status == LE_OK;
 
@@ -2258,19 +3528,34 @@ static void le_pr_worker_main(void* arg) {
   int32_t channels[LE_MAX_TRACKS];
   const int channel_count =
       loaded ? le_pr_collect_channels(&manifest, log, log_count, channels, LE_MAX_TRACKS) : 0;
+  /* Every lane of every channel (#1824), lane 0 first. */
+  int32_t lane_counts[LE_MAX_TRACKS];
+  int run_count = 0;
+  for (int i = 0; i < channel_count; ++i) {
+    lane_counts[i] = le_pr_channel_lanes(&manifest, channels[i]);
+    run_count += lane_counts[i];
+  }
 
-  /* Master accumulator: the sum of every channel's wet contribution, before
-   * the capture bus's output stages run over it once, after every channel
-   * has been processed (le_pr_render_master, below) — mirrors
-   * mix_tracks_frame's additive per-lane sum feeding output_bus_frame. NULL
-   * (rather than a zero-length calloc) when there is nothing to render, so
-   * the write-out step below can use its presence as the gate. */
-  float* master_accum =
-      (loaded && channel_count > 0)
-          ? (float*)calloc((size_t)manifest.capture_frames * 2, sizeof(float))
+  /* Every lane renders together, a block at a time (#1747): its stems are
+   * written as they go and its contribution is summed into the master block
+   * before the capture bus's output stages run over it — mirrors
+   * mix_tracks_frame's additive per-lane sum feeding output_bus_frame. */
+  le_pr_channel_run* runs =
+      run_count > 0
+          ? (le_pr_channel_run*)calloc((size_t)run_count,
+                                       sizeof(le_pr_channel_run))
+          : NULL;
+  float* master_buf =
+      runs != NULL
+          ? (float*)malloc((size_t)LE_PR_BLOCK_FRAMES * 2 * sizeof(float))
           : NULL;
 
-  if (loaded && channel_count > 0) {
+  /* A render that cannot allocate its state is a failed render, not an
+   * empty one: no track would say so. */
+  if (run_count > 0 && (runs == NULL || master_buf == NULL)) {
+    status = LE_ERR_DEVICE;
+  }
+  if (runs != NULL && master_buf != NULL) {
     char dry_dir[LE_PR_FULL_PATH_MAX];
     snprintf(dry_dir, sizeof(dry_dir), "%s/stems/dry", r->capture_dir);
     le_pr_mkdir_recursive(dry_dir);
@@ -2278,101 +3563,141 @@ static void le_pr_worker_main(void* arg) {
     snprintf(wet_dir, sizeof(wet_dir), "%s/stems/wet", r->capture_dir);
     le_pr_mkdir_recursive(wet_dir);
 
-    for (int i = 0; i < channel_count; ++i) {
-      if (!atomic_load_explicit(&r->running, memory_order_acquire)) break;
-
-      const int32_t channel = channels[i];
-      int32_t load_failed = 0;
-      le_pr_gate_runs* runs = (le_pr_gate_runs*)calloc(1, sizeof(le_pr_gate_runs));
-      float* stem = runs == NULL ? NULL
-                                 : le_pr_render_track(r->capture_dir, &manifest,
-                                                      log, log_count, channel,
-                                                      &load_failed, runs);
-      int ok = 0;
-      if (stem != NULL) {
-        char dry_path[LE_PR_FULL_PATH_MAX];
-        snprintf(dry_path, sizeof(dry_path), "%s/track%d.wav", dry_dir, channel);
-        if (atomic_load_explicit(&g_pr_force_dry_write_failure_channel,
-                                 memory_order_relaxed) == channel) {
-          ok = 0; /* test-only: simulate a dry-write I/O failure on this one
-                   * channel without touching the filesystem
-                   * (le_perf_render_force_dry_write_failure_for_test,
-                   * above). */
-        } else {
-          ok = le_pr_write_wav_mono(dry_path, stem,
-                                    (int32_t)manifest.capture_frames,
-                                    manifest.sample_rate);
-        }
-
-        int32_t wet_failed = 0;
-        float* routed = calloc((size_t)manifest.capture_frames * 2, sizeof(float));
-        float* wet = routed ? le_pr_render_wet_track(&manifest, log, log_count, channel,
-                                            stem, runs, &wet_failed, routed) : NULL;
-        if (wet != NULL) {
-          char wet_path[LE_PR_FULL_PATH_MAX];
-          snprintf(wet_path, sizeof(wet_path), "%s/track%d.wav", wet_dir, channel);
-          const int wet_ok = le_pr_write_wav_mono(
-              wet_path, wet, (int32_t)manifest.capture_frames,
-              manifest.sample_rate);
-          ok = ok && wet_ok;
-          /* Either write failing (dry OR wet) leaves this channel out of the
-           * master sum below with no separate flag on master.wav itself —
-           * the signal is `ok` above, surfaced via this channel's own
-           * `le_perf_render_track_status.succeeded == 0`, the same partial-
-           * success contract every other per-stem failure in this file
-           * already uses; a consumer checking every track's status before
-           * trusting master.wav as complete already has everything it needs.
-           * Gating on `ok` (not `wet_ok` alone) matters because a dry-write
-           * failure must exclude this channel's wet content from master.wav
-           * too, even though the wet write itself succeeded — otherwise
-           * master.wav would contain audio for a channel the render already
-           * reports as failed. */
-          if (ok && master_accum != NULL) {
-            for (uint64_t f = 0; f < manifest.capture_frames; ++f) {
-              master_accum[2*f] += routed[2*f];
-              master_accum[2*f+1] += routed[2*f+1];
-            }
-          }
-          free(wet);
-        } else {
-          ok = 0;
-        }
-        free(routed);
-        free(stem);
+    for (int i = 0, k = 0; i < channel_count; ++i) {
+      for (int32_t l = 0; l < lane_counts[i]; ++l, ++k) {
+        le_pr_channel_open(&runs[k], r->capture_dir, dry_dir, wet_dir,
+                           &manifest, log, log_count, channels[i], l);
       }
-      free(runs);
-
-      const int index = atomic_load_explicit(&r->track_count, memory_order_relaxed);
-      atomic_store_explicit(&r->results[index].channel, channel,
-                            memory_order_relaxed);
-      atomic_store_explicit(&r->results[index].succeeded, ok ? 1 : 0,
-                            memory_order_release);
-      atomic_store_explicit(&r->track_count, index + 1, memory_order_release);
-      atomic_store_explicit(&r->progress_pct, (int)(((i + 1) * 100) / channel_count),
-                            memory_order_relaxed);
     }
 
-    if (master_accum != NULL &&
-        atomic_load_explicit(&r->running, memory_order_acquire)) {
-      const int master_ok = le_pr_render_master(&manifest, log, log_count, master_accum);
-      char master_path[LE_PR_FULL_PATH_MAX];
-      snprintf(master_path, sizeof(master_path), "%s/master.wav", wet_dir);
-      const uint32_t pair_mask = (manifest.capture_mask >> (2 * manifest.arm_capture_bus)) & 3u;
-      const int channels = pair_mask == 3 ? 2 : 1;
-      if (channels == 1) {
-        const int side = pair_mask == 2 ? 1 : 0;
-        for (uint64_t f = 0; f < manifest.capture_frames; ++f)
-          master_accum[f] = master_accum[2*f+side];
+    const uint64_t total = manifest.capture_frames;
+    const uint32_t pair_mask =
+        (manifest.capture_mask >> (2 * manifest.arm_capture_bus)) & 3u;
+    const int master_channels = pair_mask == 3 ? 2 : 1;
+    const int side = pair_mask == 2 ? 1 : 0;
+    /* A master past the 32-bit WAV sizes (a stereo master over 3 h 6 min at
+     * 48 kHz) cannot be sealed: it is not rendered, rather than rendered for
+     * hours and thrown away, and the stems stand as they are. A take the
+     * drain stopped at its longest length always fits (le_wav_max_frames is
+     * tighter), and so does one an earlier build stopped at the RIFF limit,
+     * whose master a re-render must not lose. */
+    const int master_fits = total <= le_wav_sealable_frames(master_channels);
+    le_pr_master_run* master =
+        le_pr_master_open(&manifest, log, log_count);
+    le_pr_stem_file master_file = {0};
+    char master_path[LE_PR_FULL_PATH_MAX];
+    snprintf(master_path, sizeof(master_path), "%s/master.wav", wet_dir);
+    /* An output chain that could not be set up fails the master from the
+     * start: it is not rendered only to be thrown away. */
+    if (master != NULL && master->ok && master_fits) {
+      le_pr_stem_open(&master_file, master_path, manifest.sample_rate,
+                      master_channels);
+    }
+
+    int cancelled = 0;
+    for (uint64_t f0 = 0; f0 < total;) {
+      if (!atomic_load_explicit(&r->running, memory_order_acquire)) {
+        cancelled = 1;
+        break;
       }
-      if (master_ok) le_pr_write_wav(master_path, master_accum,
-                           (int32_t)manifest.capture_frames,
-                           manifest.sample_rate, (uint16_t)channels);
-      else for (int i = 0; i < channel_count; ++i)
-        atomic_store_explicit(&r->results[i].succeeded, 0, memory_order_release);
+      const int32_t n = total - f0 < LE_PR_BLOCK_FRAMES
+                            ? (int32_t)(total - f0)
+                            : LE_PR_BLOCK_FRAMES;
+      memset(master_buf, 0, (size_t)n * 2 * sizeof(float));
+      for (int i = 0; i < run_count; ++i) {
+        le_pr_channel_run* c = &runs[i];
+        le_pr_channel_render(c, &manifest, log, log_count, f0, n);
+        if (c->in_master && !c->ok) {
+          /* A channel that fails after some of its audio is in the master
+           * (a write, or a slot a logged type change could not prepare)
+           * leaves no master: it cannot be told apart from one that holds
+           * a failed channel. One that fails before any is summed is just
+           * left out, as when the stems were rendered whole. */
+          c->in_master = 0;
+          if (c->summed) le_pr_stem_drop(&master_file);
+        }
+        if (!c->in_master) continue;
+        c->summed = 1;
+        for (int32_t j = 0; j < n; ++j) {
+          master_buf[2*j] += c->routed_buf[2*j];
+          master_buf[2*j+1] += c->routed_buf[2*j+1];
+        }
+      }
+      if (master_file.open) {
+        le_pr_master_render(master, &manifest, log, log_count, f0, n,
+                            master_buf);
+        if (!master->ok) le_pr_stem_drop(&master_file); /* see the seal */
+      }
+      if (master_file.open) {
+        if (master_channels == 1) {
+          for (int32_t j = 0; j < n; ++j) master_buf[j] = master_buf[2*j+side];
+        }
+        if (!le_wav_append(&master_file.w, master_buf, (uint64_t)n)) {
+          le_pr_stem_drop(&master_file);
+        }
+      }
+      f0 += (uint64_t)n;
+      atomic_store_explicit(&r->progress_pct, (int)(f0 * 100 / total),
+                            memory_order_relaxed);
+      /* Test-only: stop between blocks while a test holds the render. */
+      while (atomic_load_explicit(&g_pr_hold_for_test, memory_order_acquire) &&
+             atomic_load_explicit(&r->running, memory_order_acquire)) {
+        atomic_store_explicit(&g_pr_held_for_test, 1, memory_order_release);
+        le_pr_sleep_ms(1);
+      }
+    }
+
+    if (!cancelled) {
+      for (int i = 0; i < run_count; ++i) {
+        le_pr_channel_seal(&runs[i]);
+        if (runs[i].summed && !runs[i].ok) le_pr_stem_drop(&master_file);
+      }
+      const int indexed =
+          le_pr_write_stem_index(r->capture_dir, runs, run_count);
+      /* A track succeeds when every one of its lanes does, and the index
+       * names them. */
+      for (int i = 0, k = 0; i < channel_count; ++i) {
+        int ok = indexed;
+        for (int32_t l = 0; l < lane_counts[i]; ++l, ++k) ok &= runs[k].ok;
+        const int index =
+            atomic_load_explicit(&r->track_count, memory_order_relaxed);
+        atomic_store_explicit(&r->results[index].channel, channels[i],
+                              memory_order_relaxed);
+        atomic_store_explicit(&r->results[index].succeeded, ok ? 1 : 0,
+                              memory_order_release);
+        atomic_store_explicit(&r->track_count, index + 1,
+                              memory_order_release);
+      }
+      /* The output stages that could not be replayed (a chain that does not
+       * read, a slot that could not be prepared) fail the render, as they
+       * did: no master, and every track reported failed. A master that only
+       * could not be written is left out and the stems stand. */
+      const int master_rendered = master != NULL && master->ok;
+      if (master_file.open) le_pr_stem_seal(&master_file);
+      le_pr_stem_settle(&master_file, master_path);
+      if (!master_rendered) {
+        for (int i = 0; i < channel_count; ++i)
+          atomic_store_explicit(&r->results[i].succeeded, 0,
+                                memory_order_release);
+      }
+    }
+    /* Cancelled, or the master failed: nothing partial stays on disk. */
+    le_pr_stem_drop(&master_file);
+    le_pr_master_close(master);
+    for (int i = 0; i < run_count; ++i) le_pr_channel_close(&runs[i]);
+  } else if (loaded && run_count == 0) {
+    /* A take with no looper track has no stems, and its index says so: a
+     * reader tells it from a take that was never rendered. */
+    char stems_dir[LE_PR_FULL_PATH_MAX];
+    snprintf(stems_dir, sizeof(stems_dir), "%s/stems", r->capture_dir);
+    le_pr_mkdir_recursive(stems_dir);
+    if (!le_pr_write_stem_index(r->capture_dir, NULL, 0)) {
+      status = LE_ERR_DEVICE;
     }
   }
 
-  free(master_accum);
+  free(master_buf);
+  free(runs);
   free(log);
   free(text);
   free(arena.nodes);
@@ -2384,22 +3709,23 @@ static void le_pr_worker_main(void* arg) {
   atomic_store_explicit(&r->done, 1, memory_order_release);
 }
 
+
 /* ---- public ABI ---- */
 
 int32_t le_perf_render_begin(le_engine* engine, const char* capture_dir) {
   if (engine == NULL || capture_dir == NULL || capture_dir[0] == '\0') {
     return LE_ERR_INVALID;
   }
-  if (engine->perf.render != NULL &&
-      !atomic_load_explicit(&engine->perf.render->done, memory_order_acquire)) {
+  if (engine->perf_render != NULL &&
+      !atomic_load_explicit(&engine->perf_render->done, memory_order_acquire)) {
     return LE_ERR_ALREADY_RUNNING;
   }
-  if (engine->perf.render != NULL) {
+  if (engine->perf_render != NULL) {
     /* A finished-but-unreaped session from a prior render: join and free it
      * before starting a new one (mirrors le_perf_drain's reaping). */
-    le_pr_thread_join(engine->perf.render->thread);
-    free(engine->perf.render);
-    engine->perf.render = NULL;
+    le_pr_thread_join(engine->perf_render->thread);
+    free(engine->perf_render);
+    engine->perf_render = NULL;
   }
 
   le_perf_render* r = (le_perf_render*)calloc(1, sizeof(le_perf_render));
@@ -2416,14 +3742,14 @@ int32_t le_perf_render_begin(le_engine* engine, const char* capture_dir) {
     return LE_ERR_DEVICE;
   }
 
-  engine->perf.render = r;
+  engine->perf_render = r;
   return LE_OK;
 }
 
 int32_t le_perf_render_poll(le_engine* engine, int32_t* done,
                             int32_t* progress_pct, int32_t* track_count) {
   if (engine == NULL) return LE_ERR_INVALID;
-  le_perf_render* r = engine->perf.render;
+  le_perf_render* r = engine->perf_render;
   if (r == NULL) {
     if (done != NULL) *done = 1;
     if (progress_pct != NULL) *progress_pct = 100;
@@ -2445,7 +3771,7 @@ int32_t le_perf_render_poll(le_engine* engine, int32_t* done,
 int32_t le_perf_render_track_status(le_engine* engine, int32_t index,
                                     int32_t* channel, int32_t* succeeded) {
   if (engine == NULL || index < 0) return LE_ERR_INVALID;
-  le_perf_render* r = engine->perf.render;
+  le_perf_render* r = engine->perf_render;
   if (r == NULL || index >= atomic_load_explicit(&r->track_count,
                                                  memory_order_acquire)) {
     return LE_ERR_INVALID;
@@ -2463,11 +3789,11 @@ int32_t le_perf_render_track_status(le_engine* engine, int32_t index,
 
 int32_t le_perf_render_cancel(le_engine* engine) {
   if (engine == NULL) return LE_ERR_INVALID;
-  le_perf_render* r = engine->perf.render;
+  le_perf_render* r = engine->perf_render;
   if (r == NULL) return LE_OK;
   atomic_store_explicit(&r->running, 0, memory_order_release);
   le_pr_thread_join(r->thread);
   free(r);
-  engine->perf.render = NULL;
+  engine->perf_render = NULL;
   return LE_OK;
 }

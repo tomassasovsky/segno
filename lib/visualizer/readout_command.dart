@@ -10,7 +10,7 @@ import 'package:looper_repository/looper_repository.dart' show RecordTiming;
 /// command that arrives garbled, or that this build does not know, is
 /// dropped ([fromMap] returns null).
 sealed class ReadoutCommand extends Equatable {
-  const ReadoutCommand();
+  const new();
 
   /// The command [map] describes, or null when it describes none.
   static ReadoutCommand? fromMap(Object? map) {
@@ -52,7 +52,7 @@ sealed class ReadoutCommand extends Equatable {
 /// held button never works from the readout's own copy of the tempo.
 final class TempoNudge extends ReadoutCommand {
   /// Creates a [TempoNudge].
-  const TempoNudge(this.delta);
+  const new(this.delta);
 
   /// The wire name.
   static const kind = 'tempo.nudge';
@@ -70,7 +70,7 @@ final class TempoNudge extends ReadoutCommand {
 /// Sets the tempo to exactly [bpm], from the readout's keypad.
 final class TempoSet extends ReadoutCommand {
   /// Creates a [TempoSet].
-  const TempoSet(this.bpm);
+  const new(this.bpm);
 
   /// The wire name.
   static const kind = 'tempo.set';
@@ -88,7 +88,7 @@ final class TempoSet extends ReadoutCommand {
 /// One tap of tap tempo.
 final class TempoTap extends ReadoutCommand {
   /// Creates a [TempoTap].
-  const TempoTap();
+  const new();
 
   /// The wire name.
   static const kind = 'tempo.tap';
@@ -104,7 +104,7 @@ final class TempoTap extends ReadoutCommand {
 /// engine's tempo lock decides; a refusal comes back as a [ReadoutRefusal].
 final class TempoClear extends ReadoutCommand {
   /// Creates a [TempoClear].
-  const TempoClear();
+  const new();
 
   /// The wire name.
   static const kind = 'tempo.clear';
@@ -119,7 +119,7 @@ final class TempoClear extends ReadoutCommand {
 /// Sets the time signature to [num]/[den].
 final class SignatureSet extends ReadoutCommand {
   /// Creates a [SignatureSet].
-  const SignatureSet(this.num, this.den);
+  const new(this.num, this.den);
 
   /// The wire name.
   static const kind = 'signature.set';
@@ -140,7 +140,7 @@ final class SignatureSet extends ReadoutCommand {
 /// Sets the default length of the next take to [bars]; `0` is Auto.
 final class LengthSet extends ReadoutCommand {
   /// Creates a [LengthSet].
-  const LengthSet(this.bars);
+  const new(this.bars);
 
   /// The wire name.
   static const kind = 'length.set';
@@ -158,7 +158,7 @@ final class LengthSet extends ReadoutCommand {
 /// Sets the default record timing to [timing].
 final class TimingSet extends ReadoutCommand {
   /// Creates a [TimingSet].
-  const TimingSet(this.timing);
+  const new(this.timing);
 
   /// The wire name.
   static const kind = 'timing.set';

@@ -3,7 +3,7 @@
 /// helper refused before doing anything, so the console is still running.
 class UpdateInstallingException implements Exception {
   /// Creates an [UpdateInstallingException] carrying the helper's [detail].
-  const UpdateInstallingException(this.detail);
+  const new(this.detail);
 
   /// What the helper logged, for diagnostics.
   final String detail;

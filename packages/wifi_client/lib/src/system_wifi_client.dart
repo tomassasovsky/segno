@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -11,7 +12,7 @@ import 'package:wifi_client/src/wifi_models.dart';
 /// Production [WifiClient]: shells out to `/usr/bin/segno-wifi-ctl`.
 class SystemWifiClient implements WifiClient {
   /// Creates a [SystemWifiClient].
-  const SystemWifiClient({
+  const new({
     this.helperPath = '/usr/bin/segno-wifi-ctl',
     this.holdPath = '/run/segno/wifi-hold',
   });
@@ -45,6 +46,46 @@ class SystemWifiClient implements WifiClient {
       for (final item in json)
         if (item is Map<String, dynamic>) WifiNetwork.fromJson(item),
     ];
+  }
+
+  /// `segno-wifi-ctl monitor`, started once with posix_spawn when the stream
+  /// is listened to and killed, with its `nmcli monitor`, when it is
+  /// cancelled. Each line it prints is one change.
+  @override
+  Stream<void> changes() {
+    if (!isSupported) return const Stream.empty();
+    SpawnedProcess? process;
+    var cancelled = false;
+    late final StreamController<void> controller;
+    Future<void> run() async {
+      try {
+        final started = await startProcess(helperPath, const ['monitor']);
+        if (cancelled) {
+          started.kill();
+          return;
+        }
+        process = started;
+        started.stderr.drain<void>().ignore();
+        final lines = started.stdout
+            .transform(utf8.decoder)
+            .transform(const LineSplitter());
+        await for (final line in lines) {
+          if (line.trim().isNotEmpty) controller.add(null);
+        }
+      } on Object catch (error, stack) {
+        if (!cancelled) controller.addError(error, stack);
+      }
+      if (!controller.isClosed) unawaited(controller.close());
+    }
+
+    controller = StreamController<void>(
+      onListen: () => unawaited(run()),
+      onCancel: () {
+        cancelled = true;
+        process?.kill();
+      },
+    );
+    return controller.stream;
   }
 
   /// The key goes to the helper on stdin, like [changePassword]'s.
@@ -115,7 +156,8 @@ class SystemWifiClient implements WifiClient {
   /// returns its stdout.
   ///
   /// A non-zero exit throws a [WifiHelperException] with the helper's stderr
-  /// and, for a failed join, the network it brought back. Never the
+  /// and, for a failed join, why it failed and the network it brought back.
+  /// Never the
   /// arguments: [secret], when given, is scrubbed from the text as well, so no
   /// key can reach an error message or a log.
   Future<String> _run(
@@ -129,22 +171,32 @@ class SystemWifiClient implements WifiClient {
     var err = (result.stderr as String).trim();
     if (err.isEmpty) err = 'segno-wifi-ctl failed (${result.exitCode})';
     if (secret.isNotEmpty) err = err.replaceAll(secret, '***');
-    throw WifiHelperException(err, restored: _restored(stdout));
+    final reply = _reply(stdout);
+    throw WifiHelperException(
+      err,
+      restored: reply['restored'] as String?,
+      join: args.first == 'connect'
+          ? WifiJoinError.fromCode(reply['error'] as String?)
+          : null,
+    );
   }
 
-  /// The network a failed join printed as `{"restored":<ssid>}`, if any.
-  static String? _restored(String stdout) {
-    for (final line in const LineSplitter().convert(stdout)) {
-      try {
-        final json = jsonDecode(line);
-        if (json is Map<String, dynamic> && json['restored'] is String) {
-          return json['restored'] as String;
-        }
-      } on FormatException {
-        continue;
-      }
+  /// Every string field a failed call printed, one JSON object per line: a
+  /// join's `{"error":<code>}` and `{"restored":<ssid>}`.
+  static Map<String, Object?> _reply(String stdout) => {
+    for (final line in const LineSplitter().convert(stdout))
+      if (_object(line) case final json?)
+        for (final MapEntry(:key, :value) in json.entries)
+          if (value is String) key: value,
+  };
+
+  static Map<String, dynamic>? _object(String line) {
+    try {
+      final json = jsonDecode(line);
+      return json is Map<String, dynamic> ? json : null;
+    } on FormatException {
+      return null;
     }
-    return null;
   }
 }
 

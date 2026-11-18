@@ -74,7 +74,7 @@ class _Store extends FakeKeyValueStore {
 }
 
 class _Midi extends MidiDeviceRepository {
-  _Midi(SettingsRepository settings)
+  new(SettingsRepository settings)
     : super(captures: null, settings: settings, pollInterval: Duration.zero);
   final inputs = StreamController<MidiInputMessage>.broadcast();
   MidiInputSession get session => const MidiInputSession('timing-test', 1);
@@ -100,7 +100,7 @@ class _Midi extends MidiDeviceRepository {
 }
 
 class _Rig {
-  _Rig(this.clock, this.engine, this.looper) {
+  new(this.clock, this.engine, this.looper) {
     store.values['pedal.setup'] = const PedalSetup()
         .copyWith(
           external: ExternalPedalSetup(
@@ -185,9 +185,7 @@ class _Rig {
   late final PerformanceRepository performance;
   late final ControlCubit cubit;
   int get live => owner.recordTimingSnapshot!
-      .effectiveTiming(
-        const RecordTimingAddress.track(0),
-      )
+      .effectiveTiming(const RecordTimingAddress.track(0))
       .code;
   int? get durable => owner.durableRecordTimingSnapshot.trackOverrides[0]?.code;
   void pump() {
@@ -325,151 +323,129 @@ void main() {
       });
     });
     for (final external in [false, true]) {
-      check(
-        '${external ? 'External' : 'MIDI'} holds live and saves '
-        'authored Released',
-        (r) {
-          r.bind();
-          if (external) {
-            r.external(high: true);
-          } else {
-            r.note(127);
-          }
-          expect(r.live, external ? 6 : 4);
-          expect(r.durable, external ? 1 : 0);
-          expect(r.store.values['track_record_timing.0'], external ? 1 : 0);
-          if (external) {
-            r.external(high: false);
-          } else {
-            r.note(0);
-          }
-          expect(r.live, external ? 1 : 0);
-        },
-      );
-      check(
-        '${external ? 'External' : 'MIDI'} retiring flush rejects owed '
-        'cleanup until explicit retry succeeds',
-        (r) {
-          r.bind();
-          if (external) {
-            r.external(high: true);
-          } else {
-            r.note(127);
-          }
-          r.engine.refuse = true;
-          Object? failure;
-          var finished = false;
-          unawaited(
-            r.cubit
-                .flushMidiConfiguration(retireControls: true)
-                .then(
-                  (_) => finished = true,
-                  onError: (Object error) => failure = error,
-                ),
-          );
-          r.pump();
-          expect(finished, isFalse);
-          expect(failure, isNotNull);
-          expect(r.live, external ? 6 : 4);
-          expect(r.durable, external ? 1 : 0);
-          expect(r.engine.stopCalls, 0);
-          r.engine.refuse = false;
-          unawaited(
-            r.cubit
-                .flushMidiConfiguration(retireControls: true)
-                .then(
-                  (_) => finished = true,
-                ),
-          );
-          r.pump();
-          expect(finished, isTrue);
-          expect(r.live, external ? 1 : 0);
-          expect(r.engine.stopCalls, 0);
-        },
-      );
-      check(
-        '${external ? 'External' : 'MIDI'} retains owed release while '
-        'owner is unavailable for scalar recovery',
-        (r) {
-          r.bind();
-          if (external) {
-            r.external(high: true);
-          } else {
-            r.note(127);
-          }
-          r.store.fail = true;
-          unawaited(
-            r.owner.setTrackTiming(channel: 7, timing: RecordTiming.bar),
-          );
-          r.pump();
-          expect(r.owner.recordTimingSnapshot, isNull);
-          if (external) {
-            r.external(high: false);
-          } else {
-            r.retire();
-          }
-          expect(
-            r.looper.trackRecordTimingOverrides[0]!.code,
-            external ? 6 : 4,
-          );
-          expect(r.durable, external ? 1 : 0);
-          r.store.fail = false;
-          unawaited(r.owner.owner.recover());
-          r.pump();
-          unawaited(r.cubit.flushMidiConfiguration(retireControls: true));
-          r.pump();
-          expect(r.live, external ? 1 : 0);
-          expect(r.store.values['track_record_timing.0'], external ? 1 : 0);
-        },
-      );
-      check(
-        '${external ? 'External' : 'MIDI'} Use default defeats old '
-        'release and preserves inheritance',
-        (r) {
-          r.bind();
-          if (external) {
-            r.external(high: true);
-          } else {
-            r.note(127);
-          }
-          r.ordinary(value: null);
-          unawaited(r.owner.setTiming(RecordTiming.bar));
-          r.pump();
-          if (external) {
-            r.external(high: false);
-          } else {
-            r.note(0);
-          }
+      check('${external ? 'External' : 'MIDI'} holds live and saves '
+          'authored Released', (r) {
+        r.bind();
+        if (external) {
+          r.external(high: true);
+        } else {
+          r.note(127);
+        }
+        expect(r.live, external ? 6 : 4);
+        expect(r.durable, external ? 1 : 0);
+        expect(r.store.values['track_record_timing.0'], external ? 1 : 0);
+        if (external) {
+          r.external(high: false);
+        } else {
+          r.note(0);
+        }
+        expect(r.live, external ? 1 : 0);
+      });
+      check('${external ? 'External' : 'MIDI'} retiring flush rejects owed '
+          'cleanup until explicit retry succeeds', (r) {
+        r.bind();
+        if (external) {
+          r.external(high: true);
+        } else {
+          r.note(127);
+        }
+        r.engine.refuse = true;
+        Object? failure;
+        var finished = false;
+        unawaited(
+          r.cubit
+              .flushMidiConfiguration(retireControls: true)
+              .then(
+                (_) => finished = true,
+                onError: (Object error) => failure = error,
+              ),
+        );
+        r.pump();
+        expect(finished, isFalse);
+        expect(failure, isNotNull);
+        expect(r.live, external ? 6 : 4);
+        expect(r.durable, external ? 1 : 0);
+        expect(r.engine.stopCalls, 0);
+        r.engine.refuse = false;
+        unawaited(
+          r.cubit
+              .flushMidiConfiguration(retireControls: true)
+              .then((_) => finished = true),
+        );
+        r.pump();
+        expect(finished, isTrue);
+        expect(r.live, external ? 1 : 0);
+        expect(r.engine.stopCalls, 0);
+      });
+      check('${external ? 'External' : 'MIDI'} retains owed release while '
+          'owner is unavailable for scalar recovery', (r) {
+        r.bind();
+        if (external) {
+          r.external(high: true);
+        } else {
+          r.note(127);
+        }
+        r.store.fail = true;
+        unawaited(r.owner.setTrackTiming(channel: 7, timing: RecordTiming.bar));
+        r.pump();
+        expect(r.owner.recordTimingSnapshot, isNull);
+        if (external) {
+          r.external(high: false);
+        } else {
           r.retire();
-          expect(r.live, 2);
-          expect(r.owner.recordTimingSnapshot!.trackOverrides, isEmpty);
-          expect(r.store.values.containsKey('track_record_timing.0'), isFalse);
-        },
-      );
-      check(
-        '${external ? 'External' : 'MIDI'} capture retirement stays '
-        'owed and retries at idle',
-        (r) {
-          r.bind();
-          if (external) {
-            r.external(high: true);
-          } else {
-            r.note(127);
-          }
-          r.capture(TrackState.recording);
-          if (external) {
-            r.external(high: false);
-          } else {
-            r.retire();
-          }
-          expect(r.live, external ? 6 : 4);
-          expect(r.durable, external ? 1 : 0);
-          expect(r.engine.stopCalls, 0);
-          r.capture(TrackState.empty);
-          expect(r.live, external ? 1 : 0);
-          expect(r.engine.stopCalls, 0);
-        },
-      );
+        }
+        expect(r.looper.trackRecordTimingOverrides[0]!.code, external ? 6 : 4);
+        expect(r.durable, external ? 1 : 0);
+        r.store.fail = false;
+        unawaited(r.owner.owner.recover());
+        r.pump();
+        unawaited(r.cubit.flushMidiConfiguration(retireControls: true));
+        r.pump();
+        expect(r.live, external ? 1 : 0);
+        expect(r.store.values['track_record_timing.0'], external ? 1 : 0);
+      });
+      check('${external ? 'External' : 'MIDI'} Use default defeats old '
+          'release and preserves inheritance', (r) {
+        r.bind();
+        if (external) {
+          r.external(high: true);
+        } else {
+          r.note(127);
+        }
+        r.ordinary(value: null);
+        unawaited(r.owner.setTiming(RecordTiming.bar));
+        r.pump();
+        if (external) {
+          r.external(high: false);
+        } else {
+          r.note(0);
+        }
+        r.retire();
+        expect(r.live, 2);
+        expect(r.owner.recordTimingSnapshot!.trackOverrides, isEmpty);
+        expect(r.store.values.containsKey('track_record_timing.0'), isFalse);
+      });
+      check('${external ? 'External' : 'MIDI'} capture retirement stays '
+          'owed and retries at idle', (r) {
+        r.bind();
+        if (external) {
+          r.external(high: true);
+        } else {
+          r.note(127);
+        }
+        r.capture(TrackState.recording);
+        if (external) {
+          r.external(high: false);
+        } else {
+          r.retire();
+        }
+        expect(r.live, external ? 6 : 4);
+        expect(r.durable, external ? 1 : 0);
+        expect(r.engine.stopCalls, 0);
+        r.capture(TrackState.empty);
+        expect(r.live, external ? 1 : 0);
+        expect(r.engine.stopCalls, 0);
+      });
     }
     check('accepted MIDI toggle has no owed release at retiring flush', (r) {
       r
@@ -482,9 +458,7 @@ void main() {
       unawaited(
         r.cubit
             .flushMidiConfiguration(retireControls: true)
-            .then(
-              (_) => finished = true,
-            ),
+            .then((_) => finished = true),
       );
       r.pump();
       expect(finished, isTrue);

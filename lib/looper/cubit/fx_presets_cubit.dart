@@ -31,9 +31,7 @@ FxUserPreset? fxPresetNamed(List<FxUserPreset> presets, String name) {
 
 class FxPresetsCubit extends Cubit<List<FxUserPreset>> {
   /// Creates an [FxPresetsCubit].
-  FxPresetsCubit({required SettingsRepository settings})
-    : _settings = settings,
-      super(const []);
+  new({required this._settings}) : super(const []);
 
   final SettingsRepository _settings;
   Future<void>? _loadFuture;
@@ -144,9 +142,7 @@ class FxPresetsCubit extends Cubit<List<FxUserPreset>> {
   static bool _isRack(List<TrackEffect> entries) =>
       entries.length > 1 || (entries.isNotEmpty && entries.first.rack != null);
 
-  Future<void> _write(
-    List<FxUserPreset> Function(List<FxUserPreset>) change,
-  ) {
+  Future<void> _write(List<FxUserPreset> Function(List<FxUserPreset>) change) {
     final result = _writeTail.then((_) async {
       await load();
       if (isClosed) return;

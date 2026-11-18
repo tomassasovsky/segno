@@ -10,7 +10,7 @@ import 'package:equatable/equatable.dart';
 /// (missing or unreadable `info.json`, a missing file); [problem] says why.
 class BackingAsset extends Equatable {
   /// Creates a [BackingAsset].
-  const BackingAsset({
+  const new({
     required this.digest,
     required this.name,
     required this.path,

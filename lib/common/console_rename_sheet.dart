@@ -1,7 +1,7 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/common/on_screen_keyboard/on_screen_keyboard.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -62,7 +62,7 @@ Future<String?> showConsoleRenameSheet(
 }
 
 class _ConsoleRenameSheet extends StatefulWidget {
-  const _ConsoleRenameSheet({
+  const new({
     required this.title,
     required this.subtitle,
     required this.current,
@@ -218,7 +218,9 @@ class _ConsoleRenameSheetState extends State<_ConsoleRenameSheet> {
               const SizedBox(height: 8),
               AppText(error, key: const Key('console_rename_error')),
             ],
-            const SizedBox(height: 13),
+            // The keys sit on the keyboard's edges (#1672): 16 under the
+            // field, and 19 from the sheet's sides and bottom like the field.
+            const SizedBox(height: 16),
             OnScreenKeyboard(
               layout: OnScreenKeyboardLayout.text,
               showNumberRow: true,
@@ -243,12 +245,17 @@ class _ConsoleRenameSheetState extends State<_ConsoleRenameSheet> {
 /// uses for prose.
 class ConsoleEntryField extends StatelessWidget {
   /// Creates a [ConsoleEntryField] showing [text], announced as [label].
-  const ConsoleEntryField({
+  const new({
     required this.text,
     required this.label,
     this.textKey,
+    this.fontSize = 18,
     super.key,
   });
+
+  /// The typed text's size: 18 in the console's sheets, larger on a
+  /// full-size page (#1672). The caret follows it.
+  final double fontSize;
 
   /// What has been typed so far.
   final String text;
@@ -284,14 +291,18 @@ class ConsoleEntryField extends StatelessWidget {
                 style: TextStyle(
                   color: surface.textPrimary,
                   fontFamily: SurfaceTheme.monoFont,
-                  fontSize: 18,
+                  fontSize: fontSize,
                   height: 1.17,
                   leadingDistribution: TextLeadingDistribution.even,
                 ),
               ),
             ),
             const SizedBox(width: 2),
-            Container(width: 2, height: 22, color: surface.accent),
+            Container(
+              width: 2,
+              height: fontSize * 22 / 18,
+              color: surface.accent,
+            ),
           ],
         ),
       ),

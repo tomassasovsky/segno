@@ -4,7 +4,7 @@ part of 'backing_cubit.dart';
 /// for its confirmation.
 class BackingCubitState extends Equatable {
   /// Creates a [BackingCubitState].
-  const BackingCubitState({required this.backing, this.confirmUse});
+  const new({required this.backing, this.confirmUse});
 
   /// The player.
   final BackingState backing;

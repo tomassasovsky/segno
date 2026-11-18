@@ -8,15 +8,11 @@ part 'new_loop_state.dart';
 /// and, for Ed's setup, its sounds read and checked against the effects
 /// budget before Start new loop is offered (D3).
 class NewLoopCubit extends Cubit<NewLoopState> {
-  /// Creates the sheet's state, with Empty tracks chosen. [loadEdsSetup]
-  /// reads Ed's setup's sounds (null when one is missing) and [fits] checks
+  /// Creates the sheet's state, with Empty tracks chosen. [_loadEdsSetup]
+  /// reads Ed's setup's sounds (null when one is missing) and [_fits] checks
   /// a template against the effects budget on the live chains.
-  NewLoopCubit({
-    required Future<NewLoopTemplate?> Function() loadEdsSetup,
-    required bool Function(NewLoopTemplate template) fits,
-  }) : _loadEdsSetup = loadEdsSetup,
-       _fits = fits,
-       super(const NewLoopState());
+  new({required this._loadEdsSetup, required this._fits})
+    : super(const NewLoopState());
 
   final Future<NewLoopTemplate?> Function() _loadEdsSetup;
   final bool Function(NewLoopTemplate template) _fits;

@@ -15,6 +15,7 @@ EngineSnapshot _rig(
   TrackState state = TrackState.empty,
   bool pending = false,
   int outputBusCount = 0,
+  int lanes = 1,
 }) => EngineSnapshot(
   isRunning: true,
   devicePresent: true,
@@ -41,16 +42,17 @@ EngineSnapshot _rig(
         undoDepth: 0,
         rms: 0,
         peak: 0,
-        lanes: const [
-          LaneSnapshot(
-            inputChannel: 0,
-            outputMask: 3,
-            volume: 1,
-            muted: false,
-            lengthFrames: 0,
-            rms: 0,
-            peak: 0,
-          ),
+        lanes: [
+          for (var lane = 0; lane < lanes; lane++)
+            LaneSnapshot(
+              inputChannel: lane,
+              outputMask: 3,
+              volume: 1,
+              muted: false,
+              lengthFrames: 0,
+              rms: 0,
+              peak: 0,
+            ),
         ],
       ),
     for (var i = count; i < 8; i++) const TrackSnapshot.empty(),
@@ -310,10 +312,7 @@ void main() {
         ..commandsAreSettled = false;
       expect(repo.setTrackPan(-.5), EngineResult.ok);
       expect(
-        await repo.settleMixSettings(
-          attempts: 1,
-          pollInterval: Duration.zero,
-        ),
+        await repo.settleMixSettings(attempts: 1, pollInterval: Duration.zero),
         EngineResult.notReady,
       );
       expect(engine.calls, isNot(contains('stop')));
@@ -540,14 +539,8 @@ void main() {
         repo.setInputPair(input: kMaxChannels - 1, paired: true),
         EngineResult.invalid,
       );
-      expect(
-        repo.setInputPair(input: 1, paired: true),
-        EngineResult.invalid,
-      );
-      expect(
-        repo.setPairBalance(input: 0, balance: 0.5),
-        EngineResult.invalid,
-      );
+      expect(repo.setInputPair(input: 1, paired: true), EngineResult.invalid);
+      expect(repo.setPairBalance(input: 0, balance: 0.5), EngineResult.invalid);
     });
 
     test('the monitors carry the pan', () {
@@ -569,6 +562,31 @@ void main() {
       repo.setInputPan(input: 0, pan: 0.75);
       expect(engine.lanePan[(0, 0)], -0.25);
       expect(engine.monitorPan[0], 0.75);
+    });
+
+    test('a take remembers its input; a later input change keeps it', () {
+      final repo = start();
+      expect(repo.state.tracks[0].lanes.single.recordedInput, -1);
+      repo
+        ..setLaneInput(channel: 0, lane: 0, inputChannel: 1)
+        ..record();
+      expect(repo.state.tracks[0].lanes.single.recordedInput, 1);
+      repo.setLaneInput(channel: 0, lane: 0, inputChannel: 0);
+      expect(repo.state.tracks[0].lanes.single.recordedInput, 1);
+    });
+
+    test("a lane dropped by a lane-count change forgets its take's input", () {
+      engine.nextSnapshot = _rig(2, lanes: 2);
+      final repo = start()
+        ..setLaneCount(channel: 0, count: 2)
+        ..setLaneInput(channel: 0, lane: 1, inputChannel: 1)
+        ..record();
+      expect(repo.state.tracks[0].lanes[1].recordedInput, 1);
+      repo
+        ..setLaneCount(channel: 0, count: 1)
+        ..setLaneCount(channel: 0, count: 2);
+      expect(repo.state.tracks[0].lanes[0].recordedInput, 0);
+      expect(repo.state.tracks[0].lanes[1].recordedInput, -1);
     });
 
     test('a pair member records hard on its side at the balance gain', () {
@@ -759,9 +777,8 @@ void main() {
           2,
         );
         expect(
-          MixSettingsSnapshot.fromRig(
-            SessionRig(tracks: rig.tracks),
-          ).laneCounts[0],
+          MixSettingsSnapshot.fromRig(SessionRig(tracks: rig.tracks))
+              .laneCounts[0],
           2,
         );
       },
@@ -806,6 +823,7 @@ void main() {
                   outputMask: 0x3,
                   inputChannel: 0,
                   pan: -0.5,
+                  recordedInput: 1,
                 ),
               ],
             ),
@@ -824,6 +842,12 @@ void main() {
       );
       // The lane's saved image plus the restored track pan.
       expect(engine.lanePan[(0, 0)], -0.75);
+      // The take keeps the input it was captured from, apart from the
+      // lane's setting.
+      engine.nextSnapshot = _rig(2);
+      ticker.add(null);
+      await Future<void>.delayed(Duration.zero);
+      expect(repo.state.tracks[0].lanes.single.recordedInput, 1);
       expect(repo.trackPan(0), -0.25);
       // Track 1's pan and solo went with the old rig.
       expect(repo.trackPan(1), 0);
@@ -897,12 +921,7 @@ void main() {
         ..setOutputMono(bus: 1, mono: true);
       expect(
         repo.outputSetup.of(1),
-        const OutputBus(
-          level: .5,
-          balance: -1,
-          muted: true,
-          mono: true,
-        ),
+        const OutputBus(level: .5, balance: -1, muted: true, mono: true),
       );
       expect(engine.outputLevel[1], .5);
       expect(engine.outputBalance[1], -1);
@@ -936,14 +955,7 @@ void main() {
         ..publishMixCommands = false
         ..commandsAreSettled = false;
       const next = OutputSetup(
-        buses: {
-          1: OutputBus(
-            level: .4,
-            muted: true,
-            mono: true,
-            balance: -.7,
-          ),
-        },
+        buses: {1: OutputBus(level: .4, muted: true, mono: true, balance: -.7)},
       );
       expect(repo.setOutputSetup(next), EngineResult.ok);
       expect(repo.outputSetup, const OutputSetup());
@@ -1247,9 +1259,7 @@ void main() {
     test('missing destinations retain intent but cannot be newly selected', () {
       final repo = start();
       final before = repo.mixSettingsSnapshot.copyWith(
-        laneOutputs: {
-          for (var lane = 0; lane < 8; lane++) (0, lane): 0x81,
-        },
+        laneOutputs: {for (var lane = 0; lane < 8; lane++) (0, lane): 0x81},
       );
       expect(
         repo.prepareTrackOutput(before, channel: 0, mask: 0x80),

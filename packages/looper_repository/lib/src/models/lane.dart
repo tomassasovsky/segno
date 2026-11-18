@@ -11,13 +11,14 @@ import 'package:segno_engine/segno_engine.dart' show LaneCacheState;
 /// two assigned inputs keeps both as separate lanes that play back together.
 class Lane extends Equatable {
   /// Creates a [Lane].
-  const Lane({
+  const new({
     this.inputChannel = -1,
     this.outputMask = 0x3,
     this.volume = 1,
     this.pan = 0,
     this.imagePan = 0,
     this.balance = 1,
+    this.recordedInput = -1,
     this.muted = false,
     this.lengthFrames = 0,
     this.effects = const [],
@@ -53,6 +54,12 @@ class Lane extends Equatable {
   /// engine is given their product. Fixed for the take; saved with the
   /// session.
   final double balance;
+
+  /// The hardware input the lane's take was captured from, fixed when the
+  /// take starts like [imagePan] and saved with the session; `-1` when the
+  /// lane has never recorded. [inputChannel] is where the NEXT take comes
+  /// from, and changing it never renames what is already recorded.
+  final int recordedInput;
 
   /// Whether the lane is muted.
   final bool muted;
@@ -102,6 +109,7 @@ class Lane extends Equatable {
     pan,
     imagePan,
     balance,
+    recordedInput,
     muted,
     lengthFrames,
     effects,

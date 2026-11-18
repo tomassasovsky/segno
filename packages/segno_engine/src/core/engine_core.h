@@ -161,6 +161,12 @@ static inline le_hist_entry le_hist_kind_entry(int32_t kind, int32_t slot,
   return e;
 }
 
+/* Stamps every undo entry that has no seq yet, oldest first, from one
+ * process-wide counter (#1707). Control thread, after every change to the
+ * undo stack; le_publish_undo_depth calls it. The snapshot reads the top
+ * entry's seq straight off the stack (le_track_snapshot.history_seq). */
+void le_stamp_history(le_track* t);
+
 /* How many LAYER entries Peel can still consume (#1164): those above the
  * highest entry that is neither LAYER nor PEEL (the whole stack when there is
  * none). */
@@ -183,6 +189,48 @@ static inline void le_seam_fold_head(float* head, const float* continuation,
   for (int32_t i = 0; i < F; ++i) {
     const float x = (float)i / (float)F; /* 0..1 across the fade */
     head[i] = continuation[i] * (1.0f - x) + head[i] * x;
+  }
+}
+
+/* One buffer's share of the content operations a take's ends get, shared by
+ * the clean slot's helpers (engine_process.c) and the heard image's replay
+ * (engine_heard.c), so the two cannot drift. */
+
+/* A linear fade out over `f` frames that ends (weight 0) at position `last`,
+ * modulo `len` (le_lanes_fade_out_to). */
+static inline void le_plane_fade_out_to(float* b, int32_t last, int32_t len,
+                                        int32_t f) {
+  if (len <= 0 || f <= 0 || f > len || last < 0 || last >= len) return;
+  for (int32_t i = 0; i < f; ++i) {
+    int32_t p = last - i;
+    if (p < 0) p += len;
+    b[p] *= (float)i / (float)f;
+  }
+}
+
+/* A linear fade in over `f` frames from `start`, modulo `len`, out of the
+ * silence before it (the #730 taper's start). */
+static inline void le_plane_fade_in_at(float* b, int32_t start, int32_t len,
+                                       int32_t f) {
+  if (len <= 0 || f <= 0 || f > len || start < 0 || start >= len) return;
+  for (int32_t i = 0; i < f; ++i) {
+    const float x = (float)i / (float)f; /* 0 .. 1 across the fade */
+    int32_t in = start + i;
+    if (in >= len) in -= len;
+    b[in] *= x;
+  }
+}
+
+/* Copies `k` frames from `from` on, modulo `len`, from `src` to `dst`
+ * (le_dub_stop_tail's shadow copy). */
+static inline void le_plane_copy_wrapped(float* dst, const float* src,
+                                         int32_t from, int32_t k,
+                                         int32_t len) {
+  if (len <= 0 || from < 0 || from >= len) return;
+  for (int32_t i = 0; i < k; ++i) {
+    int32_t p = from + i;
+    if (p >= len) p -= len;
+    dst[p] = src[p];
   }
 }
 
@@ -414,6 +462,10 @@ int le_mix_valid(const le_engine* engine, const le_mix_settings* settings);
 int le_image_valid(const le_engine* engine, int32_t channel,
                    const le_record_image* image);
 int32_t le_push_cmd(le_engine* engine, le_command cmd);
+
+/* Logs [cmd] from the control thread at the current capture frame, onto
+ * perf.log_ctrl_ring (engine_commands.c); a no-op when not armed. */
+void le_plog_push_ctrl(le_engine* engine, le_command cmd);
 
 /* Backing player (#1200, engine_backing.c): frees every engine-owned backing
  * buffer with the callback stopped, except, when [keep_loaded] is set, the

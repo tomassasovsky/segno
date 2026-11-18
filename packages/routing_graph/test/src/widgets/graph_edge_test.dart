@@ -24,18 +24,9 @@ void main() {
     });
 
     test('differs when any field differs', () {
-      const base = GraphEdge(
-        Offset.zero,
-        Offset(10, 10),
-        color: _wet,
-      );
+      const base = GraphEdge(Offset.zero, Offset(10, 10), color: _wet);
       expect(
-        base ==
-            const GraphEdge(
-              Offset.zero,
-              Offset(10, 10),
-              color: _dry,
-            ),
+        base == const GraphEdge(Offset.zero, Offset(10, 10), color: _dry),
         isFalse,
       );
       expect(

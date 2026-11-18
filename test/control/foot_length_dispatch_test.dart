@@ -26,7 +26,7 @@ import '../helpers/helpers.dart';
 
 /// Doubles and halves tracks and publishes the length like the callback.
 class _Engine extends FakeAudioEngine {
-  _Engine(this.recorded);
+  new(this.recorded);
 
   final Set<int> recorded;
   final lengths = <int, int>{};
@@ -99,7 +99,7 @@ class _Engine extends FakeAudioEngine {
 /// A repository whose Session revision a test can move mid-edit, the way a
 /// Session load does.
 class _Looper extends LooperRepository {
-  _Looper({required super.engine, required super.ticker});
+  new({required super.engine, required super.ticker});
 
   int? revision;
 
@@ -108,7 +108,7 @@ class _Looper extends LooperRepository {
 }
 
 class _Midi extends MidiDeviceRepository {
-  _Midi(SettingsRepository settings)
+  new(SettingsRepository settings)
     : super(captures: null, settings: settings, pollInterval: Duration.zero);
   final inputs = StreamController<MidiInputMessage>.broadcast();
   MidiInputSession get session => const MidiInputSession('test-midi', 1);
@@ -134,7 +134,7 @@ class _Midi extends MidiDeviceRepository {
 }
 
 class _Rig {
-  _Rig({
+  new({
     Set<int> recorded = const {0, 1, 4},
     ExternalJackSetup? jack,
     int? longPressMs,
@@ -755,9 +755,7 @@ void main() {
     );
 
     test('every scope but all tracks is offered', () {
-      final keys = {
-        for (final action in controlActionCatalogue()) action.key,
-      };
+      final keys = {for (final action in controlActionCatalogue()) action.key};
       for (final operation in [
         TrackOperation.multiply,
         TrackOperation.divideFirstHalf,
@@ -841,10 +839,7 @@ void main() {
         rig.engine.verdicts.add(EngineResult.capacity);
         await stomp(PedalButton.clear);
         expect(rig.control.state.footLengthFailure, 2);
-        expect(
-          rig.control.state.footLengthRefusal,
-          FootLengthRefusal.capacity,
-        );
+        expect(rig.control.state.footLengthRefusal, FootLengthRefusal.capacity);
         expect(rig.control.state.mode, InteractionMode.custom);
       } finally {
         await rig.close();

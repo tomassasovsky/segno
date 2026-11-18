@@ -1,8 +1,8 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/loop_settings_feedback_cubit.dart';
@@ -45,11 +45,7 @@ _RecordingValues _recordingValues(LooperState state) => (
 /// banner, which moves the layout down under it.
 class LoopRecordingPage extends StatefulWidget {
   /// Creates a [LoopRecordingPage] showing [track]'s fields.
-  const LoopRecordingPage({
-    required this.track,
-    required this.onTrack,
-    super.key,
-  });
+  const new({required this.track, required this.onTrack, super.key});
 
   /// The selected channel, or `null` for the defaults; shared with the
   /// Playback tab for the visit.
@@ -58,33 +54,49 @@ class LoopRecordingPage extends StatefulWidget {
   /// Selects a channel, or `null` for the defaults.
   final ValueChanged<int?> onTrack;
 
-  /// How far a capture's banner moves the layout down: its 68 and a gap.
-  static const double lockShift = 68 + 16;
+  /// How far a capture's banner moves the layout down: its 68 and the gap
+  /// a heading keeps over its row.
+  static const double lockShift = 68 + 12;
 
   /// Where the layout starts under the title row, and the banner with it.
-  static const double top = 124;
+  static const double top = kLoopTabContentTop;
 
-  /// Every take's choice rows, under their headings.
-  static const double globalRowTop = top + 40;
+  /// The choices' height, Playback's (#1672: one choice size on Recording
+  /// and Playback).
+  static const double choiceHeight = 120;
+
+  /// The choices' label size, Playback's.
+  static const double choiceFontSize = 28;
+
+  /// Every take's choice rows, 12 under their 28 high headings.
+  static const double globalRowTop = top + 28 + 12;
 
   /// The start note, under the start row.
-  static const double noteTop = globalRowTop + 96 + 16;
+  static const double noteTop = globalRowTop + choiceHeight + 16;
 
   /// The track selector.
-  static const double selectorTop = noteTop + 29 + 24;
+  static const double selectorTop = noteTop + 29 + 16;
 
-  /// The length field: the stepper's top, the row 8 under it.
-  static const double lengthTop = selectorTop + 64 + 24;
+  /// The length row: Auto and Bars, with the stepper centred on it.
+  static const double lengthTop = selectorTop + 64 + 16;
+
+  /// The length note, under the length row.
+  static const double lengthNoteTop = lengthTop + choiceHeight + 16;
 
   /// The later-tracks row, under the length note.
-  static const double multipleTop = lengthTop + 181;
+  static const double multipleTop = lengthNoteTop + 29 + 16;
 
   /// The later-tracks choices' height: compact, so the locked layout still
   /// ends inside the frame.
   static const double multipleHeight = 60;
 
-  /// The record timing heading; its row and note follow.
-  static const double timingTop = multipleTop + multipleHeight + 32;
+  /// The record timing heading, 16 under the later-tracks row.
+  static const double timingTop = multipleTop + multipleHeight + 16;
+
+  /// The record timing choices, 16 under the heading. Use default ends on
+  /// the same line as the heading (#1672); on a track scope it rises into
+  /// the band the later-tracks row leaves empty.
+  static const double timingRowTop = timingTop + 28 + 16;
 
   @override
   State<LoopRecordingPage> createState() => _LoopRecordingPageState();
@@ -233,6 +245,7 @@ class _LoopRecordingPageState extends State<LoopRecordingPage> {
     final lengthTop = LoopRecordingPage.lengthTop + shift;
     final multipleTop = LoopRecordingPage.multipleTop + shift;
     final timingTop = LoopRecordingPage.timingTop + shift;
+    final timingRowTop = LoopRecordingPage.timingRowTop + shift;
     return MultiBlocListener(
       listeners: [
         BlocListener<RecordOptionsCubit, RecordOptionsViewState>(
@@ -298,16 +311,15 @@ class _LoopRecordingPageState extends State<LoopRecordingPage> {
                   context.read<TempoCubit>().setSoundStart(enabled: sound),
                 ),
                 width: half,
+                height: LoopRecordingPage.choiceHeight,
+                fontSize: LoopRecordingPage.choiceFontSize,
               ),
             ),
             Positioned(
               left: 0,
               top: LoopRecordingPage.noteTop + shift,
               width: half,
-              child: LoopNote(
-                startNote,
-                key: const Key('loop_recording_note'),
-              ),
+              child: LoopNote(startNote, key: const Key('loop_recording_note')),
             ),
             Positioned(
               left: secondLeft,
@@ -331,6 +343,8 @@ class _LoopRecordingPageState extends State<LoopRecordingPage> {
                   context.read<RecordOptionsCubit>().setRecDub(value: overdub),
                 ),
                 width: half,
+                height: LoopRecordingPage.choiceHeight,
+                fontSize: LoopRecordingPage.choiceFontSize,
               ),
             ),
             // ---- the track selector, over the fields it scopes
@@ -344,21 +358,26 @@ class _LoopRecordingPageState extends State<LoopRecordingPage> {
               ),
             ),
             // ---- loop length
+            // The label centred on the row.
             Positioned(
               left: 0,
-              top: lengthTop + (scope == null ? 40 : 24),
-              child: LoopFieldLabel(
-                title: l10n.loopLengthLabel,
-                origin: scopedOrigin(
-                  scoped: scope != null,
-                  custom: barsCustom,
-                  shared: shared,
+              top: lengthTop,
+              height: LoopRecordingPage.choiceHeight,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: LoopFieldLabel(
+                  title: l10n.loopLengthLabel,
+                  origin: scopedOrigin(
+                    scoped: scope != null,
+                    custom: barsCustom,
+                    shared: shared,
+                  ),
                 ),
               ),
             ),
             Positioned(
               left: _controlsLeft,
-              top: lengthTop + 8,
+              top: lengthTop,
               child: LoopChoiceRow<bool>(
                 values: const [false, true],
                 labelOf: (fixed) =>
@@ -367,16 +386,18 @@ class _LoopRecordingPageState extends State<LoopRecordingPage> {
                     Key(fixed ? 'loop_length_bars' : 'loop_length_auto'),
                 selected: bars > 0,
                 enabled: lengthEnabled,
-                onSelected: (fixed) => _setBars(
-                  fixed ? (_lastBars[scope] ?? 4) : 0,
-                ),
+                onSelected: (fixed) =>
+                    _setBars(fixed ? (_lastBars[scope] ?? 4) : 0),
                 width: 392,
+                height: LoopRecordingPage.choiceHeight,
+                fontSize: LoopRecordingPage.choiceFontSize,
               ),
             ),
             if (shownBars > 0)
               Positioned(
                 left: _controlsLeft + 424,
-                top: lengthTop,
+                // The 112 high stepper centred on the row.
+                top: lengthTop + 4,
                 child: LoopStepper(
                   key: ValueKey((sessionRevision, scope, locked, shared)),
                   value: shownBars,
@@ -396,7 +417,7 @@ class _LoopRecordingPageState extends State<LoopRecordingPage> {
             if (barsCustom && !locked)
               Positioned(
                 right: 0,
-                top: lengthTop + 24,
+                top: lengthTop + (LoopRecordingPage.choiceHeight - 64) / 2,
                 child: LoopUseDefaultButton(
                   key: const Key('loop_length_use_default'),
                   onTap: () => _setBars(null),
@@ -404,7 +425,7 @@ class _LoopRecordingPageState extends State<LoopRecordingPage> {
               ),
             Positioned(
               left: _controlsLeft,
-              top: lengthTop + 132,
+              top: LoopRecordingPage.lengthNoteTop + shift,
               child: LoopNote(
                 _candidateRefused
                     ? _candidateCapacityFailure
@@ -465,7 +486,8 @@ class _LoopRecordingPageState extends State<LoopRecordingPage> {
                 ),
               ),
             ],
-            // ---- record timing
+            // ---- record timing: the heading and Use default end on one
+            // line, 16 above the choices.
             Positioned(
               left: 0,
               top: timingTop,
@@ -481,8 +503,7 @@ class _LoopRecordingPageState extends State<LoopRecordingPage> {
             if (timingCustom && timingEnabled)
               Positioned(
                 right: 0,
-                // The button centred on the 28 high heading.
-                top: timingTop + 14 - 32,
+                top: timingRowTop - 16 - 64,
                 child: LoopUseDefaultButton(
                   key: const Key('loop_timing_use_default'),
                   onTap: () => _setTiming(null),
@@ -490,7 +511,7 @@ class _LoopRecordingPageState extends State<LoopRecordingPage> {
               ),
             Positioned(
               left: 0,
-              top: timingTop + 48,
+              top: timingRowTop,
               child: LoopChoiceRow<RecordTiming>(
                 values: RecordTiming.values,
                 labelOf: (t) => recordTimingLabels(l10n)[t]!,
@@ -499,12 +520,14 @@ class _LoopRecordingPageState extends State<LoopRecordingPage> {
                 enabled: timingEnabled,
                 onSelected: _setTiming,
                 width: width,
+                height: LoopRecordingPage.choiceHeight,
+                fontSize: LoopRecordingPage.choiceFontSize,
                 gap: 16,
               ),
             ),
             Positioned(
               left: 0,
-              top: timingTop + 48 + 96 + 20,
+              top: timingRowTop + LoopRecordingPage.choiceHeight + 16,
               child: LoopNote(
                 timing == null
                     ? l10n.recordTimingUnavailable

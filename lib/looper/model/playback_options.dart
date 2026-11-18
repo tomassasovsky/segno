@@ -7,7 +7,7 @@ import 'package:segno/looper/model/overdub_decay.dart';
 /// Accepted global playback options and explicit track decay membership.
 class PlaybackOptions extends Equatable {
   /// Creates the playback state; Decay remains unavailable until restored.
-  const PlaybackOptions({
+  const new({
     this.overdubDecay = 0,
     this.defaultOneShot = false,
     this.trackOverdubDecayOverrides = const {},

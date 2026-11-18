@@ -1,19 +1,19 @@
 import 'dart:async';
 
 import 'package:bloc_test/bloc_test.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/view/track_meters.dart';
 import 'package:segno/theme/theme.dart';
 
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+    implements LooperBloc;
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 void main() {
   late LooperBloc bloc;
@@ -130,9 +130,8 @@ void main() {
     testWidgets('a channel the rig has dropped meters as silence', (
       tester,
     ) async {
-      when(() => repository.meters).thenReturn(
-        const MeterLevels(tracks: [TrackLevels(peak: 0.75)]),
-      );
+      when(() => repository.meters)
+          .thenReturn(const MeterLevels(tracks: [TrackLevels(peak: 0.75)]));
       seed(const LooperState());
       await pumpLeaf(tester, meter(6));
 
@@ -172,9 +171,7 @@ void main() {
       expect(find.byKey(const Key('meter_clip_cap')), findsNothing);
     });
 
-    testWidgets('retires after the hold with no further ticks', (
-      tester,
-    ) async {
+    testWidgets('retires after the hold with no further ticks', (tester) async {
       // One hot block, then silence: nothing rebuilds the bar again, so the
       // cap must retire on its own clock rather than on the next rebuild.
       seed(const LooperState());
@@ -225,9 +222,8 @@ void main() {
         .widthFactor;
 
     testWidgets("fills to the track's own playhead", (tester) async {
-      when(
-        () => repository.playhead,
-      ).thenReturn(const Playhead(tracks: [0.25]));
+      when(() => repository.playhead)
+          .thenReturn(const Playhead(tracks: [0.25]));
       seed(const LooperState());
       await pumpLeaf(tester, bar);
 
@@ -235,9 +231,8 @@ void main() {
     });
 
     testWidgets('paints the fill the full bar height (#1570)', (tester) async {
-      when(
-        () => repository.playhead,
-      ).thenReturn(const Playhead(tracks: [0.25]));
+      when(() => repository.playhead)
+          .thenReturn(const Playhead(tracks: [0.25]));
       seed(const LooperState());
       // In a column, as on a track tile, so it takes its own height.
       await pumpLeaf(tester, const Column(children: [bar]));
@@ -284,9 +279,8 @@ void main() {
       await pumpLeaf(tester, bar, drawn: false);
       expect(playheads.hasListener, isFalse);
 
-      when(
-        () => repository.playhead,
-      ).thenReturn(const Playhead(tracks: [0.75]));
+      when(() => repository.playhead)
+          .thenReturn(const Playhead(tracks: [0.75]));
       await pumpLeaf(tester, bar);
       await tester.pump();
 
@@ -295,9 +289,7 @@ void main() {
     });
 
     testWidgets('an empty or dropped channel reads 0', (tester) async {
-      when(
-        () => repository.playhead,
-      ).thenReturn(const Playhead(tracks: [0.5]));
+      when(() => repository.playhead).thenReturn(const Playhead(tracks: [0.5]));
       seed(const LooperState(tracks: [Track()]));
       await pumpLeaf(
         tester,

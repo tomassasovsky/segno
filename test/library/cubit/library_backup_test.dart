@@ -6,15 +6,15 @@ import 'package:mocktail/mocktail.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/library/application/audio_export.dart';
-import 'package:segno/library/application/removable_volumes.dart';
 import 'package:segno/library/cubit/library_cubit.dart';
 import 'package:session_repository/session_repository.dart';
+import 'package:storage_repository/storage_repository.dart';
 
 import '../helpers/fake_drive.dart';
 
-class _MockPedalRepository extends Mock implements PedalRepository {}
+class _MockPedalRepository extends Mock implements PedalRepository;
 
-class _MockSessionRepository extends Mock implements SessionRepository {}
+class _MockSessionRepository extends Mock implements SessionRepository;
 
 /// Sessions > USB (#1178 Part 8, pen section 34): Back up to USB through
 /// the port and the guard table, and Restore to Library.
@@ -72,7 +72,7 @@ void main() {
   Future<LibraryCubit> selected() async {
     final cubit = LibraryCubit(
       sessions: sessions,
-      volumes: drive,
+      storage: drive,
       pedal: pedal,
       guards: guards,
     );
@@ -111,7 +111,7 @@ void main() {
 
       await backUp(cubit);
 
-      expect(drive.leases, ['Backing up Evening loop']);
+      expect(drive.leasePurposes, [WritePurpose.backup]);
       expect(drive.copies.map((c) => (c.relativePath, c.policy)), [
         for (final f in files)
           (
@@ -123,9 +123,8 @@ void main() {
         for (final f in [...files]..sort()) 'Segno/Sessions/$id/$f',
       ]);
       expect(
-        File(
-          '${drive.mount}/Segno/Sessions/$id/track1_lane0_L0.wav',
-        ).readAsBytesSync(),
+        File('${drive.mount}/Segno/Sessions/$id/track1_lane0_L0.wav')
+            .readAsBytesSync(),
         [2, 2],
       );
       expect(heldDuring.first, [
@@ -192,9 +191,8 @@ void main() {
 
       expect(drive.files, contains('Segno/Sessions/$id (2)/session.json'));
       expect(
-        File(
-          '${drive.mount}/Segno/Sessions/$id/session.json',
-        ).readAsBytesSync(),
+        File('${drive.mount}/Segno/Sessions/$id/session.json')
+            .readAsBytesSync(),
         [9],
       );
     });
@@ -231,9 +229,8 @@ void main() {
       );
       expect(drive.files, ['Segno/Sessions/$id/session.json']);
       expect(
-        File(
-          '${drive.mount}/Segno/Sessions/$id/session.json',
-        ).readAsBytesSync(),
+        File('${drive.mount}/Segno/Sessions/$id/session.json')
+            .readAsBytesSync(),
         [9],
       );
 
@@ -243,9 +240,8 @@ void main() {
       expect(drive.copies.last.policy, ConflictPolicy.replace);
       expect(drive.files, hasLength(files.length));
       expect(
-        File(
-          '${drive.mount}/Segno/Sessions/$id/session.json',
-        ).readAsBytesSync(),
+        File('${drive.mount}/Segno/Sessions/$id/session.json')
+            .readAsBytesSync(),
         [3, 3],
       );
       expect(cubit.state.backup, isA<LibraryBackupDone>());
@@ -329,6 +325,30 @@ void main() {
       expect(drive.copies, isEmpty);
     });
 
+    test('a file of 4 GiB for a FAT32 drive is refused before any copy, and '
+        'says so (#1794)', () async {
+      await drive.close();
+      drive = FakeDrive('${temp.path}/usb', fsType: 'vfat');
+      // Sparse: 4 GiB long, nothing written.
+      File('$bundle/${files.last}').openSync(mode: FileMode.write)
+        ..truncateSync(1 << 32)
+        ..closeSync();
+      final cubit = await selected();
+
+      await backUp(cubit);
+
+      expect(
+        cubit.state.backup,
+        isA<LibraryBackupInterrupted>().having(
+          (b) => b.problem,
+          'problem',
+          LibraryBackupProblem.tooLargeForDrive,
+        ),
+      );
+      expect(drive.copies, isEmpty);
+      expect(drive.files, isEmpty);
+    });
+
     test('the guard table refuses it during a shutdown, naming it', () async {
       final restart = guards.enter(
         GuardKind.restart,
@@ -353,6 +373,25 @@ void main() {
       expect(guards.active, [restart.operation]);
     });
 
+    test('the storage repository refuses its lease, naming what holds the '
+        'drive', () async {
+      final cubit = await selected();
+      drive.leaseRefusal = const StorageFailure.busy(GuardKind.capture);
+
+      await backUp(cubit);
+
+      expect(
+        cubit.state.backup,
+        const LibraryBackupInterrupted(
+          id: id,
+          name: 'Evening loop',
+          problem: LibraryBackupProblem.busy,
+          blockedBy: GuardKind.capture,
+        ),
+      );
+      expect(drive.copies, isEmpty);
+    });
+
     test('a second press while it runs is ignored', () async {
       final cubit = await selected();
       final hold = Completer<void>();
@@ -364,7 +403,7 @@ void main() {
       hold.complete();
       await first;
 
-      expect(drive.leases, hasLength(1));
+      expect(drive.leasePurposes, hasLength(1));
     });
   });
 
@@ -382,9 +421,8 @@ void main() {
       cubit.setLocation(LibraryLocation.usb);
 
       expect(cubit.state.backups, backups);
-      verify(
-        () => sessions.listBackups('${drive.mount}/Segno/Sessions'),
-      ).called(1);
+      verify(() => sessions.listBackups('${drive.mount}/Segno/Sessions'))
+          .called(1);
 
       cubit.selectBackup('s-b');
       drive.announce();
@@ -410,9 +448,8 @@ void main() {
     test('Restore to Library adds the backup and shows it selected in '
         'Internal', () async {
       when(() => sessions.listBackups(any())).thenReturn(backups);
-      when(
-        () => sessions.restoreFrom(any()),
-      ).thenAnswer((_) async => 's-restored');
+      when(() => sessions.restoreFrom(any()))
+          .thenAnswer((_) async => 's-restored');
       final cubit = await selected();
       cubit
         ..setLocation(LibraryLocation.usb)
@@ -420,9 +457,8 @@ void main() {
 
       await cubit.restore();
 
-      verify(
-        () => sessions.restoreFrom('${drive.mount}/Segno/Sessions/s-a'),
-      ).called(1);
+      verify(() => sessions.restoreFrom('${drive.mount}/Segno/Sessions/s-a'))
+          .called(1);
       expect(cubit.state.location, LibraryLocation.internal);
       expect(cubit.state.restoredId, 's-restored');
       expect(cubit.state.selectedId, 's-restored');

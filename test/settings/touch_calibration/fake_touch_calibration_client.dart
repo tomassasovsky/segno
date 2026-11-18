@@ -5,7 +5,7 @@ import 'package:touch_calibration_client/touch_calibration_client.dart';
 /// A calibration helper that remembers each call, and tells the calibration
 /// on /data ([stored]) apart from the one the touchscreen uses ([inForce]).
 class FakeTouchCalibrationClient implements TouchCalibrationClient {
-  FakeTouchCalibrationClient({this.stored}) : inForce = stored;
+  new({this.stored}) : inForce = stored;
 
   /// What a reboot would put back.
   TouchMatrix? stored;

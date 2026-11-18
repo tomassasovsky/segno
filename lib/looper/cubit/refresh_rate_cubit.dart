@@ -8,15 +8,10 @@ import 'package:settings_repository/settings_repository.dart';
 ///
 /// Higher is smoother but costs more CPU; lower eases load on slower machines.
 class RefreshRateCubit extends Cubit<int> {
-  /// Creates a [RefreshRateCubit] driving [repository]'s poll cadence, with the
-  /// rate persisted through [settings]. Starts at 60 Hz until [load] restores
-  /// the saved value.
-  RefreshRateCubit({
-    required LooperRepository repository,
-    required SettingsRepository settings,
-  }) : _repository = repository,
-       _settings = settings,
-       super(60);
+  /// Creates a [RefreshRateCubit] driving [_repository]'s poll cadence, with
+  /// the rate persisted through [_settings]. Starts at 60 Hz until [load]
+  /// restores the saved value.
+  new({required this._repository, required this._settings}) : super(60);
 
   final LooperRepository _repository;
   final SettingsRepository _settings;

@@ -4,7 +4,7 @@ import 'package:cpu_load_repository/cpu_load_repository.dart';
 /// readout with a known figure and no sampling timer.
 class FixedCpuLoadRepository extends CpuLoadRepository {
   /// Creates a [FixedCpuLoadRepository] reporting [load].
-  const FixedCpuLoadRepository(this.load) : super(readStat: _unread);
+  const new(this.load) : super(readStat: _unread);
 
   /// The load reported.
   final int load;

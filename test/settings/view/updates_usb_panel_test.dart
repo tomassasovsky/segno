@@ -1,7 +1,7 @@
 import 'package:bloc_test/bloc_test.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/settings/view/settings_fact_panel.dart';
@@ -11,7 +11,7 @@ import 'package:segno/update/usb/usb_update_cubit.dart';
 import 'package:segno/update/usb/usb_update_package.dart';
 import 'package:update_repository/update_repository.dart';
 
-class _MockUsb extends MockCubit<UsbUpdateState> implements UsbUpdateCubit {}
+class _MockUsb extends MockCubit<UsbUpdateState> implements UsbUpdateCubit;
 
 /// Load from USB's panel (#1270 Part 8): each state says what it is.
 void main() {
@@ -32,7 +32,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         theme: AppTheme.neon,
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        localizationsDelegates: appLocalizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         home: Scaffold(
           body: BlocProvider<UsbUpdateCubit>.value(

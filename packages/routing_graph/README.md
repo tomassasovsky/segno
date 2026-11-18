@@ -3,9 +3,8 @@
 Flutter UI library for drawing routing graphs: a zoom and pan canvas
 (`GraphCanvas`), wires (`GraphEdge`, `GraphEdgePainter`), hardware port chips
 (`ChannelChip`), an accessible tap target (`FocusableTapTarget`), and geometry
-helpers (`cardColumnXs`, `chainEdges`, `fanEdges`, `positionedNode`). Neutral
-colors come from the `RoutingGraphTheme` theme extension. It has no Segno
-domain types.
+helpers (`cardColumnXs`, `chainEdges`, `fanEdges`). Neutral colors come from
+the `RoutingGraphTheme` theme extension. It has no Segno domain types.
 
 The app registers `RoutingGraphTheme` in `lib/theme/app_theme.dart` and uses
 `FocusableTapTarget` in the looper and control views and the console surface.
@@ -45,7 +44,7 @@ In a widget, read the tokens with `context.routingGraph`, for example
 
 ## Notes
 
-- The barrel re-exports `package:flutter/material.dart`.
+- The barrel re-exports `package:material_ui/material_ui.dart`.
 - Only neutral colors are in the theme. Semantic colors, such as a lane color
   or a wet or dry send, are constructor parameters on each widget.
 - `FocusableTapTarget` is keyboard focusable, activates on Enter and Space,

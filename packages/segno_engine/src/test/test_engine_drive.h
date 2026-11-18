@@ -37,8 +37,9 @@ static double drive_h1(int32_t type, const float* p, double dbfs, int* sign) {
 
 /* The overdrive reproduces the Guitar Rack's OvDrive captures (#891,
  * session fxlive, Tone 50 %): the 1 kHz fundamental at -48, -24 and
- * 0 dBFS in at Drive 10.7, 50 and 90 %, within 1 dB, and the inverted
- * polarity. */
+ * 0 dBFS in at Drive 10.7, 50 and 90 %, within 1 dB, and the input's
+ * polarity (#1743, s20pol: Phase 0 read the impulse's later negative swing
+ * as an inversion). */
 static void test_overdrive_matches_the_capture(void) {
   printf("test_overdrive_matches_the_capture\n");
   const float drives[3] = {0.107f, 0.5f, 0.9f};
@@ -59,7 +60,7 @@ static void test_overdrive_matches_the_capture(void) {
                levels[l], got, want[d][l]);
       }
       CHECK(fabs(got - want[d][l]) < 1.0);
-      if (l == 0) CHECK(sign < 0);
+      if (l == 0) CHECK(sign > 0);
     }
   }
 }
@@ -125,6 +126,97 @@ static void test_overdrive_small_signal_matches_the_capture(void) {
   }
 }
 
+/* The level is a gain after the pedal: the Lo-Fi Rack's Distort (#1737)
+ * is the OvDrive times 1.6, which its +4.08 dB gives sample for sample, and
+ * the default, 0 dB, leaves the output as the fit has it. */
+static void test_overdrive_level(void) {
+  printf("test_overdrive_level\n");
+  const le_fx_param_desc level = fxd_get(LE_FX_OVERDRIVE, 2);
+  CHECK(level.unit == LE_FX_UNIT_DB);
+  CHECK(level.def == 0.0f);
+  CHECK(fxd_value(&level, 0.0) == 0.0);
+  const int sr = 48000;
+  const int n = sr / 4;
+  float* in = (float*)malloc(sizeof(float) * (size_t)n);
+  float* plain = (float*)malloc(sizeof(float) * (size_t)n);
+  float* lofi = (float*)malloc(sizeof(float) * (size_t)n);
+  for (int i = 0; i < n; ++i) {
+    in[i] = 0.25f * sinf(2.0f * (float)M_PI * 220.0f * (float)i / sr);
+  }
+  float p[LE_FX_PARAMS] = {0.535f, 0.901f, 0.0f};
+  le_fx_state* fx = dyn_state(LE_FX_OVERDRIVE, sr);
+  uint32_t clock = 0;
+  dyn_run(fx, LE_FX_OVERDRIVE, p, sr, in, plain, NULL, n, &clock);
+  dyn_free(fx);
+  p[2] = (float)(20.0 * log10(1.6) / 12.0);
+  fx = dyn_state(LE_FX_OVERDRIVE, sr);
+  clock = 0;
+  dyn_run(fx, LE_FX_OVERDRIVE, p, sr, in, lofi, NULL, n, &clock);
+  dyn_free(fx);
+  double worst = 0.0;
+  for (int i = 0; i < n; ++i) {
+    const double d = fabs((double)lofi[i] - 1.6 * (double)plain[i]);
+    if (d > worst) worst = d;
+  }
+  CHECK(worst < 1e-5);
+
+  /* Changed on a running pedal, the level glides there: it has not jumped
+   * a few samples after the change, and it has arrived by the end. */
+  float* moved = (float*)malloc(sizeof(float) * (size_t)n);
+  fx = dyn_state(LE_FX_OVERDRIVE, sr);
+  clock = 0;
+  p[2] = 0.0f;
+  dyn_run(fx, LE_FX_OVERDRIVE, p, sr, in, moved, NULL, n / 2, &clock);
+  p[2] = (float)(20.0 * log10(1.6) / 12.0);
+  dyn_run(fx, LE_FX_OVERDRIVE, p, sr, in + n / 2, moved + n / 2, NULL,
+          n - n / 2, &clock);
+  dyn_free(fx);
+  /* From the first sample the change reaches (the next update boundary),
+   * eight samples move only part of the way. */
+  int first = n / 2;
+  while (first < n && moved[first] == plain[first]) ++first;
+  CHECK(first < n / 2 + 64);
+  double early = 0.0, late = 0.0;
+  for (int i = first; i < first + 8 && i < n; ++i) {
+    const double d = fabs((double)moved[i] - (double)plain[i]);
+    if (d > early) early = d;
+  }
+  for (int i = n - 2000; i < n; ++i) {
+    const double d = fabs((double)moved[i] - 1.6 * (double)plain[i]);
+    if (d > late) late = d;
+  }
+  CHECK(early < 0.05 * 0.6 * 0.25); /* well short of the 60 % step */
+  CHECK(late < 1e-4);
+  free(moved);
+  free(in);
+  free(plain);
+  free(lofi);
+}
+
+/* The pedal keeps the input's polarity (#1743, session s20pol): a positive
+ * impulse's onset comes out positive, as the Looper X's does 2 samples
+ * after the dry path's, before it rings to a larger negative swing. */
+static void test_overdrive_keeps_polarity(void) {
+  printf("test_overdrive_keeps_polarity\n");
+  const int sr = 48000;
+  const int n = 256;
+  float in[256] = {0};
+  float out[256];
+  in[64] = 0.5f;
+  const float p[LE_FX_PARAMS] = {0.5f, 0.5f, 0.0f};
+  le_fx_state* fx = dyn_state(LE_FX_OVERDRIVE, sr);
+  uint32_t clock = 0;
+  dyn_run(fx, LE_FX_OVERDRIVE, p, sr, in, out, NULL, n, &clock);
+  dyn_free(fx);
+  /* The onset lobe: the largest swing in the first 16 frames (the Looper
+   * X's first six samples are all positive, 2.1 to 3.6 % of the impulse). */
+  float lobe = 0.0f;
+  for (int i = 64; i < 80; ++i) {
+    if (fabsf(out[i]) > fabsf(lobe)) lobe = out[i];
+  }
+  CHECK(lobe > 0.0f);
+}
+
 /* ---- Distortion ---- */
 
 /* The distortion reproduces the amp captures with the 4x12" cabinet (#891:
@@ -180,6 +272,72 @@ static void test_distortion_cabinet(void) {
       printf("  %.0f Hz: %.2f dB, capture %.2f\n", want[i][0], got, want[i][1]);
     }
     CHECK(fabs(got - want[i][1]) < 1.5);
+  }
+  free(in);
+  free(h);
+}
+
+/* The drive's law follows the Studio Rack's Dist's small-signal gain
+ * (#1731, session s19std, the Dist alone at Drive 0 to 100 % as the Looper
+ * X shows them): the 1 kHz
+ * fundamental at -48 dBFS in is within 3.1 dB of the capture at every
+ * setting (the largest, 3.05 dB, at 100 %; the same at 48 and 96 kHz), and
+ * rises with it as the capture does. The check allows 3.2 dB. */
+static void test_distortion_drive_law(void) {
+  printf("test_distortion_drive_law\n");
+  const float drives[8] = {0.0f,  0.056f, 0.10f, 0.233f,
+                           0.5f,  0.665f, 0.80f, 1.0f};
+  const double want[8] = {-56.35, -55.85, -55.08, -51.77,
+                          -46.06, -37.50, -27.93, -19.88};
+  double last = -1e9;
+  for (int d = 0; d < 8; ++d) {
+    float p[LE_FX_PARAMS] = {0};
+    p[0] = drives[d];
+    p[1] = 0.5f;
+    const double got = drive_h1(LE_FX_DISTORTION, p, -48.0, NULL);
+    if (fabs(got - want[d]) >= 3.2) {
+      printf("  drive %.3f: %.2f, capture %.2f\n", drives[d], got, want[d]);
+    }
+    CHECK(fabs(got - want[d]) < 3.2);
+    CHECK(got > last);
+    last = got;
+  }
+}
+
+/* The tone reads as the Looper X's 0 to 100 % and plays as its 2 kHz
+ * shelf: at 16 kHz, with the curve near linear, each setting moves the
+ * response from the flat middle by 6 x (2 tone - 1) dB (LE_DIST_TONE_DB)
+ * within 0.5 dB. */
+static void test_distortion_tone_is_its_shelf(void) {
+  printf("test_distortion_tone_is_its_shelf\n");
+  const int sr = 48000;
+  const int n = 1 << 15;
+  const float tones[5] = {0.0f, 0.25f, 0.5f, 0.9f, 1.0f};
+  const le_fx_param_desc tone = fxd_get(LE_FX_DISTORTION, 1);
+  CHECK(tone.unit == LE_FX_UNIT_PERCENT);
+  CHECK(tone.at_min == 0.0f && tone.at_max == 100.0f);
+  float* in = (float*)calloc((size_t)n, sizeof(float));
+  float* h = (float*)calloc((size_t)n, sizeof(float));
+  in[0] = 1e-4f;
+  double flat = 0.0;
+  double got[5];
+  for (int t = 0; t < 5; ++t) {
+    float p[LE_FX_PARAMS] = {0};
+    p[1] = tones[t];
+    le_fx_state* fx = dyn_state(LE_FX_DISTORTION, sr);
+    uint32_t clock = 0;
+    dyn_run(fx, LE_FX_DISTORTION, p, sr, in, h, NULL, n, &clock);
+    dyn_free(fx);
+    got[t] = eq_measured_db(h, n, 16000.0, sr);
+    if (tones[t] == 0.5f) flat = got[t];
+  }
+  for (int t = 0; t < 5; ++t) {
+    const double want = 6.0 * (2.0 * tones[t] - 1.0);
+    if (fabs(got[t] - flat - want) >= 0.5) {
+      printf("  tone %.2f: %.2f dB, shelf %.2f\n", tones[t], got[t] - flat,
+             want);
+    }
+    CHECK(fabs(got[t] - flat - want) < 0.5);
   }
   free(in);
   free(h);
@@ -299,8 +457,12 @@ static void run_drive_tests(void) {
   test_overdrive_matches_the_capture();
   test_overdrive_controls();
   test_overdrive_small_signal_matches_the_capture();
+  test_overdrive_level();
+  test_overdrive_keeps_polarity();
   test_distortion_matches_the_capture();
   test_distortion_cabinet();
+  test_distortion_drive_law();
+  test_distortion_tone_is_its_shelf();
   test_drive_offline_equals_live();
   test_drive_on_a_lane();
 }

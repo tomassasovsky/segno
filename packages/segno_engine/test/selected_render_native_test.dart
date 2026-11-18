@@ -12,21 +12,12 @@ import 'package:segno_engine/segno_engine.dart';
 /// render their 48-frame common cycle as `A[f % 16] + B[f % 24]` on both
 /// sides.
 ///
-/// Self-skips when `SEGNO_ENGINE_LIB` is unset; build it first:
-///   export SEGNO_ENGINE_LIB="$(bash tool/build_test_lib.sh)"
 void main() {
-  final lib = Platform.environment['SEGNO_ENGINE_LIB'];
-  final skip = lib == null || lib.isEmpty
-      ? 'SEGNO_ENGINE_LIB not set — run tool/build_test_lib.sh'
-      : null;
-
   PumpedNativeEngine fixture() {
     final engine = PumpedNativeEngine();
     addTearDown(engine.dispose);
     expect(
-      engine.start(
-        const EngineConfig(inputChannels: 1, outputChannels: 2),
-      ),
+      engine.start(const EngineConfig(inputChannels: 1, outputChannels: 2)),
       EngineResult.ok,
     );
     engine.pump(frames: 0);
@@ -76,16 +67,13 @@ void main() {
     engine.pump(frames: 0);
     const request = RenderRequest(sources: {0}, lengthBars: 1);
     expect(engine.measureRender(request).plan!.onceCutTracks, isEmpty);
-    expect(
-      engine.setOneShotMask(channels: 1, oneShot: true),
-      EngineResult.ok,
-    );
+    expect(engine.setOneShotMask(channels: 1, oneShot: true), EngineResult.ok);
     engine.pump(frames: 0);
     final measured = engine.measureRender(request);
     expect(measured.result, EngineResult.ok);
     expect(measured.plan!.frames, 38400);
     expect(measured.plan!.onceCutTracks, {0});
-  }, skip: skip);
+  });
 
   test('measures and renders the common cycle into memory', () async {
     final engine = fixture();
@@ -109,7 +97,7 @@ void main() {
     }
     expect(engine.cancelRender(begun.job), EngineResult.ok);
     expect(engine.pollRender(begun.job), isNull);
-  }, skip: skip);
+  });
 
   test('writes a stereo float WAV for a file render', () async {
     final engine = fixture();
@@ -134,7 +122,7 @@ void main() {
       expect(data.getFloat32(44 + 8 * f, Endian.little), expected(f));
     }
     expect(File('$path.part').existsSync(), isFalse);
-  }, skip: skip);
+  });
 
   test('maps the recipe refusals and failures', () async {
     final engine = fixture();
@@ -168,5 +156,5 @@ void main() {
     }
     expect(status!.state, RenderJobState.failed);
     expect(status.failure, EngineResult.tracksChanged);
-  }, skip: skip);
+  });
 }

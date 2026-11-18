@@ -30,10 +30,7 @@ void main() {
     );
     final store = _GatedDecayStore();
     final settings = SettingsRepository(store: store);
-    final owner = PlaybackSettings(
-      repository: repository,
-      settings: settings,
-    );
+    final owner = PlaybackSettings(repository: repository, settings: settings);
     await owner.load();
     addTearDown(() async {
       if (!store.release.isCompleted) store.release.complete();

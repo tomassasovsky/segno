@@ -8,7 +8,7 @@ import 'package:console_facts_client/src/console_facts_models.dart';
 /// desktop build, and the faces are written against it first.
 class UnsupportedConsoleFactsClient implements ConsoleFactsClient {
   /// Creates an [UnsupportedConsoleFactsClient].
-  const UnsupportedConsoleFactsClient();
+  const new();
 
   @override
   bool get isSupported => false;

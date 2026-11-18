@@ -10,7 +10,7 @@ import 'package:spawn_process/src/libc.dart' as libc;
 /// What the parent isolate asks a worker to start.
 final class SpawnRequest {
   /// Creates a [SpawnRequest].
-  const SpawnRequest(this.port, this.executable, this.arguments, this.stdin);
+  const new(this.port, this.executable, this.arguments, this.stdin);
 
   /// Where the worker sends its [WorkerMessage]s.
   final SendPort port;

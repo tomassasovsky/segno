@@ -1,7 +1,7 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -178,10 +178,9 @@ void main() {
       tester,
     ) async {
       await openCalibration(tester, 'main');
-      expect(
-        harness.guards.active.map((op) => op.kind),
-        [GuardKind.touchCalibration],
-      );
+      expect(harness.guards.active.map((op) => op.kind), [
+        GuardKind.touchCalibration,
+      ]);
       await tester.tap(find.byKey(const Key('touch_calibration_cancel')));
       await tester.pumpAndSettle();
       expect(harness.guards.active, isEmpty);

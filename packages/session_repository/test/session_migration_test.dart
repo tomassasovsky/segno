@@ -75,17 +75,14 @@ void main() {
         reason: 'no conversion step from schema $version to ${version + 1}',
       );
     }
-    expect(
-      sessionMigrationSteps.keys.toSet(),
-      {
-        for (
-          var version = oldestConvertibleSessionVersion;
-          version < Session.formatVersion;
-          version++
-        )
-          version,
-      },
-    );
+    expect(sessionMigrationSteps.keys.toSet(), {
+      for (
+        var version = oldestConvertibleSessionVersion;
+        version < Session.formatVersion;
+        version++
+      )
+        version,
+    });
   });
 
   group('a schema-7 bundle written by master', () {
@@ -472,15 +469,51 @@ void main() {
       );
     });
 
-    test('the current schema opens with no conversion', () async {
+    test('schema 17 opens with each take recorded from its lane input '
+        '(#1678)', () async {
       final dir = copyFixture('v17_anchor');
+      final (:bundle, :conversion) = await repo().open(
+        dir,
+        liveSettings: () => _live,
+      );
+      expect(conversion!.fromVersion, 17);
+      for (final track in bundle.session.tracks) {
+        for (final lane in track.lanes) {
+          expect(lane.recordedInput, lane.inputChannel);
+        }
+      }
+      expect(
+        conversion.notes,
+        containsAll([
+          'tracks[1].lanes[0].recordedInput: taken from inputChannel',
+          'tracks[1].lanes[1].recordedInput: taken from inputChannel',
+        ]),
+      );
+    });
+
+    test('schema 18 opens with no heard images and nothing filled in '
+        '(#1713)', () async {
+      final dir = copyFixture('v18_recorded_input');
+      final (:bundle, :conversion) = await repo().open(
+        dir,
+        liveSettings: () => _live,
+      );
+      expect(conversion!.fromVersion, 18);
+      expect(conversion.notes, isEmpty);
+      expect(bundle.heardStems, isEmpty);
+      for (final track in bundle.session.tracks) {
+        for (final lane in track.lanes) {
+          expect(lane.layers.map((l) => l.heard), everyElement(isNull));
+        }
+      }
+    });
+
+    test('the current schema opens with no conversion', () async {
+      final dir = copyFixture('v19_heard');
       final before = snapshotOf(dir);
       final (:bundle, :conversion) = await repo().open(dir);
       expect(conversion, isNull);
-      expect(
-        bundle.session,
-        Session.fromJson(manifestOf(dir)),
-      );
+      expect(bundle.session, Session.fromJson(manifestOf(dir)));
       expect(bundle.session.tracks.map((t) => t.reversed), [
         false,
         true,
@@ -507,21 +540,38 @@ void main() {
       expect(bundle.session.backing.loaded?.name, 'Count-in.mp3');
       expect(bundle.session.clickPan, 0.4);
       // The retimed rig and the Audio & tempo settings (#1179).
-      expect(
-        bundle.session.tracks.map((t) => t.spanFrames),
-        [0, 0, 0, 2400, 2400],
-      );
+      expect(bundle.session.tracks.map((t) => t.spanFrames), [
+        0,
+        0,
+        0,
+        2400,
+        2400,
+      ]);
       expect(bundle.session.recordedTempoBpm, 120);
       expect(bundle.session.recordedLengthFrames, 1200);
       expect(bundle.session.defaultFollowTempo, isFalse);
       // The lap each take was played on (#854).
       expect(bundle.session.tracks.map((t) => t.anchorLap), [0, 1, 0, 0, 0]);
+      // The input each take was captured from, apart from the lane's
+      // setting (#1678).
+      final lanes = bundle.session.tracks[1].lanes;
+      expect(lanes[1].inputChannel, 1);
+      expect(lanes[1].recordedInput, 3);
+      // Each layer's heard image, empty for the one without (#1713).
+      final heard = bundle.heardStems[(0, 0)]!;
+      expect(heard, hasLength(3));
+      expect(heard[0], hasLength(4800));
+      expect(heard[0].take(2), [0.0625, -0.0625]);
+      expect(heard[1], isEmpty);
+      expect(heard[2].take(2), [0.125, -0.125]);
+      expect(bundle.heardStems.keys, [(0, 0)]);
       expect(snapshotOf(dir), before);
     });
 
     test('the current schema stays strict: a track without a direction, a '
-        'span or an anchor, a grid without its beats, or a manifest without '
-        'its Audio & tempo settings, is refused, not defaulted', () {
+        'span or an anchor, a grid without its beats, a manifest without '
+        'its Audio & tempo settings, or a lane without its recorded input, '
+        'is refused, not defaulted', () {
       for (final edit in <void Function(Map<String, dynamic>)>[
         (m) => ((m['tracks'] as List)[1] as Map).remove('reversed'),
         (m) => ((m['tracks'] as List)[1] as Map).remove('spanFrames'),
@@ -529,8 +579,10 @@ void main() {
         (m) => m.remove('loopBeats'),
         (m) => m.remove('defaultFollowTempo'),
         (m) => m.remove('recordedTempoBpm'),
+        (m) => ((((m['tracks'] as List)[1] as Map)['lanes'] as List)[1] as Map)
+            .remove('recordedInput'),
       ]) {
-        final manifest = manifestOf(copyFixture('v17_anchor'));
+        final manifest = manifestOf(copyFixture('v19_heard'));
         edit(manifest);
         expect(
           () => decodeSessionManifest(jsonEncode(manifest)),
@@ -625,13 +677,12 @@ void main() {
     void rewrite(String dir, void Function(Map<String, dynamic>) edit) {
       final manifest = manifestOf(dir);
       edit(manifest);
-      File(
-        '$dir/${Session.manifestName}',
-      ).writeAsStringSync(jsonEncode(manifest));
+      File('$dir/${Session.manifestName}')
+          .writeAsStringSync(jsonEncode(manifest));
     }
 
     test('newer than this build', () async {
-      final dir = copyFixture('v17_anchor');
+      final dir = copyFixture('v19_heard');
       rewrite(dir, (m) => m['version'] = Session.formatVersion + 1);
       await expectRefused(dir, isA<SessionUnsupportedVersion>());
     });
@@ -891,14 +942,10 @@ void main() {
     final manifest = manifestOf(dir);
     final lane = (_first(manifest['tracks'])['lanes'] as List).first as Map;
     (lane['layers'] as List).removeLast();
-    File(
-      '$dir/${Session.manifestName}',
-    ).writeAsStringSync(jsonEncode(manifest));
+    File('$dir/${Session.manifestName}')
+        .writeAsStringSync(jsonEncode(manifest));
 
-    await expectLater(
-      repo().open(dir),
-      throwsA(isA<SessionCorruptLayers>()),
-    );
+    await expectLater(repo().open(dir), throwsA(isA<SessionCorruptLayers>()));
   });
 
   group('a schema older than 7 written by its own commit', () {
@@ -1042,10 +1089,7 @@ void main() {
       final manifest = manifestOf(copyFixture('v9_trunk_623a5a7ba'));
       _first(manifest['outputChains'])['bus'] = 0;
       manifest['masterChain'] = '{"entries":[]}';
-      expect(
-        () => convert(manifest),
-        throwsA(isA<SessionUnconvertible>()),
-      );
+      expect(() => convert(manifest), throwsA(isA<SessionUnconvertible>()));
     });
 
     test('the strict decoder still reads only the current schema', () {

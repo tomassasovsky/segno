@@ -1,5 +1,5 @@
-import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/common/top_bar_layout.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
@@ -12,12 +12,16 @@ const Size kLoopPenSize = Size(1920, 1080);
 /// The pen's top bar height on these pages.
 const double kLoopTopBarHeight = 96;
 
+/// Where a Loop settings tab's content starts in the frame's content box:
+/// 30 under the tabs' 64 high row at 30 (#1672: every tab starts here).
+const double kLoopTabContentTop = 124;
+
 /// Lays [child] out at the pen's size and scales it down uniformly when the
 /// window is smaller, so the appliance draws the pen 1:1 and a desktop window
 /// sees the same page smaller instead of overflowing.
 class LoopPenCanvas extends StatelessWidget {
   /// Creates a [LoopPenCanvas].
-  const LoopPenCanvas({required this.child, super.key});
+  const new({required this.child, super.key});
 
   /// The page, laid out in pen pixels.
   final Widget child;
@@ -57,7 +61,7 @@ double fillingCardWidth({
 /// starts its content at `left: 0` and fills it with `right: 0`.
 class LoopSettingsFrame extends StatelessWidget {
   /// Creates a [LoopSettingsFrame].
-  const LoopSettingsFrame({
+  const new({
     required this.title,
     required this.onBack,
     required this.onStage,
@@ -186,6 +190,7 @@ class LoopSettingsFrame extends StatelessWidget {
                       width: 113,
                       radius: 8,
                       tone: LoopButtonTone.frameRaised,
+                      fitLabel: true,
                       label: l10n.loopSettingsStage,
                       onTap: onStage,
                     ),

@@ -21,7 +21,7 @@ class _Store extends FakeKeyValueStore {
   @override
   Future<String?> getString(String key) async {
     if (refuseRead) throw StateError('read refused');
-    return super.getString(key);
+    return await super.getString(key);
   }
 
   @override
@@ -102,22 +102,19 @@ void main() {
 
     for (final old in [null, '{ "overrides": {"0":4000}, "defaultMs":4000 }']) {
       for (final discard in [false, true]) {
-        test(
-          'restores exact $old after '
-          '${discard ? 'mismatch' : 'write then throw'}',
-          () async {
-            if (old != null) store.values[key] = old;
-            store
-              ..throwAfterWrite = !discard
-              ..discardWrite = discard;
-            await expectLater(owner.setDefault(8000), throwsStateError);
-            expect(store.values[key], old);
-            expect(owner.confirmed.defaultMs, 4000);
-            expect(owner.needsRecovery, isFalse);
-            await owner.setDefault(6000);
-            expect(owner.confirmed.defaultMs, 6000);
-          },
-        );
+        test('restores exact $old after '
+            '${discard ? 'mismatch' : 'write then throw'}', () async {
+          if (old != null) store.values[key] = old;
+          store
+            ..throwAfterWrite = !discard
+            ..discardWrite = discard;
+          await expectLater(owner.setDefault(8000), throwsStateError);
+          expect(store.values[key], old);
+          expect(owner.confirmed.defaultMs, 4000);
+          expect(owner.needsRecovery, isFalse);
+          await owner.setDefault(6000);
+          expect(owner.confirmed.defaultMs, 6000);
+        });
       }
     }
 
@@ -252,23 +249,20 @@ void main() {
       },
     );
 
-    test(
-      'close supersedes the admitted write, restores storage and rejects '
-      'new work',
-      () async {
-        store.gate = Completer<void>();
-        final write = owner.setDefault(6000);
-        await store.entered.future;
-        final closing = owner.close();
-        await expectLater(owner.setDefault(8000), throwsStateError);
-        store.gate!.complete();
-        await Future.wait([write, closing]);
-        // As every owner: a write still in flight at close is superseded and
-        // its storage rolled back, so nothing half-applied stays behind.
-        expect(owner.confirmed.defaultMs, 4000);
-        expect(store.values.containsKey(key), isFalse);
-      },
-    );
+    test('close supersedes the admitted write, restores storage and rejects '
+        'new work', () async {
+      store.gate = Completer<void>();
+      final write = owner.setDefault(6000);
+      await store.entered.future;
+      final closing = owner.close();
+      await expectLater(owner.setDefault(8000), throwsStateError);
+      store.gate!.complete();
+      await Future.wait([write, closing]);
+      // As every owner: a write still in flight at close is superseded and
+      // its storage rolled back, so nothing half-applied stays behind.
+      expect(owner.confirmed.defaultMs, 4000);
+      expect(store.values.containsKey(key), isFalse);
+    });
 
     test(
       'startup queued during a canceled Session still restores local setup',
@@ -320,26 +314,23 @@ void main() {
         expect((owner.live.defaultMs, stored().defaultMs), (2500, 2500));
       });
 
-      test(
-        'a device restart retires a held value: the next gesture uses '
-        'Released',
-        () async {
-          expect(await write(null, 5000, released: 1000), isTrue);
-          expect(owner.live.defaultMs, 5000);
-          final lifetime = owner.lifetime;
-          expect(repository.startEngine(const EngineConfig()), EngineResult.ok);
-          await Future<void>.delayed(Duration.zero);
-          expect(owner.lifetime, isNot(lifetime));
-          expect(owner.live.defaultMs, 1000);
-          expect(owner.confirmed.defaultMs, 1000);
-          // The pedal's release from the old lifetime is refused, harmlessly.
-          expect(
-            await write(null, 1000, lifetime: lifetime, revision: 0),
-            isFalse,
-          );
-          expect(owner.live.defaultMs, 1000);
-        },
-      );
+      test('a device restart retires a held value: the next gesture uses '
+          'Released', () async {
+        expect(await write(null, 5000, released: 1000), isTrue);
+        expect(owner.live.defaultMs, 5000);
+        final lifetime = owner.lifetime;
+        expect(repository.startEngine(const EngineConfig()), EngineResult.ok);
+        await Future<void>.delayed(Duration.zero);
+        expect(owner.lifetime, isNot(lifetime));
+        expect(owner.live.defaultMs, 1000);
+        expect(owner.confirmed.defaultMs, 1000);
+        // The pedal's release from the old lifetime is refused, harmlessly.
+        expect(
+          await write(null, 1000, lifetime: lifetime, revision: 0),
+          isFalse,
+        );
+        expect(owner.live.defaultMs, 1000);
+      });
 
       test('writing an inherited track creates its override', () async {
         await owner.setDefault(8000);
@@ -372,10 +363,7 @@ void main() {
           expect(changes, [(channel: null, milliseconds: 4000)]);
           expect(owner.revision(null), defaultRevision + 1);
           expect(owner.revision(0), trackRevision);
-          expect(
-            await write(null, 20000, revision: defaultRevision),
-            isFalse,
-          );
+          expect(await write(null, 20000, revision: defaultRevision), isFalse);
           expect(owner.live.defaultMs, 4000);
           expect(await write(0, 20000, revision: trackRevision), isTrue);
           await owner.setOverride(0, null);
@@ -386,32 +374,29 @@ void main() {
         },
       );
 
-      test(
-        'a Session load supersedes queued intent; its install replaces the '
-        'held value',
-        () async {
-          final lifetime = owner.lifetime;
-          expect(await write(null, 10000, released: 6000), isTrue);
-          late Future<bool> queued;
-          await owner.owner.runExclusive(() async {
-            // Queued behind the Session operation, not refused by it.
-            queued = write(null, 20000, lifetime: lifetime);
-            await repository.applySession(
-              const SessionRig(),
-              clearPollInterval: Duration.zero,
-            );
-            await owner.installSession(FadeDurations(defaultMs: 12000));
-          });
-          expect(await queued, isFalse);
-          expect(owner.lifetime, isNot(lifetime));
-          expect(owner.live, owner.confirmed);
-          expect(owner.live.defaultMs, 12000);
-          expect(
-            FadeDurations.fromJson(jsonDecode(store.values[key]! as String)),
-            FadeDurations(defaultMs: 12000),
+      test('a Session load supersedes queued intent; its install replaces the '
+          'held value', () async {
+        final lifetime = owner.lifetime;
+        expect(await write(null, 10000, released: 6000), isTrue);
+        late Future<bool> queued;
+        await owner.owner.runExclusive(() async {
+          // Queued behind the Session operation, not refused by it.
+          queued = write(null, 20000, lifetime: lifetime);
+          await repository.applySession(
+            const SessionRig(),
+            clearPollInterval: Duration.zero,
           );
-        },
-      );
+          await owner.installSession(FadeDurations(defaultMs: 12000));
+        });
+        expect(await queued, isFalse);
+        expect(owner.lifetime, isNot(lifetime));
+        expect(owner.live, owner.confirmed);
+        expect(owner.live.defaultMs, 12000);
+        expect(
+          FadeDurations.fromJson(jsonDecode(store.values[key]! as String)),
+          FadeDurations(defaultMs: 12000),
+        );
+      });
 
       test(
         'a Session save stores Released and applies queued work after',

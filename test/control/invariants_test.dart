@@ -31,16 +31,14 @@ void main() {
       if (i == channel) led else PedalTrackLed.off,
   ];
 
-  LooperState looper({
-    List<Track>? tracks,
-    int masterLengthFrames = 0,
-  }) => LooperState(
-    transport: TransportState(
-      deviceRunning: true,
-      masterLengthFrames: masterLengthFrames,
-    ),
-    tracks: tracks ?? [for (var i = 0; i < 8; i++) Track(channel: i)],
-  );
+  LooperState looper({List<Track>? tracks, int masterLengthFrames = 0}) =>
+      LooperState(
+        transport: TransportState(
+          deviceRunning: true,
+          masterLengthFrames: masterLengthFrames,
+        ),
+        tracks: tracks ?? [for (var i = 0; i < 8; i++) Track(channel: i)],
+      );
 
   List<Track> tracksWith(Track track) => [
     for (var i = 0; i < 8; i++)
@@ -48,9 +46,9 @@ void main() {
   ];
 
   String? violation(ControlContext c, String name) {
-    final hits = checkControlInvariants(
-      c,
-    ).where((v) => v.startsWith('$name:')).toList();
+    final hits = checkControlInvariants(c)
+        .where((v) => v.startsWith('$name:'))
+        .toList();
     return hits.isEmpty ? null : hits.first;
   }
 
@@ -370,10 +368,7 @@ void main() {
           ),
           boundChains: const {0: false},
         );
-        expect(
-          violation(c, 'fx-led-mirrors-what-the-switch-drives'),
-          isNull,
-        );
+        expect(violation(c, 'fx-led-mirrors-what-the-switch-drives'), isNull);
 
         // And a stale binding — present, unresolvable — must read dark too.
         expect(
@@ -581,10 +576,8 @@ void main() {
       final dark = ControlContext(
         looper: song(),
         overlay: record,
-        frame: frame(leds: leds(PedalTrackLed.green)).copyWith(
-          queuedButton: PedalButton.track2,
-          queuedProgress: 127,
-        ),
+        frame: frame(leds: leds(PedalTrackLed.green))
+            .copyWith(queuedButton: PedalButton.track2, queuedProgress: 127),
       );
       expect(violation(dark, 'song-queue-mirrors-engine'), isNotNull);
       final invented = ControlContext(
@@ -610,11 +603,8 @@ void main() {
       final shown = ControlContext(
         looper: song(),
         overlay: mute,
-        frame:
-            frame(
-              leds: leds(PedalTrackLed.green),
-              mode: PedalMode.play,
-            ).copyWith(
+        frame: frame(leds: leds(PedalTrackLed.green), mode: PedalMode.play)
+            .copyWith(
               activeButtonMask: lit,
               queuedButton: PedalButton.track2,
               queuedProgress: 127,

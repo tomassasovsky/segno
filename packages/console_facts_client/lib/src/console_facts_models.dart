@@ -9,7 +9,7 @@ import 'package:equatable/equatable.dart';
 /// not defaulted.
 class StorageUsage extends Equatable {
   /// Creates a known [StorageUsage].
-  const StorageUsage({
+  const new({
     required this.sessionBytes,
     required this.captureBytes,
     required this.pluginBytes,
@@ -19,7 +19,7 @@ class StorageUsage extends Equatable {
   }) : known = true;
 
   /// What a build that cannot read the disk reports.
-  const StorageUsage.unknown()
+  const new unknown()
     : known = false,
       sessionBytes = 0,
       captureBytes = 0,
@@ -72,7 +72,7 @@ class StorageUsage extends Equatable {
 /// prefers the board's own HELLO whenever the link is up.
 class ConsoleBoardFlash extends Equatable {
   /// Creates a [ConsoleBoardFlash].
-  const ConsoleBoardFlash({required this.firmware, required this.protocol});
+  const new({required this.firmware, required this.protocol});
 
   /// The firmware version flashed, `major.minor`.
   final String firmware;
@@ -93,7 +93,7 @@ class ConsoleBoardFlash extends Equatable {
 /// is not there is not a serial number that is blank.
 class ConsoleFacts extends Equatable {
   /// Creates a [ConsoleFacts].
-  const ConsoleFacts({
+  const new({
     this.name = '',
     this.serial = '',
     this.systemImage = '',

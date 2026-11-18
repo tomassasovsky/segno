@@ -295,14 +295,3 @@ int32_t le_wav_patch_sizes(const char* path, uint64_t max_frames,
   if (ok && kept != NULL) *kept = frames;
   return ok;
 }
-
-int le_wav_write_file(const char* path, const float* samples, uint64_t frames,
-                      int32_t sample_rate, int32_t channels) {
-  le_wav_writer w;
-  if (!le_wav_open(&w, path, sample_rate, channels, NULL, NULL, 0)) {
-    le_wav_abandon(&w);
-    return 0;
-  }
-  le_wav_append(&w, samples, frames);
-  return le_wav_seal(&w, 0);
-}

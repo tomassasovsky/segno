@@ -1,9 +1,9 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart'
     show EngineStatus, LatencyState;
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
 import 'package:segno/audio_setup/view/audio_device_scan_scope.dart';
 import 'package:segno/audio_setup/view/audio_interfaces.dart';
@@ -27,7 +27,7 @@ import 'package:segno/theme/theme.dart';
 /// in flight.
 class DevicePage extends StatefulWidget {
   /// Creates a [DevicePage].
-  const DevicePage({super.key});
+  const new({super.key});
 
   /// The workspace's inset in the frame's content box: its full width,
   /// under the title (pen 28/01 drew the content 52 in from the title;
@@ -132,7 +132,7 @@ class _DevicePageState extends State<DevicePage> {
 
 /// Everything above the Apply row.
 class _Workspace extends StatelessWidget {
-  const _Workspace();
+  const new();
 
   @override
   Widget build(BuildContext context) {
@@ -146,11 +146,10 @@ class _Workspace extends StatelessWidget {
       return outputs > 0 &&
           List.generate(outputs, looper.isOutputEnabled).every((on) => !on);
     });
-    final banner = _banner(l10n, state);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (banner != null) ...[banner, const SizedBox(height: 16)],
+        _OutcomeBanner(state: state),
         if (silent) ...[
           ConsoleBanner(
             key: const Key('audio_no_outputs_banner'),
@@ -189,13 +188,35 @@ class _Workspace extends StatelessWidget {
       ],
     );
   }
+}
 
-  /// What the last request turned out to be, or null when the page simply
-  /// shows what runs.
-  Widget? _banner(AppLocalizations l10n, AudioSetupState state) {
+/// What the last request turned out to be, with the gap below it, or
+/// nothing when the page simply shows what runs.
+class _OutcomeBanner extends StatelessWidget {
+  const new({required this.state});
+
+  final AudioSetupState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final outcome = _outcome(context.l10n);
+    if (outcome == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: ConsoleBanner(
+        key: outcome.key,
+        message: outcome.message,
+        tone: outcome.tone,
+      ),
+    );
+  }
+
+  ({Key key, String message, ConsoleBannerTone tone})? _outcome(
+    AppLocalizations l10n,
+  ) {
     final refusal = state.refusal;
     if (refusal != null) {
-      return ConsoleBanner(
+      return (
         key: const Key('audio_apply_refused_banner'),
         message: _refusalMessage(l10n, refusal),
         // The device stays as it was: a press that did nothing (#1562).
@@ -204,7 +225,7 @@ class _Workspace extends StatelessWidget {
     }
     final error = state.error;
     if (error != null) {
-      return ConsoleBanner(
+      return (
         key: const Key('audio_open_failed_banner'),
         message: switch (error) {
           AudioSetupError.openDeviceFailed => l10n.failedToOpenDevice(
@@ -215,7 +236,7 @@ class _Workspace extends StatelessWidget {
       );
     }
     if (state.phase == ConfigPhase.settled) return null;
-    return ConsoleBanner(
+    return (
       key: const Key('audio_refused_banner'),
       message: l10n.audioRefusedConfig(
         l10n.audioRateBufferValue(
@@ -250,7 +271,7 @@ class _Workspace extends StatelessWidget {
 /// The interface: its name and channel counts, whether it is there, and
 /// Change interface.
 class _Header extends StatelessWidget {
-  const _Header();
+  const new();
 
   @override
   Widget build(BuildContext context) {
@@ -364,7 +385,7 @@ class _Header extends StatelessWidget {
 }
 
 class _InterfaceDialog extends StatelessWidget {
-  const _InterfaceDialog();
+  const new();
 
   @override
   Widget build(BuildContext context) {
@@ -413,7 +434,7 @@ class _InterfaceDialog extends StatelessWidget {
 }
 
 class _StatusPill extends StatelessWidget {
-  const _StatusPill({required this.present});
+  const new({required this.present});
 
   final bool present;
 
@@ -447,7 +468,7 @@ class _StatusPill extends StatelessWidget {
 
 /// Sample rate, buffer and the period they make.
 class _EngineColumn extends StatelessWidget {
-  const _EngineColumn();
+  const new();
 
   @override
   Widget build(BuildContext context) {
@@ -575,7 +596,7 @@ class _EngineColumn extends StatelessWidget {
 /// automatic loopback measurement (#1541) reads as measuring while it runs,
 /// and a failed one says so under the figure.
 class _LatencyColumn extends StatelessWidget {
-  const _LatencyColumn();
+  const new();
 
   @override
   Widget build(BuildContext context) {
@@ -692,7 +713,7 @@ class _LatencyColumn extends StatelessWidget {
 }
 
 class _HealthRow extends StatelessWidget {
-  const _HealthRow({required this.label, required this.value, super.key});
+  const new({required this.label, required this.value, super.key});
 
   final String label;
   final String value;
@@ -718,7 +739,7 @@ class _HealthRow extends StatelessWidget {
 
 /// Shown only while a draft differs from what runs (pen 28/01).
 class _ApplyRow extends StatelessWidget {
-  const _ApplyRow();
+  const new();
 
   @override
   Widget build(BuildContext context) {

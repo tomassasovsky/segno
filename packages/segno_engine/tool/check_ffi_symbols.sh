@@ -63,34 +63,33 @@ if [ -z "$nm_bin" ]; then
 fi
 
 # --- Extract what Dart will look up -------------------------------------------
-# ffigen emits, for every bound function:
+# ffigen emits, for every bound function, an `@Native` external:
 #
-#     late final _le_fooPtr =
-#         _lookup<ffi.NativeFunction<...>>('le_foo');
+#     @ffi.Native<ffi.Int32 Function(ffi.Pointer<le_engine>)>()
+#     external int le_foo(
 #
-# ...but `dart format` reflows long generic argument lists, so the call tail
-# appears in at least two shapes -- `>('le_foo')` and a wrapped
-# `>(\n  'le_foo',\n)` with a trailing comma. Matching only the first shape
-# silently skips the second (16 of 144 symbols at time of writing), so the
-# pattern deliberately stops at the opening quote and cares about neither the
-# comma nor the closing paren. `(?:(?!_lookup<).)*?` keeps one match from
-# running past the next binding and swallowing it whole.
+# The symbol is the external's name, or the annotation's `symbol:` when ffigen
+# renamed the Dart side. Each annotation is split off on its own, so one match
+# cannot run past the next binding.
 extract_lookups() {
   perl -0777 -ne '
-    my @m = /_lookup<(?:(?!_lookup<).)*?>\(\s*'"'"'([A-Za-z_][A-Za-z0-9_]*)'"'"'/gs;
-    print "$_\n" for @m;
+    for my $b (split /(?=\@ffi\.Native<)/) {
+      next unless $b =~ /^\@ffi\.Native</;
+      if ($b =~ /^\@ffi\.Native<.*?>\(\s*[^)]*?symbol:\s*'"'"'([A-Za-z_][A-Za-z0-9_]*)'"'"'/s) { print "$1\n"; }
+      elsif ($b =~ /\bexternal\b[^;(]*?([A-Za-z_][A-Za-z0-9_]*)\s*[(;]/s) { print "$1\n"; }
+    }
   ' "$1"
 }
 
-# The count of `_lookup<` occurrences is the ground truth for how many bindings
-# exist. If the extractor returns a different number, ffigen's output shape has
+# The count of `@ffi.Native<` annotations is the ground truth for how many
+# bindings exist. If the extractor returns a different number, ffigen's output shape has
 # drifted out from under the pattern above and this script is now checking less
 # than it claims to. That is the one failure mode a gate must never have, so it
 # is fatal rather than a warning: fail closed, never silently under-check.
 # `|| true` is load-bearing: grep exits 1 when it matches nothing, and under
 # `set -e` + `pipefail` that aborts the assignment below with no output at all,
 # making the "no _lookup< sites" diagnostic that follows unreachable.
-count_lookup_sites() { { grep -o '_lookup<' "$1" || true; } | wc -l | tr -d ' '; }
+count_lookup_sites() { { grep -o '@ffi.Native<' "$1" || true; } | wc -l | tr -d ' '; }
 
 # LC_ALL=C throughout: `comm` compares bytes, but `sort` under a UTF-8 locale
 # collates by language rules that can ignore punctuation -- and every symbol here
@@ -100,9 +99,9 @@ wanted="$(extract_lookups "$bindings" | LC_ALL=C sort -u)"
 n_wanted="$(printf '%s\n' "$wanted" | grep -c . || true)"
 n_sites="$(count_lookup_sites "$bindings")"
 
-[ "$n_sites" -gt 0 ] || die "no _lookup< sites in $bindings -- is this the generated bindings file?"
+[ "$n_sites" -gt 0 ] || die "no @ffi.Native< sites in $bindings -- is this the generated bindings file?"
 [ "$n_wanted" -eq "$n_sites" ] || die \
-  "extractor drift: $n_sites _lookup< sites but $n_wanted symbol names parsed out of
+  "extractor drift: $n_sites @ffi.Native< sites but $n_wanted symbol names parsed out of
   $bindings
   ffigen's emitted shape has changed. Fix the pattern in $SELF before trusting
   this gate -- it is currently blind to $((n_sites - n_wanted)) binding(s)."

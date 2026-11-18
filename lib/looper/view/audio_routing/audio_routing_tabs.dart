@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/audio_routing/audio_routing_page.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
@@ -11,11 +11,7 @@ import 'package:segno/theme/theme.dart';
 /// columns.
 class AudioRoutingTabBar extends StatelessWidget {
   /// Creates an [AudioRoutingTabBar].
-  const AudioRoutingTabBar({
-    required this.selected,
-    required this.onSelected,
-    super.key,
-  });
+  const new({required this.selected, required this.onSelected, super.key});
 
   /// The task now showing.
   final AudioRoutingTab selected;
@@ -79,7 +75,7 @@ class AudioRoutingTabBar extends StatelessWidget {
 }
 
 class _TaskPill extends StatelessWidget {
-  const _TaskPill({
+  const new({
     required this.label,
     required this.width,
     required this.selected,

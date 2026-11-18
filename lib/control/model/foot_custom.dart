@@ -18,7 +18,7 @@ enum FootCustomRole {
 /// One switch's read of the Custom setup for the bank in view.
 class FootCustomPedal extends Equatable {
   /// Creates one switch's read.
-  const FootCustomPedal({
+  const new({
     required this.button,
     required this.role,
     this.press,
@@ -58,7 +58,7 @@ class FootCustomPedal extends Equatable {
 /// The Custom face for the bank in view.
 class FootCustomProjection extends Equatable {
   /// Creates a complete projection.
-  const FootCustomProjection({required this.bank, required this.pedals});
+  const new({required this.bank, required this.pedals});
 
   /// Shared rig bank (0 = A, 1 = B).
   final int bank;

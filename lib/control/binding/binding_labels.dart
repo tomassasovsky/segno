@@ -3,6 +3,7 @@ import 'package:segno/control/binding/control_availability.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/fx_binding_target.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/model/fx_names.dart';
 
 /// How a binding's target and its control are NAMED, in one place.
 ///
@@ -44,8 +45,11 @@ String fxStageLabel(
   FxStage.output => l10n.pedalAssignStageOutput(address.index + 1),
 };
 
-/// Names a discrete (`enabled`-flipping) [target] — one whole chain, or one
-/// effect inside it.
+/// Names a discrete (`enabled`-flipping) [target] — one whole chain, one rack
+/// in it, or one effect inside it.
+///
+/// Pure, so it cannot read a rack's or an effect's name from the rig; a
+/// surface that can calls [fxRackName] or [fxSlotName] first.
 String bindingTargetLabel(
   AppLocalizations l10n,
   List<String> trackNames,
@@ -58,6 +62,7 @@ String bindingTargetLabel(
     // can repeat within one chain, so it could not identify which slot the
     // binding points at.
     FxSlotTarget(:final slotId) => '$stage · $slotId',
+    FxRackTarget() => '$stage · ${l10n.externalActivationRack}',
   };
 }
 
@@ -147,20 +152,34 @@ String _laneVolumeLabel(
 }
 
 /// The display name of the effect sitting in [target]'s slot, or `null` when
-/// the slot is gone.
+/// the slot is gone, named as every surface names it ([fxBlockName]).
 ///
 /// The effect's own name, not its slot id: a list of `slot-7f2a` rows names
 /// nothing a performer recognises. The id stays the binding's identity — it is
 /// what survives a reorder — and this is only what the row says.
-String? fxSlotName(LooperRepository looper, FxSlotTarget target) {
+String? fxSlotName(
+  AppLocalizations l10n,
+  LooperRepository looper,
+  FxSlotTarget target,
+) {
   final entries = looper.chainEntriesAt(target.address);
   if (entries == null) return null;
   for (final fx in entries) {
-    if (fx.slotId != target.slotId) continue;
-    return switch (fx) {
-      BuiltInEffect(:final type) => type.label,
-      PluginEffect(:final name) => name,
-    };
+    if (fx.slotId == target.slotId) return fxBlockName(l10n, fx);
+  }
+  return null;
+}
+
+/// The name of the rack [target] names, or `null` when the rack is gone.
+///
+/// The rack's own name, which the player may have changed, never its id: the
+/// id is the binding's identity, and this is what the row says.
+String? fxRackName(LooperRepository looper, FxRackTarget target) {
+  for (final fx
+      in looper.chainEntriesAt(target.address) ?? const <TrackEffect>[]) {
+    if (fx.rack case final rack? when rack.id == target.rackId) {
+      return rack.name;
+    }
   }
   return null;
 }

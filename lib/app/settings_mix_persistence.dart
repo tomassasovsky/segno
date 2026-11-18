@@ -5,7 +5,7 @@ import 'package:settings_repository/settings_repository.dart';
 /// Persists a coordinator candidate as one appliance-wide settings value.
 class SettingsMixPersistence implements MixSettingsPersistence {
   /// Uses the existing settings store; no second persistence owner is needed.
-  const SettingsMixPersistence(this.settings);
+  const new(this.settings);
 
   /// The settings repository carrying the canonical mix value.
   final SettingsRepository settings;

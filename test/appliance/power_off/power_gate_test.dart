@@ -60,12 +60,7 @@ void main() {
   group('powerSnapshotOf', () {
     test('maps capturing from tracks', () {
       const looper = LooperState(
-        tracks: [
-          Track(
-            state: TrackState.recording,
-            lengthFrames: 48000,
-          ),
-        ],
+        tracks: [Track(state: TrackState.recording, lengthFrames: 48000)],
       );
       final snapshot = powerSnapshotOf(
         looper: looper,
@@ -88,9 +83,7 @@ void main() {
       );
       expect(
         powerSnapshotOf(
-          looper: const LooperState(
-            tracks: [Track(layerInFlight: true)],
-          ),
+          looper: const LooperState(tracks: [Track(layerInFlight: true)]),
           recorder: const PerformanceRecorderIdle(),
           session: const SessionState(),
           backing: const BackingState(),
@@ -228,9 +221,7 @@ void main() {
         isTrue,
       );
       expect(
-        read(
-          backing: const BackingState(prepared: [item]),
-        ).sessionHasContent,
+        read(backing: const BackingState(prepared: [item])).sessionHasContent,
         isTrue,
       );
       expect(

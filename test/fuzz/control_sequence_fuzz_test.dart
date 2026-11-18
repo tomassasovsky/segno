@@ -55,15 +55,8 @@ import '../helpers/test_mix_settings.dart';
 /// On failure: the seed and a shrunk, replayable action list are printed —
 /// paste the sequence into the corpus below as a permanent regression test.
 ///
-/// Self-skips when SEGNO_ENGINE_LIB is unset:
-///   export SEGNO_ENGINE_LIB="$(bash packages/segno_engine/tool/build_test_lib.sh)"
 ///   flutter test --tags fuzz
 void main() {
-  final lib = Platform.environment['SEGNO_ENGINE_LIB'];
-  final skip = lib == null || lib.isEmpty
-      ? 'SEGNO_ENGINE_LIB not set — run packages/segno_engine/tool/build_test_lib.sh'
-      : null;
-
   group('shared Count-in through real pedal controls', () {
     void prepare(_Harness h, FakeAsync fa) {
       expect(h.repo.setTempo(120), EngineResult.ok);
@@ -99,7 +92,7 @@ void main() {
         expect(h.looper.tracks[6].state, TrackState.empty);
         expect(h.looper.tracks[6].undoDepth, 0);
       });
-    }, skip: skip);
+    });
 
     for (final mode in [
       InteractionMode.fx,
@@ -138,7 +131,6 @@ void main() {
             expect(h.looper.transport.primaryTrack, -1);
           });
         },
-        skip: skip,
       );
     }
 
@@ -163,8 +155,167 @@ void main() {
           expect(h.looper.tracks[1].undoDepth, 0);
         });
       },
-      skip: skip,
     );
+  });
+
+  group('Undo after a Track Hold clear (#1707)', () {
+    /// Tracks 1, 2 and 3 hold a take each and play, Track Hold is Clear
+    /// track, and [mode] is the interaction mode.
+    void threeTakes(_Harness h, FakeAsync fa, InteractionMode mode) {
+      for (var channel = 0; channel < 3; channel++) {
+        h.control.selectTrack(channel);
+        h
+          ..run(const [_Tap(PedalButton.recPlay)], fa)
+          ..run(const [_Pump(512, 0.5)], fa)
+          ..run(const [_Tap(PedalButton.recPlay)], fa)
+          ..run(const [_Pump(512, 0.5)], fa)
+          ..settle(fa);
+      }
+      unawaited(
+        h.control.setPedalSetup(
+          h.control.state.pedalSetup.copyWith(trackHold: TrackHold.clearTrack),
+        ),
+      );
+      fa.flushMicrotasks();
+      h.control.setMode(mode);
+      h.settle(fa);
+      for (var channel = 0; channel < 3; channel++) {
+        expect(h.looper.tracks[channel].hasContent, isTrue);
+        expect(h.looper.tracks[channel].isCapturing, isFalse);
+      }
+    }
+
+    /// Holds track 2's pedal through the pause and the fill, then lets go.
+    void holdClearTrackTwo(_Harness h, FakeAsync fa) {
+      h.run(const [_Hold(PedalButton.track2)], fa);
+      fa
+        ..elapse(const Duration(milliseconds: 1500))
+        ..flushMicrotasks();
+      h
+        ..run(const [_Release(PedalButton.track2)], fa)
+        ..settle(fa);
+      expect(h.looper.tracks[1].state, TrackState.empty);
+      expect(h.looper.tracks[1].clearRestore, isTrue);
+    }
+
+    test('in Mute, the Undo pedal brings the cleared track back while track '
+        '3 stays selected', () {
+      _inHarness((h, fa) {
+        threeTakes(h, fa, InteractionMode.mute);
+        h.control.selectTrack(2);
+        final third = h.looper.tracks[2];
+        holdClearTrackTwo(h, fa);
+        expect(h.control.state.cursor, 2);
+        h
+          ..run(const [_Tap(PedalButton.undo)], fa)
+          ..settle(fa);
+        expect(h.looper.tracks[1].hasContent, isTrue);
+        expect(h.looper.tracks[1].clearRestore, isFalse);
+        // Track 3's own take is untouched.
+        expect(h.looper.tracks[2].undoDepth, third.undoDepth);
+        expect(h.looper.tracks[2].hasContent, isTrue);
+      });
+    });
+
+    test('in Record, the Undo pedal brings it back after the selection '
+        'moved on', () {
+      _inHarness((h, fa) {
+        threeTakes(h, fa, InteractionMode.record);
+        holdClearTrackTwo(h, fa);
+        // A tap on track 3 only selects it: nothing is capturing.
+        h
+          ..run(const [_Tap(PedalButton.track3)], fa)
+          ..settle(fa);
+        expect(h.control.state.cursor, 2);
+        final third = h.looper.tracks[2];
+        h
+          ..run(const [_Tap(PedalButton.undo)], fa)
+          ..settle(fa);
+        expect(h.looper.tracks[1].hasContent, isTrue);
+        expect(h.looper.tracks[2].undoDepth, third.undoDepth);
+        expect(h.looper.tracks[2].hasContent, isTrue);
+      });
+    });
+
+    test('an overdub on the selected track since the clear is what Undo '
+        'takes back', () {
+      _inHarness((h, fa) {
+        threeTakes(h, fa, InteractionMode.mute);
+        h.control.selectTrack(2);
+        holdClearTrackTwo(h, fa);
+        final before = h.looper.tracks[2].undoDepth;
+        expect(h.repo.record(channel: 2), EngineResult.ok);
+        h
+          ..run(const [_Pump(512, 0.5)], fa)
+          ..settle(fa);
+        expect(h.repo.record(channel: 2), EngineResult.ok);
+        h
+          ..run(const [_Pump(512, 0.5)], fa)
+          ..settle(fa);
+        expect(h.looper.tracks[2].undoDepth, before + 1);
+        h
+          ..run(const [_Tap(PedalButton.undo)], fa)
+          ..settle(fa);
+        expect(h.looper.tracks[2].undoDepth, before);
+        expect(h.looper.tracks[1].state, TrackState.empty);
+        expect(h.looper.tracks[1].clearRestore, isTrue);
+        // The overdub is taken back; the clear is the next newest edit.
+        h
+          ..run(const [_Tap(PedalButton.undo)], fa)
+          ..settle(fa);
+        expect(h.looper.tracks[1].hasContent, isTrue);
+        expect(h.looper.tracks[2].undoDepth, before);
+      });
+    });
+
+    test('a Peel on the selected track since the clear is what Undo takes '
+        'back', () {
+      _inHarness((h, fa) {
+        threeTakes(h, fa, InteractionMode.mute);
+        h.control.selectTrack(2);
+        // A second layer on track 3, so it has one to peel.
+        expect(h.repo.record(channel: 2), EngineResult.ok);
+        h
+          ..run(const [_Pump(512, 0.5)], fa)
+          ..settle(fa);
+        expect(h.repo.record(channel: 2), EngineResult.ok);
+        h
+          ..run(const [_Pump(512, 0.5)], fa)
+          ..settle(fa);
+        holdClearTrackTwo(h, fa);
+        final depth = h.looper.tracks[2].undoDepth;
+        final peelable = h.looper.tracks[2].peelDepth;
+        expect(peelable, greaterThan(0));
+        expect(h.repo.peel(channel: 2), EngineResult.ok);
+        h.settle(fa);
+        expect(h.looper.tracks[2].undoDepth, depth);
+        h
+          ..run(const [_Tap(PedalButton.undo)], fa)
+          ..settle(fa);
+        expect(h.looper.tracks[2].peelDepth, peelable);
+        expect(h.looper.tracks[1].state, TrackState.empty);
+      });
+    });
+
+    test('a later clear is what Undo takes back first', () {
+      _inHarness((h, fa) {
+        threeTakes(h, fa, InteractionMode.mute);
+        h.control.selectTrack(2);
+        holdClearTrackTwo(h, fa);
+        h.run(const [_Hold(PedalButton.track1)], fa);
+        fa
+          ..elapse(const Duration(milliseconds: 1500))
+          ..flushMicrotasks();
+        h
+          ..run(const [_Release(PedalButton.track1)], fa)
+          ..settle(fa)
+          ..run(const [_Tap(PedalButton.undo)], fa)
+          ..settle(fa);
+        expect(h.looper.tracks[0].hasContent, isTrue);
+        expect(h.looper.tracks[1].state, TrackState.empty);
+        expect(h.looper.tracks[1].clearRestore, isTrue);
+      });
+    });
   });
 
   group('corpus (found-bug regressions, replayed every run)', () {
@@ -195,7 +346,7 @@ void main() {
         expect(h.looper.tracks[0].state, TrackState.playing);
         expect(h.frame.trackLeds[0], PedalTrackLed.green);
       });
-    }, skip: skip);
+    });
 
     test('clear-all also wipes undone-to-empty (redo-able) tracks '
         '(2026-07-04)', () {
@@ -215,7 +366,7 @@ void main() {
         expect(h.looper.tracks[0].canRedo, isFalse); // resurrect path wiped
         expect(h.looper.transport.masterLengthFrames, 0);
       });
-    }, skip: skip);
+    });
 
     test('redo-from-empty comes back unmuted and audible (2026-07-04)', () {
       _inHarness((h, fa) {
@@ -236,7 +387,7 @@ void main() {
         expect(h.looper.tracks[0].state, TrackState.playing);
         expect(h.looper.tracks[0].muted, isFalse); // never silent-playing
       });
-    }, skip: skip);
+    });
 
     test('a fresh record after undo-to-empty redefines the ghost grid '
         '(2026-07-04)', () {
@@ -255,7 +406,7 @@ void main() {
         // The new loop defines its own length instead of rounding to 256.
         expect(h.looper.transport.masterLengthFrames, 400);
       });
-    }, skip: skip);
+    });
 
     test('set then clear a lane chain keeps cache == engine (F6)', () {
       _inHarness((h, fa) {
@@ -272,7 +423,7 @@ void main() {
         expect(h.fxFingerprintViolation(), isNull);
         expect(h.repo.laneChainFingerprint(0, 0), FxFingerprint.offset);
       });
-    }, skip: skip);
+    });
 
     test('a staged lane chain survives a dry-monitor record with cache == '
         'engine (F4/F6)', () {
@@ -291,7 +442,7 @@ void main() {
         expect(h.looper.tracks[0].lanes[0].effects, hasLength(1));
         expect(h.fxFingerprintViolation(), isNull);
       });
-    }, skip: skip);
+    });
 
     test('recording through a monitor chain copies it onto the lane, cache == '
         'engine (F3/F6)', () {
@@ -310,7 +461,7 @@ void main() {
         expect(h.looper.tracks[0].lanes[0].effects, hasLength(2));
         expect(h.fxFingerprintViolation(), isNull);
       });
-    }, skip: skip);
+    });
 
     test('clearing a take drops its FX chain so a later dry record does not '
         'inherit it, cache == engine (leftover-from-previous-config)', () {
@@ -331,9 +482,7 @@ void main() {
         // empty: the fresh dry take must NOT resurrect A's chain.
         h
           ..run(const [_Tap(PedalButton.clear)], fa)
-          ..run(const [
-            _SetMonitorChain(0, []),
-          ], fa) // dry monitor
+          ..run(const [_SetMonitorChain(0, [])], fa) // dry monitor
           ..settle(fa)
           ..run(const [_Tap(PedalButton.recPlay)], fa)
           ..pumpLoop(fa)
@@ -342,7 +491,7 @@ void main() {
         expect(h.looper.tracks[0].lanes[0].effects, isEmpty);
         expect(h.fxFingerprintViolation(), isNull);
       });
-    }, skip: skip);
+    });
 
     test('monitor FX set then record-from-empty in the SAME turn (no drain) '
         'still lands on the take, cache == engine (snapshot race)', () {
@@ -362,7 +511,7 @@ void main() {
         expect(h.looper.tracks[0].lanes[0].effects, hasLength(2));
         expect(h.fxFingerprintViolation(), isNull);
       });
-    }, skip: skip);
+    });
   });
 
   group('mute/unmute corpus (auto-unmute + unpark rules, 2026-07-16)', () {
@@ -387,7 +536,7 @@ void main() {
         expect(h.looper.tracks[0].state, TrackState.overdubbing);
         expect(h.looper.tracks[0].muted, isFalse);
       });
-    }, skip: skip);
+    });
 
     test('recording anything while parked unparks the entire loop '
         '(unpark-on-start)', () {
@@ -416,7 +565,7 @@ void main() {
         expect(h.looper.tracks[0].state, TrackState.overdubbing);
         expect(h.looper.tracks[1].state, TrackState.playing);
       });
-    }, skip: skip);
+    });
 
     test('playing anything while parked unparks the loop with mutes '
         'preserved', () {
@@ -446,7 +595,7 @@ void main() {
         expect(h.looper.tracks[1].muted, isTrue);
         expect(h.looper.tracks[0].muted, isFalse);
       });
-    }, skip: skip);
+    });
 
     test('a deselected parked-resume member comes back muted, matching its '
         'dark preview (parked-preview-matches-resume)', () {
@@ -481,7 +630,7 @@ void main() {
         expect(h.frame.trackLeds[0], PedalTrackLed.green);
         expect(h.frame.trackLeds[1], PedalTrackLed.off);
       });
-    }, skip: skip);
+    });
 
     test('mute during an overdub punches out, then lands '
         '(capturing-never-muted)', () {
@@ -502,7 +651,7 @@ void main() {
         expect(h.looper.tracks[0].state, TrackState.playing); // punched out
         expect(h.looper.tracks[0].muted, isTrue); // the mute landed
       });
-    }, skip: skip);
+    });
 
     test('mute during a defining recording rides the deferred seam-crossfade '
         'finalize and lands with it', () {
@@ -525,7 +674,7 @@ void main() {
         expect(h.looper.tracks[0].muted, isTrue);
         expect(h.looper.transport.masterLengthFrames, 1200);
       });
-    }, skip: skip);
+    });
 
     test('redo-from-empty while parked unparks the rest of the loop', () {
       _inHarness((h, fa) {
@@ -559,7 +708,7 @@ void main() {
         expect(h.looper.tracks[0].state, TrackState.playing);
         expect(h.looper.tracks[1].state, TrackState.playing);
       });
-    }, skip: skip);
+    });
 
     test('a live capture survives the Rec->Mute mode switch and keeps '
         'recording until Rec/Play finalizes it back in Rec mode '
@@ -592,7 +741,7 @@ void main() {
         expect(h.looper.tracks[0].state, TrackState.playing);
         expect(h.looper.transport.masterLengthFrames, 200);
       });
-    }, skip: skip);
+    });
 
     test('an overdub survives the Rec->Mute mode switch (2026-07-16)', () {
       _inHarness((h, fa) {
@@ -614,7 +763,7 @@ void main() {
           ..settle(fa);
         expect(h.looper.tracks[0].state, TrackState.playing);
       });
-    }, skip: skip);
+    });
 
     test('mute punch-out clears a pending quantized arm — no spurious '
         'overdub at the next loop top', () {
@@ -645,7 +794,7 @@ void main() {
         expect(h.looper.tracks[1].state, TrackState.playing);
         expect(h.looper.tracks[1].muted, isTrue); // the mute stuck
       });
-    }, skip: skip);
+    });
 
     test('mute-mode Rec/Play resume leaves a live capture alone (does not '
         'punch it out as a deselected member)', () {
@@ -681,7 +830,7 @@ void main() {
         expect(h.looper.tracks[2].state, TrackState.recording);
         expect(h.looper.tracks[2].muted, isFalse);
       });
-    }, skip: skip);
+    });
 
     test('FX mode: track stomps carry chain state into the trackLeds, and '
         'Stop is inert (part 5b, #1229)', () {
@@ -731,7 +880,7 @@ void main() {
         // ...and the loop is untouched: Stop never stops the transport here.
         expect(h.looper.tracks[0].state, TrackState.playing);
       });
-    }, skip: skip);
+    });
 
     test('FX mode: Clear and Rec/Play are inert — a stray stomp cannot erase '
         'the set (part 5b)', () {
@@ -749,7 +898,7 @@ void main() {
         expect(h.looper.tracks[0].state, TrackState.playing); // still there
         expect(h.control.state.mode, InteractionMode.fx); // no home-and-reset
       });
-    }, skip: skip);
+    });
 
     test('a quantized punch-in armed on a muted track auto-unmutes when the '
         'boundary fires it', () {
@@ -775,7 +924,7 @@ void main() {
         expect(h.looper.tracks[0].state, TrackState.overdubbing);
         expect(h.looper.tracks[0].muted, isFalse);
       });
-    }, skip: skip);
+    });
   });
 
   test('seeded random sequences hold every invariant', () {
@@ -797,7 +946,7 @@ void main() {
         '[\n  $repro\n]',
       );
     }
-  }, skip: skip);
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -805,7 +954,7 @@ void main() {
 // ---------------------------------------------------------------------------
 
 class _Harness {
-  _Harness(FakeAsync fa) {
+  new(FakeAsync fa) {
     engine = PumpedNativeEngine();
     ticker = StreamController<void>.broadcast(sync: true);
     reconnectTicker = StreamController<void>.broadcast(sync: true);
@@ -870,9 +1019,7 @@ class _Harness {
         fade: ownedFade,
       ),
     );
-    cubit = PedalCubit(
-      pedal: pedalRepo,
-    ); // LED frames round-trip the codec
+    cubit = PedalCubit(pedal: pedalRepo); // LED frames round-trip the codec
     settle(fa);
   }
 
@@ -989,13 +1136,13 @@ void _inHarness(void Function(_Harness h, FakeAsync fa) body) {
 // ---------------------------------------------------------------------------
 
 sealed class _FuzzAction {
-  const _FuzzAction();
+  const new();
   void apply(_Harness h, FakeAsync fa);
   String describe();
 }
 
 class _Tap extends _FuzzAction {
-  const _Tap(this.button);
+  const new(this.button);
   final PedalButton button;
   @override
   void apply(_Harness h, FakeAsync fa) {
@@ -1013,7 +1160,7 @@ class _Tap extends _FuzzAction {
 }
 
 class _Hold extends _FuzzAction {
-  const _Hold(this.button);
+  const new(this.button);
   final PedalButton button;
   @override
   void apply(_Harness h, FakeAsync fa) {
@@ -1025,7 +1172,7 @@ class _Hold extends _FuzzAction {
 }
 
 class _Release extends _FuzzAction {
-  const _Release(this.button);
+  const new(this.button);
   final PedalButton button;
   @override
   void apply(_Harness h, FakeAsync fa) {
@@ -1037,7 +1184,7 @@ class _Release extends _FuzzAction {
 }
 
 class _LongPressUndo extends _FuzzAction {
-  const _LongPressUndo();
+  const new();
   @override
   void apply(_Harness h, FakeAsync fa) {
     h._held.remove(PedalButton.undo);
@@ -1055,7 +1202,7 @@ class _LongPressUndo extends _FuzzAction {
 }
 
 class _Encoder extends _FuzzAction {
-  const _Encoder(this.delta);
+  const new(this.delta);
   final int delta;
   @override
   // A stage turn as EncoderNavigation routes it (#1276).
@@ -1065,7 +1212,7 @@ class _Encoder extends _FuzzAction {
 }
 
 class _Bloc extends _FuzzAction {
-  const _Bloc(this.kind, this.channel);
+  const new(this.kind, this.channel);
   final String kind;
   final int channel;
   @override
@@ -1096,7 +1243,7 @@ class _Bloc extends _FuzzAction {
 }
 
 class _Select extends _FuzzAction {
-  const _Select(this.channel);
+  const new(this.channel);
   final int channel;
   @override
   void apply(_Harness h, FakeAsync fa) => h.control.selectTrack(channel);
@@ -1105,7 +1252,7 @@ class _Select extends _FuzzAction {
 }
 
 class _ToggleMode extends _FuzzAction {
-  const _ToggleMode();
+  const new();
   @override
   void apply(_Harness h, FakeAsync fa) => h.control.toggleMode();
   @override
@@ -1116,7 +1263,7 @@ class _ToggleMode extends _FuzzAction {
 /// only way to reach Rec from Mute without passing through FX (whose entry
 /// finalizes a live capture, A5).
 class _SetMode extends _FuzzAction {
-  const _SetMode(this.mode);
+  const new(this.mode);
   final InteractionMode mode;
   @override
   void apply(_Harness h, FakeAsync fa) => h.control.setMode(mode);
@@ -1125,7 +1272,7 @@ class _SetMode extends _FuzzAction {
 }
 
 class _Pump extends _FuzzAction {
-  const _Pump(this.frames, this.input);
+  const new(this.frames, this.input);
   final int frames;
   final double input;
   @override
@@ -1136,7 +1283,7 @@ class _Pump extends _FuzzAction {
 }
 
 class _Tick extends _FuzzAction {
-  const _Tick();
+  const new();
   @override
   void apply(_Harness h, FakeAsync fa) => h.ticker.add(null);
   @override
@@ -1144,7 +1291,7 @@ class _Tick extends _FuzzAction {
 }
 
 class _Elapse extends _FuzzAction {
-  const _Elapse(this.ms);
+  const new(this.ms);
   final int ms;
   @override
   void apply(_Harness h, FakeAsync fa) => fa.elapse(Duration(milliseconds: ms));
@@ -1156,7 +1303,7 @@ class _Elapse extends _FuzzAction {
 /// snapshot-read toggle) this sets an absolute value, so shrunk repros stay
 /// deterministic and mute-during-capture windows are directly reachable.
 class _MuteTrack extends _FuzzAction {
-  const _MuteTrack(this.channel, {required this.muted});
+  const new(this.channel, {required this.muted});
   final int channel;
   final bool muted;
   @override
@@ -1170,7 +1317,7 @@ class _MuteTrack extends _FuzzAction {
 /// record paths — and their interplay with mutes and parks — that the
 /// immediate paths never exercise.
 class _SetQuantize extends _FuzzAction {
-  const _SetQuantize({required this.enabled});
+  const new({required this.enabled});
   final bool enabled;
   @override
   void apply(_Harness h, FakeAsync fa) => h.repo.setRecordTiming(
@@ -1195,7 +1342,7 @@ const List<TrackEffectType> _fxPalette = [
 /// Sets lane [lane] of track [channel]'s chain to [types] (empty clears it),
 /// straight through the repository — the same call the bloc makes.
 class _SetLaneChain extends _FuzzAction {
-  const _SetLaneChain(this.channel, this.lane, this.types);
+  const new(this.channel, this.lane, this.types);
   final int channel;
   final int lane;
   final List<int> types; // indices into _fxPalette
@@ -1213,7 +1360,7 @@ class _SetLaneChain extends _FuzzAction {
 
 /// Sets monitor input [input]'s chain to [types] (empty clears it).
 class _SetMonitorChain extends _FuzzAction {
-  const _SetMonitorChain(this.input, this.types);
+  const new(this.input, this.types);
   final int input;
   final List<int> types;
 
@@ -1234,7 +1381,7 @@ class _SetMonitorChain extends _FuzzAction {
 /// dry take. The repository owns the snapshot now, so the take must still carry
 /// the chain and cache == engine must hold after the next settle.
 class _SetMonitorThenRecord extends _FuzzAction {
-  const _SetMonitorThenRecord(this.input, this.channel, this.types);
+  const new(this.input, this.channel, this.types);
   final int input;
   final int channel;
   final List<int> types;
@@ -1258,7 +1405,7 @@ class _SetMonitorThenRecord extends _FuzzAction {
 
 /// Hand-rolled xorshift PRNG — deterministic across platforms and runs.
 class _Rng {
-  _Rng(int seed) : _s = seed == 0 ? 0x9E3779B9 : seed;
+  new(int seed) : _s = seed == 0 ? 0x9E3779B9 : seed;
   int _s;
   int next(int max) {
     var x = _s;

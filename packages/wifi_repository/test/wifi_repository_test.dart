@@ -23,6 +23,9 @@ class _FakeClient implements WifiClient {
   Future<List<WifiNetwork>> scan() async => const [];
 
   @override
+  Stream<void> changes() => Stream.value(null);
+
+  @override
   Future<void> connect(String ssid, {String? psk}) async {}
 
   @override
@@ -77,9 +80,8 @@ void main() {
 
   test('changePassword delegates to client', () async {
     final client = _FakeClient();
-    await WifiRepository(
-      client: client,
-    ).changePassword('The Studio', 'n3w-s3cret');
+    await WifiRepository(client: client)
+        .changePassword('The Studio', 'n3w-s3cret');
     expect(client.passwords, {'The Studio': 'n3w-s3cret'});
   });
 
@@ -96,5 +98,10 @@ void main() {
     await repo.holdReconnects(hold: true);
     await repo.holdReconnects(hold: false);
     expect(client.holds, [true, false]);
+  });
+
+  test('changes delegates to client', () async {
+    final repo = WifiRepository(client: _FakeClient());
+    expect(await repo.changes().length, 1);
   });
 }

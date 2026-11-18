@@ -1,7 +1,7 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
@@ -28,7 +28,7 @@ import 'package:segno/update/cubit/update_cubit.dart';
 /// Opened from the Updates page; leads to the Controller firmware page.
 class AboutSettingsPage extends StatefulWidget {
   /// Creates an [AboutSettingsPage].
-  const AboutSettingsPage({super.key});
+  const new({super.key});
 
   /// The columns' top in the frame's main area, under the title row.
   static const double top = 120;
@@ -160,11 +160,7 @@ class _AboutSettingsPageState extends State<AboutSettingsPage> {
         onBack: () => Navigator.maybePop(context),
         onStage: () => Navigator.popUntil(context, (route) => route.isFirst),
         children: [
-          Positioned(
-            left: 0,
-            top: AboutSettingsPage.top,
-            child: thisConsole,
-          ),
+          Positioned(left: 0, top: AboutSettingsPage.top, child: thisConsole),
           Positioned(
             right: 0,
             top: AboutSettingsPage.top,
@@ -181,7 +177,8 @@ class _AboutSettingsPageState extends State<AboutSettingsPage> {
                       label: l10n.aboutConnectionRow,
                       value: controllerConnection(l10n, pedal.status),
                     ),
-                    ...controllerFactRows(l10n, controller),
+                    ControllerFirmwareRow(facts: controller),
+                    ControllerProtocolRow(facts: controller),
                     SettingsFactRow(
                       key: const Key('about_controller_firmware_row'),
                       label: l10n.aboutControllerFirmwareRow,
@@ -226,26 +223,48 @@ String controllerConnection(AppLocalizations l10n, PedalLinkStatus status) =>
       PedalLinkStatus.incompatible => l10n.aboutConnectionIncompatible,
     };
 
-/// The Firmware and Wire protocol rows for [facts], shared by About and the
-/// Controller firmware page: the values, and under the firmware where they
-/// came from when that was not the board itself.
-List<Widget> controllerFactRows(
-  AppLocalizations l10n,
-  ControllerFacts facts,
-) => [
-  SettingsFactRow(
-    key: const Key('controller_firmware'),
-    label: l10n.aboutFirmwareRow,
-    value: facts.firmware ?? l10n.aboutNotReported,
-    caption: switch (facts.source) {
-      ControllerFactsSource.reported => null,
-      ControllerFactsSource.lastFlashed => l10n.aboutLastFlashedCaption,
-      ControllerFactsSource.notReported => l10n.aboutNotReportedCaption,
-    },
-  ),
-  SettingsFactRow(
-    key: const Key('controller_protocol'),
-    label: l10n.aboutWireProtocolRow,
-    value: facts.protocol?.toString() ?? l10n.aboutNotReported,
-  ),
-];
+/// The Firmware row for [facts], shared by About and the Controller firmware
+/// page: the version, and under it where it came from when that was not the
+/// board itself.
+class ControllerFirmwareRow extends StatelessWidget {
+  /// Creates the Firmware row for [facts].
+  const new({required this.facts, super.key});
+
+  /// What the console knows about the board.
+  final ControllerFacts facts;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    return SettingsFactRow(
+      key: const Key('controller_firmware'),
+      label: l10n.aboutFirmwareRow,
+      value: facts.firmware ?? l10n.aboutNotReported,
+      caption: switch (facts.source) {
+        ControllerFactsSource.reported => null,
+        ControllerFactsSource.lastFlashed => l10n.aboutLastFlashedCaption,
+        ControllerFactsSource.notReported => l10n.aboutNotReportedCaption,
+      },
+    );
+  }
+}
+
+/// The Wire protocol row for [facts], shared by About and the Controller
+/// firmware page.
+class ControllerProtocolRow extends StatelessWidget {
+  /// Creates the Wire protocol row for [facts].
+  const new({required this.facts, super.key});
+
+  /// What the console knows about the board.
+  final ControllerFacts facts;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    return SettingsFactRow(
+      key: const Key('controller_protocol'),
+      label: l10n.aboutWireProtocolRow,
+      value: facts.protocol?.toString() ?? l10n.aboutNotReported,
+    );
+  }
+}

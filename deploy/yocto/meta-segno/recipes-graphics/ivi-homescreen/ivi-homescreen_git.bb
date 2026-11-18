@@ -15,7 +15,8 @@ LIC_FILES_CHKSUM = "file://LICENSE;md5=39ae29158ce710399736340c60147314"
 SRCREV = "80f9ea426825ada81825e6e06c4361bb2dee441c"
 SRC_URI = "gitsm://github.com/toyota-connected/ivi-homescreen.git;protocol=https;branch=v3.0 \
            file://0001-drm-apply-the-configured-pixel-ratio-to-window-metrics.patch \
-           file://0002-engine-keep-the-AOT-snapshot-mapped-after-engine-shutdown.patch"
+           file://0002-engine-keep-the-AOT-snapshot-mapped-after-engine-shutdown.patch \
+           file://0003-drm-render-Flutter-into-a-multisampled-framebuffer-and-resolve-it.patch"
 PV = "3.0+git${SRCPV}"
 S = "${WORKDIR}/git"
 

@@ -16,17 +16,18 @@ void main() {
       expect(PedalLinkCodec.encode(const EncoderMessage(127))[3], 0x7F);
       expect(
         PedalLinkCodec.decode(PedalLinkCodec.typeEncoder, [0xFF]),
-        const [
-          EncoderMessage(-1),
-        ].single,
+        const [EncoderMessage(-1)].single,
       );
     });
 
     test('the encoder push switch is one 0/1 byte', () {
-      expect(
-        PedalLinkCodec.encode(const EncoderButtonMessage(pressed: true)),
-        [0xA5, 0x05, 0x01, 0x01, 0x05 ^ 0x01 ^ 0x01],
-      );
+      expect(PedalLinkCodec.encode(const EncoderButtonMessage(pressed: true)), [
+        0xA5,
+        0x05,
+        0x01,
+        0x01,
+        0x05 ^ 0x01 ^ 0x01,
+      ]);
       expect(
         PedalLinkCodec.encode(const EncoderButtonMessage(pressed: false)),
         [0xA5, 0x05, 0x01, 0x00, 0x05 ^ 0x01],
@@ -332,10 +333,9 @@ void main() {
       () {
         final corrupt = List<int>.of(hello)..[hello.length - 1] ^= 0x01;
         final parser = PedalLinkParser();
-        expect(
-          parser.push([0x00, 0x13, ...corrupt, 0x37, ...button]),
-          [const ButtonMessage(PedalButton.bank, pressed: false)],
-        );
+        expect(parser.push([0x00, 0x13, ...corrupt, 0x37, ...button]), [
+          const ButtonMessage(PedalButton.bank, pressed: false),
+        ]);
         expect(parser.droppedFrames, 1);
       },
     );
@@ -366,11 +366,7 @@ void main() {
       // was replaced by a sync: the real frame behind each survives.
       expect(parser.push([PedalLinkCodec.sync, ...button]), hasLength(1));
       expect(
-        parser.push([
-          PedalLinkCodec.sync,
-          PedalLinkCodec.typeState,
-          ...button,
-        ]),
+        parser.push([PedalLinkCodec.sync, PedalLinkCodec.typeState, ...button]),
         hasLength(1),
       );
       expect(parser.droppedFrames, 2);
@@ -449,10 +445,7 @@ void main() {
         PedalLinkCodec.decode(PedalLinkCodec.typeClearHold, [0, 1]),
         isNull,
       );
-      expect(
-        PedalLinkCodec.decode(PedalLinkCodec.typeClearHold, [1]),
-        isNull,
-      );
+      expect(PedalLinkCodec.decode(PedalLinkCodec.typeClearHold, [1]), isNull);
       expect(
         PedalLinkCodec.decode(PedalLinkCodec.typeClearHold, [10, 255]),
         const ClearHoldMessage(button: PedalButton.bank, progress: 255),

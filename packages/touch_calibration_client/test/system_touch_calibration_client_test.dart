@@ -99,9 +99,8 @@ void main() {
       ..writeAsStringSync('#!/bin/sh\necho "need 6 values" >&2\nexit 2\n');
     Process.runSync('chmod', ['+x', helper.path]);
     await expectLater(
-      SystemTouchCalibrationClient(
-        helperPath: helper.path,
-      ).restore(TouchScreen.main),
+      SystemTouchCalibrationClient(helperPath: helper.path)
+          .restore(TouchScreen.main),
       throwsA(
         isA<ProcessException>()
             .having((e) => e.message, 'message', 'need 6 values')

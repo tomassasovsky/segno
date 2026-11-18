@@ -35,7 +35,7 @@ class LinuxUsbStorageClient implements UsbStorageClient {
   /// [restartDelay] is the first wait before an ended watch is started again;
   /// it doubles up to [maxRestartDelay] while watches keep ending, and comes
   /// back to [restartDelay] once a watch delivers an event.
-  LinuxUsbStorageClient({
+  new({
     this.runDir = '/run/segno/usb',
     String Function()? newRequestId,
     void Function(String message)? log,

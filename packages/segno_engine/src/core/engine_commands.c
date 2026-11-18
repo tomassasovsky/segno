@@ -32,6 +32,7 @@
 #include "engine_render.h" /* le_render_take (Bounce, #1202) */
 #include "engine_core.h" /* le_push, valid_channel, le_lanes_active, le_*_reset */
 #include "engine_fx.h"   /* LE_PV_N / LE_PV_BINS */
+#include "engine_heard.h" /* the heard image (#1713) */
 #include "engine_private.h"
 #include "engine_internal.h"
 #include "engine_prefault.h" /* the background prefaulter (#900) */
@@ -88,7 +89,21 @@ static int le_peel_target(const le_track* t, int32_t* skipped) {
   return -1;
 }
 
+/* The history order every engine shares (#1707): only increasing order
+ * matters, so one counter serves every engine in the process. */
+static _Atomic int32_t le_history_clock = 0;
+
+void le_stamp_history(le_track* t) {
+  for (int i = 0; i < t->undo_count; ++i) {
+    if (t->undo_stack[i].seq != 0) continue;
+    t->undo_stack[i].seq =
+        atomic_fetch_add_explicit(&le_history_clock, 1, memory_order_relaxed) +
+        1;
+  }
+}
+
 static void le_publish_undo_depth(le_track* t) {
+  le_stamp_history(t);
   /* A frozen take's restore point is still to be filed: the layers kept
    * beneath it are not peelable yet (the track reads EMPTY), and the restore
    * is not offered until the point lands — so both read 0 for now. */
@@ -264,16 +279,6 @@ static void le_lane_prefault_slot(le_lane* ln, int slot, int32_t frames) {
   if (frames > 0) le_rt_prefault(ln->pool[slot], (size_t)frames * sizeof(float));
 }
 
-/* A cap-sized buffer a capture will write from frame 0 at one second per
- * second: the head now, the rest in the background ahead of the track. */
-static void le_lane_prefault_capture_buffer(le_engine* e, int32_t channel,
-                                            le_lane* ln, int slot) {
-  if (slot < 0 || ln->pool[slot] == NULL) return;
-  const int32_t head = le_head_frames(e);
-  le_lane_prefault_slot(ln, slot, head);
-  le_prefault_follow(e, channel, ln->pool[slot], ln->pool_cap[slot], head);
-}
-
 /* How far before the published playhead a write may land: a block of lag in
  * the published position, plus the latency compensation that writes a
  * capture where the player heard it (comp_pos). */
@@ -353,19 +358,24 @@ static void le_track_prefault_take(le_engine* e, int32_t channel,
   for (int32_t l = 0; l < lanes; ++l) {
     le_lane* ln = &t->lanes[l];
     const int live = load_i32(&ln->a_live);
-    float* buf = ln->pool[live];
+    /* The clean buffer, and the heard image's planes (#1713): the take
+     * writes all of them at the same places. */
+    float* bufs[1 + LE_HEARD_PLANES];
+    const int nb = le_lane_slot_buffers(e, channel, l, live, bufs);
     const int32_t cap = ln->pool_cap[live];
-    if (buf == NULL) continue;
-    if (wrap64 > 0 && wrap64 <= cap) {
-      le_prefault_around(e, buf, (int32_t)wrap64, at);
-      continue;
+    for (int b = 0; b < nb; ++b) {
+      float* buf = bufs[b];
+      if (wrap64 > 0 && wrap64 <= cap) {
+        le_prefault_around(e, buf, (int32_t)wrap64, at);
+        continue;
+      }
+      if (from >= cap) continue;
+      int32_t frames = head;
+      if (frames > cap - from) frames = cap - from;
+      le_rt_prefault(buf + from, (size_t)frames * sizeof(float));
+      le_prefault_follow(e, channel, buf, cap, from + frames);
+      if (from > 0) le_prefault_range(e, buf, 0, from);
     }
-    if (from >= cap) continue;
-    int32_t frames = head;
-    if (frames > cap - from) frames = cap - from;
-    le_rt_prefault(buf + from, (size_t)frames * sizeof(float));
-    le_prefault_follow(e, channel, buf, cap, from + frames);
-    if (from > 0) le_prefault_range(e, buf, 0, from);
   }
 }
 
@@ -443,9 +453,32 @@ static void le_prefault_dub_second(le_engine* e, int32_t channel, float* buf,
  * all of a shadow in here cost a punch-in on a long multi-lane loop tens of
  * milliseconds before RECORD was posted, and the press is applied when
  * RECORD is, not back-dated. */
+static void le_prefault_shadow_buffer(le_engine* e, int32_t channel,
+                                      float* buf, int32_t cap, int punch,
+                                      int32_t len, int32_t st, int32_t at,
+                                      int fast) {
+  if (punch && len <= cap) {
+    le_prefault_dub_second(e, channel, buf, len, at);
+    if (st == LE_TRACK_STOPPED) le_prefault_dub_second(e, channel, buf, len, 0);
+    le_prefault_around(e, buf, len, at);
+  } else if (cap >= e->max_loop_frames) {
+    /* a pre-arm: the head now, the rest ahead of the take */
+    const int32_t head = le_head_frames(e);
+    le_rt_prefault(buf, (size_t)(head < cap ? head : cap) * sizeof(float));
+    le_prefault_follow(e, channel, buf, cap, head);
+  } else if (fast || cap <= le_head_frames(e)) {
+    le_rt_prefault(buf, (size_t)cap * sizeof(float));
+  } else {
+    le_prefault_buffer(e, buf, cap, NULL); /* a loop away */
+  }
+}
+
+/* [heard_standby_mask]: lanes whose heard planes (#1713) for the slot came
+ * from their heard standby, already faulted in. */
 static void le_prefault_shadow(le_engine* e, int32_t channel, int slot,
                                int immediate, int urgent,
-                               uint32_t standby_mask) {
+                               uint32_t standby_mask,
+                               uint32_t heard_standby_mask) {
   le_track* t = &e->tracks[channel];
   const int32_t lanes = le_lanes_active(t);
   const int32_t len = le_track_settled_len(t);
@@ -456,21 +489,22 @@ static void le_prefault_shadow(le_engine* e, int32_t channel, int slot,
   const int32_t at = load_i32(&e->a_clock_at[channel]);
   for (int32_t l = 0; l < lanes; ++l) {
     le_lane* ln = &t->lanes[l];
-    if (ln->pool[slot] == NULL || (standby_mask & (1u << l))) continue;
+    if (ln->pool[slot] == NULL) continue;
     const int32_t cap = ln->pool_cap[slot];
-    if (punch && len <= cap) {
-      le_prefault_dub_second(e, channel, ln->pool[slot], len, at);
-      if (st == LE_TRACK_STOPPED) {
-        le_prefault_dub_second(e, channel, ln->pool[slot], len, 0);
-      }
-      le_prefault_around(e, ln->pool[slot], len, at);
-    } else if (cap >= e->max_loop_frames) {
-      le_lane_prefault_capture_buffer(e, channel, ln, slot); /* pre-arm */
-    } else if (immediate || urgent || cap <= le_head_frames(e)) {
-      le_lane_prefault_slot(ln, slot, cap);
-    } else {
-      le_prefault_buffer(e, ln->pool[slot], cap, NULL); /* a loop away */
+    if (!(standby_mask & (1u << l))) {
+      le_prefault_shadow_buffer(e, channel, ln->pool[slot], cap, punch, len,
+                                st, at, immediate || urgent);
     }
+    float* pl;
+    float* pr;
+    if ((heard_standby_mask & (1u << l)) ||
+        !le_heard_planes(e, channel, l, slot, &pl, &pr)) {
+      continue;
+    }
+    le_prefault_shadow_buffer(e, channel, pl, cap, punch, len, st, at,
+                              immediate || urgent);
+    le_prefault_shadow_buffer(e, channel, pr, cap, punch, len, st, at,
+                              immediate || urgent);
   }
 }
 
@@ -509,11 +543,17 @@ static void le_keep_standbys(le_engine* e) {
                           st == LE_TRACK_OVERDUBBING);
     const int32_t want = has_take ? le_layer_slot_frames(e, len) : 0;
     const int32_t lanes = le_lanes_active(t);
-    const size_t need = (size_t)want * sizeof(float) * (size_t)lanes;
+    /* A lane whose take has a heard image (#1713) keeps its planes'
+     * standbys too, at three times the bytes. */
+    size_t need = 0;
+    for (int32_t l = 0; l < lanes; ++l) {
+      need += le_heard_standby_bytes(e, ch, l, want);
+    }
     const int keep = has_take && used + need <= LE_STANDBY_BUDGET_BYTES;
     if (keep) used += need;
     for (int32_t l = 0; l < LE_MAX_LANES; ++l) {
       le_lane_spares* sp = &e->spares[ch][l];
+      le_heard_keep_standby(e, ch, l, keep && l < lanes, want);
       if (!keep || l >= lanes ||
           (sp->standby != NULL && sp->standby_cap != want)) {
         if (sp->standby != NULL) le_lane_release_standby(e, sp);
@@ -544,6 +584,7 @@ static void le_keep_zero_spares(le_engine* e) {
     for (int32_t l = 0; l < LE_MAX_LANES; ++l) {
       le_lane_spares* sp = &e->spares[ch][l];
       const int want = empty && l < lanes;
+      le_heard_keep_zero_spare(e, ch, l, want); /* #1713 */
       if (sp->zero_spare != NULL &&
           (!want || sp->zero_spare_cap != e->max_loop_frames)) {
         le_lane_release_zero_spare(e, sp);
@@ -599,12 +640,16 @@ static void le_release_removed_lanes(le_engine* e) {
     for (int32_t l = le_lanes_active(t); l < LE_MAX_LANES; ++l) {
       le_lane* ln = &t->lanes[l];
       if (load_i32(&ln->a_recoverable)) continue;
+      /* An attach the callback has not handled may still install into
+       * this lane: leave it for a later pass (#1713). */
+      if (e->heard[ch][l].attach[0] != NULL) continue;
       for (int i = 0; i < LE_POOL_SLOTS; ++i) {
         if (ln->pool[i] == NULL) continue;
         le_free_audio_buffer(e, ln->pool[i]);
         ln->pool[i] = NULL;
         ln->pool_cap[i] = 0;
       }
+      le_heard_free_lane(e, ch, l); /* #1713: the slots' images with them */
     }
   }
 }
@@ -653,8 +698,12 @@ static void le_post_dub_shadows(le_engine* engine, int32_t channel,
       }
     }
     if (!ok) return;
+    /* The layer's heard image (#1713), where the take has one. */
+    const uint32_t heard_standby =
+        le_heard_match_shadow(engine, channel, slot, standby_mask);
     le_prefault_shadow(engine, channel, slot, immediate,
-                       running && t->outstanding_count == 0, standby_mask);
+                       running && t->outstanding_count == 0, standby_mask,
+                       heard_standby);
     if (le_push_cmd(engine, (le_command){.code = LE_CMD_DUB_SHADOW,
                                          .lanei = {channel, 0, slot}}) !=
         LE_OK) {
@@ -706,6 +755,7 @@ static int le_capture_may_overdub(le_engine* engine, int32_t channel,
  * instead of leaving the arrays safe by coincidence. */
 static int le_redo_push(le_track* t, le_hist_entry e) {
   if (t->redo_count >= LE_POOL_SLOTS) return 0;
+  e.seq = 0; /* a redo files it again as a new edit (#1707) */
   t->redo_stack[t->redo_count++] = e;
   return 1;
 }
@@ -746,6 +796,7 @@ static void le_undo_swap(le_engine* engine, le_track* t) {
     if (insert < 0) insert = 0;
     for (int k = p; k > insert; --k) t->undo_stack[k] = t->undo_stack[k - 1];
     t->undo_stack[insert] = le_hist_layer(live);
+    t->undo_stack[insert].seq = top.layer_seq; /* its own place (#1707) */
     t->undo_count++;
     (void)le_redo_push(t, le_hist_kind_entry(LE_HIST_PEEL, -1, top.skipped));
   } else {
@@ -769,6 +820,7 @@ static void le_undo_swap(le_engine* engine, le_track* t) {
 static void le_peel_apply(le_engine* engine, le_track* t, int idx,
                           int32_t skipped) {
   const int32_t target = t->undo_stack[idx].slot;
+  const int32_t layer_seq = t->undo_stack[idx].seq;
   const int32_t live = load_i32(&t->lanes[0].a_live);
   const uint32_t id = le_stage_source_image(
       engine, (int32_t)(t - engine->tracks), target,
@@ -778,6 +830,7 @@ static void le_peel_apply(le_engine* engine, le_track* t, int idx,
   }
   t->undo_stack[t->undo_count - 1] =
       le_hist_kind_entry(LE_HIST_PEEL, live, skipped);
+  t->undo_stack[t->undo_count - 1].layer_seq = layer_seq;
   le_publish_live_image(engine, t, target, id, 1); /* [R1] peel swap */
 }
 
@@ -1079,24 +1132,41 @@ static int le_stage_retired_layer(le_engine* engine, int32_t channel,
       /* Shouldn't happen for an active lane whose track just retired a pass
        * on this slot (le_post_dub_shadows allocates every active lane's
        * buffer before posting it) — fail closed rather than copy garbage. */
-      for (int32_t k = 0; k < l; ++k) free(entry.lane_pcm[k]);
+      le_staged_layer_free(&entry);
       atomic_fetch_add_explicit(&engine->a_perf_layer_overruns, 1u,
                                 memory_order_relaxed);
       return 0;
     }
-    float* copy = (float*)malloc((size_t)frame_count * sizeof(float));
+    /* The lane's heard image of the same slot (#1713) follows its clean
+     * take as (L, R) pairs. A copy that cannot be made fails the layer: a
+     * stem must not replay the clean take where the player heard the
+     * image. */
+    float* pl;
+    float* pr;
+    const int heard = le_heard_planes(engine, channel, l, slot, &pl, &pr);
+    float* copy = heard && engine->heard[channel][l].cap[slot] < frame_count
+                      ? NULL
+                      : (float*)malloc((heard ? 3 : 1) * (size_t)frame_count *
+                                       sizeof(float));
     if (copy == NULL) {
-      for (int32_t k = 0; k < l; ++k) free(entry.lane_pcm[k]);
+      le_staged_layer_free(&entry);
       atomic_fetch_add_explicit(&engine->a_perf_layer_overruns, 1u,
                                 memory_order_relaxed);
       return 0;
     }
     memcpy(copy, src, (size_t)frame_count * sizeof(float));
     entry.lane_pcm[l] = copy;
+    if (!heard) continue;
+    float* pairs = copy + frame_count;
+    for (int32_t i = 0; i < frame_count; ++i) {
+      pairs[2 * i] = pl[i];
+      pairs[2 * i + 1] = pr[i];
+    }
+    entry.heard_mask |= 1u << l;
   }
 
   if (!le_layer_staging_ring_push(&engine->perf.layer_staging_ring, entry)) {
-    for (int32_t l = 0; l < lane_count; ++l) free(entry.lane_pcm[l]);
+    le_staged_layer_free(&entry);
     atomic_fetch_add_explicit(&engine->a_perf_layer_overruns, 1u,
                               memory_order_relaxed);
     return 0;
@@ -1167,6 +1237,7 @@ static void le_handle_retired(le_engine* engine, const le_command* evt,
     const int32_t lanes = le_lanes_active(t);
     for (int32_t l = 0; l < lanes; ++l) {
       le_lane_shrink_slot(engine, &t->lanes[l], evt->evt.slot, want);
+      le_heard_shrink(engine, ch, l, evt->evt.slot, want);
     }
   }
   if (t->undo_count < LE_POOL_SLOTS) {
@@ -1215,6 +1286,9 @@ static void le_handle_event(le_engine* engine, const le_command* evt,
       break;
     case LE_EVT_TAKE_CANCELLED:
       le_handle_take_cancelled(engine, evt);
+      break;
+    case LE_EVT_HEARD_TAIL: /* #1713 part 3 */
+      le_heard_tail_event(engine, evt);
       break;
     default:
       break;
@@ -1287,10 +1361,12 @@ static int32_t le_length_fit_ctl(le_engine* e, int32_t ch, int32_t len,
 void le_engine_drain_events(le_engine* engine) {
   le_fx_recipe_collect(engine, 0);
   if (engine == NULL) return;
+  le_heard_settle_attaches(engine); /* #1713 */
   le_command evt;
   while (le_ring_pop(&engine->evt_ring, &evt)) {
     le_handle_event(engine, &evt, 1);
   }
+  le_heard_tail_poll(engine); /* #1713 part 3 */
   le_bounce_collect(engine);
   le_release_removed_lanes(engine);
   le_collect_retired(engine, 0);
@@ -1837,9 +1913,13 @@ static int le_prepare_image_punch_in(le_engine* e, int32_t channel) {
       ln->pool[slot] = allocated[n][l];
       ln->pool_cap[slot] = want;
     }
+    /* The layer's heard image (#1713), where the take has one. */
+    const uint32_t heard_standby =
+        le_heard_match_shadow(e, channel, slot, standby_mask);
     /* Capacity for ALL shadows plus the final action was proven before any
      * mutation. Shadows precede capture, even if the callback drains now. */
-    le_prefault_shadow(e, channel, slot, immediate, 0, standby_mask);
+    le_prefault_shadow(e, channel, slot, immediate, 0, standby_mask,
+                       heard_standby);
     t->outstanding_slots[t->outstanding_count++] = slot;
     (void)le_push_cmd(e, (le_command){.code = LE_CMD_DUB_SHADOW,
                                     .lanei = {channel, 0, slot}});
@@ -1953,6 +2033,10 @@ static int le_prepare_routing(le_engine* e, const le_mix_settings* mix) {
          * starts (le_track_prefault_capture). */
         if (got == LE_SLOT_REUSED && !load_i32(&ln->a_recoverable))
           memset(ln->pool[live], 0, (size_t)e->max_loop_frames * sizeof(float));
+        /* An image from the lane's earlier life no longer belongs to what
+         * the slot holds (#1713). The lane is inactive: free at once. */
+        if (got == LE_SLOT_FRESH || !load_i32(&ln->a_recoverable))
+          (void)le_heard_match(e, ch, l, live, 0, LE_HEARD_FREE);
         /* A take can start on the lane at once: fault its head in. And on a
          * track that already plays, the callback reads the new lane over the
          * whole loop from its next block, where the first read of an
@@ -2046,6 +2130,12 @@ static int32_t le_post_record_image(le_engine* e, int32_t channel,
     e->capture_seq[channel] = ++e->capture_seq_next; /* le_keep_standbys */
   }
   if (st == LE_TRACK_EMPTY) {
+    /* The take's heard image (#1713): zeroed planes beside every clean live
+     * slot the image asks for (none elsewhere), and the pre-armed shadow's
+     * to match, before anything is faulted in or posted. */
+    (void)le_heard_prepare_capture(e, channel, image ? image->heard_mask : 0u,
+                                   e->heard_zero);
+    if (fresh_shadow >= 0) (void)le_heard_match_shadow(e, channel, fresh_shadow, 0u);
     /* A Band section's Sound start becomes a handoff from its loop top if a
      * section sounds by the time the signal arrives: fault in that start
      * too, before the window at the playhead the signal may start it at. */
@@ -2056,7 +2146,7 @@ static int32_t le_post_record_image(le_engine* e, int32_t channel,
      * its loop top. */
     le_track_prefault_take(e, channel, action == LE_CMD_ARM &&
                                            (trigger == 0.0f || trigger == 3.0f));
-    if (fresh_shadow >= 0) le_prefault_shadow(e, channel, fresh_shadow, 0, 0, 0);
+    if (fresh_shadow >= 0) le_prefault_shadow(e, channel, fresh_shadow, 0, 0, 0, 0);
   }
   if (!image) return clocked ? le_post_clock_command(e, action, channel)
                             : le_push(e, action, channel, trigger);
@@ -2185,13 +2275,20 @@ static int32_t le_record_preflight(le_engine* e, int channel,
  * candidate below the `shadow_frames` this action will supply it at. A NULL
  * buffer is left lazy and a sufficient one is kept, so neither counts. */
 static int le_capture_prep_touches_pcm(const le_engine* e, le_track* t, int zero,
-                                       int shadow, int32_t shadow_frames) {
+                                       int shadow, int32_t shadow_frames,
+                                       uint32_t heard_mask) {
+  /* The take's heard image (#1713) replaces planes the same way. */
+  if (le_heard_capture_replaces((le_engine*)e, (int32_t)(t - e->tracks),
+                                heard_mask, zero)) {
+    return 1;
+  }
   const int32_t lanes = le_lanes_active(t);
   for (int32_t l = 0; l < lanes; ++l) {
     const le_lane* ln = &t->lanes[l];
     const int live = load_i32(&t->lanes[l].a_live);
     if (ln->pool[live] != NULL &&
         (zero || ln->pool_cap[live] < e->max_loop_frames)) return 1;
+
     if (shadow >= 0 && ln->pool[shadow] != NULL &&
         ln->pool_cap[shadow] < shadow_frames) return 1;
   }
@@ -2204,6 +2301,12 @@ static int32_t le_record_impl(le_engine* engine, int32_t channel,
   if (admission != LE_OK) return admission;
   /* Shadows sized now would serve the old length (#1168). */
   if (engine->tracks[channel].length_pending) return LE_ERR_NOT_READY;
+  /* A fresh take replaces the live slot's heard image, which an attach in
+   * flight may still be installing (#1713). */
+  if (le_effective_state(&engine->tracks[channel]) == LE_TRACK_EMPTY &&
+      le_heard_attach_pending(engine, channel)) {
+    return LE_ERR_NOT_READY;
+  }
   if (le_launch_cancellable(&engine->tracks[channel])) {
     /* Keep cancellation intent even if an earlier pair command removes the
      * countdown before this command drains. Never reinterpret it as acquire. */
@@ -2292,6 +2395,10 @@ static int32_t le_record_impl(le_engine* engine, int32_t channel,
   const int quantized_arm = !handoff_arm &&
       (le_effective_quantize(engine, channel) || sync_force_arm) &&
       capture_has_master && le_transport_active(engine);
+  /* Whether a fresh take zeroes its live slots (le_prepare_new_capture
+   * below): its heard image is zeroed with them, and the #1146 guard weighs
+   * the same verdict (#1713). */
+  engine->heard_zero = sound_arm || quantized_arm || capture_has_master;
   /* Preparing a new capture while a structural command is unpublished
    * would allocate shadows for the old lane count. The callback could then
    * activate more lanes before RECORD, making their first Undo lose audio.
@@ -2386,7 +2493,8 @@ static int32_t le_record_impl(le_engine* engine, int32_t channel,
         shadow_frames = le_layer_slot_frames(engine, le_track_settled_len(t));
       }
     }
-    if (le_capture_prep_touches_pcm(engine, t, zero, shadow, shadow_frames) &&
+    if (le_capture_prep_touches_pcm(engine, t, zero, shadow, shadow_frames,
+                                    image ? image->heard_mask : 0u) &&
         !(load_i32(&t->a_state) == LE_TRACK_EMPTY &&
           t->empty_command <= atomic_load_explicit(&engine->a_commands_published,
                                                    memory_order_acquire))) {
@@ -2683,6 +2791,17 @@ int32_t le_engine_stop_track(le_engine* engine, int32_t channel) {
   if (rc == LE_OK) le_ticket_emptying(engine, channel); /* void take -> EMPTY */
   return rc;
 }
+int32_t le_engine_spare_tail(le_engine* engine, int32_t channel,
+                             int32_t following) {
+  if (!engine || channel < 0 || channel >= engine->track_count ||
+      following < 0) {
+    return LE_ERR_INVALID;
+  }
+  if (!le_record_capacity(engine, 1 + (size_t)following)) {
+    return LE_ERR_NOT_READY;
+  }
+  return le_push(engine, LE_CMD_SPARE_TAIL, channel, 0.0f);
+}
 int32_t le_engine_play(le_engine* engine, int32_t channel) {
   if (!engine || channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
   if (le_launch_cancellable(&engine->tracks[channel]))
@@ -2959,7 +3078,7 @@ int32_t le_engine_history_mode_gate(le_engine* engine, uint32_t channels,
  * checked via the published atomic (this runs on the control thread, not the
  * audio thread, so e->perf.armed — the audio-thread-local mirror — must not
  * be read here). */
-static void le_plog_push_ctrl(le_engine* engine, le_command cmd) {
+void le_plog_push_ctrl(le_engine* engine, le_command cmd) {
   if (!atomic_load_explicit(&engine->a_perf_armed, memory_order_acquire)) {
     return;
   }
@@ -3681,32 +3800,47 @@ static int32_t le_length_post(le_engine* e, int32_t ch, int32_t slot,
   return LE_OK;
 }
 
+/* One buffer's share of le_length_build. */
+static void le_length_build_buffer(float* dst, const float* src, int32_t edit,
+                                   int32_t old_len, int32_t len, int32_t F) {
+  if (src == NULL) {
+    memset(dst, 0, (size_t)len * sizeof(float));
+  } else if (edit == LE_LENGTH_DOUBLE) {
+    memcpy(dst, src, (size_t)old_len * sizeof(float));
+    memcpy(dst + old_len, src, (size_t)old_len * sizeof(float));
+  } else {
+    const int32_t from = edit == LE_LENGTH_LAST_HALF ? old_len - len : 0;
+    memcpy(dst, src + from, (size_t)len * sizeof(float));
+    if (F > 0 && len >= 2 * F) {
+      le_seam_fold_head(dst, edit == LE_LENGTH_LAST_HALF ? src : src + len, F);
+    }
+  }
+}
+
 /* Writes the edited image of [t]'s live slot into `slot` on every active lane
- * (its buffers already hold `len` frames). Double repeats the image; a half
- * copies its region in place and folds its new wrap with the material it
- * omits — the continuation of the last kept frame, which is the next region
- * for First half and the already folded head for Last half — under the seam's
- * threshold (len >= 2F). */
+ * (its buffers already hold `len` frames), and of its heard image (#1713).
+ * Double repeats the image; a half copies its region in place and folds its
+ * new wrap with the material it omits — the continuation of the last kept
+ * frame, which is the next region for First half and the already folded head
+ * for Last half — under the seam's threshold (len >= 2F). */
 static void le_length_build(le_engine* e, le_track* t, int32_t slot,
                             int32_t edit, int32_t old_len, int32_t len) {
   const int32_t live = load_i32(&t->lanes[0].a_live);
   const int32_t F = (e->sample_rate > 0 ? e->sample_rate : 48000) / 100;
+  const int32_t ch = (int32_t)(t - e->tracks);
   for (int32_t l = 0; l < le_lanes_active(t); ++l) {
     le_lane* ln = &t->lanes[l];
-    float* dst = ln->pool[slot];
-    const float* src = ln->pool[live];
-    if (src == NULL) {
-      memset(dst, 0, (size_t)len * sizeof(float));
-    } else if (edit == LE_LENGTH_DOUBLE) {
-      memcpy(dst, src, (size_t)old_len * sizeof(float));
-      memcpy(dst + old_len, src, (size_t)old_len * sizeof(float));
-    } else {
-      const int32_t from = edit == LE_LENGTH_LAST_HALF ? old_len - len : 0;
-      memcpy(dst, src + from, (size_t)len * sizeof(float));
-      if (F > 0 && len >= 2 * F) {
-        le_seam_fold_head(dst, edit == LE_LENGTH_LAST_HALF ? src : src + len,
-                          F);
-      }
+    le_length_build_buffer(ln->pool[slot], ln->pool[live], edit, old_len, len,
+                           F);
+    /* The heard image's planes get the same edit (#1713). */
+    float* dl;
+    float* dr;
+    float* sl;
+    float* sr;
+    if (le_heard_planes(e, ch, l, slot, &dl, &dr) &&
+        le_heard_planes(e, ch, l, live, &sl, &sr)) {
+      le_length_build_buffer(dl, sl, edit, old_len, len, F);
+      le_length_build_buffer(dr, sr, edit, old_len, len, F);
     }
   }
 }
@@ -3727,6 +3861,8 @@ int32_t le_engine_edit_length(le_engine* e, int32_t channel, int32_t edit,
   if ((st != LE_TRACK_PLAYING && st != LE_TRACK_STOPPED) || old_len <= 0 ||
       (edit != LE_LENGTH_DOUBLE && old_len < 2)) return LE_ERR_INVALID;
   if (le_length_busy(e, channel)) return LE_ERR_NOT_READY;
+  /* An attach in flight would land on the image this edit replaces. */
+  if (le_heard_attach_pending(e, channel)) return LE_ERR_NOT_READY;
   /* The image is read from the live slot: not while the callback may still
    * write it (a seam fold, a punch tail; its end-of-block view). The payload
    * names the revision read, so a write that slips in before the callback
@@ -3764,24 +3900,46 @@ int32_t le_engine_edit_length(le_engine* e, int32_t channel, int32_t edit,
   const int32_t want = le_layer_slot_frames(e, len);
   const int32_t lanes = le_lanes_active(t);
   float* fresh[LE_MAX_LANES] = {0};
-  for (int32_t l = 0; l < lanes; ++l) {
-    if (t->lanes[l].pool[slot] != NULL && t->lanes[l].pool_cap[slot] >= want) {
-      continue;
+  /* The edited image's heard image (#1713), where the take has one: its
+   * planes, the size the clean slot will have, mapped here too, so a
+   * refusal leaves nothing changed and an edit never drops an image. */
+  float* hfresh[LE_MAX_LANES][LE_HEARD_PLANES] = {{0}};
+  int failed = 0;
+  for (int32_t l = 0; l < lanes && !failed; ++l) {
+    const int reuse =
+        t->lanes[l].pool[slot] != NULL && t->lanes[l].pool_cap[slot] >= want;
+    if (!reuse) {
+      fresh[l] = (float*)le_rt_alloc((size_t)want * sizeof(float));
+      failed = fresh[l] == NULL;
     }
-    fresh[l] = (float*)le_rt_alloc((size_t)want * sizeof(float));
-    if (fresh[l] != NULL) continue;
-    for (int32_t k = 0; k < l; ++k) le_rt_free(fresh[k]);
-    return LE_ERR_INVALID;
+    if (!failed &&
+        le_heard_has(e, channel, l, load_i32(&t->lanes[l].a_live))) {
+      failed = !le_heard_alloc_planes(reuse ? t->lanes[l].pool_cap[slot] : want,
+                                      &hfresh[l][0], &hfresh[l][1]);
+    }
   }
-  if (track_acquire_slot(t) != slot) { /* the same pure selection, applied */
-    for (int32_t l = 0; l < lanes; ++l) le_rt_free(fresh[l]);
+  if (failed || track_acquire_slot(t) != slot) {
+    /* the same pure selection, applied, or out of memory */
+    for (int32_t l = 0; l < lanes; ++l) {
+      le_rt_free(fresh[l]);
+      le_rt_free(hfresh[l][0]);
+      le_rt_free(hfresh[l][1]);
+    }
     return LE_ERR_INVALID;
   }
   for (int32_t l = 0; l < lanes; ++l) {
-    if (fresh[l] == NULL) continue;
-    le_free_audio_buffer(e, t->lanes[l].pool[slot]);
-    t->lanes[l].pool[slot] = fresh[l];
-    t->lanes[l].pool_cap[slot] = want;
+    if (fresh[l] != NULL) {
+      le_free_audio_buffer(e, t->lanes[l].pool[slot]);
+      t->lanes[l].pool[slot] = fresh[l];
+      t->lanes[l].pool_cap[slot] = want;
+    }
+    /* The slot is not live yet: what it held is freed at once. */
+    if (hfresh[l][0] != NULL) {
+      le_heard_adopt(e, channel, l, slot, hfresh[l][0], hfresh[l][1],
+                     t->lanes[l].pool_cap[slot]);
+    } else {
+      (void)le_heard_match(e, channel, l, slot, 0, LE_HEARD_FREE);
+    }
   }
   le_length_build(e, t, slot, edit, old_len, len);
   le_hist_entry file =
@@ -3859,6 +4017,8 @@ static void le_length_collect(le_engine* e, le_track* t) {
   const le_hist_entry f = t->length_file;
   for (int32_t l = 0; l < le_lanes_active(t); ++l) {
     le_lane_shrink_slot(e, &t->lanes[l], f.slot, le_layer_slot_frames(e, f.len));
+    le_heard_shrink(e, (int32_t)(t - e->tracks), l, f.slot,
+                    le_layer_slot_frames(e, f.len));
   }
   const int32_t ch = (int32_t)(t - e->tracks);
   if (t->length_op == 1) {
@@ -3872,7 +4032,10 @@ static void le_length_collect(le_engine* e, le_track* t) {
     } else {
       le_clear_redo(t);
     }
-    if (t->undo_count < LE_POOL_SLOTS) t->undo_stack[t->undo_count++] = f;
+    if (t->undo_count < LE_POOL_SLOTS) {
+      t->undo_stack[t->undo_count] = f;
+      t->undo_stack[t->undo_count++].seq = 0; /* a new edit (#1707) */
+    }
   }
   le_publish_undo_depth(t);
   store_i32(&t->a_redo_depth, t->redo_count);
@@ -3977,8 +4140,12 @@ int32_t le_engine_cancel_count_in(le_engine* engine) {
   return rc;
 }
 
-int32_t le_engine_stop_record_control(le_engine* engine, int32_t channel) {
-  if (!engine || channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+/* Rec Stop (le_engine_stop_record_control), and with [park] the Rec-mode
+ * Stop of the only audible loop (le_engine_stop_record_park, #1782). */
+static int32_t le_stop_record(le_engine* engine, int32_t channel, int park,
+                              int32_t following) {
+  if (!engine || channel < 0 || channel >= engine->track_count || following < 0)
+    return LE_ERR_INVALID;
   if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire))
     return LE_ERR_NOT_RUNNING;
   le_engine_drain_events(engine);
@@ -3994,8 +4161,9 @@ int32_t le_engine_stop_record_control(le_engine* engine, int32_t channel) {
   /* A Stop that saw a countdown (or its launch grace) means "cancel the
    * cohort", never "finish a capture": post the cancel itself, so one that
    * lands after the commit and grace is a no-op instead of finalizing the
-   * just-started defining take into a tiny master. */
-  if (cohort) return le_engine_cancel_count_in(engine);
+   * just-started defining take into a tiny master. The park still parks
+   * after that cancel, and finishes no capture there either. */
+  if (cohort && !park) return le_engine_cancel_count_in(engine);
   if (state == LE_TRACK_RECORDING || state == LE_TRACK_OVERDUBBING) {
     const int quantized = le_effective_quantize(engine, channel) &&
         le_rig_effective_master_len(engine) > 0 && le_transport_active(engine);
@@ -4003,20 +4171,41 @@ int32_t le_engine_stop_record_control(le_engine* engine, int32_t channel) {
     if (pending && (quantized ? engine->armed_trigger[channel] != 0
                               : engine->armed_trigger[channel] == 2))
       return LE_ERR_INVALID;
-    if (quantized) action = pending ? 2 : 1;
+    /* A second Stop drops the armed end, unless it parks an overdub: then
+     * it keeps the arm, so the pass still ends, and parks, on the grid. */
+    const int keep = park && state == LE_TRACK_OVERDUBBING;
+    if (quantized) action = pending && !keep ? 2 : 1;
   }
-  const int result = le_push(engine, LE_CMD_STOP_RECORD_CONTROL, channel, (float)action);
+  if (park && !le_record_capacity(engine, 1 + (size_t)following))
+    return LE_ERR_NOT_READY;
+  const int result = le_push(engine, LE_CMD_STOP_RECORD_CONTROL, channel,
+                             (float)(action + (park ? 4 : 0)));
   if (result == LE_OK && action) {
     engine->armed[channel] = action == 1;
     engine->armed_trigger[channel] = 0;
   }
   if (result == LE_OK) {
     /* Either half can empty a track: the count-in cancellation sweeps every
-     * grace take, the finish may close a void take on this channel. */
+     * grace take, the finish may close a void take on this channel, and a
+     * park stops every track, as le_engine_stop_track does. */
     le_ticket_grace_cohort(engine);
-    le_ticket_emptying(engine, channel);
+    if (park) {
+      for (int32_t c = 0; c < engine->track_count; ++c)
+        le_ticket_emptying(engine, c);
+    } else {
+      le_ticket_emptying(engine, channel);
+    }
   }
   return result;
+}
+
+int32_t le_engine_stop_record_control(le_engine* engine, int32_t channel) {
+  return le_stop_record(engine, channel, 0, 0);
+}
+
+int32_t le_engine_stop_record_park(le_engine* engine, int32_t channel,
+                                   int32_t following) {
+  return le_stop_record(engine, channel, 1, following);
 }
 
 int32_t le_engine_finalize_take(le_engine* engine, int32_t channel) {
@@ -5740,20 +5929,22 @@ static size_t le_perf_ring_capacity(int32_t channels, int32_t sample_rate,
 /* The ring seconds an arm grants (#1198): the requested seconds (at most
  * LE_PERF_RING_SECONDS_MAX, checked by the caller), lowered one at a time —
  * never below LE_PERF_RING_SECONDS_DEFAULT — until every ring of
- * the take together fits LE_PERF_RING_BYTES_MAX. A take on a removable volume
+ * the take together (the master, each monitored input's stereo ring as
+ * heard and each input's mono raw ring) fits LE_PERF_RING_BYTES_MAX. A take on a removable volume
  * asks for more than the default to ride out flash stalls; with many captured
  * inputs at a high rate the cap keeps arm from allocating (and prefaulting)
  * hundreds of megabytes. */
 static int32_t le_perf_ring_seconds_granted(int32_t requested,
                                             int32_t master_channels,
-                                            int32_t stereo_inputs,
+                                            int32_t heard_inputs,
+                                            int32_t raw_inputs,
                                             int32_t sample_rate) {
   int32_t seconds = requested;
   while (seconds > LE_PERF_RING_SECONDS_DEFAULT) {
     const size_t samples =
         le_perf_ring_capacity(master_channels, sample_rate, seconds) +
-        (size_t)stereo_inputs *
-            le_perf_ring_capacity(2, sample_rate, seconds);
+        (size_t)heard_inputs * le_perf_ring_capacity(2, sample_rate, seconds) +
+        (size_t)raw_inputs * le_perf_ring_capacity(1, sample_rate, seconds);
     if (samples * sizeof(float) <= (size_t)LE_PERF_RING_BYTES_MAX) break;
     seconds--;
   }
@@ -5793,20 +5984,63 @@ int le_perf_first_enabled_pair(le_engine* e, int32_t out_ch[2]) {
 /* Frees every ring allocated by an arm attempt that never reached the audio
  * thread (the command was never pushed, or push failed) — plain control-thread
  * cleanup, not a quiescent teardown, since nothing was published. */
-static void le_perf_free_unpublished(le_engine* e, uint64_t monitors_done) {
+static void le_perf_free_unpublished(le_engine* e) {
   le_audio_ring_release(&e->perf.master_ring);
   for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
-    if (monitors_done & (UINT64_C(1) << c)) {
-      le_audio_ring_release(&e->perf.monitor_ring[c]);
-    }
+    le_audio_ring_release(&e->perf.monitor_ring[c]);
+    le_audio_ring_release(&e->perf_raw_ring[c]);
   }
+  e->perf.input_mask = 0;
+  e->perf_raw_mask = 0;
+}
+
+/* Clamped to the DEVICE's input count, not just LE_MAX_MONITORED_INPUTS
+ * (#710). le_engine_set_monitor_input validates only against the array
+ * bound, so a session saved on an 8-in interface and reloaded on a 2-in one
+ * leaves monitors 2..7 enabled. Capturing them would open a stem the audio
+ * thread can never fill (it taps only c < ch_in), so the drain would
+ * silence-fill that file for the entire take and light the capture's glitch
+ * flag. An input that does not exist is not a captured input.
+ *
+ * A loopback channel (#1805 review) carries the device's own output, not a
+ * player: it is never monitored (so as heard it was only ever silence), and
+ * recording it raw would put the playback in the take as an input. A
+ * monitor enabled before a reopen onto a device that marks the channel
+ * loopback still reads enabled, so it is skipped here.
+ *
+ * Instrument sources (#1197) whose slot has a patch are filled by the audio
+ * thread every block, so they are captured like inputs. */
+void le_perf_capture_sets(le_engine* e, uint64_t* heard, uint64_t* raw) {
+  const uint32_t excluded =
+      atomic_load_explicit(&e->a_excluded_input_mask, memory_order_relaxed);
+  const int32_t in_ch = load_i32(&e->a_in_channels);
+  const int32_t limit =
+      in_ch > 0 && in_ch < LE_MAX_CHANNELS ? in_ch : LE_MAX_CHANNELS;
+  *heard = 0;
+  *raw = 0;
+  for (int32_t c = 0; c < LE_MAX_SOURCES; ++c) {
+    if (c < LE_INSTRUMENT_SOURCE_BASE
+            ? c >= limit || (excluded & (1u << c)) != 0
+            : e->inst_patch_requested[c - LE_INSTRUMENT_SOURCE_BASE] < 0) {
+      continue;
+    }
+    *raw |= UINT64_C(1) << c;
+    if (load_i32(&e->monitors[c].a_enabled)) *heard |= UINT64_C(1) << c;
+  }
+}
+
+static int32_t le_perf_mask_count(uint64_t mask) {
+  int32_t n = 0;
+  for (; mask != 0; mask &= mask - 1) n++;
+  return n;
 }
 
 int32_t le_perf_arm(le_engine* engine, const le_perf_target* target) {
   if (engine == NULL || target == NULL || target->capture_dir == NULL ||
       target->capture_dir[0] == '\0' || target->ring_seconds < 0 ||
       target->ring_seconds > LE_PERF_RING_SECONDS_MAX ||
-      target->checkpoint_ms < 0) {
+      target->checkpoint_ms < 0 || target->idle_stop_seconds < 0 ||
+      target->max_seconds < 0) {
     return LE_ERR_INVALID;
   }
   /* A part must hold at least one stereo frame after its header, and its
@@ -5836,42 +6070,20 @@ int32_t le_perf_arm(le_engine* engine, const le_perf_target* target) {
 
   const int32_t sr = engine->sample_rate > 0 ? engine->sample_rate : 48000;
 
-  /* The monitor capture set is frozen at arm: whichever inputs are enabled
-   * right now, and no others — an input enabled later is logged, not tapped
-   * (umbrella scope for this part). Every captured monitor ring is stereo
-   * (the monitor's own chain, e.g. a reverb, may decorrelate l/r).
-   *
-   * Clamped to the DEVICE's input count, not just LE_MAX_MONITORED_INPUTS
-   * (#710). le_engine_set_monitor_input validates only against the array
-   * bound, so a session saved on an 8-in interface and reloaded on a 2-in one
-   * leaves monitors 2..7 enabled. Capturing them would open a stem the audio
-   * thread can never fill — mix_monitors_frame taps only c < ch_in — so the
-   * drain would silence-fill that file for the entire take. Harmless while
-   * nothing counted the padding; now that a zero-fill raises the capture's
-   * glitch flag, it would light the warning on every single capture and drown
-   * the real signal. An input that does not exist is not a captured input. */
-  /* Instrument sources (#1197) are captured like inputs when monitored and
-   * their slot has a patch: the audio thread fills them every block. */
-  uint64_t wanted_inputs = 0;
-  int32_t input_count = 0;
-  const int32_t monitor_ch_limit =
-      (engine->in_channels > 0 && engine->in_channels < LE_MAX_CHANNELS)
-          ? engine->in_channels
-          : LE_MAX_CHANNELS;
-  for (int32_t c = 0; c < LE_MAX_SOURCES; ++c) {
-    if (c < LE_INSTRUMENT_SOURCE_BASE ? c >= monitor_ch_limit
-                                      : engine->inst_patch_requested
-                                                [c - LE_INSTRUMENT_SOURCE_BASE] < 0) {
-      continue;
-    }
-    if (!load_i32(&engine->monitors[c].a_enabled)) continue;
-    wanted_inputs |= (UINT64_C(1) << c);
-    input_count++;
-  }
+  /* The capture sets are frozen at arm (le_perf_capture_sets): an input
+   * enabled later is logged, not tapped (umbrella scope for this part).
+   * Each monitored input is recorded as heard, in a stereo ring (the
+   * monitor's own chain, e.g. a reverb, may decorrelate l/r); every device
+   * input and active instrument, monitored or not, is recorded raw in a
+   * mono ring (#1805, engine->perf_raw_ring). */
+  uint64_t heard_inputs = 0;
+  uint64_t raw_inputs = 0;
+  le_perf_capture_sets(engine, &heard_inputs, &raw_inputs);
   const int32_t ring_seconds = le_perf_ring_seconds_granted(
       target->ring_seconds > 0 ? target->ring_seconds
                                : LE_PERF_RING_SECONDS_DEFAULT,
-      found, input_count, sr);
+      found, le_perf_mask_count(heard_inputs), le_perf_mask_count(raw_inputs),
+      sr);
   atomic_store_explicit(&engine->a_perf_ring_seconds, ring_seconds,
                         memory_order_relaxed);
 
@@ -5886,17 +6098,20 @@ int32_t le_perf_arm(le_engine* engine, const le_perf_target* target) {
    * stands at arm, read by the audio thread through this plain field. */
   engine->perf.follow_output = load_i32(&engine->a_perf_follow_output);
 
-  uint64_t input_mask = 0;
   const size_t monitor_cap = le_perf_ring_capacity(2, sr, ring_seconds);
+  const size_t raw_cap = le_perf_ring_capacity(1, sr, ring_seconds);
   for (int32_t c = 0; c < LE_MAX_SOURCES; ++c) {
-    if (!(wanted_inputs & (UINT64_C(1) << c))) continue;
-    if (!le_audio_ring_alloc(&engine->perf.monitor_ring[c], monitor_cap)) {
-      le_perf_free_unpublished(engine, input_mask);
+    const uint64_t bit = UINT64_C(1) << c;
+    if (((heard_inputs & bit) &&
+         !le_audio_ring_alloc(&engine->perf.monitor_ring[c], monitor_cap)) ||
+        ((raw_inputs & bit) &&
+         !le_audio_ring_alloc(&engine->perf_raw_ring[c], raw_cap))) {
+      le_perf_free_unpublished(engine);
       return LE_ERR_INVALID;
     }
-    input_mask |= (UINT64_C(1) << c);
   }
-  engine->perf.input_mask = input_mask;
+  engine->perf.input_mask = heard_inputs;
+  engine->perf_raw_mask = raw_inputs;
 
   atomic_store_explicit(&engine->a_perf_frames, 0, memory_order_relaxed);
   atomic_store_explicit(&engine->a_perf_overruns, 0u, memory_order_relaxed);
@@ -5955,8 +6170,7 @@ int32_t le_perf_arm(le_engine* engine, const le_perf_target* target) {
    * failure here aborts the whole arm. */
   engine->perf.drain = le_perf_drain_start(engine, target, ring_seconds);
   if (engine->perf.drain == NULL) {
-    le_perf_free_unpublished(engine, input_mask);
-    engine->perf.input_mask = 0;
+    le_perf_free_unpublished(engine);
     return LE_ERR_DEVICE;
   }
 
@@ -5968,8 +6182,7 @@ int32_t le_perf_arm(le_engine* engine, const le_perf_target* target) {
   if (rc != LE_OK) {
     le_perf_drain_stop(engine->perf.drain, LE_PERF_STOP_DISARM);
     engine->perf.drain = NULL;
-    le_perf_free_unpublished(engine, input_mask);
-    engine->perf.input_mask = 0;
+    le_perf_free_unpublished(engine);
     return rc;
   }
   return LE_OK;
@@ -6100,11 +6313,11 @@ int32_t le_perf_disarm(le_engine* engine) {
 
   le_audio_ring_release(&engine->perf.master_ring);
   for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
-    if (engine->perf.input_mask & (UINT64_C(1) << c)) {
-      le_audio_ring_release(&engine->perf.monitor_ring[c]);
-    }
+    le_audio_ring_release(&engine->perf.monitor_ring[c]);
+    le_audio_ring_release(&engine->perf_raw_ring[c]);
   }
   engine->perf.input_mask = 0;
+  engine->perf_raw_mask = 0;
   le_perf_log_callback_telemetry(engine, /*stalled=*/0);
   return LE_OK;
 }
@@ -6137,6 +6350,15 @@ int32_t le_engine_perf_monitor_pop_for_test(le_engine* engine, int32_t input,
   const size_t popped = le_audio_ring_pop(&engine->perf.monitor_ring[input],
                                           out, (size_t)max_frames * 2);
   return (int32_t)(popped / 2);
+}
+
+int32_t le_engine_perf_raw_pop_for_test(le_engine* engine, int32_t input,
+                                        float* out, int32_t max_frames) {
+  if (engine == NULL || out == NULL || max_frames <= 0) return 0;
+  if (input < 0 || input >= LE_MAX_MONITORED_INPUTS) return 0;
+  if (!(engine->perf_raw_mask & (UINT64_C(1) << input))) return 0;
+  return (int32_t)le_audio_ring_pop(&engine->perf_raw_ring[input], out,
+                                    (size_t)max_frames);
 }
 
 /* ---- Bounce (#1202, Part 4a) ---- */
@@ -6297,6 +6519,7 @@ void le_bounce_collect(le_engine* engine) {
                   (size_t)(LE_POOL_SLOTS - 1) * sizeof(t->undo_stack[0]));
           t->undo_count = LE_POOL_SLOTS - 1;
         }
+        prev.seq = 0; /* a new edit, or a redo of one (#1707) */
         t->undo_stack[t->undo_count++] = prev;
       }
       le_publish_undo_depth(t);
@@ -6405,6 +6628,8 @@ int32_t le_engine_bounce(le_engine* engine, const le_bounce_request* request,
     } else {
       memset(dst, 0, (size_t)len * sizeof(float));
     }
+    /* A bounce is the track's sound already: no heard image (#1713). */
+    (void)le_heard_match(engine, ch, l, slot, 0, LE_HEARD_FREE);
   }
   /* A lane the bounce adds plays and records nothing while Redo holds the
    * bounce: after Undo it reads the replaced take's slot, which on a lane
@@ -6423,6 +6648,7 @@ int32_t le_engine_bounce(le_engine* engine, const le_bounce_request* request,
       break;
     }
     memset(ln->pool[live0], 0, (size_t)ln->pool_cap[live0] * sizeof(float));
+    (void)le_heard_match(engine, ch, l, live0, 0, LE_HEARD_FREE);
   }
   if (rc != LE_OK) {
     le_fx_recipe_abandon(b->lane_fx);

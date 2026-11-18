@@ -1,4 +1,5 @@
 import 'package:fx_catalogue/fx_catalogue.dart';
+import 'package:looper_repository/src/models/fx_preset_additions.dart';
 import 'package:looper_repository/src/models/fx_rack_level.dart';
 import 'package:looper_repository/src/models/fx_slot_ids.dart';
 import 'package:looper_repository/src/models/track_effect.dart';
@@ -75,7 +76,7 @@ List<FxModulePath?> fxEntryPaths(List<TrackEffect> chain) {
 /// preset's own controls have nowhere to go.
 class FxModuleBuild {
   /// Creates an [FxModuleBuild].
-  const FxModuleBuild({
+  const new({
     required this.type,
     this.params = const [],
     this.unmapped = const [],
@@ -87,7 +88,7 @@ class FxModuleBuild {
   });
 
   /// A module this engine cannot build at all.
-  const FxModuleBuild.unavailable() : this(type: null);
+  const new unavailable() : this(type: null);
 
   /// The engine effect this module becomes, or `null` when there is none.
   final TrackEffectType? type;
@@ -154,18 +155,18 @@ class FxModuleBuild {
 /// [FxModuleBuild.scales]).
 class FxSourceScale {
   /// `min * (max / min) ^ v`: the engine's exponential curve.
-  const FxSourceScale.log(this.min, this.max)
+  const new log(this.min, this.max)
     : curve = FxParamCurve.exponential,
       points = const [];
 
   /// `min + (max - min) * v`: the engine's linear curve.
-  const FxSourceScale.linear(this.min, this.max)
+  const new linear(this.min, this.max)
     : curve = FxParamCurve.linear,
       points = const [];
 
   /// Straight lines through measured `(setting, value)` [points], in
   /// setting order from 0 to 1.
-  const FxSourceScale.table(this.points) : min = 0, max = 0, curve = null;
+  const new table(this.points) : min = 0, max = 0, curve = null;
 
   /// The value at 0, unless [points] is set.
   final double min;
@@ -204,9 +205,11 @@ class FxSourceScale {
   }
 }
 
-/// The rack variants of the Looper X modules, by module and family: one engine
-/// kind per module (a Looper X kind, or for the Pitch Shift the octaver), each
-/// variant exposing the controls its racks show
+/// The rack variants of the Looper X modules, by module and family: each an
+/// engine kind (a Looper X kind, or for the Pitch Shift the octaver; one per
+/// module, except the Distortion, whose Lo-Fi variant is the Overdrive,
+/// #1737, and Studio variant the Amp, #1743), each variant exposing the
+/// controls its racks show
 /// (docs/plan/2026-10-20-looperx-derived-tables.md) and fixing the rest:
 /// - the EQ and the compressor: at the values measured on the Looper X
 ///   (#891, docs/plan/2026-10-23-looperx-eq-measured.md and
@@ -215,11 +218,12 @@ class FxSourceScale {
 ///   Looper X shows;
 /// - the doubler: where a rack hides its separation, 50 % (the Studio and
 ///   Vocal racks' copies reach the 51 ms of the Dub Rack's 50 %, #1445);
-/// - the distortion: where a rack hides it, the tone flat (50 %, chosen).
+/// - the Studio Rack's Dist: the Amp's tone and cabinet, fixed where the
+///   Looper X's Studio Dist measures (#1743).
 ///
 /// The first variant of each module is its default, the one "Add an effect"
 /// uses (#887: Ed's 4-band, the Dub Rack's Para, Ed's compressor, the Dub
-/// Rack's doubler, the Lo-Fi Rack's distortion).
+/// Rack's doubler, the Lo-Fi Rack's Distort).
 const Map<String, Map<String, FxModuleBuild>> kFxModuleVariants = {
   'Four-band EQ': {
     "Ed's Rack": _edsEq,
@@ -245,6 +249,7 @@ const Map<String, Map<String, FxModuleBuild>> kFxModuleVariants = {
   'High-pass gate': {
     'Vocal Rack': _hpGate,
     'Vocal Tuner Rack': _hpGate,
+    'Guitar Rack': _guitarGate,
   },
   'Doubler': {
     'Dub Rack': _dubDoubler,
@@ -255,7 +260,7 @@ const Map<String, Map<String, FxModuleBuild>> kFxModuleVariants = {
   'Chorus': {"Ed's Rack": _chorus},
   'Wah': {"Ed's Rack": _wah, 'Guitar Rack': _wah},
   'Overdrive': {"Ed's Rack": _overdrive, 'Guitar Rack': _overdrive},
-  'Distortion': {'Lo-Fi Rack': _loFiDistortion, 'Studio Rack': _distortion},
+  'Distortion': {'Lo-Fi Rack': _loFiDistortion, 'Studio Rack': _studioDist},
   'Vinyl': {'Lo-Fi Rack': _vinyl},
   'Degrade': {'Lo-Fi Rack': _degrade},
   'Low-pass filter': {'Rhythmic Rack': _rhythmicLpf, 'Lo-Fi Rack': _lpf},
@@ -570,18 +575,42 @@ const FxModuleBuild _rhythmicLpf = FxModuleBuild(
   params: ['LPF Cutoff', 'LPF Reso', 'LPF LFO Depth', 'LPF LFO Rate'],
 );
 
-// Lo-Fi Rack: drive and tone.
+// Lo-Fi Rack: drive and tone, on the Overdrive. The Looper X's Lo-Fi Distort
+// is its overdrive, the Guitar Rack's OvDrive times 1.6 to a residual of
+// -73 dB (#1737, session s19lofi), so the level is fixed there.
 const FxModuleBuild _loFiDistortion = FxModuleBuild(
-  type: TrackEffectType.distortion,
+  type: TrackEffectType.overdrive,
   params: ['Dist Drive', 'Dist Tone'],
+  fixed: {2: _loFiDistortLevelDb},
 );
 
-// Studio Rack: the drive, the tone flat.
-const FxModuleBuild _distortion = FxModuleBuild(
-  type: TrackEffectType.distortion,
+/// The Lo-Fi Distort's gain over the OvDrive, 1.6, in dB.
+const double _loFiDistortLevelDb = 4.082399653118496;
+
+// Studio Rack: the drive, on the Amp with the D.I. cabinet. The Looper X's
+// Studio Dist is its amp simulator without a cabinet (#1743, session
+// s19std: within 1 to 2.5 dB rms of response and level at Dist Drive 0 to
+// 80 %): Bass and Modern at 50 %, Treble at 35 %, and its drive on a steeper
+// law than the Guitar Amp's. Each Dist Drive reads as the Amp's drive with
+// the same small-signal gain at 1 kHz; from 80 % the Studio Dist runs past
+// the Amp's 100 %, which is as far as it goes here.
+const FxModuleBuild _studioDist = FxModuleBuild(
+  type: TrackEffectType.ampCab,
   params: ['Dist Drive'],
-  fixed: {1: 50},
+  scales: {0: _studioDistDrive},
+  // Bass 50 %, Treble 35 %, Modern 50 %, the cabinet's first choice: D.I.
+  fixed: {1: 50, 2: 35, 3: 50, 4: 0},
 );
+
+const FxSourceScale _studioDistDrive = FxSourceScale.table([
+  (0, 0),
+  (0.1, 5),
+  (0.233, 28),
+  (0.5, 54),
+  (0.665, 82),
+  (0.8, 100),
+  (1, 100),
+]);
 
 // Ed's and Guitar racks: drive and tone.
 const FxModuleBuild _overdrive = FxModuleBuild(
@@ -680,10 +709,24 @@ const FxModuleBuild _transient = FxModuleBuild(
   params: ['Attack', 'Attack Length', 'Sustain'],
 );
 
-// Vocal and Vocal Tuner racks: the whole high-pass gate.
+// Vocal and Vocal Tuner racks: the whole high-pass gate, as the Looper X
+// times it (the hold, release and detector at their lowest).
 const FxModuleBuild _hpGate = FxModuleBuild(
   type: TrackEffectType.hpGate,
   params: ['Highpass', 'Gate Thresh'],
+);
+
+// Guitar Rack (segno's, #1644: the Looper X's has no gate): the same
+// controls, timed for a guitar's decay. It closes on the input's RMS over
+// 10 ms, so a steady floor reads as its level and not as its highest
+// peaks, and a fading note closes it as it reaches the floor; a note's
+// first crest opens it at once. After the Looper X's 250 ms hold it fades
+// with a 120 ms time constant, 60 dB in about 0.8 s, where the Vocal
+// Rack's shuts in 3.2 ms.
+const FxModuleBuild _guitarGate = FxModuleBuild(
+  type: TrackEffectType.hpGate,
+  params: ['Highpass', 'Gate Thresh'],
+  fixed: {2: 120, 3: 10},
 );
 
 // The EQ layouts (the kind's "layout" choice).
@@ -828,9 +871,10 @@ const FxModuleBuild _rhythmicEq = FxModuleBuild(
 /// The source key that carries a rack's own level.
 const String kFxRackLevelKey = 'Master Vol';
 
-/// Builds the chain entries for a whole factory rack out of [preset]: one
-/// entry per module the preset holds, in rack order (see [fxPresetModules]),
-/// with the preset's [kFxRackLevelKey] as the rack level.
+/// Builds the chain entries for a whole factory rack out of [source] with
+/// segno's additions to it ([fxWithAdditions]): one entry per module the
+/// preset holds, in rack order (see [fxPresetModules]), with the preset's
+/// [kFxRackLevelKey] as the rack level.
 ///
 /// The rack level is the last entry's [FxChannels.level], which is where
 /// `FxChainGroup.channels` reads a rack's level from. `Master Vol` belongs
@@ -842,7 +886,8 @@ const String kFxRackLevelKey = 'Master Vol';
 ///
 /// With [onlyEnabled], the modules the preset leaves off are left out, and
 /// the level lands on the last module kept.
-List<BuiltInEffect> fxRackEntries(FxPreset preset, {bool onlyEnabled = false}) {
+List<BuiltInEffect> fxRackEntries(FxPreset source, {bool onlyEnabled = false}) {
+  final preset = fxWithAdditions(source);
   final entries = [
     for (final module in fxPresetModules(preset)) fxModuleEntry(module, preset),
   ];

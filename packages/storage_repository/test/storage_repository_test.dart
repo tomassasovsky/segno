@@ -253,9 +253,7 @@ void main() {
       await pumpEventQueue();
       final export = repo.acquire(usb1, WritePurpose.export);
 
-      h.client.update(
-        h.record(1, status: RemovableVolumeRecordStatus.ejected),
-      );
+      h.client.update(h.record(1, status: RemovableVolumeRecordStatus.ejected));
       await pumpEventQueue();
 
       expect(await export.lost, const StorageFailure.volumeLost(1));
@@ -388,10 +386,7 @@ void main() {
       unawaited(outcome.then((_) => settled = true));
       await pumpEventQueue();
       h.client.update(
-        h.record(
-          1,
-          eject: const EjectOutcomeRecord(request: 'old', ok: false),
-        ),
+        h.record(1, eject: const EjectOutcomeRecord(request: 'old', ok: false)),
       );
       await pumpEventQueue();
       expect(settled, isFalse);
@@ -911,7 +906,7 @@ void main() {
 
 /// A client whose eject requests cannot be written (a read-only run dir).
 class _UnfileableClient extends FakeUsbStorageClient {
-  _UnfileableClient({super.initial});
+  new({super.initial});
 
   @override
   Future<String> requestEject(int generation) async =>

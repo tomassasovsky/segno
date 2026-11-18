@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/visualizer/console_readout_view.dart';
 import 'package:segno/visualizer/performance_readout.dart';
 import 'package:segno/visualizer/readout_command.dart';
@@ -17,7 +17,7 @@ import 'package:segno/visualizer/waveform_window.dart';
 /// that wakes the console presses nothing, as on the main screen.
 class ReadoutControls extends StatefulWidget {
   /// Creates a [ReadoutControls].
-  const ReadoutControls({
+  const new({
     required this.readout,
     required this.frame,
     required this.waveform,

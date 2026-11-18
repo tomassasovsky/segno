@@ -374,6 +374,11 @@ int32_t le_engine_perf_master_channels_for_test(le_engine* engine);
 int32_t le_engine_perf_monitor_pop_for_test(le_engine* engine, int32_t input,
                                             float* out, int32_t max_frames);
 
+/* Pops up to `max_frames` MONO frames from input [input]'s raw capture ring
+ * (#1805) into `out`, returning the number popped; 0 as above. */
+int32_t le_engine_perf_raw_pop_for_test(le_engine* engine, int32_t input,
+                                        float* out, int32_t max_frames);
+
 /* ---- perf-drain test seams (perf_drain.h; part 2) ---- */
 
 struct le_perf_drain; /* opaque; full definition in perf_drain.c */
@@ -476,6 +481,13 @@ void le_perf_checkpoint_fail_slot_writes_for_test(int count);
  * default; a test must re-disable it (pass -1) before the next test runs.
  * Not part of the FFI surface. */
 void le_perf_render_force_dry_write_failure_for_test(int32_t channel);
+
+/* Holds the offline render worker between blocks while `hold` is 1 (a cancel
+ * still ends it), so a test can act on a render known to be mid-way;
+ * le_perf_render_held_for_test reads 1 once a worker waits. Process-global;
+ * a test must release it (pass 0). Not part of the FFI surface. */
+void le_perf_render_hold_for_test(int hold);
+int le_perf_render_held_for_test(void);
 
 /* Structural FX recipe ownership; all except apply are control-thread only. */
 struct le_prepared_fx;

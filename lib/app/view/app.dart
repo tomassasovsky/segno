@@ -7,12 +7,12 @@ import 'package:console_facts_client/console_facts_client.dart';
 import 'package:controller_repository/controller_repository.dart';
 import 'package:cpu_load_repository/cpu_load_repository.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:instrument_repository/instrument_repository.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
@@ -40,7 +40,6 @@ import 'package:segno/common/on_screen_keyboard/on_screen_keyboard_host.dart';
 import 'package:segno/console_leds/cubit/console_leds_cubit.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
-import 'package:segno/library/application/removable_volumes.dart';
 import 'package:segno/logging/app_log.dart';
 import 'package:segno/looper/application/record_settings.dart';
 import 'package:segno/looper/application/record_timing_settings.dart';
@@ -78,7 +77,7 @@ class App extends StatefulWidget {
   /// The repositories and [waveformWindow] are injected so tests can supply
   /// fakes / a no-op window service instead of the native device and the
   /// link to the Track display.
-  const App({
+  const new({
     required this.repository,
     required this.controllerRepository,
     required this.midiDeviceRepository,
@@ -101,7 +100,6 @@ class App extends StatefulWidget {
     this.touchCalibration = const UnsupportedTouchCalibrationClient(),
     this.consoleFacts = const UnsupportedConsoleFactsClient(),
     this.cpuLoad = const CpuLoadRepository.unsupported(),
-    this.removableVolumes = const InternalOnlyVolumes(),
     this.storage,
     this.powerKeySource,
     this.powerOff,
@@ -137,11 +135,6 @@ class App extends StatefulWidget {
   /// unsupported repository, which hides the readout; the entrypoint injects
   /// the `/proc/stat` one.
   final CpuLoadRepository cpuLoad;
-
-  /// The removable drives the Library browses and copies to. Defaults to
-  /// [InternalOnlyVolumes] (no drive, every removable write refused) until
-  /// the storage service (#1177) stands behind the port.
-  final RemovableVolumes removableVolumes;
 
   /// Where a write may go: Internal and the USB volumes. Null (the default)
   /// builds one over no USB at all, measuring Internal through
@@ -232,7 +225,6 @@ class _AppState extends State<App> {
   final _ownerSubscriptions = <StreamSubscription<void>>[];
   StreamSubscription<int>? _recordingInputRequiredSubscription;
   StreamSubscription<int>? _recordRefusedSubscription;
-  StreamSubscription<int>? _fxTakeHeldSubscription;
   StreamSubscription<int>? _overdubRefusedSubscription;
   StreamSubscription<int>? _lengthHistoryRefusedSubscription;
   late final PlaybackOptionsCubit _playbackView;
@@ -287,9 +279,6 @@ class _AppState extends State<App> {
         .repository
         .recordingInputRequired
         .listen(_showRecordingInputRequired);
-    _fxTakeHeldSubscription = widget.repository.fxTakeHeld.listen(
-      _showFxTakeHeld,
-    );
     _recordRefusedSubscription = widget.repository.recordRefusals.listen(
       (channel) => _showTrackRefused(channel, _recordRefused),
     );
@@ -324,7 +313,6 @@ class _AppState extends State<App> {
     }
     unawaited(_recordingInputRequiredSubscription?.cancel());
     unawaited(_recordRefusedSubscription?.cancel());
-    unawaited(_fxTakeHeldSubscription?.cancel());
     unawaited(_overdubRefusedSubscription?.cancel());
     unawaited(_lengthHistoryRefusedSubscription?.cancel());
     unawaited(_notices.close());
@@ -456,25 +444,6 @@ class _AppState extends State<App> {
     ),
   };
 
-  /// A take whose inherited effects did not fit came in with them switched
-  /// off (#1515, the owner's R1). The take sounds dry until the player makes
-  /// room, which matters little in the moment: a message on its track. While
-  /// the standing effects-off message is up the repository adds the take to
-  /// it instead.
-  void _showFxTakeHeld(int channel) {
-    if (!mounted) return;
-    _notices.showOnTrack(
-      channel,
-      Notice(
-        id: AppNoticeId.fxTakeHeld,
-        tone: NoticeTone.warning,
-        overline: (l10n) => l10n.noticeEffectsOff,
-        title: (l10n) => l10n.fxTakeHeldToast,
-        body: (l10n) => l10n.fxTakeHeldBody,
-      ),
-    );
-  }
-
   /// A Record press on a track with no recording input: said on its track.
   void _showRecordingInputRequired(int channel) {
     if (!mounted) return;
@@ -587,9 +556,6 @@ class _AppState extends State<App> {
         RepositoryProvider.value(value: widget.waveformWindow),
         RepositoryProvider.value(value: widget.consoleFacts),
         RepositoryProvider.value(value: widget.cpuLoad),
-        RepositoryProvider<RemovableVolumes>.value(
-          value: widget.removableVolumes,
-        ),
         RepositoryProvider.value(value: _storage),
         // The one guard table (#1198), for the owners the views build: the
         // Library's exports and backups enter transfer guards on what
@@ -681,25 +647,17 @@ class _AppState extends State<App> {
           // The stage footer's `OUT` readout, refreshed four times a second
           // rather than on every 16 ms engine poll (#1301).
           BlocProvider(
-            create: (context) => OutputLevelCubit(
-              repository: context.read<LooperRepository>(),
-            ),
+            create: (context) =>
+                OutputLevelCubit(repository: context.read<LooperRepository>()),
           ),
           // Beside the track names and for the same reason: an input is called
           // what the player calls it on every surface that shows one — the
           // Audio face's input list, the Tracks routing summary, and the
           // per-track lane list — so the names load once, here.
-          // Eager: the names key off the OPEN DEVICE, so the cubit has to be
-          // listening before the engine reports one — created lazily it would
-          // miss the boot device entirely and show ordinals until the next
-          // reopen.
-          BlocProvider(
-            lazy: false,
-            create: (context) => InputsCubit(
-              settings: context.read<SettingsRepository>(),
-              repository: context.read<LooperRepository>(),
-            ),
-          ),
+          // The runtime creates it, eagerly: the names key off the OPEN
+          // DEVICE, so the cubit has to be listening before the engine
+          // reports one, and a take's arm records them (#1799).
+          BlocProvider<InputsCubit>.value(value: _runtime.inputs),
           // Destination names, the output-side twin of the inputs above and
           // eager for the same reason: they key off the OPEN DEVICE.
           BlocProvider(
@@ -823,9 +781,8 @@ class _AppState extends State<App> {
           // there) — the cubits know nothing of each other.
           BlocProvider(
             lazy: false,
-            create: (context) => PedalCubit(
-              pedal: context.read<PedalRepository>(),
-            ),
+            create: (context) =>
+                PedalCubit(pedal: context.read<PedalRepository>()),
           ),
           // The console LEDs' brightness (#1564), Manual or following the
           // light sensor. Eager: it sends the board its level from launch.
@@ -887,6 +844,9 @@ class _AppState extends State<App> {
             create: (context) {
               final cubit = PerformanceRecorderCubit(
                 performance: context.read<PerformanceRepository>(),
+                // The rig and names a take's arm records (#375, #1799).
+                currentChains: _runtime.currentChains,
+                currentNames: _runtime.currentNames,
                 // The runtime's lock, which also holds during an audio
                 // warm-up (#1533).
                 takeLocked: () => _runtime.takeLocked,
@@ -908,7 +868,7 @@ class _AppState extends State<App> {
 /// Builds the themed [MaterialApp], wires the macOS system menu, and opens /
 /// closes the secondary waveform window for tracks mode.
 class _AppView extends StatefulWidget {
-  const _AppView({required this.waveformWindow});
+  const new({required this.waveformWindow});
 
   final WaveformWindowService waveformWindow;
 
@@ -1189,9 +1149,7 @@ class _AppViewState extends State<_AppView> {
   Future<void> _bootstrapWindow() async {
     await context.read<WaveformWindowCubit>().load();
     if (!mounted) return;
-    _display.start(
-      enabled: context.read<WaveformWindowCubit>().state.enabled,
-    );
+    _display.start(enabled: context.read<WaveformWindowCubit>().state.enabled);
   }
 
   void _syncWindow() => _display.setEnabled(
@@ -1586,7 +1544,7 @@ class _AppViewState extends State<_AppView> {
           ? AppTheme.highContrast
           : AppTheme.neon,
       highContrastTheme: AppTheme.highContrast,
-      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      localizationsDelegates: appLocalizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
       home: const LooperPage(),
       debugShowCheckedModeBanner: false,
@@ -1609,7 +1567,9 @@ class _AppViewState extends State<_AppView> {
             final dimmed = SoftwareBrightness(
               brightness: brightness.softwareOf(DisplayRole.main),
               child: IdleDimHost(
-                child: WifiReconnectHoldHost(child: typed),
+                child: PerformanceAutoStopNotice(
+                  child: WifiReconnectHoldHost(child: typed),
+                ),
               ),
             );
             return BlocBuilder<PowerCubit, PowerState>(

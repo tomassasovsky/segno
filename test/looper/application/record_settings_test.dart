@@ -9,7 +9,7 @@ import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/helpers.dart';
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 void main() {
   late SettingsRepository settings;
@@ -26,9 +26,8 @@ void main() {
     when(() => repository.recordLengthCaptureLocked).thenReturn(false);
     when(() => repository.lengthSettingsSettled).thenReturn(true);
     when(() => repository.lengthRecoveryRequired).thenReturn(false);
-    when(
-      () => repository.lengthSettingsFailures,
-    ).thenAnswer((_) => const Stream.empty());
+    when(() => repository.lengthSettingsFailures)
+        .thenAnswer((_) => const Stream.empty());
     when(() => repository.trackLengthPresetOverrides).thenReturn({});
     when(() => repository.state).thenReturn(const LooperState());
     when(() => repository.lengthRestartIntent).thenAnswer(
@@ -53,15 +52,12 @@ void main() {
     when(() => repository.sessionTransport).thenAnswer(
       (_) => TransportState(defaultLengthPresetBars: confirmedLength),
     );
-    when(
-      () => repository.settleLengthSettings(),
-    ).thenAnswer((_) async => EngineResult.ok);
-    when(
-      () => repository.setRecDub(enabled: any(named: 'enabled')),
-    ).thenReturn(EngineResult.ok);
-    when(
-      () => repository.setDefaultMultiple(multiple: any(named: 'multiple')),
-    ).thenReturn(EngineResult.ok);
+    when(() => repository.settleLengthSettings())
+        .thenAnswer((_) async => EngineResult.ok);
+    when(() => repository.setRecDub(enabled: any(named: 'enabled')))
+        .thenReturn(EngineResult.ok);
+    when(() => repository.setDefaultMultiple(multiple: any(named: 'multiple')))
+        .thenReturn(EngineResult.ok);
     when(() => repository.setDefaultLengthPreset(any())).thenAnswer((call) {
       confirmedLength = call.positionalArguments.single as int;
       return EngineResult.ok;
@@ -192,9 +188,9 @@ void main() {
     );
 
     test('late length refusal keeps the displayed and saved default', () async {
-      (() => when(
-        () => repository.settleLengthSettings(),
-      ).thenAnswer((_) async => EngineResult.invalid))();
+      (() =>
+          when(() => repository.settleLengthSettings())
+              .thenAnswer((_) async => EngineResult.invalid))();
       final owner = build();
       addTearDown(owner.close);
       final states = <RecordOptions>[];
@@ -224,20 +220,17 @@ void main() {
           final bars = call.namedArguments[#defaultBars] as int;
           return bars == 12 ? EngineResult.notReady : EngineResult.ok;
         });
-        when(
-          () => repository.settleLengthSettings(),
-        ).thenAnswer((_) => pending.future);
+        when(() => repository.settleLengthSettings())
+            .thenAnswer((_) => pending.future);
         final cubit = build();
         addTearDown(cubit.close);
 
         // Initialize before withholding the transaction receipt.
-        when(
-          () => repository.settleLengthSettings(),
-        ).thenAnswer((_) async => EngineResult.ok);
+        when(() => repository.settleLengthSettings())
+            .thenAnswer((_) async => EngineResult.ok);
         await cubit.load();
-        when(
-          () => repository.settleLengthSettings(),
-        ).thenAnswer((_) => pending.future);
+        when(() => repository.settleLengthSettings())
+            .thenAnswer((_) => pending.future);
         final accepted = cubit.setDefaultLengthBars(8);
         // In flight before the next tap, so the tap queues instead of
         // replacing it.
@@ -300,12 +293,10 @@ void main() {
       'refused edits preserve displayed and saved recording options',
       () async {
         await (() {
-          when(
-            () => repository.setRecDub(enabled: true),
-          ).thenReturn(EngineResult.invalid);
-          when(
-            () => repository.setDefaultMultiple(multiple: 2),
-          ).thenReturn(EngineResult.invalid);
+          when(() => repository.setRecDub(enabled: true))
+              .thenReturn(EngineResult.invalid);
+          when(() => repository.setDefaultMultiple(multiple: 2))
+              .thenReturn(EngineResult.invalid);
         })();
         final owner = build();
         addTearDown(owner.close);
@@ -335,10 +326,7 @@ void main() {
       await ((_) async {
         looperStates.add(
           const LooperState(
-            transport: TransportState(
-              recDub: true,
-              defaultMultiple: 3,
-            ),
+            transport: TransportState(recDub: true, defaultMultiple: 3),
           ),
         );
         await Future<void>.delayed(Duration.zero);

@@ -1,8 +1,8 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:fx_catalogue/fx_catalogue.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/audio_setup/view/device_page.dart';
 import 'package:segno/control/view/midi_controls/midi_controls_page.dart';
 import 'package:segno/control/view/pedal_setup/external_pedal_page.dart';
@@ -102,11 +102,8 @@ void setSegnoFxCatalogueForTest(FxCatalogue? catalogue) =>
 Future<void> openFx({FxDestination? destination, VoidCallback? onStage}) =>
     _pushOnce(segnoFxRouteName, () async {
       final catalogue = await segnoFxCatalogue();
-      return (_) => FxPage(
-        initial: destination,
-        catalogue: catalogue,
-        onStage: onStage,
-      );
+      return (_) =>
+          FxPage(initial: destination, catalogue: catalogue, onStage: onStage);
     });
 
 /// Pushes the page [page] builds onto the root navigator under [name], once:

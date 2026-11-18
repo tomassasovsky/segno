@@ -39,12 +39,7 @@ enum FootFadeAction {
 /// One physical pedal's semantics; Control alone supplies gesture timing.
 class FootFadePedal {
   /// Creates one static role in the accepted ten-pedal layout.
-  const FootFadePedal(
-    this.press, {
-    this.hold,
-    this.slot,
-    this.immediate = false,
-  });
+  const new(this.press, {this.hold, this.slot, this.immediate = false});
 
   /// Short action, either at contact or matching release.
   final FootFadeAction press;
@@ -63,7 +58,7 @@ class FootFadePedal {
 /// and the visible bank is the shared rig bank.
 class FootFadeSelection extends Equatable {
   /// Creates the local Fade selection.
-  const FootFadeSelection({this.timeChannel});
+  const new({this.timeChannel});
 
   /// Track whose duration is selected, or null for the shared Default.
   final int? timeChannel;
@@ -75,7 +70,7 @@ class FootFadeSelection extends Equatable {
 /// One track's confirmed envelope and effective next-gesture duration.
 class FootFadeTrack extends Equatable {
   /// Creates a read of current repository and settings facts.
-  const FootFadeTrack({
+  const new({
     required this.channel,
     required this.available,
     required this.amount,
@@ -122,7 +117,7 @@ class FootFadeTrack extends Equatable {
 /// Shared semantic read model for captions, touch and physical feedback.
 class FootFadeProjection extends Equatable {
   /// Creates a complete projection.
-  const FootFadeProjection({
+  const new({
     required this.selection,
     required this.bank,
     required this.tracks,

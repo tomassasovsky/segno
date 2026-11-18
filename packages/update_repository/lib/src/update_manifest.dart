@@ -8,7 +8,7 @@ import 'package:pub_semver/pub_semver.dart';
 @immutable
 class UpdateManifest {
   /// Creates an [UpdateManifest].
-  const UpdateManifest({
+  const new({
     required this.version,
     required this.bundle,
     this.sha256 = '',

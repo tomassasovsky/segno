@@ -5,12 +5,12 @@ part of 'output_level_cubit.dart';
 /// figure so a peak that does not move the figure is an equal state.
 class OutputLevelState extends Equatable {
   /// Creates an [OutputLevelState].
-  const OutputLevelState({this.tenths, this.clip = false});
+  const new({this.tenths, this.clip = false});
 
   /// The reading for an absolute sample [peak], where 1.0 is full scale. A
   /// peak below the meters' floor ([kMeterFloorDb]) reads as silence, as the
   /// routing readouts do: there is no level to give down there.
-  factory OutputLevelState.of(double peak) {
+  factory of(double peak) {
     final shown = meterPeak(peak);
     if (shown <= 0) return const OutputLevelState();
     if (shown >= kClipPeak) {

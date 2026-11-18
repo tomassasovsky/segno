@@ -176,6 +176,54 @@ class ApplianceTests(unittest.TestCase):
         output = subprocess.check_output([sys.executable, str(HELPER), "catalog", str(empty), "", "", ""])
         self.assertEqual(json.loads(output), {"recordings": [], "unavailable": 0})
 
+    def test_catalog_lists_the_live_set(self):
+        (self.take / "project.als").write_bytes(b"\x1f\x8bset")
+        other = self.make_take("no-set")
+        (other / "project.als").symlink_to(self.take / "project.als")
+        output = subprocess.check_output([sys.executable, str(HELPER), "catalog", str(self.root), "", "", ""])
+        recordings = {r["name"]: r for r in json.loads(output)["recordings"]}
+        self.assertEqual(recordings[self.take.name]["liveSet"], {
+            "path": "project.als", "bytes": 5, "version": appliance.version(self.take / "project.als")})
+        self.assertIsNone(recordings["no-set"]["liveSet"])
+        self.assertEqual([f["path"] for f in recordings[self.take.name]["files"]], ["master.wav"])
+
+    def test_an_unreadable_live_set_hides_only_the_set(self):
+        (self.take / "project.als").write_bytes(b"set")
+        original = appliance.version
+        def failing(path):
+            if path.name == "project.als":
+                raise FileNotFoundError(path)
+            return original(path)
+        appliance.version = failing
+        self.addCleanup(setattr, appliance, "version", original)
+        recording = appliance.catalog(self.root)["recordings"][0]
+        self.assertIsNone(recording["live_set"])
+        self.assertEqual([f["path"] for f in recording["files"]], ["master.wav"])
+
+    def test_live_set_downloads_and_hashes_but_does_not_stream(self):
+        import hashlib
+        source = self.take / "project.als"
+        source.write_bytes(b"\x1f\x8bset")
+        command = [sys.executable, str(HELPER), "download", str(self.root), self.take.name,
+                   "project.als", appliance.version(source)]
+        self.assertEqual(subprocess.check_output(command), source.read_bytes())
+        request = {"root": str(self.root), "action": "hash", "recording": self.take.name,
+                   "file": "project.als", "version": appliance.version(source)}
+        self.assertEqual(appliance.run(request)["sha256"], hashlib.sha256(source.read_bytes()).hexdigest())
+        result = subprocess.run(command[:2] + ["read"] + command[3:] + ["0", "2"], capture_output=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, b"")
+
+    def test_only_the_take_own_live_set_is_served(self):
+        nested = self.take / "loops"
+        nested.mkdir()
+        (nested / "project.als").write_bytes(b"set")
+        (self.take / "fx-chains.txt").write_text("chains")
+        for name in ("loops/project.als", "fx-chains.txt", "../project.als"):
+            request = {"action": "download", "recording": self.take.name, "file": name, "version": ""}
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                appliance.selected_file(self.root, request)
+
 
 if __name__ == "__main__":
     unittest.main()

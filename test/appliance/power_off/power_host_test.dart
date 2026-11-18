@@ -1,11 +1,11 @@
 import 'dart:async';
 
 import 'package:bloc_test/bloc_test.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
@@ -29,24 +29,23 @@ import '../../helpers/helpers.dart';
 import 'fake_power_key_source.dart';
 
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+    implements LooperBloc;
 
-class _MockSessionCubit extends MockCubit<SessionState>
-    implements SessionCubit {}
+class _MockSessionCubit extends MockCubit<SessionState> implements SessionCubit;
 
 class _MockRecorder extends MockCubit<PerformanceRecorderState>
-    implements PerformanceRecorderCubit {}
+    implements PerformanceRecorderCubit;
 
-class _MockPedalRepository extends Mock implements PedalRepository {}
+class _MockPedalRepository extends Mock implements PedalRepository;
 
-class _MockUpdateCubit extends MockCubit<UpdateState> implements UpdateCubit {}
+class _MockUpdateCubit extends MockCubit<UpdateState> implements UpdateCubit;
 
 class _MockBackingCubit extends MockCubit<BackingCubitState>
-    implements BackingCubit {}
+    implements BackingCubit;
 
-class _MockUpdateRepository extends Mock implements UpdateRepository {}
+class _MockUpdateRepository extends Mock implements UpdateRepository;
 
-class _MockSettingsRepository extends Mock implements SettingsRepository {}
+class _MockSettingsRepository extends Mock implements SettingsRepository;
 
 const _loops = LooperState(
   tracks: [Track(state: TrackState.playing, lengthFrames: 48000)],
@@ -148,9 +147,7 @@ void main() {
               BlocProvider<SessionCubit>.value(value: session),
             ],
             child: const PowerHost(
-              child: Scaffold(
-                body: SizedBox(key: Key('power_host_child')),
-              ),
+              child: Scaffold(body: SizedBox(key: Key('power_host_child'))),
             ),
           ),
         ),
@@ -197,9 +194,8 @@ void main() {
         rootNavigator: true,
       ).push(
         MaterialPageRoute<void>(
-          builder: (_) => const Scaffold(
-            body: SizedBox(key: Key('power_underlay')),
-          ),
+          builder: (_) =>
+              const Scaffold(body: SizedBox(key: Key('power_underlay'))),
         ),
       );
       await settle(tester);
@@ -271,15 +267,13 @@ void main() {
         final updates = _MockUpdateRepository();
         when(() => updates.isSupported).thenReturn(true);
         when(() => updates.channel).thenReturn('production');
-        when(
-          updates.currentVersion,
-        ).thenAnswer((_) async => Version.parse('1.0.0'));
+        when(updates.currentVersion)
+            .thenAnswer((_) async => Version.parse('1.0.0'));
         when(updates.stagedVersion).thenAnswer((_) async => Version.none);
         when(updates.checkForUpdate).thenAnswer((_) async => offer);
         when(updates.installInProgress).thenAnswer((_) async => false);
-        when(
-          () => updates.downloadAndStage(offer),
-        ).thenAnswer((_) => download.stream);
+        when(() => updates.downloadAndStage(offer))
+            .thenAnswer((_) => download.stream);
         update = UpdateCubit(
           updates: updates,
           settings: _MockSettingsRepository(),

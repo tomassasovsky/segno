@@ -1,5 +1,5 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/appliance/power_off/power_host.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/looper/view/tracks_view.dart';
@@ -8,7 +8,7 @@ import 'package:segno/session/session.dart';
 /// Projects the shared session and transport owners onto the Tracks surface.
 class LooperPage extends StatelessWidget {
   /// Creates the main performance surface.
-  const LooperPage({super.key});
+  const new({super.key});
 
   @override
   Widget build(BuildContext context) =>

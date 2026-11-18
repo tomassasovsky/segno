@@ -36,9 +36,9 @@ A reader only ever needs to parse the file **once it is finalized**
 `finalized` absent or `false` is either still in progress or is exactly what
 `PerformanceRepository.findUnfinalized` flags for crash recovery (D-SALVAGE).
 
-## Salvage sibling files (`.boot-recovery`, `.recovered-at`)
+## Salvage sibling files (`.boot-recovery`, `.boot-recovery-attempt`, `.boot-recovery-failed`, `.recovered-at`)
 
-Boot-time crash salvage (D-SALVAGE, silent since #679) leaves two tiny
+Boot-time crash salvage (D-SALVAGE, silent since #679) leaves tiny
 sibling files beside `performance.json` at different points of a bundle's
 life. They exist because `finalized` alone cannot carry the whole salvage
 story: a finished take the user kept and a salvage output stranded mid-move
@@ -49,6 +49,8 @@ console boots near the epoch until its first NTP sync).
 | File | Format | Written by | Removed by |
 |---|---|---|---|
 | `.boot-recovery` | empty file (its presence is the datum) | `PerformanceRepository.runBootRecovery`, immediately before a bundle's salvage begins | the move into `recovered/` completing — its deletion is what declares the salvage done |
+| `.boot-recovery-attempt` | UTF-8 text: how many salvages of the bundle have begun without ending (#1747) | the salvage, before its finalize and stem render begin | the salvage ending, however it went (moved, or kept for the next start), a timed-out render included once it is done; left behind when the app stops during it |
+| `.boot-recovery-failed` | empty file | the next start, finding `.boot-recovery-attempt` with a count of 2: the app stopped during two salvages in a row | the player's Try again on the notice that says a take could not be recovered, which records one interrupted salvage so the next interruption fails it again |
 | `.recovered-at` | epoch milliseconds, UTF-8 text, nothing else | the same move, stamped on the **source** bundle strictly before the rename, so the rename carries it atomically | never — it stays with the bundle as the record of when it arrived under `recovered/` |
 
 What a standalone tool should conclude from each combination:
@@ -57,6 +59,8 @@ What a standalone tool should conclude from each combination:
 |---|---|
 | `finalized` `false`/absent (exports root) | still armed, or crashed while armed — the salvage candidate `findUnfinalized` flags; `.boot-recovery` may also be present from an earlier attempt that could not finalize |
 | `finalized: true` + `.boot-recovery` (exports root) | **stranded salvage output**: finalize completed but the move to `recovered/` did not (a crash in that window, or a stem-render timeout); the next boot re-attempts the render and finishes the move |
+| `.boot-recovery-attempt` (exports root) | a salvage began and did not end: the app stopped during it (killed, crashed, restarted, or the power went). The next start salvages it once more; at a count of 2 it marks the bundle failed instead |
+| `.boot-recovery-failed` (exports root) | a salvage the app did not survive: never started again by a start, the bundle and its files kept and reported as not recovered at every start, until the player asks to try again |
 | `finalized: true`, no `.boot-recovery` (exports root) | a normal finished take — never touched by salvage or pruning |
 | `.recovered-at` present (under `recovered/`) | landed there via salvage at the stamped instant. Never deleted automatically: recovered audio stays until the user removes it (#1198; the 30-day prune of #679 is gone) |
 | under `recovered/` without `.recovered-at` | not placed there by the salvage (e.g. dragged in by hand) |
@@ -67,7 +71,7 @@ What a standalone tool should conclude from each combination:
 {
   "slug": "perf-20260706-143015",
   "sample_rate": 48000,
-  "channel_layout": { "master_channels": 2, "captured_inputs": [0, 1] },
+  "channel_layout": { "master_channels": 2, "captured_inputs": [0, 1], "raw_inputs": [0, 1] },
   "capture_frames": 4800000,
   "overrun_count": 0,
   "overrun_gaps": [ { "frame": 12000, "duration_frames": 64 } ],
@@ -90,7 +94,8 @@ What a standalone tool should conclude from each combination:
 | `slug` | string | The bundle directory's own name (D-NAME); redundant with the path but kept so the file is self-describing if moved. |
 | `sample_rate` | int | Negotiated device sample rate at arm time. Every PCM file in the bundle shares this rate (D-RATE — no resampling). |
 | `channel_layout.master_channels` | int | Channel count of the master parts (D-MASTER: stereo, or mono on a mono device). |
-| `channel_layout.captured_inputs` | int[] | Hardware input indices monitored at arm time (frozen for the session, D-INPUT); each has its own `input-<n>-NNN.wav` parts, stereo. |
+| `channel_layout.captured_inputs` | int[] | Hardware input indices monitored at arm time (frozen for the session, D-INPUT), loopback channels aside; each has its own `input-<n>-NNN.wav` parts, stereo. An input is recorded as its monitor plays it, after its chain, volume and pan (`mix_monitors_frame`), and as silence while its monitor is off or muted. |
+| `channel_layout.raw_inputs` | int[] | The inputs recorded raw (#1805), each in its own `input-raw-<n>-NNN.wav` parts, mono: the clean sample (the device's, or an instrument source's), before the monitor's chain, on/off and mute, volume and pan, every frame of the take. Every input the device has (loopback channels aside) and every instrument with a patch at arm, monitored or not, so it is a superset of `captured_inputs`. Absent from a capture written before #1805, which has no raw streams. |
 | `capture_frames` | int | Total frames elapsed since arm, regardless of any ring drop. In a MID-CAPTURE sidecar this is elapsed *as of that cycle's start*, not as of the moment the file was written (the cycle samples the frame count before it drains a single ring — see #710 — so audio produced while the cycle was writing is counted next cycle instead). The final sidecar is unaffected, since no audio is produced after it; only a crash-recovered bundle, whose newest sidecar is a mid-capture one, ever sees the difference. |
 | `overrun_count` | int | Capture-ring overruns (frames the audio thread could not enqueue) since arm. Not the whole story — see `zero_filled_frames`. |
 | `zero_filled_frames` | int | Frames of digital silence the drain actually wrote into the capture files since arm, summed over every file it writes. Since #1198 a dropped frame is never silence-filled: it ends the take (`slow_storage`). What is filled is audio counted but never tapped, which is how #710's takes carried audible silence while `overrun_count` read `0`. Counts bytes that reached disk, so a pad the disk refused (a `disk_full` stop mid-pad) is excluded even though `overrun_gaps` may still name the span. Absent from any sidecar written before #710. |
@@ -102,7 +107,7 @@ What a standalone tool should conclude from each combination:
 | `ring_seconds` | int | Seconds each capture ring was granted at arm, after the 64 MiB total cap. |
 | `overs` | int | Samples with a magnitude above 1.0 across every part, sealed and open. Kept as written, never clipped. |
 | `parts` | array | The take's audio parts in playback order — see "Audio parts" below. |
-| `stopped_early` | string? | Why the take stopped before a normal disarm; absent otherwise. `"disk_full"`: a write failed (a full disk, a quota, a read-only remount, an I/O error). `"device_changed"`: the audio device changed. `"reserve_reached"` (#1198): the destination reached its reserve, and every stream ends at the last whole frame it could hold above it. `"slow_storage"` (#1198): a capture ring overflowed because the storage fell behind, and every stream ends at the first frame that could not be kept, with nothing filled in after it. For the last two, `capture_frames` is the frame the take ends at. |
+| `stopped_early` | string? | Why the take stopped before a normal disarm; absent otherwise. `"disk_full"`: a write failed (a full disk, a quota, a read-only remount, an I/O error). `"device_changed"`: the audio device changed. `"reserve_reached"` (#1198): the destination reached its reserve, and every stream ends at the last whole frame it could hold above it. `"slow_storage"` (#1198): a capture ring overflowed because the storage fell behind, and every stream ends at the first frame that could not be kept, with nothing filled in after it. `"idle"` (#1767): nothing happened for the arm's idle period (20 minutes): no logged event a player's action leaves (the facts the engine logs on its own, a loop top's tempo anchor or a retired overdub pass, do not count) and no captured input above -40 dBFS through the sound trigger's 100 Hz high-pass; the take ends that long after the last thing that happened. `"length_limit"` (#1767): the take reached its longest length (3 hours, and never past what a 32-bit WAV of the rendered master holds). For the last four, `capture_frames` is the frame the take ends at, and everything up to it is kept. |
 | `armSnapshot` | object? | See below. `null`/absent only if the app crashed before arm's own crash-survival file (`arm-snapshot.json`, deleted at finalize) could even be written. |
 | `disarmSnapshot` | object? | See below. Absent for a capture recovered from a crash — there is no live engine left for a second pass. |
 | `finalized` | bool | `true` once finalize completed. The salvage *trigger* (D-SALVAGE): `false`/absent is what routes a bundle to crash recovery — but since the silent boot salvage (#679) it is no longer the sole salvage marker; the `.boot-recovery` / `.recovered-at` sibling files carry the move half of the story (see "Salvage sibling files" above). |
@@ -110,8 +115,11 @@ What a standalone tool should conclude from each combination:
 ## Audio parts (#1198)
 
 The drain writes each captured stream straight into ordered 32-bit float WAV
-parts: `master-NNN.wav` (stream 0) and `input-<n>-NNN.wav` (stream `1 + n`),
-`NNN` counting from `001`. A part holds at most 2,000,000,000 bytes including
+parts: `master-NNN.wav` (stream 0), `input-<n>-NNN.wav` (stream `1 + n`, the
+input as heard) and `input-raw-<n>-NNN.wav` (stream `100 + n`, the input raw,
+#1805), `NNN` counting from `001`. 100 is a format constant
+(`LE_PERF_RAW_STREAM_BASE`), not the input count, so a stream number keeps
+its meaning if the engine takes more inputs. A part holds at most 2,000,000,000 bytes including
 its header; the next part continues the stream with no gap. Nothing converts
 them at finalize: a sealed part is the delivered audio.
 
@@ -129,7 +137,7 @@ part still open when the process died keeps 0 there, and finalize seals it
 
 | Field | Type | Notes |
 |---|---|---|
-| `stream` | int | 0 for master, `1 + n` for captured input `n`. |
+| `stream` | int | 0 for master, `1 + n` for captured input `n` as heard, `100 + n` for its raw recording. |
 | `index` | int | The part's position in its stream, from 1. |
 | `file` | string | The part's file name in the bundle directory. |
 | `frames` | int | Frames in the part, as of this sidecar. |
@@ -185,6 +193,77 @@ are **not** copied into `loops/` — they exist for the offline renderer (parts
 7-8) to reconstruct overdub-pass-by-pass audibility, not as a directly
 playable deliverable of this part.
 
+A layer is the loop as it was **before** the pass that retired it: an overdub
+writes the live buffer in place and backs the old values up into the slot it
+retires. So the first pass's layer is the take, each later pass's layer is
+the previous pass's result, and the last pass's result is the disarm image
+(#1808). The renderer plays pass j's result from `a_j + L - d`, where `a_j` is
+the frame of the pass's first write, `L` the loop length and `d` the
+`armSnapshot`'s `latencyOffsetFrames`: the write head trails the read head by
+the record offset, so a pass is first heard `L - d` frames after it starts.
+A complete pass's first write is `L - 1` frames before its retire; a pass cut
+short starts on the frame after the previous pass of its session ended, or on
+the press or finalize that began the session. A quantized punch-in is not logged,
+so a session started by one is taken to begin with a complete pass.
+
+A layer whose lanes hold heard images (#1713: what the player heard, the input
+chain's output recorded with the take) also carries `"heard_mask"`, the lanes
+that have one, and its file holds them after the clean lanes: `frame_count`
+frames of one (L, R) pair per lane in the mask, in lane order. A layer with no
+heard image has no `heard_mask` and its file is as before. The renderer plays
+each lane's heard image in the lane's wet stem where the lane played it
+(see `LE_PLOG_HEARD_SOURCE` in the event log format).
+
+`lane_count` is the lanes the track mixed when the layer retired. A lane
+past it (added later, or not mixed then) reads as silence of the layer's
+length where the layer is a take's image, and keeps what it played where the
+layer is a pass's result: the pass did not touch it.
+
+## Rendered stems (`stems/`, #1824)
+
+The offline renderer (`perf_render.c`) writes, beside the capture's own
+files, two stems for every lane of every looper track, each a mono 32-bit
+float WAV the length of the take:
+
+| File | What it holds |
+|---|---|
+| `stems/dry/track<c>-lane<l>.wav` | The lane's loop as it played, at unity: its own layers and images, with the overdub passes placed where they were heard (#1808), the Stop and Play fades, Reverse, Speed and Transpose. No volume, mute or effects. Silent wherever the track did not mix the lane (past its logged lane count). |
+| `stems/wet/track<c>-lane<l>.wav` | The same lane after its volume, its effect chain (or its heard image, #1713), its mute, the track's solo, gain and fade, and Cut: what the lane sent to the output, before its pan, folded to mono `(L + R) / 2`. |
+| `stems/wet/master.wav` | Every lane's routed contribution (after its pan and output routing) summed, then the captured destination's output chain, and under Follow output its level and mute. |
+| `stems/stems.json` | The index of the lane stems this render published. |
+
+```jsonc
+{ "version": 1, "lanes": [
+  { "channel": 0, "lane": 0, "dry": "stems/dry/track0-lane0.wav", "wet": "stems/wet/track0-lane0.wav" },
+  { "channel": 0, "lane": 1, "dry": "stems/dry/track0-lane1.wav" }
+] }
+```
+
+Each entry names a lane and the stems of it that rendered; a stem that
+failed is left out, and so is a lane with neither. A take with no looper
+track gets an index with no lanes, so a take with no index at all is one
+that was never rendered this way (it failed, or predates #1824): the DAW
+project and the DAW package render its stems before they write its set, and
+never replace its `project.als` with one that has no stems. A reader lists the lane
+stems from the index and never from the file names. A render writes the
+index once it has sealed its stems, under `stems/stems.json.part` and
+renamed into place, so an index on disk always describes one whole render.
+A render cancelled part way leaves the previous render's stems and index.
+
+The lanes a track renders run up to the last lane that holds material: a
+take in either snapshot (`pcmRef`) or a lane of a layer. A lane listed empty
+at the arm, or counted active but never recorded, gets no stems. If the index
+cannot be written, the render reports every track failed. The lanes share the
+track's transport, so every lane is rebuilt from the same facts with its own
+images: lane `l` of each layer and snapshot. A lane a snapshot does not list
+while lane 0 has a take reads as silence there, except for the last pass's
+result in the disarm snapshot: a lane added after the take keeps a length of
+0 (#1825), which the snapshot skips, so the renderer keeps what that lane
+played before its last pass (what that pass added to it is not in the
+capture). The
+Track stage chain the lanes sum into (`trackChains`) is not replayed; its
+commands are manifest-only.
+
 ## `armSnapshot`
 
 The capture's initial state. Lane, monitor and track chains come from the
@@ -224,7 +303,7 @@ incomplete arm must not leave plausible but incorrect recovery metadata. The mas
 |---|---|
 | `masterGain` | Master output gain at arm time. |
 | `limiterOn` / `limiterCeiling` | Master peak limiter state at arm time. |
-| `latencyOffsetFrames` | The active device profile's record-offset latency compensation. |
+| `latencyOffsetFrames` | The active device profile's record-offset latency compensation. The offline renderer reads it as the distance an overdub's write head trails its read head by (see `layers[]` below); a change of the offset during the take is not logged. |
 | `followOutput` | Required capture policy, frozen at arm. Both policies capture after the selected destination FX. Default excludes final output controls. Follow applies that destination’s current level and mute; arm values seed replay and later events change them. Neither policy applies destination Mono/Balance, final hardware master gain or limiter. |
 | `captureBus` | The destination actually captured: the first with an enabled channel at successful arm, not a pre-I/O guess. It remains fixed for the take. Its selected output chain is captured at the same boundary. Omission means bus 0; a provided value must be an integer from 0 through 15. |
 | `captureMask` | Required nonzero unsigned 32-bit mask confined to the selected pair, frozen at arm. Missing/disabled jacks are not invented as routes. Invalid or absent identity is refused before reconstruction. |
@@ -233,6 +312,7 @@ incomplete arm must not leave plausible but incorrect recovery metadata. The mas
 | `tempoBpm` | The engine tempo at the arm instant, verbatim (`0` = unset, the same sentinel `session.json`'s `tempoBpm` uses; absent = written before the field existed — both read as "no tempo evidence"). The **crash-salvage fallback** for a DAW export's tempo, not the authoritative value: D6's tempo lock only engages once grid content exists, so a tempo dialed in (or derived by the first loop) after an arm-over-empty-grid is only knowable at disarm — see `disarmSnapshot.tempoBpm`. |
 | `fxStagesVersion` | FX-stage schema revision (FX v3, R20): `1` = the four-stage model below. **Absent = a legacy snapshot** written before those fields existed; see "FX stages" below. |
 | `tracks` | One entry per **non-empty** track (empty tracks are omitted); carries the **Loop** stage, per lane. |
+| `inputs` | #1799: what the player calls each hardware input, `[{ "input": 0, "name": "Guitar" }]`, in input order. Only named inputs are listed; omitted when none is. A DAW export uses these names and falls back to `Input 1`, `Input 2` for the rest. |
 | `monitors` | The **Input** stage: one entry per hardware input the caller supplied chain/routing state for. Each entry's `chainEnabled` is that monitor chain's bypass flag, written only when `false` (absent = engaged, or legacy — see the marker below); `enabled` beside it is the input's own monitor gate, not an FX flag. |
 | `trackChains` | The **Track** stage: one entry per track channel with bus FX or a non-default chain flag. Omitted when there are none. |
 | `outputEffects` / `outputChainEnabled` | The actual captured destination’s output chain and bypass flag, captured by the engine at arm. The chain is applied once by reconstruction to audio before that stage; the already captured top-level master audio is never processed a second time. Empty effects and an engaged chain use the writer’s default omission rule. |
@@ -267,6 +347,10 @@ field by field, matching the session manifest's own migration style.
 `state` is one of the native `le_track_state` names: `empty`, `recording`,
 `overdubbing`, `playing`, `stopped`.
 
+`name` (#1799) is the name the player gave the track, written on the arm
+pass only and only when the track has one. A DAW export uses it and falls back
+to `Track 1`, `Track 2` (the channel, 1-based) for an unnamed track.
+
 `anchorLap` (#854) is the lap the take was played on
 (`le_track_snapshot.anchor_lap`), written only when nonzero. The offline
 renderer places an arm-time image of several base loops at the segment the
@@ -286,6 +370,8 @@ reads it; absent reads as 0, the placement every capture before #854 used.
 | `chainEnabled` | The lane chain's per-chain bypass flag, written only when `false` (absent = engaged, or legacy — see the marker above). |
 | `deferred` | `true` when this lane was mid-overdub at snapshot time (D-SNAP) — the audio thread was still writing its buffer, so there is no stable PCM to export here. Its content instead reaches disk via the retired-layer path (`layers[]` above) once the pass retires, or via `disarmSnapshot` if it finishes before disarm. |
 | `pcmRef` | The lane's exported WAV filename, relative to the bundle directory (e.g. `loops/track0-lane0.wav`). Absent when `deferred`, or when the lane was empty. |
+| `heardPcmRef` | #1713: the lane's heard image as a stereo 32-bit float WAV, beside `pcmRef` (`loops/track{c}-lane{l}-heard.wav`). Absent when the take has none. The renderer's wet stem plays it where the lane played its image; the dry stem keeps `pcmRef`. The Ableton export's session clip for the lane uses it in place of `pcmRef`, unless `source` says the lane played clean or the file is missing. |
+| `source` | #1713: `"clean"` when the lane has a `heardPcmRef` but played its clean take through its chain at this snapshot (its effects were edited after it was recorded). Absent otherwise. |
 | `takeId` | The monotonic id of the take this lane-0 image is the result of (#819), carried from the engine snapshot's `settledTakeId` (`le_track_snapshot.settled_take_id`). **Disarm-time lane 0 only**, presence-keyed (written only when `> 0`): the offline renderer (`perf_render.c`) matches it against the `LE_PLOG_RECORD_END` payloads' `take_id` in `events.log` to anchor the DISARM image by identity rather than by "the first `RECORD_END` on this channel" (which mis-anchored on a clear-then-re-record or an abort-before-content, #264). Absent means "no identity recorded" (an arm entry, a non-zero lane, or a settled take that predates the id machinery), and the renderer then places no disarm segment. |
 | `effects` | The lane's effect chain, in order, **only on an arm-time snapshot** ("chain at t=0"). Each entry is a `TrackEffect.toJson()` map verbatim: `{type, params}` for a built-in effect (`type` = the native `le_fx_type` code, `params` = up to 4 normalized `0..1` values), or `{type: 8, plugin: {...}, paramValues?, state?, name?}` for a hosted VST3/CLAP plugin (`PluginRef` identity — `daw_export`'s `fx-chains.txt`, part 10, reads this for third-party plugin identity + passthrough notes). Any entry may also carry `"enabled": false` (its own bypass; absent = audible) and `"slotId"` (its stable per-slot identity, the same id pedal bindings address). Absent (not an empty array) when there is nothing to report. |
 
@@ -441,7 +527,7 @@ writes `finalized: true`, on a background isolate:
   its header reads as this take's (`take_id`, stream, index, format); the
   first one that does not ends its stream, and it is never touched.
 - **Every stream ends together**, at the fewest frames any stream with a
-  part holds. A stream with no part of the take is left out rather than
+  part holds, the raw inputs' included. A stream with no part of the take is left out rather than
   shortening the others to nothing.
 - **Sealing.** Parts past that frame are deleted. The last kept part of each
   stream is truncated to its share, its RIFF and data sizes patched, and its

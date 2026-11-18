@@ -870,6 +870,8 @@
     "paramSustain": "Sustain",
     "paramHighpass": "High-pass",
     "paramGateThreshold": "Gate threshold",
+    "paramGateRelease": "Gate release",
+    "paramGateDetector": "Gate detector",
     "effectDoubler": "Doubler",
     "effectChorus": "Chorus",
     "effectWah": "Wah",
@@ -937,6 +939,118 @@
     "effectSmartTune": "Smart Tune",
     "@effectSmartTune": {
         "description": "The Vocal Tuner's pitch correction: it retunes a voice to the nearest note of a scale."
+    },
+    "fxModuleAmbience": "Ambience",
+    "@fxModuleAmbience": {
+        "description": "The name of the factory racks' Ambience pedal (the catalogue module 'Ambience'), on every surface that names it."
+    },
+    "fxModuleAmp": "Amp",
+    "@fxModuleAmp": {
+        "description": "The name of the factory racks' Amp pedal (the catalogue module 'Amp'), on every surface that names it."
+    },
+    "fxModuleChorus": "Chorus",
+    "@fxModuleChorus": {
+        "description": "The name of the factory racks' Chorus pedal (the catalogue module 'Chorus'), on every surface that names it."
+    },
+    "fxModuleCompressor": "Compressor",
+    "@fxModuleCompressor": {
+        "description": "The name of the factory racks' Compressor pedal (the catalogue module 'Compressor'), on every surface that names it."
+    },
+    "fxModuleDegrade": "Degrade",
+    "@fxModuleDegrade": {
+        "description": "The name of the factory racks' Degrade pedal (the catalogue module 'Degrade'), on every surface that names it."
+    },
+    "fxModuleDelay": "Delay",
+    "@fxModuleDelay": {
+        "description": "The name of the factory racks' Delay pedal (the catalogue module 'Delay'), on every surface that names it."
+    },
+    "fxModuleDistortion": "Distortion",
+    "@fxModuleDistortion": {
+        "description": "The name of the factory racks' Distortion pedal (the catalogue module 'Distortion'), on every surface that names it."
+    },
+    "fxModuleDoubler": "Doubler",
+    "@fxModuleDoubler": {
+        "description": "The name of the factory racks' Doubler pedal (the catalogue module 'Doubler'), on every surface that names it."
+    },
+    "fxModuleDubDelay": "Dub delay",
+    "@fxModuleDubDelay": {
+        "description": "The name of the factory racks' Dub delay pedal (the catalogue module 'Dub delay'), on every surface that names it."
+    },
+    "fxModuleDubReverb": "Dub reverb",
+    "@fxModuleDubReverb": {
+        "description": "The name of the factory racks' Dub reverb pedal (the catalogue module 'Dub reverb'), on every surface that names it."
+    },
+    "fxModuleFourBandEq": "Four-band EQ",
+    "@fxModuleFourBandEq": {
+        "description": "The name of the factory racks' Four-band EQ pedal (the catalogue module 'Four-band EQ'), on every surface that names it."
+    },
+    "fxModuleHarmonizer": "Harmonizer",
+    "@fxModuleHarmonizer": {
+        "description": "The name of the factory racks' Harmonizer pedal (the catalogue module 'Harmonizer'), on every surface that names it."
+    },
+    "fxModuleHighPassGate": "High-pass gate",
+    "@fxModuleHighPassGate": {
+        "description": "The name of the factory racks' High-pass gate pedal (the catalogue module 'High-pass gate'), on every surface that names it."
+    },
+    "fxModuleLowPassFilter": "Low-pass filter",
+    "@fxModuleLowPassFilter": {
+        "description": "The name of the factory racks' Low-pass filter pedal (the catalogue module 'Low-pass filter'), on every surface that names it."
+    },
+    "fxModuleModulation": "Modulation",
+    "@fxModuleModulation": {
+        "description": "The name of the factory racks' Modulation pedal (the catalogue module 'Modulation'), on every surface that names it."
+    },
+    "fxModuleOctaver": "Octaver",
+    "@fxModuleOctaver": {
+        "description": "The name of the factory racks' Octaver pedal (the catalogue module 'Octaver'), on every surface that names it."
+    },
+    "fxModuleOverdrive": "Overdrive",
+    "@fxModuleOverdrive": {
+        "description": "The name of the factory racks' Overdrive pedal (the catalogue module 'Overdrive'), on every surface that names it."
+    },
+    "fxModuleParametricEq": "Parametric EQ",
+    "@fxModuleParametricEq": {
+        "description": "The name of the factory racks' Parametric EQ pedal (the catalogue module 'Parametric EQ'), on every surface that names it."
+    },
+    "fxModulePitchShift": "Pitch shift",
+    "@fxModulePitchShift": {
+        "description": "The name of the factory racks' Pitch shift pedal (the catalogue module 'Pitch shift'), on every surface that names it."
+    },
+    "fxModulePumper": "Pumper",
+    "@fxModulePumper": {
+        "description": "The name of the factory racks' Pumper pedal (the catalogue module 'Pumper'), on every surface that names it."
+    },
+    "fxModuleReverb": "Reverb",
+    "@fxModuleReverb": {
+        "description": "The name of the factory racks' Reverb pedal (the catalogue module 'Reverb'), on every surface that names it."
+    },
+    "fxModuleSlicer": "Slicer",
+    "@fxModuleSlicer": {
+        "description": "The name of the factory racks' Slicer pedal (the catalogue module 'Slicer'), on every surface that names it."
+    },
+    "fxModuleSmartTune": "Smart Tune",
+    "@fxModuleSmartTune": {
+        "description": "The name of the factory racks' Smart tune pedal (the catalogue module 'Smart tune'), on every surface that names it."
+    },
+    "fxModuleSpringReverb": "Spring reverb",
+    "@fxModuleSpringReverb": {
+        "description": "The name of the factory racks' Spring reverb pedal (the catalogue module 'Spring reverb'), on every surface that names it."
+    },
+    "fxModuleTransient": "Transient",
+    "@fxModuleTransient": {
+        "description": "The name of the factory racks' Transient pedal (the catalogue module 'Transient'), on every surface that names it."
+    },
+    "fxModuleVinyl": "Vinyl",
+    "@fxModuleVinyl": {
+        "description": "The name of the factory racks' Vinyl pedal (the catalogue module 'Vinyl'), on every surface that names it."
+    },
+    "fxModuleWah": "Wah",
+    "@fxModuleWah": {
+        "description": "The name of the factory racks' Wah pedal (the catalogue module 'Wah'), on every surface that names it."
+    },
+    "fxModuleWhammy": "Whammy",
+    "@fxModuleWhammy": {
+        "description": "The name of the factory racks' Whammy pedal (the catalogue module 'Whammy'), on every surface that names it."
     },
     "paramSpeed": "Speed",
     "@paramSpeed": {
@@ -1629,17 +1743,53 @@
     "@wifiConnectFailedPassword": {
         "description": "Shown when WPA authentication fails while joining a network."
     },
-    "wifiConnectFailedTimeout": "Couldn’t join — the network didn’t finish connecting.",
-    "@wifiConnectFailedTimeout": {
-        "description": "Shown when WiFi association times out before COMPLETED."
+    "networkJoinWrongPassword": "The password for {ssid} is wrong.",
+    "@networkJoinWrongPassword": {
+        "description": "A join failed because the access point tested the key and refused it (iwd's 4-way handshake failed, #1817). The only failure worded as a password problem.",
+        "placeholders": {
+            "ssid": {
+                "type": "String"
+            }
+        }
     },
-    "wifiConnectFailedGeneric": "Couldn’t join that network.",
-    "@wifiConnectFailedGeneric": {
-        "description": "Fallback error when WiFi connect fails for an unknown reason."
+    "networkJoinNoConnection": "Couldn’t connect to {ssid}.",
+    "@networkJoinNoConnection": {
+        "description": "A join failed before the key was tested: the access point rejected or timed out the authentication or association, or the join ran out of time (#1817). Never worded as a password problem; Try again sits beside it.",
+        "placeholders": {
+            "ssid": {
+                "type": "String"
+            }
+        }
     },
-    "wifiConnectFailedBackend": "Couldn’t join — network error, not a password problem.",
-    "@wifiConnectFailedBackend": {
-        "description": "Shown when a join fails for backend/transient reasons (iwd race, NM no-secrets on a saved network) after automatic retries — explicitly not a credentials problem, so the owner does not forget the network and re-type the password (#829)."
+    "networkJoinNotFound": "Couldn’t find {ssid}. It may be out of range.",
+    "@networkJoinNotFound": {
+        "description": "A join failed because the network is not in range (#1817).",
+        "placeholders": {
+            "ssid": {
+                "type": "String"
+            }
+        }
+    },
+    "networkJoinNoAddress": "{ssid} didn’t give Segno an IP address.",
+    "@networkJoinNoAddress": {
+        "description": "A join came up but no IPv4 address came (DHCP, #1817).",
+        "placeholders": {
+            "ssid": {
+                "type": "String"
+            }
+        }
+    },
+    "networkTryAgain": "Try again",
+    "@networkTryAgain": {
+        "description": "Joins the network whose join just failed again, with the same key (#1817)."
+    },
+    "networkActionFailed": "Wi-Fi didn’t respond.",
+    "@networkActionFailed": {
+        "description": "A Wi-Fi action other than a join (scan, disconnect, forget, the radio switch) failed."
+    },
+    "networkListNoOthers": "No other networks found.",
+    "@networkListNoOthers": {
+        "description": "Network list when the only network in range is the one the console is on."
     },
     "consoleKeepIt": "Keep it",
     "@consoleKeepIt": {
@@ -1794,7 +1944,7 @@
     "@networkConnectingChecking": {
         "description": "Connecting dialog note when nothing was connected before."
     },
-    "networkRetrying": "Network error. Trying again…",
+    "networkRetrying": "Couldn’t connect. Trying again…",
     "@networkRetrying": {
         "description": "Connecting dialog note while the console re-activates after a backend failure (#829). Never worded as a password problem."
     },
@@ -4528,13 +4678,9 @@
     "@fxOverBudget": {
         "description": "Shown when adding an effect would overload the audio processing, so the add was refused."
     },
-    "fxTakeHeldToast": "This take's effects are off",
-    "@fxTakeHeldToast": {
-        "description": "On the track's card when a take came in with its inherited effects switched off (#1515, #1562)."
-    },
-    "fxTakeHeldBody": "They don't fit the rig. Remove an effect to turn them on.",
-    "@fxTakeHeldBody": {
-        "description": "Under fxTakeHeldToast (#1562)."
+    "fxBindOverBudget": "Not enough processing left for what this switch can turn on",
+    "@fxBindOverBudget": {
+        "description": "Shown when saving a pedal, MIDI or external switch assignment is refused: the effects it could switch on would not fit the audio processing, so nothing was saved."
     },
     "fxHeldBanner": "{chains} {count, plural, =1{is} other{are}} off",
     "@fxHeldBanner": {
@@ -4685,10 +4831,6 @@
     "fxRight": "Right",
     "@fxRight": {
         "description": "The right end of the balance or pan control."
-    },
-    "fxScaleUnverified": "Scale unverified",
-    "@fxScaleUnverified": {
-        "description": "Note under a control whose real-world units were never recovered."
     },
     "fxValuePercent": "{percent}%",
     "@fxValuePercent": {
@@ -4847,6 +4989,18 @@
             }
         }
     },
+    "fxPartNamedOrdinal": "{input} · part {number}",
+    "@fxPartNamedOrdinal": {
+        "description": "A recorded part named by its input, when another part of the same track has the same input.",
+        "placeholders": {
+            "input": {
+                "type": "String"
+            },
+            "number": {
+                "type": "int"
+            }
+        }
+    },
     "fxPartOrdinal": "Part {number}",
     "@fxPartOrdinal": {
         "description": "A recorded part with no input to name it after.",
@@ -4859,6 +5013,30 @@
     "fxUnassigned": "Unassigned",
     "@fxUnassigned": {
         "description": "An effect with no pedal assignment, on its card's status line."
+    },
+    "fxAssignedControlPart": "{control} · {part}",
+    "@fxAssignedControlPart": {
+        "description": "A control assigned to an effect and the part of it that acts, on the effect card's status line: Track 3 · Hold, CTRL 1 · Button 2.",
+        "placeholders": {
+            "control": {
+                "type": "String"
+            },
+            "part": {
+                "type": "String"
+            }
+        }
+    },
+    "fxAssignedMore": "{name} +{count}",
+    "@fxAssignedMore": {
+        "description": "The first control assigned to an effect and how many more, on its card's status line: Track 3 +2.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            },
+            "count": {
+                "type": "int"
+            }
+        }
     },
     "fxModuleCount": "{count, plural, =1{1 effect} other{{count} effects}}",
     "@fxModuleCount": {
@@ -4915,9 +5093,9 @@
             }
         }
     },
-    "fxReAddRackBody": "{count, plural, =1{Adding it again gives its effects new identities, so 1 MIDI or pedal assignment will be removed.} other{Adding it again gives its effects new identities, so {count} MIDI and pedal assignments will be removed.}}",
+    "fxReAddRackBody": "{count, plural, =1{Adding it again gives the rack and its effects new identities, so 1 MIDI or pedal assignment to them will be removed.} other{Adding it again gives the rack and its effects new identities, so {count} MIDI and pedal assignments to them will be removed.}}",
     "@fxReAddRackBody": {
-        "description": "How many MIDI and pedal assignments re-adding a rack removes, and why.",
+        "description": "How many MIDI and pedal assignments re-adding a rack removes, and why: the ones to the rack itself and to its effects.",
         "placeholders": {
             "count": {
                 "type": "int"
@@ -5595,14 +5773,13 @@
     "@pedalSetupContextLeds": {
         "description": "Opens the LED colors context of the Pedals setup: per mode, a color for every state each pedal group can show."
     },
-    "pedalLedMode": "Mode: {mode}",
-    "@pedalLedMode": {
-        "description": "The LED colors mode picker; {mode} is the mode whose colors are shown.",
-        "placeholders": {
-            "mode": {
-                "type": "String"
-            }
-        }
+    "pedalLedModeRecord": "Record",
+    "@pedalLedModeRecord": {
+        "description": "LED colors mode tab: Record mode, by its own name (the catalogue calls its Mode action Exit). One of eleven tabs sharing a row, about 160 px wide."
+    },
+    "pedalLedModeMute": "Mute",
+    "@pedalLedModeMute": {
+        "description": "LED colors mode tab: Mute mode, by its own name. One of eleven tabs sharing a row, about 160 px wide."
     },
     "pedalLedReset": "Reset to defaults",
     "@pedalLedReset": {
@@ -5907,6 +6084,10 @@
     "externalActivationChain": "Every effect",
     "@externalActivationChain": {
         "description": "An activation on a whole chain rather than one effect in it."
+    },
+    "externalActivationRack": "Rack",
+    "@externalActivationRack": {
+        "description": "Names an activation on a rack whose name can no longer be read, because the rack was removed or replaced; the row also shows it as missing."
     },
     "externalActivationRow": "{name} · Activation",
     "@externalActivationRow": {
@@ -6507,10 +6688,6 @@
     "noticeLengthUnchanged": "Length unchanged",
     "@noticeLengthUnchanged": {
         "description": "Short cause over a length Undo or Redo that did nothing, on the track's card (#1562)."
-    },
-    "noticeEffectsOff": "Effects off",
-    "@noticeEffectsOff": {
-        "description": "Short cause over a take that came in with its effects off, on the track's card (#1562)."
     },
     "monitorRestoreFailedTitle": "Input monitoring needs recovery",
     "mixSettingsRecoveryTitle": "Mix settings need recovery",
@@ -7575,6 +7752,10 @@
     "@libraryAudioReadOnly": {
         "description": "The drive refuses writes."
     },
+    "libraryAudioTooLargeForDrive": "FAT32 drives can't hold files over 4 GB. Use an exFAT drive.",
+    "@libraryAudioTooLargeForDrive": {
+        "description": "A file of the export is 4 GiB or more and the drive is FAT32; nothing was written (#1794)."
+    },
     "libraryAudioExportFailed": "Could not export. Nothing was left on the drive.",
     "@libraryAudioExportFailed": {
         "description": "An export failed and was removed from the drive."
@@ -7813,9 +7994,53 @@
     "@perfStoppedSlowStorage": {
         "description": "Completion banner when a capture stopped because the storage fell behind and a capture buffer overflowed."
     },
-    "perfTakesNotRecovered": "{count, plural, =1{This take could not be recovered. Its files are kept.} other{{count} takes could not be recovered. Their files are kept.}}",
+    "perfStoppedIdle": "{minutes, plural, =1{Capture stopped after 1 idle minute.} other{Capture stopped after {minutes} idle minutes.}}",
+    "@perfStoppedIdle": {
+        "description": "A capture stopped on its own because nothing happened for that long (no press, no input above the playing level, #1767). Said on the completion banner and, when the player comes back, as a passing notice; perfStoppedKept follows it.",
+        "placeholders": {
+            "minutes": {
+                "type": "int"
+            }
+        }
+    },
+    "perfStoppedLengthLimit": "Capture reached its longest length.",
+    "@perfStoppedLengthLimit": {
+        "description": "A capture stopped on its own at its longest length (3 hours, #1767). Said like perfStoppedIdle; perfStoppedKept follows it."
+    },
+    "perfStoppedKept": "Everything recorded is kept.",
+    "@perfStoppedKept": {
+        "description": "The sentence after perfStoppedIdle and perfStoppedLengthLimit."
+    },
+    "perfTakesNotRecovered": "{count, plural, =1{This take could not be recovered.} other{{count} takes could not be recovered.}}",
     "@perfTakesNotRecovered": {
-        "description": "Shown once at startup when the boot salvage could not recover one or more crashed captures; their files stay where they are.",
+        "description": "Shown once at startup when the boot salvage could not recover one or more crashed captures; their files stay where they are (perfTakesNotRecoveredBody). Its action, Try again (consoleTryAgain), salvages them again.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "perfTakesNotRecoveredBody": "{count, plural, =1{Its files are kept.} other{Their files are kept.}}",
+    "@perfTakesNotRecoveredBody": {
+        "description": "The body under perfTakesNotRecovered: the takes' files stay where they are.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "perfTakesRecovering": "{count, plural, =1{Recovering the take.} other{Recovering {count} takes.}}",
+    "@perfTakesRecovering": {
+        "description": "Said when Try again on perfTakesNotRecovered starts salvaging the takes again.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "perfTakesRecovered": "{count, plural, =1{The take was recovered.} other{The takes were recovered.}}",
+    "@perfTakesRecovered": {
+        "description": "Said when Try again on perfTakesNotRecovered recovered every take.",
         "placeholders": {
             "count": {
                 "type": "int"
@@ -8595,6 +8820,10 @@
     "readoutTimingLoopTop": "Loop top",
     "@readoutTimingLoopTop": {
         "description": "Record timing Loop start, short, on the readout."
+    },
+    "readoutButtonLoopTop": "Loop top",
+    "@readoutButtonLoopTop": {
+        "description": "Record timing Loop start on the readout panel's Start button, the narrowest place it is named (#1672)."
     },
     "readoutStripStart": "Start {timing}",
     "@readoutStripStart": {

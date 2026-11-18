@@ -12,6 +12,7 @@ import 'package:performance_repository/src/models/arm_refusal.dart';
 import 'package:performance_repository/src/models/capture_summary.dart';
 import 'package:performance_repository/src/models/performance_chains.dart';
 import 'package:performance_repository/src/models/performance_manifest.dart';
+import 'package:performance_repository/src/models/performance_names.dart';
 import 'package:performance_repository/src/models/recording_format.dart';
 import 'package:performance_repository/src/models/unfinalized_capture.dart';
 import 'package:performance_repository/src/performance_capture_status.dart';
@@ -31,45 +32,37 @@ import 'package:wav_codec/wav_codec.dart';
 /// all land directly where the finished bundle expects them, and [disarm]
 /// only needs to merge the snapshot metadata into the sidecar.
 class PerformanceRepository {
-  /// Creates a [PerformanceRepository] driving [engine].
+  /// Creates a [PerformanceRepository] driving [_engine].
   ///
-  /// [exportsRoot] resolves the `exports/` root directory new bundles are
-  /// created under (mirrors `SessionRepository`'s `sessionsRoot`). [now]
+  /// [_exportsRoot] resolves the `exports/` root directory new bundles are
+  /// created under (mirrors `SessionRepository`'s `sessionsRoot`). [_now]
   /// supplies the timestamp [arm] slugs from; injectable for deterministic
-  /// tests. [bootRecoveryPollInterval] paces [runBootRecovery]'s wait for
+  /// tests. [_bootRecoveryPollInterval] paces [runBootRecovery]'s wait for
   /// the salvage render to finish before it moves the bundle; injectable so
   /// tests interleave against the wait without real 200ms sleeps.
-  /// [bootRecoveryRenderTimeout] bounds that wait (default
+  /// [_bootRecoveryRenderTimeout] bounds that wait (default
   /// [defaultBootRecoveryRenderTimeout]) so a wedged render can never park
   /// boot recovery — and [arm]'s render-poll refusal — forever.
   ///
-  /// [storageIo] makes the engine's digest and directory sync, without an
+  /// [_storageIo] makes the engine's digest and directory sync, without an
   /// engine; it is called on a background isolate too, so it must be a
-  /// top-level or static function. [partBytes] is the size of the parts a
+  /// top-level or static function. [_partBytes] is the size of the parts a
   /// take from before #1198 is converted into (tests pass small sizes).
-  /// [bootId] reads this boot's kernel id, which decides how far recovery
+  /// [_bootId] reads this boot's kernel id, which decides how far recovery
   /// trusts a take's files ([readBootId]).
-  PerformanceRepository({
-    required AudioEngine engine,
-    required Future<String> Function() exportsRoot,
-    required GuardRegistry guards,
-    DateTime Function() now = DateTime.now,
-    Duration bootRecoveryPollInterval = const Duration(milliseconds: 200),
-    Duration bootRecoveryRenderTimeout = defaultBootRecoveryRenderTimeout,
-    int? reserveBytes,
-    StorageIo Function() storageIo = NativeStorageIo.new,
-    int partBytes = RecordedPartWriter.defaultPartBytes,
-    String Function() bootId = readBootId,
-  }) : _engine = engine,
-       _guards = guards,
-       _exportsRoot = exportsRoot,
-       _reserveBytes = reserveBytes,
-       _now = now,
-       _bootRecoveryPollInterval = bootRecoveryPollInterval,
-       _bootRecoveryRenderTimeout = bootRecoveryRenderTimeout,
-       _storageIo = storageIo,
-       _partBytes = partBytes,
-       _bootId = bootId;
+
+  new({
+    required this._engine,
+    required this._exportsRoot,
+    required this._guards,
+    this._now = DateTime.now,
+    this._bootRecoveryPollInterval = const Duration(milliseconds: 200),
+    this._bootRecoveryRenderTimeout = defaultBootRecoveryRenderTimeout,
+    this._reserveBytes,
+    this._storageIo = NativeStorageIo.new,
+    this._partBytes = RecordedPartWriter.defaultPartBytes,
+    this._bootId = readBootId,
+  });
 
   final AudioEngine _engine;
   final Future<String> Function() _exportsRoot;
@@ -80,6 +73,20 @@ class PerformanceRepository {
   late final StorageIo _io = _storageIo();
   final int _partBytes;
   final String Function() _bootId;
+
+  /// How long a take runs with nothing happening (no press, no transport
+  /// change, no edit, no input above the playing level) before it stops on
+  /// its own, keeping everything recorded (#1767, owner's call). A take left
+  /// running with nobody at the console recorded 4.5 GB an hour (#1747).
+  static const Duration idleStopAfter = Duration(minutes: 20);
+
+  /// The longest a take runs (#1767): the rendered stereo master at 48 kHz
+  /// fills one file on a FAT32 stick (4 GiB less one byte, header included)
+  /// at 3 h 6 min (#1747, #1794), and the engine never lets a take run past
+  /// what that stem can hold in one, whatever the rate: a stereo take at
+  /// 96 kHz stops at 93 min. `test_perf_longest_take_fits_one_fat32_file`
+  /// (the engine's native tests) checks every file a take renders.
+  static const Duration longestTake = Duration(hours: 3);
 
   /// The app's one guard table (accepted behaviour 6.12). A take holds a
   /// `capture` guard from the commit of [arm] until it is finalized or its
@@ -137,8 +144,9 @@ class PerformanceRepository {
 
   /// Free bytes the exports volume needs before a take may start: the
   /// reserve, the engine's allowance, and [minimumTake] of every stream the
-  /// arm would capture (the master and each monitored input, as the engine
-  /// reports them) at the current sample rate, with one part header each.
+  /// arm would capture (the master, each monitored input as heard, and every
+  /// input and instrument raw, as the engine reports them) at the current
+  /// sample rate, with one part header each.
   /// Arming below this would start a take the reserve stops at once. When
   /// the engine reports nothing to capture, a stereo master is assumed.
   int get minimumFreeBytesToArm => minimumFreeBytesToArmAt();
@@ -264,6 +272,23 @@ class PerformanceRepository {
   /// to run.
   static const String recoveryMarkerName = '.boot-recovery';
 
+  /// The file a salvage writes in a bundle before its finalize and stem
+  /// render begin, and removes once they (the render included, however long
+  /// it outlives the wait) have ended (#1747): how many salvages of the
+  /// bundle have begun without ending. Found at the next start, it says the
+  /// app stopped while that salvage ran (it ran the console out of memory,
+  /// crashed, was restarted, or the power went).
+  static const String recoveryAttemptName = '.boot-recovery-attempt';
+
+  /// The mark that a bundle's salvage did not finish and is not started
+  /// again at boot (#1747): the app stopped during two salvages of it in a
+  /// row (one is tried again: a restart or a power cut also stops one). The
+  /// bundle and its files are kept and counted in [unrecoveredTakes];
+  /// [retryUnrecovered] clears the mark and gives it one more salvage.
+  /// Without it, a salvage that kills the app is run by every start, and the
+  /// app never stays up.
+  static const String recoveryFailedName = '.boot-recovery-failed';
+
   /// Default for the ctor's `bootRecoveryRenderTimeout`: how long one
   /// salvage's stem render may run before [runBootRecovery] gives up
   /// waiting and keeps the bundle where it is (marker intact, for the next
@@ -325,8 +350,9 @@ class PerformanceRepository {
   /// finished and nothing new has started since).
   PerformanceRenderProgress get renderProgress => _engine.renderPoll();
 
-  /// Every track's render outcome discovered so far — grows progressively as
-  /// each stem completes. `succeeded` reflects both that track's dry AND wet
+  /// Every track's render outcome discovered so far: all of them once the
+  /// stems are written, which the tracks finish together (#1747). `succeeded`
+  /// reflects both that track's dry AND wet
   /// stem (either failing marks the track failed). A per-track failure does
   /// not mean the render as a whole failed (partial success); check
   /// [PerformanceRenderTrackStatus.succeeded] per entry.
@@ -394,7 +420,9 @@ class PerformanceRepository {
   /// arm overlapping one still in flight is a no-op success too: it is the
   /// same press arriving twice. [chains]
   /// supplies the lane/monitor effect chains and master-limiter state the
-  /// engine snapshot alone cannot read back (see [PerformanceChains]).
+  /// engine snapshot alone cannot read back (see [PerformanceChains]), and
+  /// [names] what the player calls each track and input
+  /// ([PerformanceNames]).
   ///
   /// Refused with [EngineResult.notReady] while a take finalizes or
   /// recovers, or a render is in flight (#671), and when the guard table
@@ -413,6 +441,7 @@ class PerformanceRepository {
   /// with that volume's scope.
   Future<EngineResult> arm({
     PerformanceChains chains = const PerformanceChains(),
+    PerformanceNames names = const PerformanceNames(),
     String? root,
     GuardScope scope = const GuardScope.internal(),
   }) async {
@@ -431,7 +460,7 @@ class PerformanceRepository {
     final finished = Completer<void>();
     _armFinished = finished;
     try {
-      return await _armGated(chains, root: root, scope: scope);
+      return await _armGated(chains, names, root: root, scope: scope);
     } finally {
       _armInFlight = false;
       _armFinished = null;
@@ -447,7 +476,8 @@ class PerformanceRepository {
 
   /// The body of [arm] past its entry gate; runs with [_armInFlight] held.
   Future<EngineResult> _armGated(
-    PerformanceChains chains, {
+    PerformanceChains chains,
+    PerformanceNames names, {
     required String? root,
     required GuardScope scope,
   }) async {
@@ -464,7 +494,12 @@ class PerformanceRepository {
     await Directory(dir).create(recursive: true);
 
     final snapshot = _engine.snapshot();
-    final tracks = _captureSettledLanes(dir, chains: chains, writeChains: true);
+    final tracks = _captureSettledLanes(
+      dir,
+      chains: chains,
+      writeChains: true,
+      names: names.tracks,
+    );
     final armSnapshot = PerformanceArmSnapshot(
       // The master loop phase at arm is no longer recorded here: it was
       // sampled on the control thread BEFORE lane export and manifest I/O, an
@@ -485,6 +520,10 @@ class PerformanceRepository {
       // D6's tempo lock may not even have engaged yet this early (#281).
       tempoBpm: snapshot.tempoBpm,
       tracks: tracks,
+      inputNames: {
+        for (final MapEntry(:key, :value) in names.inputs.entries)
+          if (value.trim().isNotEmpty) key: value.trim(),
+      },
       monitors: _monitorsJson(chains),
       // The bus stages (FX v3, R20/R3): recorded so a replay can rebuild the
       // whole four-stage rig, bypass state included.
@@ -535,6 +574,8 @@ class PerformanceRepository {
         captureDir: dir,
         takeId: takeId,
         reserveBytes: root == null ? _reserveBytes : null,
+        idleStopSeconds: idleStopAfter.inSeconds,
+        maxSeconds: longestTake.inSeconds,
       ),
     );
     if (!result.isOk) {
@@ -684,7 +725,7 @@ class PerformanceRepository {
     if (armedAt != null && _now().difference(armedAt) < disarmGuardWindow) {
       return EngineResult.ok;
     }
-    return _finalizeArmed(dir);
+    return await _finalizeArmed(dir);
   }
 
   /// Disarms performance-recording capture unconditionally — the
@@ -715,7 +756,7 @@ class PerformanceRepository {
     await _armFinished?.future;
     final dir = _armedDir;
     if (dir == null) return EngineResult.ok;
-    return _finalizeArmed(dir);
+    return await _finalizeArmed(dir);
   }
 
   /// The disarm-time snapshot of the take in [dir], taken while the engine
@@ -928,7 +969,12 @@ class PerformanceRepository {
   /// from the take's own later disarm. Armed state is re-checked before
   /// every capture and again before each move; whatever is skipped waits
   /// for the next boot.
-  Future<void> runBootRecovery() async {
+  Future<void> runBootRecovery() => _sweep(const {});
+
+  /// [runBootRecovery], salvaging the bundles in [retry] even though they
+  /// are marked failed ([retryUnrecovered]).
+  Future<void> _sweep(Set<String> retry) async {
+    final previous = _unrecovered.toSet();
     _unrecovered.clear();
     final String root;
     try {
@@ -952,19 +998,42 @@ class PerformanceRepository {
       ..._strandedSalvage(root),
       for (final capture in unfinalized) capture.directory,
     ];
-    for (final dir in pending) {
+    for (var i = 0; i < pending.length; i++) {
+      final dir = pending[i];
       // Between-captures re-check, not just per-directory: a live arm owns
       // the one global render slot, so salvaging ANY capture while armed
       // would corrupt the take's own render/disarm flow, not only its
       // directory. Deferring the remainder to the next boot is the honest
       // outcome — recovery is a background nicety, the live take is not.
-      if (_armedDir != null || _armInFlight) return;
+      //
       // A render still in flight — a prior capture's salvage timed out on
       // it — squats the engine's one global render slot: the next salvage's
       // renderBegin would be refused, its wait would watch the WRONG
       // render, and the bundle would land in the recovered area stemless
       // with its marker gone. Stop; the remainder waits for the next boot.
-      if (!renderProgress.done) return;
+      if (_armedDir != null || _armInFlight || !renderProgress.done) {
+        // What this sweep does not reach and was not recovered (counted
+        // before, or marked failed) still is not.
+        _unrecovered.addAll(
+          pending
+              .skip(i)
+              .where(
+                (d) =>
+                    previous.contains(d) ||
+                    File('$d/$recoveryFailedName').existsSync() ||
+                    _attemptsBegun(d) >= 2,
+              ),
+        );
+        return;
+      }
+      if (retry.contains(dir)) {
+        _clearFailed(dir);
+      } else if (_salvageFailed(dir)) {
+        // A salvage the app did not survive is not run again by itself:
+        // the take is counted as not recovered until the player asks again.
+        _unrecovered.add(dir);
+        continue;
+      }
       await _recoverSilently(root, dir);
       // Still in place and still unfinalized: this boot could not recover
       // it. Its files stay; the player is told.
@@ -990,8 +1059,60 @@ class PerformanceRepository {
     } on Exception {
       return false;
     }
-    if (_strandedSalvage(root).isNotEmpty) return true;
-    return (await findUnfinalized()).isNotEmpty;
+    if (_strandedSalvage(root).any((dir) => !_salvageFailed(dir))) {
+      return true;
+    }
+    return (await findUnfinalized()).any(
+      (capture) => !_salvageFailed(capture.directory),
+    );
+  }
+
+  /// Salvages again every take [unrecoveredTakes] names, as a start does
+  /// but past their failed mark (#1747): the player's Try again on the
+  /// notice that says a take could not be recovered. Each gets one more
+  /// salvage: one the app does not survive marks it failed again at the next
+  /// start. A take the sweep does not reach (a take is being recorded, a
+  /// render is still running) keeps its mark and stays counted.
+  Future<void> retryUnrecovered() => _sweep(_unrecovered.toSet());
+
+  /// Lifts [dir]'s failed mark for one more salvage: it is recorded as one
+  /// salvage already interrupted, so the next that is fails it again.
+  void _clearFailed(String dir) {
+    try {
+      File('$dir/$recoveryAttemptName').writeAsStringSync('1\n');
+      final mark = File('$dir/$recoveryFailedName');
+      if (mark.existsSync()) mark.deleteSync();
+    } on FileSystemException {
+      return; // the salvage below runs; its own write reports a bad disk
+    }
+  }
+
+  /// Whether [dir]'s salvage is marked failed, marking it now when the app
+  /// stopped during two salvages of it in a row ([recoveryAttemptName]). One
+  /// interrupted salvage is run again: a restart or a power cut also stops
+  /// one, and the boot id cannot tell those from a kill (an app restarted
+  /// by its service runs in the same boot).
+  bool _salvageFailed(String dir) {
+    if (File('$dir/$recoveryFailedName').existsSync()) return true;
+    if (_attemptsBegun(dir) < 2) return false;
+    try {
+      File('$dir/$recoveryFailedName').writeAsStringSync('');
+      File('$dir/$recoveryAttemptName').deleteSync();
+    } on FileSystemException {
+      // Unwritable: still not run this boot; the next start decides again.
+    }
+    return true;
+  }
+
+  /// How many salvages of [dir] began without ending (0 when none).
+  int _attemptsBegun(String dir) {
+    final file = File('$dir/$recoveryAttemptName');
+    try {
+      if (!file.existsSync()) return 0;
+      return int.tryParse(file.readAsStringSync().trim()) ?? 1;
+    } on FileSystemException {
+      return 1;
+    }
   }
 
   /// One capture's silent salvage: finalize + render in place, then — only
@@ -1014,6 +1135,11 @@ class PerformanceRepository {
       // the marker is what lets the next boot's [_strandedSalvage] finish
       // the move instead of the bundle falling outside retention forever.
       File('$dir/$recoveryMarkerName').writeAsStringSync('');
+      // Begun: if the app stops before it ends, the next start knows
+      // (#1747). Written before the finalize, which can be as heavy as the
+      // render for a take from before #1198.
+      File('$dir/$recoveryAttemptName')
+          .writeAsStringSync('${_attemptsBegun(dir) + 1}\n');
       if (_sidecarFinalized(dir)) {
         // A stranded bundle: its finalize already completed on a previous
         // boot, and re-running it would do real damage, not just waste work
@@ -1036,11 +1162,17 @@ class PerformanceRepository {
           // where it is — marker intact — so the next boot re-salvages it,
           // stem render and all; the caller's loop then stops on the very
           // render this wait gave up on (see the render-slot check there).
+          // The attempt stays while the render still runs (an app that
+          // stops during it has not survived this salvage), and ends with
+          // it.
+          unawaited(_endAttemptWhenRendered(dir));
           return;
         }
         await Future<void>.delayed(_bootRecoveryPollInterval);
         waited += _bootRecoveryPollInterval;
       }
+      // Ended, however it went: the app survived this salvage.
+      _endAttempt(dir);
       if (!_sidecarFinalized(dir)) return; // nothing recovered; retried later
       // Re-checked at the last synchronous moment before the rename: the
       // awaits above suspended this salvage, and the one directory that must
@@ -1050,8 +1182,29 @@ class PerformanceRepository {
     } on Exception {
       // One capture's failure neither aborts the loop for its siblings nor
       // escapes the unawaited boot call as an unhandled zone error. The
-      // bundle (and its marker) stay for the next boot.
+      // bundle (and its marker) stay for the next boot; a failure the app
+      // survived is no reason not to try again then.
+      if (renderProgress.done) _endAttempt(dir);
       return;
+    }
+  }
+
+  /// Ends [dir]'s attempt once the render a timed-out salvage left running
+  /// is done, or another render has taken the slot (so it is done too).
+  Future<void> _endAttemptWhenRendered(String dir) async {
+    while (!_disposed && _renderDir == dir && !renderProgress.done) {
+      await Future<void>.delayed(_bootRecoveryPollInterval);
+    }
+    if (!_disposed) _endAttempt(dir);
+  }
+
+  /// Removes [dir]'s [recoveryAttemptName]: its salvage has ended.
+  void _endAttempt(String dir) {
+    try {
+      final file = File('$dir/$recoveryAttemptName');
+      if (file.existsSync()) file.deleteSync();
+    } on FileSystemException {
+      return; // read as an interrupted salvage at the next start
     }
   }
 
@@ -1067,9 +1220,8 @@ class PerformanceRepository {
   /// which the next boot's retry overwrites with its own fresh landing
   /// time.
   void _moveToRecovered(String root, String dir) {
-    File(
-      '$dir/$recoveredAtStampName',
-    ).writeAsStringSync(_now().millisecondsSinceEpoch.toString());
+    File('$dir/$recoveredAtStampName')
+        .writeAsStringSync(_now().millisecondsSinceEpoch.toString());
     final recoveredRoot = '$root/$recoveredDirName';
     Directory(recoveredRoot).createSync(recursive: true);
     final slug = _basename(dir);
@@ -1290,17 +1442,18 @@ class PerformanceRepository {
   }
 
   /// The files of [capture]'s DAW package, relative to its directory, that
-  /// exist on disk: every audio part in order, the rendered stems the Live
-  /// Set points at (`stems/dry/`, `stems/wet/`), then the [dawProjectFiles].
-  /// The Library copies them keeping these paths, so the Live Set opens on
-  /// the drive.
+  /// exist on disk: every audio part in order, the rendered stems and lane
+  /// loops the Live Set points at (`stems/dry/`, `stems/wet/`, `loops/`),
+  /// then the [dawProjectFiles]. The Library copies them keeping these
+  /// paths, so the Live Set opens on the drive with none of its media
+  /// missing (#1799).
   List<String> dawPackageFiles(CaptureSummary capture) {
     final dir = capture.path;
     final stems = <String>[];
-    for (final kind in const ['dry', 'wet']) {
+    for (final folder in const ['stems/dry', 'stems/wet', 'loops']) {
       final List<FileSystemEntity> entries;
       try {
-        entries = Directory('$dir/stems/$kind').listSync();
+        entries = Directory('$dir/$folder').listSync();
       } on FileSystemException {
         continue;
       }
@@ -1308,7 +1461,7 @@ class PerformanceRepository {
         [
           for (final e in entries)
             if (e is File && e.path.toLowerCase().endsWith('.wav'))
-              'stems/$kind/${_basename(e.path)}',
+              '$folder/${_basename(e.path)}',
         ]..sort(),
       );
     }
@@ -1411,7 +1564,7 @@ class PerformanceRepository {
     if (path == null || !File(path).existsSync()) {
       return const AuditionStart(result: EngineResult.invalid);
     }
-    return _engine.auditionStartFile(path, stillWanted: stillWanted);
+    return await _engine.auditionStartFile(path, stillWanted: stillWanted);
   }
 
   /// Whether a take's stems may still be being written: the engine's one
@@ -1419,6 +1572,38 @@ class PerformanceRepository {
   /// project and the DAW package wait for it (#1178 Part 7 review,
   /// finding 4); the take's own parts are final and may go.
   bool get rendering => !renderProgress.done;
+
+  /// Whether the take in [dir] has rendered stems: the render's index,
+  /// `stems/stems.json`, is there (#1824). A take rendered before the lanes
+  /// had their own stems has none, and renders again ([renderStems]).
+  bool stemsRendered(String dir) => File('$dir/stems/stems.json').existsSync();
+
+  /// Renders the stems of the finished take in [dir] in the engine's render
+  /// slot, as its finalize does, and waits for the render: polled every
+  /// [poll], [onProgress] told its fraction done, and stopped (the render
+  /// cancelled, removing what it had begun) as soon as [cancelled] says so.
+  /// Returns whether the take has its stems afterwards: false when the
+  /// render could not start (the slot is busy), read no manifest, was
+  /// cancelled, or wrote no index.
+  Future<bool> renderStems(
+    String dir, {
+    bool Function()? cancelled,
+    void Function(double fraction)? onProgress,
+    Duration poll = const Duration(milliseconds: 50),
+  }) async {
+    if (!_engine.renderBegin(dir).isOk) return false;
+    _renderDir = dir;
+    while (true) {
+      final progress = renderProgress;
+      if (progress.done) return !progress.failed && stemsRendered(dir);
+      if (cancelled?.call() ?? false) {
+        _engine.renderCancel();
+        return false;
+      }
+      onProgress?.call(progress.progressPercent / 100);
+      await Future<void>.delayed(poll);
+    }
+  }
 
   /// [buckets] absolute peaks over [capture]'s main output, streamed off the
   /// UI isolate through the engine's one decoder, the parts concatenated in
@@ -1576,6 +1761,9 @@ class PerformanceRepository {
   /// take can stop its render ([discardUnfinalized]).
   String? _renderDir;
 
+  /// Set by [dispose]: background waits stop.
+  bool _disposed = false;
+
   void _beginRender(String dir) {
     if (_engine.renderBegin(dir).isOk) _renderDir = dir;
   }
@@ -1594,6 +1782,7 @@ class PerformanceRepository {
     required PerformanceChains chains,
     required bool writeChains,
     bool stampTakeId = false,
+    Map<int, String> names = const {},
   }) {
     final snapshot = _engine.snapshot();
     final tracks = <PerformanceTrackSnapshot>[];
@@ -1638,12 +1827,35 @@ class PerformanceRepository {
             channels: 1,
           ),
         );
+        // What the player heard (#1713): the wet stem plays it where the lane
+        // played it. Exported in the same settled window as the clean take,
+        // so the two stand frame for frame. This export replaces the lane's
+        // earlier one, so a take without a heard image also removes the one
+        // an earlier take left beside it.
+        final heard = _engine.exportTrackLaneHeard(channel, laneIndex);
+        final heardName = 'loops/track$channel-lane$laneIndex-heard.wav';
+        final heardWav = File('$dir/$heardName');
+        String? heardFile;
+        if (heard.length == 2 * pcm.length) {
+          heardFile = heardName;
+          heardWav.writeAsBytesSync(
+            WavCodec.encodeFloat32(
+              samples: heard,
+              sampleRate: snapshot.sampleRate,
+              channels: 2,
+            ),
+          );
+        } else if (heardWav.existsSync()) {
+          heardWav.deleteSync();
+        }
         lanes.add(
           PerformanceLaneSnapshot(
             lane: laneIndex,
             lengthFrames: pcm.length,
             deferred: false,
             pcmFile: filename,
+            heardFile: heardFile,
+            playsClean: heardFile != null && lane.source == LaneSource.clean,
             effects: laneChain?.effects ?? const [],
             chainEnabled: laneChain?.chainEnabled ?? true,
             volume: lane.volume,
@@ -1670,10 +1882,17 @@ class PerformanceRepository {
           multiple: track.multiple,
           anchorLap: track.anchorLap,
           lanes: lanes,
+          name: _givenName(names[channel]),
         ),
       );
     }
     return tracks;
+  }
+
+  /// [name] trimmed, or `null` when there is none to keep.
+  static String? _givenName(String? name) {
+    final trimmed = name?.trim() ?? '';
+    return trimmed.isEmpty ? null : trimmed;
   }
 
   /// Lane [lane] of [channel]'s chain among [chains], or `null` when the rig
@@ -1726,7 +1945,13 @@ class PerformanceRepository {
             'channel_layout': {
               'master_channels': reconciled.streams.first.channels,
               'captured_inputs': [
-                for (final s in reconciled.streams.skip(1)) s.stream - 1,
+                for (final s in reconciled.streams.skip(1))
+                  if (s.stream < PerfTarget.rawStreamBase) s.stream - 1,
+              ],
+              'raw_inputs': [
+                for (final s in reconciled.streams)
+                  if (s.stream >= PerfTarget.rawStreamBase)
+                    s.stream - PerfTarget.rawStreamBase,
               ],
             },
             // Overwritten below by what the parts hold, when there are any.
@@ -1770,9 +1995,10 @@ class PerformanceRepository {
   static final _rawPcmFile = RegExp(r'^(master|input-\d+)\.pcm$');
 
   /// Whether [dir] still holds a raw stream of a capture from before #1198.
-  bool _holdsRawPcm(String dir) => Directory(dir).listSync().any(
-    (e) => e is File && _rawPcmFile.hasMatch(_basename(e.path)),
-  );
+  bool _holdsRawPcm(String dir) =>
+      Directory(dir)
+          .listSync()
+          .any((e) => e is File && _rawPcmFile.hasMatch(_basename(e.path)));
 
   /// Converts a capture from before #1198 into float parts (#1078): each
   /// raw stream in turn is copied into parts on a background isolate, a
@@ -1840,9 +2066,8 @@ class PerformanceRepository {
     ];
     var largest = 0;
     for (var i = 0; i < pending.length; i++) {
-      final length = File(
-        '$dir/${legacyPcmName(pending[i].stream)}',
-      ).lengthSync();
+      final length = File('$dir/${legacyPcmName(pending[i].stream)}')
+          .lengthSync();
       final frames = length ~/ format[i].frameBytes;
       final need =
           format[i].bytesToAppend(frames) +
@@ -1929,7 +2154,7 @@ class PerformanceRepository {
   /// Deletes every part file of [stream] in [dir]: what a conversion cut
   /// short left before it could list them.
   void _deleteStrayParts(String dir, int stream) {
-    final prefix = stream == 0 ? 'master-' : 'input-${stream - 1}-';
+    final prefix = partFilePrefix(stream);
     for (final entity in Directory(dir).listSync()) {
       final name = _basename(entity.path);
       if (entity is File &&
@@ -2020,8 +2245,11 @@ class PerformanceRepository {
     _captureGuard = null;
   }
 
-  /// A part file the drain names: `master-001.wav`, `input-3-002.wav`.
-  static final _partFile = RegExp(r'^(master|input-\d+)-\d{3}\.wav$');
+  /// A part file the drain names: `master-001.wav`, `input-3-002.wav`,
+  /// `input-raw-3-002.wav`.
+  static final _partFile = RegExp(
+    r'^(master|input-\d+|input-raw-\d+)-\d{3}\.wav$',
+  );
 
   String _basename(String path) =>
       path.split(RegExp(r'[/\\]')).where((s) => s.isNotEmpty).last;
@@ -2029,6 +2257,7 @@ class PerformanceRepository {
   /// Releases the status stream. Does not disarm — callers that own the
   /// engine lifecycle are responsible for disarming before disposal.
   void dispose() {
+    _disposed = true;
     unawaited(_statusController.close());
     unawaited(_armRefusals.close());
   }
@@ -2037,7 +2266,7 @@ class PerformanceRepository {
 /// A hold on [PerformanceRepository.arm] from
 /// [PerformanceRepository.holdArm]; [release] lets arming through again.
 final class PerformanceArmHold {
-  PerformanceArmHold._(this._onRelease);
+  new _(this._onRelease);
 
   final void Function() _onRelease;
   bool _released = false;

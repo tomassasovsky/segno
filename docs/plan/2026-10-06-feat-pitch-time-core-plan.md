@@ -1,6 +1,6 @@
 # Pitch and time core: Speed, Transpose, Audio & tempo follow, import Adapt
 
-<!-- cspell:ignore varispeed lerp lbuf wdub Signalsmith signalsmith numer SCHED untransposed sidelobe retiming Retiming retimes retimed retime reclock regrid halfband Neoverse milli fmod crossfades hujm YMPRG Bmpo -->
+<!-- cspell:ignore WSOLA varispeed lerp lbuf wdub Signalsmith signalsmith numer SCHED untransposed sidelobe retiming Retiming retimes retimed retime reclock regrid halfband Neoverse milli fmod crossfades hujm YMPRG Bmpo -->
 
 Status: approved with required review edits E1-E15, which are applied in this
 text (the review is kept at the owner's evidence store,
@@ -1158,6 +1158,19 @@ events.log version 12):
   varispeed head: timing exact, the pitch off by the ratio, reported as
   `pitch_effective_cents` (1200 log2 of the sounding source's length over
   the span; 0 at its own span or once the render plays).
+  *Superseded by #1675:* the owner heard the shift on build 229 (-316
+  cents for 120 to 100 BPM, 0.6 to 9 s on the Pi until every render
+  lands, forever on a rig the cap refuses). A pending or refused track now
+  plays through the pitch bridge (`engine_bridge.h`): a real-time WSOLA
+  stretch on the audio thread, grains read at the take's own pitch from the
+  varispeed index, each aligned on the one before by a decimated
+  cross-correlation, so the pitch is kept from the first frame and the
+  render takes over through the same equal-power swap. A transposed track
+  bridges its plain Transpose render. `pitch_effective_cents` reads 0
+  while bridged; fact 331 carries the bridge flag (events.log version 15)
+  and the renderer replays it on lane 0. Streaming Signalsmith on the audio
+  thread was measured and does not fit the 667 us period (the issue has
+  the numbers).
 - **Tolerance.** A render within 0.5 % of the span serves it (about 9
   cents, reported); a tempo move past that renders again, dry meanwhile. A
   span within 0.5 % of the take itself wants no stretch (review M1): a

@@ -5,7 +5,7 @@ import 'package:meta/meta.dart';
 @immutable
 class CpuTimes {
   /// Creates a [CpuTimes].
-  const CpuTimes({required this.busy, required this.total});
+  const new({required this.busy, required this.total});
 
   /// Jiffies spent doing work: everything but idle and I/O wait.
   final int busy;

@@ -271,14 +271,10 @@ void main() {
     final press = engine.prepare(event(note, 100)).single;
     engine.settle(press, {0});
     final changed = original.copyWith(
-      controls: [
-        MidiParameterControl(key: 'gain', low: 0.1, high: 0.9),
-      ],
+      controls: [MidiParameterControl(key: 'gain', low: 0.1, high: 0.9)],
     );
     final retirement = engine
-        .setMappings(
-          MidiMappingSet(mappings: [changed]),
-        )
+        .setMappings(MidiMappingSet(mappings: [changed]))
         .single;
     expect(retirement.operations.single, isA<MidiParameterWrite>());
     engine.settle(retirement, {});

@@ -100,7 +100,7 @@ abstract interface class OwnedValueControl implements OwnedValueReadout {
 /// renders from Bloc state. A null field means that family is unavailable.
 final class OwnedValueSnapshots implements OwnedValueReadout {
   /// Collects the read models a page already holds.
-  const OwnedValueSnapshots({
+  const new({
     this.clickVolume,
     this.clickModeSnapshot,
     this.recordStartSnapshot,

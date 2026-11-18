@@ -1,6 +1,6 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
@@ -58,7 +58,7 @@ _RecordValues _recordValues(LooperState state, int chosen) {
 /// which inputs an existing recording holds.
 class RecordingInputsTab extends StatefulWidget {
   /// Creates a [RecordingInputsTab].
-  const RecordingInputsTab({super.key});
+  const new({super.key});
 
   @override
   State<RecordingInputsTab> createState() => _RecordingInputsTabState();
@@ -188,9 +188,7 @@ class _RecordingInputsTabState extends State<RecordingInputsTab> {
           child: switch (values) {
             final it when it.locked => LoopNote(l10n.routingLockedInputs),
             _ when recorded.isEmpty => LoopNote(l10n.routingNoInputs),
-            _ when available == 0 => LoopNote(
-              l10n.routingTrackFull(kMaxLanes),
-            ),
+            _ when available == 0 => LoopNote(l10n.routingTrackFull(kMaxLanes)),
             _ => const SizedBox.shrink(),
           },
         ),
@@ -202,7 +200,7 @@ class _RecordingInputsTabState extends State<RecordingInputsTab> {
 /// The pen's `routing-input` card: the jack's number and name with a check
 /// badge that says whether this track records it.
 class _InputChoiceCard extends StatelessWidget {
-  const _InputChoiceCard({
+  const new({
     required this.ordinal,
     required this.name,
     required this.selected,

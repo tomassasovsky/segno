@@ -1,8 +1,8 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/app/app_notices.dart';
 import 'package:segno/appliance/display_brightness_edit.dart';
@@ -26,7 +26,7 @@ import 'package:settings_repository/settings_repository.dart';
 /// design file has no frame for it yet.
 class ConsoleLedsPage extends StatefulWidget {
   /// Creates a [ConsoleLedsPage].
-  const ConsoleLedsPage({super.key});
+  const new({super.key});
 
   /// The page as a route.
   static Route<void> route() =>
@@ -111,7 +111,7 @@ void _edit(
 /// Manual or Automatic, the slider for the one that applies, a note on what
 /// it does or why Automatic is unavailable, and the two calibration buttons.
 class _BrightnessColumn extends StatelessWidget {
-  const _BrightnessColumn();
+  const new();
 
   static const double _range =
       ConsoleLedSettings.maxBrightness - ConsoleLedSettings.minBrightness;
@@ -153,9 +153,7 @@ class _BrightnessColumn extends StatelessWidget {
         l10n.trayBrightnessPercent((brightnessAt(travel) * 100).round());
     String shift(double travel) {
       final points = (offsetAt(travel) * _offsetPoints).round();
-      return l10n.consoleLedsOffsetPercent(
-        points > 0 ? '+$points' : '$points',
-      );
+      return l10n.consoleLedsOffsetPercent(points > 0 ? '+$points' : '$points');
     }
 
     final note = switch (state.light?.sensor) {
@@ -207,10 +205,8 @@ class _BrightnessColumn extends StatelessWidget {
             // Without a sensor Automatic cannot be chosen; a console left on
             // it can still go back to Manual.
             enabled: state.sensorFitted || automatic,
-            onSelected: (value) => _edit(
-              context,
-              (cubit) => cubit.setAutomatic(automatic: value),
-            ),
+            onSelected: (value) =>
+                _edit(context, (cubit) => cubit.setAutomatic(automatic: value)),
             width: width,
             height: 80,
           ),
@@ -296,12 +292,10 @@ class _BrightnessColumn extends StatelessWidget {
 /// What the sensor reads, where the calibration points are, and the
 /// brightness the LEDs show.
 class _SensorColumn extends StatelessWidget {
-  const _SensorColumn();
+  const new();
 
-  static int _countsOf(int level) => PedalAmbientLight(
-    sensor: PedalLightSensor.reading,
-    level: level,
-  ).counts;
+  static int _countsOf(int level) =>
+      PedalAmbientLight(sensor: PedalLightSensor.reading, level: level).counts;
 
   @override
   Widget build(BuildContext context) {

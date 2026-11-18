@@ -40,8 +40,7 @@ class _DecayStore extends FakeKeyValueStore {
 }
 
 void main() {
-  final nativeAvailable = Platform.environment.containsKey('SEGNO_ENGINE_LIB');
-  group('durable Decay session capture', skip: !nativeAvailable, () {
+  group('durable Decay session capture', () {
     late PumpedNativeEngine engine;
     late LooperRepository looper;
     late TempoSettings tempo;
@@ -86,10 +85,7 @@ void main() {
       tempo = TempoSettings(repository: looper, settings: settings);
       await tempo.load();
       expect((await tempo.recordStartControl.setCountInBars(0)).isOk, isTrue);
-      playback = PlaybackSettings(
-        repository: looper,
-        settings: settings,
-      );
+      playback = PlaybackSettings(repository: looper, settings: settings);
       await playback.load();
       record = RecordSettings(repository: looper, settings: settings);
       await record.load();

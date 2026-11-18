@@ -6,18 +6,8 @@ void main() {
   group('pickConsoleAudioDevices', () {
     test('prefers a shared non-default duplex id', () {
       const devices = [
-        AudioDevice(
-          id: 'hdmi',
-          name: 'HDMI',
-          isDefault: true,
-          isInput: false,
-        ),
-        AudioDevice(
-          id: 'hdmi',
-          name: 'HDMI',
-          isDefault: true,
-          isInput: true,
-        ),
+        AudioDevice(id: 'hdmi', name: 'HDMI', isDefault: true, isInput: false),
+        AudioDevice(id: 'hdmi', name: 'HDMI', isDefault: true, isInput: true),
         AudioDevice(
           id: 'scarlett',
           name: 'Scarlett 4i4',
@@ -31,10 +21,10 @@ void main() {
           isInput: true,
         ),
       ];
-      expect(
-        pickConsoleAudioDevices(devices),
-        (playbackId: 'scarlett', captureId: 'scarlett'),
-      );
+      expect(pickConsoleAudioDevices(devices), (
+        playbackId: 'scarlett',
+        captureId: 'scarlett',
+      ));
     });
 
     test(
@@ -54,10 +44,10 @@ void main() {
             isInput: true,
           ),
         ];
-        expect(
-          pickConsoleAudioDevices(devices),
-          (playbackId: 'hw:1,0', captureId: 'hw:1,0c'),
-        );
+        expect(pickConsoleAudioDevices(devices), (
+          playbackId: 'hw:1,0',
+          captureId: 'hw:1,0c',
+        ));
       },
     );
 
@@ -136,10 +126,9 @@ void main() {
 
     test('an empty id pins nothing, so it is always present', () {
       expect(
-        pinnedDevicesPresent(
-          const EngineConfig(playbackDeviceId: 'scarlett'),
-          [scarlettOut],
-        ),
+        pinnedDevicesPresent(const EngineConfig(playbackDeviceId: 'scarlett'), [
+          scarlettOut,
+        ]),
         isTrue,
       );
     });

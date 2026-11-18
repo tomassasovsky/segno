@@ -14,7 +14,7 @@ import 'package:equatable/equatable.dart';
 /// inferred from a zero [hz].
 class TunerReading extends Equatable {
   /// Creates a [TunerReading].
-  const TunerReading({
+  const new({
     this.hz = 0,
     this.confidence = 0,
     this.input = -1,

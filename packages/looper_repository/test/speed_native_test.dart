@@ -2,7 +2,6 @@
 library;
 
 import 'dart:async';
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -10,10 +9,6 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:segno_engine/segno_engine.dart' show PumpedNativeEngine;
 
 void main() {
-  final library = Platform.environment['SEGNO_ENGINE_LIB'];
-  final skip = library == null || library.isEmpty
-      ? 'Build packages/segno_engine/tool/build_test_lib.sh and set SEGNO_ENGINE_LIB'
-      : null;
   late PumpedNativeEngine engine;
   late LooperRepository repository;
   late StreamController<void> ticks;
@@ -50,49 +45,42 @@ void main() {
     await ticks.close();
   });
 
-  test(
-    'setSpeed confirms the callback receipt, projects the factor and the '
-    'head rate, and refuses capture until Normal',
-    () async {
-      final subscription = repository.looperState.listen((_) {});
-      addTearDown(subscription.cancel);
-      await Future<void>.delayed(Duration.zero);
-      engine.pump(frames: 36);
-      final half = repository.setSpeed(SpeedFactor.half);
-      var completed = false;
-      final completion = half.then((_) {
-        completed = true;
-      });
-      await Future<void>.delayed(Duration.zero);
-      expect(completed, isFalse); // queue acceptance is not the outcome
-      engine.pump(frames: 2);
-      expect(await half, EngineResult.ok);
-      await completion;
-      // 128 frames is shorter than two turn windows, so the step snaps: the
-      // second frame at 1/2x reads index 36.5, the interpolated half step.
-      expect(engine.snapshot().outputPeaks[0], closeTo(36.5 / 128, 1e-6));
-      ticks.add(null);
-      expect(repository.state.speed, SpeedFactor.half);
-      expect(engine.snapshot().tracks[0].headRate, 0.5);
-      expect(repository.record(), EngineResult.transformed);
-      expect(repository.record(channel: 1), EngineResult.transformed);
-      expect(engine.snapshot().tracks[0].state, TrackState.playing);
-      final normal = repository.setSpeed(SpeedFactor.normal);
-      engine.pump(frames: 1);
-      expect(await normal, EngineResult.ok);
-      ticks.add(null);
-      expect(repository.state.speed, SpeedFactor.normal);
-      expect(repository.record(), EngineResult.ok);
-      engine.pump(frames: 1);
-      expect(engine.snapshot().tracks[0].state, TrackState.overdubbing);
-      // A change during capture is refused at admission.
-      expect(
-        await repository.setSpeed(SpeedFactor.twice),
-        EngineResult.notReady,
-      );
-    },
-    skip: skip,
-  );
+  test('setSpeed confirms the callback receipt, projects the factor and the '
+      'head rate, and refuses capture until Normal', () async {
+    final subscription = repository.looperState.listen((_) {});
+    addTearDown(subscription.cancel);
+    await Future<void>.delayed(Duration.zero);
+    engine.pump(frames: 36);
+    final half = repository.setSpeed(SpeedFactor.half);
+    var completed = false;
+    final completion = half.then((_) {
+      completed = true;
+    });
+    await Future<void>.delayed(Duration.zero);
+    expect(completed, isFalse); // queue acceptance is not the outcome
+    engine.pump(frames: 2);
+    expect(await half, EngineResult.ok);
+    await completion;
+    // 128 frames is shorter than two turn windows, so the step snaps: the
+    // second frame at 1/2x reads index 36.5, the interpolated half step.
+    expect(engine.snapshot().outputPeaks[0], closeTo(36.5 / 128, 1e-6));
+    ticks.add(null);
+    expect(repository.state.speed, SpeedFactor.half);
+    expect(engine.snapshot().tracks[0].headRate, 0.5);
+    expect(repository.record(), EngineResult.transformed);
+    expect(repository.record(channel: 1), EngineResult.transformed);
+    expect(engine.snapshot().tracks[0].state, TrackState.playing);
+    final normal = repository.setSpeed(SpeedFactor.normal);
+    engine.pump(frames: 1);
+    expect(await normal, EngineResult.ok);
+    ticks.add(null);
+    expect(repository.state.speed, SpeedFactor.normal);
+    expect(repository.record(), EngineResult.ok);
+    engine.pump(frames: 1);
+    expect(engine.snapshot().tracks[0].state, TrackState.overdubbing);
+    // A change during capture is refused at admission.
+    expect(await repository.setSpeed(SpeedFactor.twice), EngineResult.notReady);
+  });
 
   test(
     'setSpeed on an empty rig is refused, so the first take records',
@@ -135,6 +123,5 @@ void main() {
       empty.pump(frames: 1);
       expect(empty.snapshot().tracks[0].state, TrackState.recording);
     },
-    skip: skip,
   );
 }

@@ -1,21 +1,21 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/l10n/l10n.dart';
-import 'package:segno/library/application/removable_volumes.dart';
 import 'package:segno/library/cubit/library_cubit.dart';
 import 'package:segno/library/view/library_audio_dialogs.dart';
 import 'package:segno/library/view/library_sessions_tab.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:session_repository/session_repository.dart';
+import 'package:storage_repository/storage_repository.dart';
 
 /// `Back up to USB` (pen 19/01 `backup:export`, 220 x 64) for the previewed
 /// session.
 class LibraryBackUpButton extends StatelessWidget {
   /// Creates the button for [summary].
-  const LibraryBackUpButton({required this.summary, super.key});
+  const new({required this.summary, super.key});
 
   /// The previewed session.
   final SessionSummary summary;
@@ -41,7 +41,7 @@ class LibraryBackUpButton extends StatelessWidget {
 /// `Cancel`, in place of the preview's footer.
 class LibraryBackupProgress extends StatelessWidget {
   /// Creates the progress of [backup].
-  const LibraryBackupProgress({required this.backup, super.key});
+  const new({required this.backup, super.key});
 
   /// The running backup.
   final LibraryBackupRunning backup;
@@ -122,6 +122,8 @@ Future<void> showLibraryBackupQuestion(
             LibraryBackupProblem.driveLost => l10n.libraryBackupDriveLost,
             LibraryBackupProblem.full => l10n.libraryBackupFull,
             LibraryBackupProblem.readOnly => l10n.libraryBackupReadOnly,
+            LibraryBackupProblem.tooLargeForDrive =>
+              l10n.libraryAudioTooLargeForDrive,
             LibraryBackupProblem.busy => l10n.operationBusy(
               blockedBy?.name ?? 'other',
             ),
@@ -175,7 +177,7 @@ Future<void> showLibraryBackupQuestion(
 /// `Saved`, and `Restore to Library` with "Adds a new session to Library."
 class LibraryBackupList extends StatelessWidget {
   /// Creates the USB list.
-  const LibraryBackupList({super.key});
+  const new({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -304,7 +306,7 @@ class LibraryBackupList extends StatelessWidget {
 /// One backup's 120-tall row: its name and facts, and when it was saved.
 class LibraryBackupRow extends StatelessWidget {
   /// Creates the row for [backup].
-  const LibraryBackupRow({
+  const new({
     required this.backup,
     required this.selected,
     required this.onTap,

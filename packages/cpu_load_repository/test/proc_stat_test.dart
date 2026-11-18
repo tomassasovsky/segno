@@ -9,10 +9,7 @@ void main() {
           'cpu  100 20 30 400 50 6 4 0 99 99\n'
           'cpu0 50 10 15 200 25 3 2 0 0 0\n'
           'intr 12345\n';
-      expect(
-        parseProcStat(stat),
-        const CpuTimes(busy: 160, total: 610),
-      );
+      expect(parseProcStat(stat), const CpuTimes(busy: 160, total: 610));
     });
 
     test('reads a short line from an old kernel', () {

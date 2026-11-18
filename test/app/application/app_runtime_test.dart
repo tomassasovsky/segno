@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -20,7 +21,13 @@ import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/model/owned_setting.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno_engine/segno_engine.dart'
-    show FxOwner, MockAudioDecoder, MockAudioEngine, TrackSnapshot;
+    show
+        FxOwner,
+        LaneSnapshot,
+        MockAudioDecoder,
+        MockAudioEngine,
+        TrackSnapshot,
+        TrackState;
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 import 'package:storage_repository/storage_repository.dart';
@@ -28,7 +35,7 @@ import 'package:usb_storage_client/usb_storage_client.dart';
 
 import '../../helpers/helpers.dart';
 
-class _Sessions extends Mock implements SessionRepository {}
+class _Sessions extends Mock implements SessionRepository;
 
 class _ReadGateStore extends FakeKeyValueStore {
   Completer<String?>? midiRead;
@@ -128,9 +135,7 @@ void main() {
         pedalBindings: any(named: 'pedalBindings'),
       ),
     ).thenReturn('fp');
-    when(
-      () => sessions.releaseSessionId(any()),
-    ).thenAnswer((_) async {});
+    when(() => sessions.releaseSessionId(any())).thenAnswer((_) async {});
     exportsDirectory = '.';
     performance = PerformanceRepository(
       guards: GuardRegistry(),
@@ -173,6 +178,61 @@ void main() {
     });
   });
 
+  test("a pedal or MIDI arm records the rig's chains and the player's "
+      'track names (#1799)', () async {
+    await runtime.start();
+    final directory = await Directory.systemTemp.createTemp('names-');
+    exportsDirectory = directory.path;
+    addTearDown(() => directory.delete(recursive: true));
+    // Track 0 with one lane, so the arm snapshot records it.
+    engine.nextSnapshot = engine.nextSnapshot.copyWith(
+      tracks: [
+        const TrackSnapshot(
+          state: TrackState.stopped,
+          volume: 1,
+          muted: false,
+          lengthFrames: 0,
+          undoDepth: 0,
+          rms: 0,
+          peak: 0,
+          lanes: [
+            LaneSnapshot(
+              inputChannel: 0,
+              outputMask: 1,
+              volume: 1,
+              muted: false,
+              lengthFrames: 0,
+              rms: 0,
+              peak: 0,
+            ),
+          ],
+        ),
+        ...engine.nextSnapshot.tracks.skip(1),
+      ],
+    );
+    await runtime.tracks.rename(0, 'Rhythm');
+
+    final armed = performance.captureStatus.firstWhere(
+      (s) => s == PerformanceCaptureStatus.armed,
+    );
+    runtime.control.togglePerformanceRecord();
+    await armed;
+
+    final snapshot = PerformanceArmSnapshot.fromJson(
+      jsonDecode(
+        File('${performance.armedDirectory}/arm-snapshot.json')
+            .readAsStringSync(),
+      ) as Map<String, dynamic>,
+    );
+    // The rig's limiter: the looper's is on, an empty rig's is off.
+    expect(snapshot.limiterEnabled, repository.limiterEnabled);
+    expect(snapshot.limiterEnabled, isTrue);
+    expect(snapshot.tracks.firstWhere((t) => t.channel == 0).name, 'Rhythm');
+    // Input names come from `runtime.inputs` the same way; they key off an
+    // open device this harness never reports (performance_names_test).
+    await performance.disarm();
+  });
+
   test('start takes the session baseline, so a fresh rig edited later is '
       'kept on Open', () async {
     await runtime.start();
@@ -184,9 +244,8 @@ void main() {
         pedalBindings: any(named: 'pedalBindings'),
       ),
     ).thenReturn('edited');
-    when(
-      () => sessions.nextAutomaticName(any()),
-    ).thenAnswer((_) async => 'New loop 1');
+    when(() => sessions.nextAutomaticName(any()))
+        .thenAnswer((_) async => 'New loop 1');
     when(() => sessions.releaseSessionId(any())).thenAnswer((_) async {});
     when(
       () => sessions.save(
@@ -208,21 +267,21 @@ void main() {
     // The target is read first and must pass (an Open the target refuses
     // keeps the rig as it is, #1178 Part 5 lows); an empty one, so only the
     // preservation is under test.
-    when(
-      () => sessions.open(any(), liveSettings: any(named: 'liveSettings')),
-    ).thenAnswer(
-      _opened(
-        (_) async => (
-          session: const Session(
-            sampleRate: 48000,
-            channels: 1,
-            baseLengthFrames: 0,
-            tracks: [],
+    when(() => sessions.open(any(), liveSettings: any(named: 'liveSettings')))
+        .thenAnswer(
+          _opened(
+            (_) async => (
+              session: const Session(
+                sampleRate: 48000,
+                channels: 1,
+                baseLengthFrames: 0,
+                tracks: [],
+              ),
+              heardStems: const <(int, int), List<Float32List>>{},
+              laneStems: const <(int, int), List<Float32List>>{},
+            ),
           ),
-          laneStems: const <(int, int), List<Float32List>>{},
-        ),
-      ),
-    );
+        );
 
     await runtime.session.open('Incoming');
 
@@ -241,14 +300,13 @@ void main() {
   Future<(Future<void>, Completer<SessionBundle>)> holdSessionRead() async {
     final entered = Completer<void>();
     final read = Completer<SessionBundle>();
-    when(
-      () => sessions.open(any(), liveSettings: any(named: 'liveSettings')),
-    ).thenAnswer(
-      _opened((_) {
-        entered.complete();
-        return read.future;
-      }),
-    );
+    when(() => sessions.open(any(), liveSettings: any(named: 'liveSettings')))
+        .thenAnswer(
+          _opened((_) {
+            entered.complete();
+            return read.future;
+          }),
+        );
     final loading = runtime.session.open('Incoming');
     await entered.future;
     return (loading, read);
@@ -261,6 +319,7 @@ void main() {
       baseLengthFrames: 0,
       tracks: [],
     ),
+    heardStems: const <(int, int), List<Float32List>>{},
     laneStems: <(int, int), List<Float32List>>{},
   ));
 
@@ -325,6 +384,7 @@ void main() {
                 ],
                 defaultFadeDurationMs: 12000,
               ),
+              heardStems: const <(int, int), List<Float32List>>{},
               laneStems: {
                 (0, 0): [Float32List(128)..fillRange(0, 128, .5)],
                 (1, 0): [Float32List(128)..fillRange(0, 128, .5)],
@@ -373,110 +433,104 @@ void main() {
       },
     );
 
-    test(
-      'real Session save waits for an admitted duration edit and captures '
-      'it',
-      () async {
-        await runtime.start();
-        registerFallbackValue(const SessionChains());
-        registerFallbackValue(const SessionSettings());
-        SessionSettings? saved;
-        when(
-          () => sessions.save(
-            any(),
-            chains: any(named: 'chains'),
-            settings: any(named: 'settings'),
-            pedalBindings: any(named: 'pedalBindings'),
-            name: any(named: 'name'),
-            captureStillValid: any(named: 'captureStillValid'),
-          ),
-        ).thenAnswer((call) async {
-          saved = call.namedArguments[#settings] as SessionSettings;
-          return const Session(
-            sampleRate: 48000,
-            channels: 1,
-            baseLengthFrames: 0,
-            tracks: [],
-          );
-        });
-        store.fadeWrite = Completer<void>();
-        final edit = runtime.fade.setOverride(7, 4000);
-        await store.fadeWriteEntered.future;
-        final save = runtime.session.saveAs('durations');
-        // Fade edits queue behind Session exclusion like every owned family;
-        // the Mixer still refuses its own edits there.
-        expect(
-          (await runtime.mix.setTrackVolume(.3)).status,
-          MixSettingsStatus.superseded,
+    test('real Session save waits for an admitted duration edit and captures '
+        'it', () async {
+      await runtime.start();
+      registerFallbackValue(const SessionChains());
+      registerFallbackValue(const SessionSettings());
+      SessionSettings? saved;
+      when(
+        () => sessions.save(
+          any(),
+          chains: any(named: 'chains'),
+          settings: any(named: 'settings'),
+          pedalBindings: any(named: 'pedalBindings'),
+          name: any(named: 'name'),
+          captureStillValid: any(named: 'captureStillValid'),
+        ),
+      ).thenAnswer((call) async {
+        saved = call.namedArguments[#settings] as SessionSettings;
+        return const Session(
+          sampleRate: 48000,
+          channels: 1,
+          baseLengthFrames: 0,
+          tracks: [],
         );
-        expect(saved, isNull);
-        store.fadeWrite!.complete();
-        await edit;
-        await save;
-        expect(runtime.session.state.outcome, SessionOutcome.savedAs);
-        expect(saved!.defaultFadeDurationMs, 4000);
-        expect(saved!.trackFadeDurationOverrides, {7: 4000});
-      },
-    );
+      });
+      store.fadeWrite = Completer<void>();
+      final edit = runtime.fade.setOverride(7, 4000);
+      await store.fadeWriteEntered.future;
+      final save = runtime.session.saveAs('durations');
+      // Fade edits queue behind Session exclusion like every owned family;
+      // the Mixer still refuses its own edits there.
+      expect(
+        (await runtime.mix.setTrackVolume(.3)).status,
+        MixSettingsStatus.superseded,
+      );
+      expect(saved, isNull);
+      store.fadeWrite!.complete();
+      await edit;
+      await save;
+      expect(runtime.session.state.outcome, SessionOutcome.savedAs);
+      expect(saved!.defaultFadeDurationMs, 4000);
+      expect(saved!.trackFadeDurationOverrides, {7: 4000});
+    });
 
     for (final amount in [null, double.nan, -.1, 1.1]) {
-      test(
-        'invalid incoming vector ($amount) fails before disarm '
-        'or stored setup changes',
-        () async {
-          await runtime.start();
-          await runtime.fade.setDefault(6000);
-          final oldRevision = repository.sessionRevision;
-          final oldBytes = store.values['looper.fade_durations'];
-          final directory = await Directory.systemTemp.createTemp(
-            'fade-preflight-',
-          );
-          exportsDirectory = directory.path;
-          addTearDown(() => directory.delete(recursive: true));
-          engine.publishPerfCommands = true;
-          expect(await performance.arm(), EngineResult.ok);
-          final capture = performance.armedDirectory;
-          expect(capture, isNotNull);
-          expect(engine.snapshot().isPerfArmed, isTrue);
-          final disarms = engine.perfDisarmCalls;
-          when(
-            () =>
-                sessions.open(any(), liveSettings: any(named: 'liveSettings')),
-          ).thenAnswer(
-            _opened(
-              (_) async => (
-                session: Session(
-                  sampleRate: 48000,
-                  channels: 1,
-                  baseLengthFrames: 0,
-                  tracks: [
-                    if (amount != null)
-                      SessionTrack(
-                        channel: 0,
-                        multiple: 1,
-                        lengthFrames: 128,
-                        fadeAmount: amount,
-                        reversed: false,
-                        lanes: const [],
-                      ),
-                  ],
-                  defaultFadeDurationMs: amount == null ? 501 : 4000,
-                ),
-                laneStems: <(int, int), List<Float32List>>{},
+      test('invalid incoming vector ($amount) fails before disarm '
+          'or stored setup changes', () async {
+        await runtime.start();
+        await runtime.fade.setDefault(6000);
+        final oldRevision = repository.sessionRevision;
+        final oldBytes = store.values['looper.fade_durations'];
+        final directory = await Directory.systemTemp.createTemp(
+          'fade-preflight-',
+        );
+        exportsDirectory = directory.path;
+        addTearDown(() => directory.delete(recursive: true));
+        engine.publishPerfCommands = true;
+        expect(await performance.arm(), EngineResult.ok);
+        final capture = performance.armedDirectory;
+        expect(capture, isNotNull);
+        expect(engine.snapshot().isPerfArmed, isTrue);
+        final disarms = engine.perfDisarmCalls;
+        when(
+          () => sessions.open(any(), liveSettings: any(named: 'liveSettings')),
+        ).thenAnswer(
+          _opened(
+            (_) async => (
+              session: Session(
+                sampleRate: 48000,
+                channels: 1,
+                baseLengthFrames: 0,
+                tracks: [
+                  if (amount != null)
+                    SessionTrack(
+                      channel: 0,
+                      multiple: 1,
+                      lengthFrames: 128,
+                      fadeAmount: amount,
+                      reversed: false,
+                      lanes: const [],
+                    ),
+                ],
+                defaultFadeDurationMs: amount == null ? 501 : 4000,
               ),
+              heardStems: const <(int, int), List<Float32List>>{},
+              laneStems: <(int, int), List<Float32List>>{},
             ),
-          );
-          await runtime.session.open('invalid');
-          expect(runtime.session.state.status, SessionStatus.failure);
-          expect(repository.sessionRevision, oldRevision);
-          expect(engine.perfDisarmCalls, disarms);
-          expect(engine.snapshot().isPerfArmed, isTrue);
-          expect(performance.armedDirectory, capture);
-          expect(store.values['looper.fade_durations'], oldBytes);
-          expect(runtime.fade.confirmed.defaultMs, 6000);
-          expect(runtime.fxPersistence.sessionTransitionActive, isFalse);
-        },
-      );
+          ),
+        );
+        await runtime.session.open('invalid');
+        expect(runtime.session.state.status, SessionStatus.failure);
+        expect(repository.sessionRevision, oldRevision);
+        expect(engine.perfDisarmCalls, disarms);
+        expect(engine.snapshot().isPerfArmed, isTrue);
+        expect(performance.armedDirectory, capture);
+        expect(store.values['looper.fade_durations'], oldBytes);
+        expect(runtime.fade.confirmed.defaultMs, 6000);
+        expect(runtime.fxPersistence.sessionTransitionActive, isFalse);
+      });
     }
   });
 
@@ -507,42 +561,42 @@ void main() {
     addTearDown(() {
       if (!store.bootWrite!.isCompleted) store.bootWrite!.complete();
     });
-    when(
-      () => sessions.open(any(), liveSettings: any(named: 'liveSettings')),
-    ).thenAnswer(
-      _opened(
-        (_) async => (
-          session: const Session(
-            sampleRate: 48000,
-            channels: 1,
-            baseLengthFrames: 128,
-            tracks: [
-              SessionTrack(
-                fadeAmount: 1,
-                reversed: false,
-                channel: 0,
-                multiple: 1,
-                lengthFrames: 128,
-                lanes: [
-                  SessionLane(
-                    lane: 0,
-                    volume: .4,
-                    muted: false,
-                    outputMask: 1,
-                    inputChannel: 0,
-                    layers: [SessionLayer(file: 'track0_lane0_L0.wav')],
-                    history: TrackHistory.none,
+    when(() => sessions.open(any(), liveSettings: any(named: 'liveSettings')))
+        .thenAnswer(
+          _opened(
+            (_) async => (
+              session: const Session(
+                sampleRate: 48000,
+                channels: 1,
+                baseLengthFrames: 128,
+                tracks: [
+                  SessionTrack(
+                    fadeAmount: 1,
+                    reversed: false,
+                    channel: 0,
+                    multiple: 1,
+                    lengthFrames: 128,
+                    lanes: [
+                      SessionLane(
+                        lane: 0,
+                        volume: .4,
+                        muted: false,
+                        outputMask: 1,
+                        inputChannel: 0,
+                        layers: [SessionLayer(file: 'track0_lane0_L0.wav')],
+                        history: TrackHistory.none,
+                      ),
+                    ],
                   ),
                 ],
               ),
-            ],
+              heardStems: const <(int, int), List<Float32List>>{},
+              laneStems: {
+                (0, 0): [Float32List(128)..fillRange(0, 128, .5)],
+              },
+            ),
           ),
-          laneStems: {
-            (0, 0): [Float32List(128)..fillRange(0, 128, .5)],
-          },
-        ),
-      ),
-    );
+        );
     final loading = runtime.session.open('Incoming');
     await store.bootWriteEntered.future;
     expect(repository.state.tracks[0].state, TrackState.stopped);
@@ -970,9 +1024,9 @@ Future<OpenedSession> Function(Invocation) _opened(
 
 /// A backing repository that counts refreshes.
 class _CountingBacking extends BackingRepository {
-  _CountingBacking() : this._(MockAudioEngine(), MockAudioDecoder());
+  new() : this._(MockAudioEngine(), MockAudioDecoder());
 
-  _CountingBacking._(MockAudioEngine engine, MockAudioDecoder decoder)
+  new _(MockAudioEngine engine, MockAudioDecoder decoder)
     : super(
         engine: engine,
         metering: engine,

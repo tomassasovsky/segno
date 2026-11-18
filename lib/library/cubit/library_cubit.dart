@@ -5,9 +5,9 @@ import 'package:equatable/equatable.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/library/application/audio_export.dart';
-import 'package:segno/library/application/removable_volumes.dart';
 import 'package:segno/logging/app_log.dart';
 import 'package:session_repository/session_repository.dart';
+import 'package:storage_repository/storage_repository.dart';
 
 part 'library_state.dart';
 
@@ -25,11 +25,11 @@ part 'library_state.dart';
 ///
 /// It runs Sessions > USB (pen section 34, plan Part 8): `Back up to USB`
 /// copies the selected bundle to the drive as one directory through the
-/// port ([AudioExporter]'s package protocol: every file under a write lease
-/// into a hidden staging directory, then one rename, `Replace` keeping the
-/// old backup until the new one is in place), under a `transfer` guard; the
-/// USB location lists the drive's backups; `Restore to Library` adds one as
-/// a new, independent session.
+/// [StorageRepository] ([AudioExporter]'s package protocol: every file under
+/// a write lease into a hidden staging directory, then one rename, `Replace`
+/// keeping the old backup until the new one is in place), under a
+/// `transfer` guard; the USB location lists the drive's backups; `Restore
+/// to Library` adds one as a new, independent session.
 ///
 /// It never opens a session. `SessionCubit` owns the current session, the
 /// catalog and its folders, and every other catalog mutation; the one
@@ -37,25 +37,22 @@ part 'library_state.dart';
 /// other, and the page refreshes the catalog when it lands
 /// ([LibraryState.restoredId]). Selecting a row can never reach the engine.
 class LibraryCubit extends Cubit<LibraryState> {
-  /// Creates a [LibraryCubit] over [sessions], [volumes] and [pedal].
-  LibraryCubit({
-    required SessionRepository sessions,
-    required RemovableVolumes volumes,
+  /// Creates a [LibraryCubit] over [_sessions], [storage] and [pedal].
+  new({
+    required this._sessions,
+    required StorageRepository storage,
     required PedalRepository pedal,
-    required GuardRegistry guards,
-    Duration listenPoll = const Duration(milliseconds: 100),
-  }) : _sessions = sessions,
-       _volumes = volumes,
-       _exporter = AudioExporter(volumes),
-       _guards = guards,
-       _listenPoll = listenPoll,
-       super(LibraryState(volumes: volumes.current)) {
+    required this._guards,
+    this._listenPoll = const Duration(milliseconds: 100),
+  }) : _storage = storage,
+       _exporter = AudioExporter(storage),
+       super(LibraryState(volumes: storage.current)) {
     _pedalSubscription = pedal.events.listen(_onPedalEvent);
-    _volumesSubscription = volumes.volumes.listen(_onVolumes);
+    _volumesSubscription = storage.volumes.listen(_onVolumes);
   }
 
   final SessionRepository _sessions;
-  final RemovableVolumes _volumes;
+  final StorageRepository _storage;
   final AudioExporter _exporter;
   final GuardRegistry _guards;
 
@@ -130,10 +127,7 @@ class LibraryCubit extends Cubit<LibraryState> {
     final peaks = <int, List<double>>{};
     for (final track in preview.tracks) {
       try {
-        final read = await _sessions.readPeaks(
-          id,
-          track,
-        );
+        final read = await _sessions.readPeaks(id, track);
         if (read != null) peaks[track.channel] = read;
       } on Object {
         // Length only for this track.
@@ -344,9 +338,8 @@ class LibraryCubit extends Cubit<LibraryState> {
   }
 
   /// Selects the backup [id] on the USB list.
-  void selectBackup(String id) => emit(
-    state.copyWith(selectedBackup: id, clearRestoreError: true),
-  );
+  void selectBackup(String id) =>
+      emit(state.copyWith(selectedBackup: id, clearRestoreError: true));
 
   /// `Restore to Library`: adds the selected backup as a new session, then
   /// shows it selected in Internal (pen 34 `Restored session selected`).
@@ -427,14 +420,14 @@ class LibraryCubit extends Cubit<LibraryState> {
       problem: problem,
       blockedBy: blockedBy,
     );
-    final drive = _volumes.current
+    final drive = _storage.current
         .where(
           (v) =>
               v.status == RemovableVolumeStatus.mounted && v.mountPoint != null,
         )
         .firstOrNull;
     if (drive == null) {
-      final readOnly = _volumes.current.any(
+      final readOnly = _storage.current.any(
         (v) => v.status == RemovableVolumeStatus.readOnly,
       );
       emit(
@@ -484,7 +477,7 @@ class LibraryCubit extends Cubit<LibraryState> {
         ),
         generation: drive.generation,
         policy: policy,
-        purpose: _backupPurpose,
+        purpose: WritePurpose.backup,
         cancelled: () => _backupCancelRequested,
         onProgress: (fraction) {
           if (isClosed) return;
@@ -527,6 +520,16 @@ class LibraryCubit extends Cubit<LibraryState> {
           ),
         );
       }
+    } on StorageBusy catch (e) {
+      // The repository's own guard check at the lease, for what took the
+      // drive between the backup's guards and its lease.
+      if (!isClosed) {
+        emit(
+          state.copyWith(
+            backup: interrupted(LibraryBackupProblem.busy, e.kind),
+          ),
+        );
+      }
     } on Object catch (e) {
       if (!isClosed) {
         emit(
@@ -536,6 +539,7 @@ class LibraryCubit extends Cubit<LibraryState> {
               StorageUnsupported() => LibraryBackupProblem.driveLost,
               StorageFull() => LibraryBackupProblem.full,
               StorageReadOnly() => LibraryBackupProblem.readOnly,
+              StorageFileTooLarge() => LibraryBackupProblem.tooLargeForDrive,
               _ => LibraryBackupProblem.failed,
             }),
           ),
@@ -554,6 +558,6 @@ class LibraryCubit extends Cubit<LibraryState> {
     _listenTimer?.cancel();
     await _pedalSubscription.cancel();
     await _volumesSubscription.cancel();
-    return super.close();
+    return await super.close();
   }
 }

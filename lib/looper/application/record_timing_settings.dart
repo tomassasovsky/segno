@@ -11,7 +11,7 @@ import 'package:settings_repository/settings_repository.dart';
 /// and the [RecordTimingState] projection. The transaction is the owner's.
 class RecordTimingSettings implements RecordTimingControl {
   /// Builds the owner over [repository] and [settings].
-  RecordTimingSettings({
+  new({
     required LooperRepository repository,
     required SettingsRepository settings,
   }) : owner = SettingsOwner(
@@ -114,7 +114,7 @@ class RecordTimingSettings implements RecordTimingControl {
   /// Toggles the gate while keeping the confirmed remembered division.
   Future<RecordTimingOutcome> setEnabled({required bool value}) async {
     await load();
-    return setTiming(
+    return await setTiming(
       RecordTiming.of(quantize: value, division: state.rememberedDivision),
     );
   }

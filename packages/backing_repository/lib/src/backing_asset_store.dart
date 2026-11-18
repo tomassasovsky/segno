@@ -10,11 +10,10 @@ import 'package:segno_engine/segno_engine.dart';
 /// the path written: `StorageRepository.copyFile` to Internal in production
 /// (`.part`, fsync, rename; nothing left behind on failure). Throws on any
 /// failure.
-typedef BackingCopier =
-    Future<String> Function(
-      String sourcePath,
-      String relativePath,
-    );
+typedef BackingCopier = Future<String> Function(
+  String sourcePath,
+  String relativePath,
+);
 
 /// The SHA-256 of the file at a path as 64 lower-case hex digits, or null
 /// when it cannot be read (`StorageIo.digestFile`).
@@ -32,18 +31,15 @@ typedef BackingDirSync = void Function(String path);
 /// identity is the full digest, which `info.json` carries and [resolve]
 /// checks against the bytes before a load.
 class BackingAssetStore {
-  /// Creates a [BackingAssetStore] under [root] (the exports root).
-  BackingAssetStore({
-    required Future<String> Function() root,
-    required AudioDecoder decoder,
-    required BackingCopier copier,
+  /// Creates a [BackingAssetStore] under [_root] (the exports root).
+  new({
+    required this._root,
+    required this._decoder,
+    required this._copier,
     BackingDigester? digester,
     BackingDirSync? syncDirectory,
-  }) : _root = root,
-       _decoder = decoder,
-       _copier = copier,
-       _digester = digester ?? _nativeDigest,
-       _sync = syncDirectory ?? NativeStorageIo().syncDirectory;
+  }) : _digester = digester ?? _nativeDigest,
+       _sync = syncDirectory ?? const NativeStorageIo().syncDirectory;
 
   /// The store's directory name under the root.
   static const String folder = 'Backing tracks';
@@ -58,7 +54,7 @@ class BackingAssetStore {
   final BackingDirSync _sync;
 
   static Future<String?> _nativeDigest(String path) => Isolate.run(
-    () => switch (NativeStorageIo().digestFile(path)) {
+    () => switch (const NativeStorageIo().digestFile(path)) {
       FileDigested(:final sha256) => sha256,
       _ => null,
     },

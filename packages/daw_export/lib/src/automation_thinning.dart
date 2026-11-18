@@ -24,11 +24,9 @@ import 'package:daw_export/src/daw_project.dart';
 /// deliberately neutralize one constraint to test the other in isolation.
 ///
 /// [raw] must already be sorted by [AutomationBreakpoint.beat], ascending —
-/// this only thins a continuous ramp; it is never used for the
-/// [AutomationTarget.activator] (mute) case, whose step-shaped breakpoints
-/// are assembled directly from the logged toggle events with no thinning at
-/// all (D-MUTE: a mute is a discrete state change, not a curve to
-/// approximate).
+/// this only thins a continuous ramp. Mute steps are added after thinning
+/// (`DawManifestReader`), never thinned: a mute is a discrete state change,
+/// not a curve to approximate.
 ///
 /// The first and last points of [raw] are always kept exactly, regardless of
 /// [epsilon] or [maxBreakpointsPerSecond] — an export that silently moved a

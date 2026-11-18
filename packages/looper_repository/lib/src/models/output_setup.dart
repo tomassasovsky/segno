@@ -46,7 +46,7 @@ bool outputMaskDrivesBus(int mask, int bus) => mask & outputBusBits(bus) != 0;
 /// outputs, bus `k` being outputs `2k` and `2k + 1`.
 class OutputBus extends Equatable {
   /// Creates an [OutputBus].
-  const OutputBus({
+  const new({
     this.level = 1,
     this.muted = false,
     this.mono = false,
@@ -92,13 +92,13 @@ class OutputBus extends Equatable {
 /// aliases.
 class OutputSetup extends Equatable {
   /// Creates an [OutputSetup].
-  const OutputSetup({this.buses = const {}});
+  const new({this.buses = const {}});
 
   /// An [OutputSetup] from one map per fact, each holding only the
   /// destinations off that fact's default — the shape settings and the
   /// session manifest persist. A destination any map names is rebuilt whole,
   /// the rest of its facts at their defaults.
-  factory OutputSetup.fromMaps({
+  factory fromMaps({
     Map<int, double> level = const {},
     Map<int, bool> muted = const {},
     Map<int, bool> mono = const {},

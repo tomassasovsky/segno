@@ -1,7 +1,7 @@
 import 'package:controller_repository/controller_repository.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:routing_graph/routing_graph.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/external_controls.dart';
@@ -22,7 +22,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(
       MaterialApp(
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        localizationsDelegates: appLocalizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         theme: ThemeData(
           extensions: [
@@ -69,10 +69,7 @@ void main() {
       expect(controlValueReadout(l10n, target, 0.5), 'Center');
       expect(controlValueReadout(l10n, target, 1), '100% right');
     }
-    expect(
-      controlValueReadout(l10n, const OutputLevelTarget(0), 0.75),
-      '75%',
-    );
+    expect(controlValueReadout(l10n, const OutputLevelTarget(0), 0.75), '75%');
   });
 
   test('Click endpoints show percent of physical unity', () async {

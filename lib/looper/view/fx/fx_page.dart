@@ -1,11 +1,12 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/app/app_notices.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/segno_navigator.dart';
@@ -24,6 +25,7 @@ import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/fx_art.dart';
 import 'package:segno/looper/model/fx_destination.dart';
 import 'package:segno/looper/model/fx_library_choice.dart';
+import 'package:segno/looper/model/fx_names.dart';
 import 'package:segno/looper/view/audio_routing/audio_routing_widgets.dart';
 import 'package:segno/looper/view/fx/fx_chain_power.dart';
 import 'package:segno/looper/view/fx/fx_chain_strip.dart';
@@ -49,7 +51,7 @@ import 'package:settings_repository/settings_repository.dart';
 /// a whole track, All tracks and an output all arrive at the same editor.
 class FxPage extends StatelessWidget {
   /// Creates an [FxPage] opened on [initial].
-  const FxPage({this.initial, this.catalogue, this.onStage, super.key});
+  const new({this.initial, this.catalogue, this.onStage, super.key});
 
   /// Where the page opens, or the first live input when absent.
   final FxDestination? initial;
@@ -77,7 +79,7 @@ class FxPage extends StatelessWidget {
 @visibleForTesting
 class FxView extends StatefulWidget {
   /// Creates an [FxView].
-  const FxView({this.catalogue, this.onStage, super.key});
+  const new({this.catalogue, this.onStage, super.key});
 
   /// The catalogue Add effects offers, or the bundled one when absent.
   final FxCatalogue? catalogue;
@@ -134,9 +136,8 @@ class _FxViewState extends State<FxView> {
     final bloc = context.read<LooperBloc>();
     final presets = context.read<FxPresetsCubit>();
     final fx = context.read<FxCubit>();
-    if (!fxChainGroups(_entriesOf(context, address)).any(
-      (group) => fxGroupId(group) == id,
-    )) {
+    if (!fxChainGroups(_entriesOf(context, address))
+        .any((group) => fxGroupId(group) == id)) {
       return;
     }
     Navigator.push<void>(
@@ -157,9 +158,9 @@ class _FxViewState extends State<FxView> {
           child: Builder(
             builder: (context) {
               final chain = _watchEntriesOf(context, address);
-              final found = fxChainGroups(
-                chain,
-              ).where((g) => fxGroupId(g) == id).firstOrNull;
+              final found = fxChainGroups(chain)
+                  .where((g) => fxGroupId(g) == id)
+                  .firstOrNull;
               if (found == null) {
                 final l10n = context.l10n;
                 return Material(
@@ -203,9 +204,8 @@ class _FxViewState extends State<FxView> {
                       edits: edits,
                       onStage: _stage,
                       onBack: () => Navigator.maybePop(context),
-                      onOptions: () => unawaited(
-                        _effectOptions(context, address, found),
-                      ),
+                      onOptions: () =>
+                          unawaited(_effectOptions(context, address, found)),
                       onSavePreset: () =>
                           unawaited(_savePreset(context, found)),
                     );
@@ -239,11 +239,7 @@ class _FxViewState extends State<FxView> {
       title: l10n.fxRackOptions,
       options: [
         FxOption(id: 'rename', label: l10n.fxRackRename),
-        FxOption(
-          id: 'reorder',
-          label: l10n.fxReorderEffects,
-          enabled: several,
-        ),
+        FxOption(id: 'reorder', label: l10n.fxReorderEffects, enabled: several),
         FxOption(
           id: 'remove-one',
           label: l10n.fxRemoveAnEffect,
@@ -276,7 +272,7 @@ class _FxViewState extends State<FxView> {
                 for (final fx in group.entries)
                   FxReorderCard(
                     id: fx.slotId ?? '',
-                    name: fxPedalName(l10n, fx),
+                    name: fxBlockName(l10n, fx),
                     // Still: the reorder page is not rebuilt when a setting
                     // changes.
                     art: fxEntryArt(fx, live: false),
@@ -294,10 +290,7 @@ class _FxViewState extends State<FxView> {
           title: l10n.fxRemoveAnEffect,
           options: [
             for (final fx in group.entries)
-              FxOption(
-                id: fx.slotId ?? '',
-                label: fxPedalName(l10n, fx),
-              ),
+              FxOption(id: fx.slotId ?? '', label: fxBlockName(l10n, fx)),
           ],
         );
         if (id == null || !context.mounted) return;
@@ -367,10 +360,16 @@ class _FxViewState extends State<FxView> {
                 id: fxGroupId(groups[i]),
                 name: fxGroupName(l10n, groups[i]),
                 // The chain's own cards, as the strip draws them: a rack's
-                // picture, and the mark for a lone effect.
-                art: switch (groups[i].rack?.art) {
-                  final slug? => FxRackPicture(slug),
-                  null => null,
+                // picture, and a lone effect's pedal.
+                art: switch (groups[i]) {
+                  FxChainGroup(rack: FxRack(art: final slug?)) => FxRackPicture(
+                    slug,
+                  ),
+                  final group when !group.isRack => fxEntryArt(
+                    group.entries.first,
+                    live: false,
+                  ),
+                  _ => null,
                 },
                 stageTag: !showStage
                     ? null
@@ -519,7 +518,7 @@ class _FxViewState extends State<FxView> {
     FxChainGroup group,
   ) async {
     final l10n = context.l10n;
-    final name = fxPedalName(l10n, group.entries.first);
+    final name = fxBlockName(l10n, group.entries.first);
     final choice = await showFxOptionsSheet(
       context,
       title: l10n.fxEffectOptions,
@@ -682,7 +681,15 @@ class _FxViewState extends State<FxView> {
       // there are none.
       final control = context.read<ControlCubit>();
       final oldSlots = {for (final fx in sameRack.entries) ?fx.slotId};
-      final count = fxAssignmentsTo(control.state, address, oldSlots);
+      // The rack itself goes too (#1711): a switch bound to it is counted in
+      // the same question.
+      final oldRacks = {sameRack.rack!.id};
+      final count = fxAssignmentsTo(
+        control.state,
+        address,
+        oldSlots,
+        rackIds: oldRacks,
+      );
       if (count > 0) {
         final l10n = context.l10n;
         final confirmed = await showConsoleConfirmDialog(
@@ -703,7 +710,11 @@ class _FxViewState extends State<FxView> {
       // their assignments go now. A store that cannot save is reported with
       // the edit's own unsaved notice.
       if (count > 0 && result.committed) {
-        final removed = await control.removeFxAssignments(address, oldSlots);
+        final removed = await control.removeFxAssignments(
+          address,
+          oldSlots,
+          rackIds: oldRacks,
+        );
         if (!removed && result.status == FxEditStatus.applied) {
           result = FxEditResult(FxEditStatus.unsaved, groupId: result.groupId);
         } else if (!removed && result.status == FxEditStatus.stale && mounted) {
@@ -748,9 +759,8 @@ class _FxViewState extends State<FxView> {
         bloc.hasMixGeneration(generation);
     bool found() =>
         valid() &&
-        fxChainGroups(_entriesOf(context, address)).any(
-          (group) => fxGroupId(group) == id,
-        );
+        fxChainGroups(_entriesOf(context, address))
+            .any((group) => fxGroupId(group) == id);
     if (!valid()) return false;
     if (found()) return true;
 
@@ -823,10 +833,7 @@ class _FxViewState extends State<FxView> {
   List<TrackEffect> _entriesOf(BuildContext context, FxAddress address) =>
       address.stage == FxStage.input
       ? context.read<MonitorCubit>().state.forInput(address.index).effects
-      : _DestinationChain._entriesAt(
-          context.read<LooperBloc>().state,
-          address,
-        );
+      : _DestinationChain._entriesAt(context.read<LooperBloc>().state, address);
 
   /// The chain at [address], WATCHED: the editor re-renders when the rig
   /// changes under it, whether the change came from this surface or a pedal.
@@ -925,7 +932,7 @@ class _FxViewState extends State<FxView> {
 
 /// The pen's Sound type row: which strip is showing.
 class _SoundTypeRow extends StatelessWidget {
-  const _SoundTypeRow({required this.kind});
+  const new({required this.kind});
 
   final FxDestinationKind kind;
 
@@ -958,16 +965,14 @@ class _SoundTypeRow extends StatelessWidget {
 
 /// The strip of sources for the current kind.
 class _SourceStrip extends StatelessWidget {
-  const _SourceStrip({required this.destination});
+  const new({required this.destination});
 
   final FxDestination destination;
 
   @override
   Widget build(BuildContext context) => switch (destination.kind) {
     FxDestinationKind.liveInput => _InputStrip(selected: destination.index),
-    FxDestinationKind.recordedTrack => _TrackStrip(
-      selected: destination.index,
-    ),
+    FxDestinationKind.recordedTrack => _TrackStrip(selected: destination.index),
     FxDestinationKind.output => _OutputStrip(selected: destination.index),
   };
 }
@@ -985,7 +990,7 @@ double _sourceCardWidth(BuildContext context, int count) => fillingCardWidth(
 );
 
 class _InputStrip extends StatelessWidget {
-  const _InputStrip({required this.selected});
+  const new({required this.selected});
 
   final int selected;
 
@@ -1020,7 +1025,7 @@ class _InputStrip extends StatelessWidget {
 }
 
 class _TrackStrip extends StatelessWidget {
-  const _TrackStrip({required this.selected});
+  const new({required this.selected});
 
   final int selected;
 
@@ -1029,9 +1034,7 @@ class _TrackStrip extends StatelessWidget {
     final l10n = context.l10n;
     final cubit = context.read<FxCubit>();
     final names = context.watch<TracksCubit>().state.names;
-    final count = context.select<LooperBloc, int>(
-      (b) => b.state.tracks.length,
-    );
+    final count = context.select<LooperBloc, int>((b) => b.state.tracks.length);
     return ListView.separated(
       key: const Key('fx_track_strip'),
       scrollDirection: Axis.horizontal,
@@ -1061,7 +1064,7 @@ class _TrackStrip extends StatelessWidget {
 }
 
 class _OutputStrip extends StatelessWidget {
-  const _OutputStrip({required this.selected});
+  const new({required this.selected});
 
   final int selected;
 
@@ -1094,7 +1097,7 @@ class _OutputStrip extends StatelessWidget {
 /// One source in a strip, saying "Effects off" while its chain is off, so an
 /// input that sounds dry shows it before it is selected (#1452).
 class _FxSourceCard extends StatelessWidget {
-  const _FxSourceCard({
+  const new({
     required this.cardKey,
     required this.address,
     required this.ordinal,
@@ -1132,7 +1135,7 @@ class _FxSourceCard extends StatelessWidget {
 /// The row under the strip: what this destination processes, the part picker
 /// or the Hear live control when the destination has one, and the actions.
 class _SoundContext extends StatelessWidget {
-  const _SoundContext({
+  const new({
     required this.destination,
     required this.onAdd,
     required this.onReorder,
@@ -1218,7 +1221,7 @@ class _SoundContext extends StatelessWidget {
 
 /// The input's Off / Auto / On monitoring gate, in the row the pen puts it.
 class _HearLive extends StatelessWidget {
-  const _HearLive({required this.input});
+  const new({required this.input});
 
   final int input;
 
@@ -1260,11 +1263,14 @@ class _HearLive extends StatelessWidget {
 
 /// Which part of the selected track the chain belongs to.
 ///
-/// Offers only the parts this track actually has: processing per recorded
-/// input needs separately recorded parts, and offering one that does not
-/// exist would point the editor at nothing.
+/// Offers one part per input the track is set to record, whether or not
+/// anything has been recorded yet: a part is a lane, and its chain can be
+/// set up before the first take. A lane that records no input any more but
+/// still holds audio stays, since that audio still plays through its chain.
+/// Each part is named by [_partInput]: a recorded part by the input its take
+/// came from, an empty one by the input it is set to record.
 class _PartPicker extends StatelessWidget {
-  const _PartPicker({required this.destination});
+  const new({required this.destination});
 
   final FxDestination destination;
 
@@ -1273,17 +1279,28 @@ class _PartPicker extends StatelessWidget {
     final l10n = context.l10n;
     final cubit = context.read<FxCubit>();
     final names = context.watch<InputsCubit>().state;
-    final recorded = context.select<LooperBloc, List<int>>(
-      (b) => _recordedLanes(b.state, destination.index),
+    final parts = context.select<LooperBloc, List<_TrackPart>>(
+      (b) => _trackParts(
+        b.state,
+        destination.index,
+        // The part being edited keeps its row even after its input was taken
+        // off the track, so the picker always names what the editor points
+        // at.
+        editing: switch (destination.part) {
+          FxRecordedPart(:final lane) => lane,
+          _ => null,
+        },
+      ),
     );
-    // The part being edited keeps its row even if its audio was just
-    // cleared, so the picker always names what the editor is pointing at.
-    final lanes = switch (destination.part) {
-      FxRecordedPart(:final lane) when !recorded.contains(lane) => [
-        ...recorded,
-        lane,
-      ],
-      _ => recorded,
+    String nameOf(int input) =>
+        input < 0 ? '' : l10n.inputName(names.names, input);
+    // Two parts can share an input (a take from the guitar, and an empty
+    // lane now set to the guitar): those say which part they are.
+    final shared = <String>{
+      for (final (i, a) in parts.indexed)
+        for (final b in parts.skip(i + 1))
+          if (a.input >= 0 && nameOf(a.input) == nameOf(b.input))
+            nameOf(a.input),
     };
     return LoopSelect<FxTrackPart>(
       key: const Key('fx_part_picker'),
@@ -1295,56 +1312,64 @@ class _PartPicker extends StatelessWidget {
           value: FxTrackPart.whole,
           label: l10n.fxWholeTrack,
         ),
-        for (final lane in lanes)
+        for (final (:lane, :input) in parts)
           LoopSelectItem(
             key: Key('fx_part_$lane'),
             value: FxTrackPart.part(lane),
-            label: _partName(context, lanes, lane, names),
+            // A part is named by its INPUT, which is what makes "edit only
+            // the guitar in this take" a thing the player can point at.
+            label: input < 0
+                ? l10n.fxPartOrdinal(lane + 1)
+                : shared.contains(nameOf(input))
+                ? l10n.fxPartNamedOrdinal(nameOf(input), lane + 1)
+                : nameOf(input),
           ),
       ],
     );
   }
-
-  /// A part is named by the INPUT it recorded, which is what makes "edit only
-  /// the guitar in this take" a thing the player can point at.
-  String _partName(
-    BuildContext context,
-    List<int> lanes,
-    int lane,
-    InputsState names,
-  ) {
-    final l10n = context.l10n;
-    final input = context
-        .read<LooperBloc>()
-        .state
-        .tracks
-        .elementAtOrNull(destination.index)
-        ?.lanes
-        .elementAtOrNull(lane)
-        ?.inputChannel;
-    return input == null || input < 0
-        ? l10n.fxPartOrdinal(lane + 1)
-        : l10n.inputName(names.names, input);
-  }
 }
 
-/// The lanes of track [channel] that hold recorded audio, in lane order.
-List<int> _recordedLanes(LooperState state, int channel) {
-  final track = state.tracks.elementAtOrNull(channel);
+/// One lane of a track and the hardware input it records (`-1` = none).
+typedef _TrackPart = ({int lane, int input});
+
+/// The parts of track [channel], in lane order: every lane its confirmed
+/// lane count and lane inputs set to record an input, the configuration the
+/// engine records from and `FxCubit` accepts a part address against, plus
+/// any lane within that count that holds recorded audio and the lane being
+/// [editing]. Each is named by [_partInput].
+List<_TrackPart> _trackParts(LooperState state, int channel, {int? editing}) {
+  final track = state.tracks.where((t) => t.channel == channel).firstOrNull;
   if (track == null) return const [];
+  final count = state.laneCounts[channel] ?? 1;
   return [
-    for (var lane = 0; lane < track.lanes.length; lane++)
-      if (track.lanes[lane].lengthFrames > 0) lane,
+    for (var lane = 0; lane < math.max(count, (editing ?? -1) + 1); lane++)
+      if (lane == editing ||
+          (lane < count &&
+              ((state.laneInputs[(channel, lane)] ?? lane) >= 0 ||
+                  (track.lanes.elementAtOrNull(lane)?.hasContent ?? false))))
+        (lane: lane, input: _partInput(state, track, lane)),
   ];
+}
+
+/// The input lane [lane] of [track] is named by: the one its take was
+/// captured from while it holds audio, so changing the lane's input never
+/// renames a recording; else the one it is set to record; else the one the
+/// engine reports for it; `-1` for none.
+int _partInput(LooperState state, Track track, int lane) {
+  final engineLane = track.lanes.elementAtOrNull(lane);
+  if (engineLane != null &&
+      engineLane.hasContent &&
+      engineLane.recordedInput >= 0) {
+    return engineLane.recordedInput;
+  }
+  final configured = state.laneInputs[(track.channel, lane)] ?? lane;
+  if (configured >= 0) return configured;
+  return engineLane?.inputChannel ?? -1;
 }
 
 /// The chain at the selected destination.
 class _DestinationChain extends StatelessWidget {
-  const _DestinationChain({
-    required this.destination,
-    required this.onOpen,
-    this.controller,
-  });
+  const new({required this.destination, required this.onOpen, this.controller});
 
   final FxDestination destination;
   final void Function(FxDestination, int) onOpen;
@@ -1365,12 +1390,34 @@ class _DestinationChain extends StatelessWidget {
             (b) => _entriesAt(b.state, address),
           );
     final chainEnabled = watchFxChainEnabled(context, address);
+    // Rebuilt when what acts on the effects changes, not on every control
+    // frame: a jack's setup without its live switch states, and the selected
+    // track only for the bindings that follow it.
+    context.select<ControlCubit, Object>((c) {
+      final state = c.state;
+      final external = state.pedalSetup.external;
+      return (
+        state.bindings,
+        external.forJack(PedalCtrlJack.ctrl1),
+        external.forJack(PedalCtrlJack.ctrl2),
+        state.midiMappings,
+        state.midiControlEnabled,
+        state.cursor,
+      );
+    });
+    final assignments = fxAssignmentNames(
+      context.l10n,
+      context.read<ControlCubit>().state,
+      address,
+      chain: entries,
+    );
     final strip = FxChainStrip(
       key: Key('fx_chain_${address.canonicalString()}'),
       entries: entries,
       chainEnabled: chainEnabled,
       controller: controller,
       showPlacement: destination.placementIsEditable,
+      assignments: assignments,
       onTogglePower: (group, {required enabled}) {
         final groups = fxChainGroups(entries);
         if (group < 0 || group >= groups.length) return;

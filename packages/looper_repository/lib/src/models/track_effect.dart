@@ -37,7 +37,7 @@ enum FxChannelOutput {
 /// [defaults] is bit-identical to no channel handling at all.
 class FxChannels extends Equatable {
   /// Creates an [FxChannels].
-  const FxChannels({
+  const new({
     this.input = FxChannelInput.stereo,
     this.output = FxChannelOutput.stereo,
     this.placement = 0,
@@ -92,10 +92,20 @@ class FxChannels extends Equatable {
 /// the surfaces draw.
 class FxRack extends Equatable {
   /// Creates an [FxRack].
-  const FxRack({required this.id, required this.name, this.art});
+  const new({
+    required this.id,
+    required this.name,
+    this.art,
+    this.bypassed = false,
+  });
 
   /// The rack's identity, shared by every module in it, unique within its
   /// chain, and never rewritten by a rename or a reorder.
+  ///
+  /// An INSTANCE id, not the catalogue's: every addition mints one
+  /// (`SlotIds.mint`), so two copies of the same factory rack in one chain
+  /// are two racks, and a binding naming one never reaches the other. It is
+  /// saved with the chain, so it survives a reload.
   final String id;
 
   /// The rack's name, which the player can change. Renaming it never touches
@@ -105,12 +115,22 @@ class FxRack extends Equatable {
   /// The catalogue artwork slug the card draws, or `null` when there is none.
   final String? art;
 
+  /// Whether the rack is switched off as a whole (#1711), leaving each
+  /// module's own [TrackEffect.enabled] as it was: a module sounds when
+  /// [TrackEffect.effectiveEnabled].
+  final bool bypassed;
+
   /// Returns a copy with the given fields replaced.
-  FxRack copyWith({String? id, String? name, String? art}) =>
-      FxRack(id: id ?? this.id, name: name ?? this.name, art: art ?? this.art);
+  FxRack copyWith({String? id, String? name, String? art, bool? bypassed}) =>
+      FxRack(
+        id: id ?? this.id,
+        name: name ?? this.name,
+        art: art ?? this.art,
+        bypassed: bypassed ?? this.bypassed,
+      );
 
   @override
-  List<Object?> get props => [id, name, art];
+  List<Object?> get props => [id, name, art, bypassed];
 }
 
 /// Where one chain entry sits relative to the loop player. Domain mirror of
@@ -232,7 +252,7 @@ enum FxParamCurve {
 /// engaged effect starts ([defaultValue]).
 class FxParamInfo extends Equatable {
   /// Creates an [FxParamInfo].
-  const FxParamInfo({
+  const new({
     required this.key,
     required this.unit,
     required this.atMin,
@@ -240,11 +260,10 @@ class FxParamInfo extends Equatable {
     required this.defaultValue,
     this.steps = 0,
     this.curve = FxParamCurve.linear,
-    this.taperUnverified = false,
     this.off = FxParamOff.none,
   }) : _source = null;
 
-  FxParamInfo._fromEngine(engine.FxParamInfo p)
+  new _fromEngine(engine.FxParamInfo p)
     : key = p.key,
       unit = _unitFromEngine(p.unit),
       atMin = p.atMin,
@@ -252,7 +271,6 @@ class FxParamInfo extends Equatable {
       defaultValue = p.defaultValue,
       steps = p.steps,
       curve = _curveFromEngine(p.curve),
-      taperUnverified = p.taperUnverified,
       off = switch (p.off) {
         engine.FxParamOff.none => FxParamOff.none,
         engine.FxParamOff.atMin => FxParamOff.atMin,
@@ -287,10 +305,6 @@ class FxParamInfo extends Equatable {
 
   /// The setting a freshly engaged effect starts at.
   final double defaultValue;
-
-  /// Whether the mapping was chosen rather than measured against the effect
-  /// it reproduces.
-  final bool taperUnverified;
 
   /// Where the parameter turns its effect off.
   final FxParamOff off;
@@ -344,7 +358,6 @@ class FxParamInfo extends Equatable {
       FxParamCurve.reciprocal => engine.FxParamCurve.reciprocal,
       FxParamCurve.reverbTime => engine.FxParamCurve.reverbTime,
     },
-    taperUnverified: taperUnverified,
     off: switch (off) {
       FxParamOff.none => engine.FxParamOff.none,
       FxParamOff.atMin => engine.FxParamOff.atMin,
@@ -361,7 +374,6 @@ class FxParamInfo extends Equatable {
     atMax,
     curve,
     defaultValue,
-    taperUnverified,
     off,
   ];
 }
@@ -421,7 +433,8 @@ enum TrackEffectType {
   /// The Looper X's overdrive (#887 part 7).
   overdrive(16),
 
-  /// The Looper X's amp simulator as the Studio Rack's Dist (#887 part 7).
+  /// An amp simulator with the 4x12" cabinet (#887 part 7). No factory rack
+  /// builds it since #1737 and #1743; chains saved with it keep it.
   distortion(17),
 
   /// The Looper X's vinyl (#887 part 7).
@@ -470,7 +483,7 @@ enum TrackEffectType {
   /// The Looper X's Smart Tune (#1480).
   smartTune(32);
 
-  const TrackEffectType(this.code);
+  new(this.code);
 
   /// Whether this is one of the Looper X kinds (#887): a type built to
   /// reproduce a factory module, whose descriptors carry that module's own
@@ -510,7 +523,7 @@ enum TrackEffectType {
 /// engine's `PluginRef`: format + stable id + packed version.
 class PluginRef extends Equatable {
   /// Creates a [PluginRef].
-  const PluginRef({required this.format, required this.id, this.version = 0});
+  const new({required this.format, required this.id, this.version = 0});
 
   /// The plugin format.
   final PluginFormat format;
@@ -539,14 +552,22 @@ class PluginRef extends Equatable {
 /// every [FxPlacement.post] one.
 sealed class TrackEffect extends Equatable {
   /// Const base constructor for the sealed subtypes.
-  const TrackEffect();
+  const new();
 
   /// The native `le_fx_type` code for this entry.
   int get typeCode;
 
   /// Whether this entry is audible (R16). A disabled entry stays in the chain
   /// with its settings intact but renders bit-exact passthrough.
+  ///
+  /// The entry's OWN switch. Whether it sounds also depends on its rack's:
+  /// see [effectiveEnabled].
   bool get enabled;
+
+  /// Whether this entry sounds: its own [enabled] bit, with its rack's switch
+  /// applied (#1711). What the engine is told and what a fingerprint folds;
+  /// [enabled] is what is saved and what the pedal's own switch shows.
+  bool get effectiveEnabled => enabled && !(rack?.bypassed ?? false);
 
   /// The entry's stable per-slot identity (A9): minted at the repository write
   /// boundary, unique within a session, never reused, preserved across edits /
@@ -581,7 +602,7 @@ sealed class TrackEffect extends Equatable {
 class BuiltInEffect extends TrackEffect {
   /// Creates a [BuiltInEffect]. [params] defaults to the [type]'s musical
   /// defaults.
-  BuiltInEffect({
+  new({
     required this.type,
     List<double>? params,
     this.enabled = true,
@@ -597,7 +618,7 @@ class BuiltInEffect extends TrackEffect {
        source = Map<String, double>.unmodifiable(source);
 
   /// [copyWith] keeping [type]: [params] is already canonical for it.
-  const BuiltInEffect._sameType({
+  const new _sameType({
     required this.type,
     required this.params,
     required this.enabled,
@@ -728,7 +749,7 @@ class BuiltInEffect extends TrackEffect {
 class PluginEffect extends TrackEffect {
   /// Creates a [PluginEffect] for [ref], optionally seeded with persisted
   /// [paramValues] and live [params] metadata.
-  const PluginEffect({
+  const new({
     required this.ref,
     this.paramValues = const {},
     this.params = const [],
@@ -1031,11 +1052,22 @@ engine.FxRackPath _pathToEngine(FxModulePath? path) => switch (path) {
 /// Maps a domain [FxRack] to the engine mirror (boundary; internal).
 engine.FxRack? _rackToEngine(FxRack? rack) => rack == null
     ? null
-    : engine.FxRack(id: rack.id, name: rack.name, art: rack.art);
+    : engine.FxRack(
+        id: rack.id,
+        name: rack.name,
+        art: rack.art,
+        bypassed: rack.bypassed,
+      );
 
 /// Maps an engine `FxRack` to its domain mirror (boundary; internal).
-FxRack? _rackFromEngine(engine.FxRack? rack) =>
-    rack == null ? null : FxRack(id: rack.id, name: rack.name, art: rack.art);
+FxRack? _rackFromEngine(engine.FxRack? rack) => rack == null
+    ? null
+    : FxRack(
+        id: rack.id,
+        name: rack.name,
+        art: rack.art,
+        bypassed: rack.bypassed,
+      );
 
 /// Maps an ordered domain chain to its engine counterpart, for callers that
 /// must hand a chain to another engine-facing repository verbatim rather than
@@ -1046,8 +1078,22 @@ FxRack? _rackFromEngine(engine.FxRack? rack) =>
 /// private behind [encodeTrackEffects] / [decodeTrackEffects]. Callers never
 /// need to name the engine types — and must not re-derive this mapping
 /// themselves, or the domain and engine models would silently drift.
+///
+/// Each entry carries the bit the engine holds for it,
+/// [TrackEffect.effectiveEnabled], not its own switch: the snapshot is what
+/// was heard, and its native reader (`perf_render.c`) knows no racks, so a
+/// rack bypassed at arm (#1711) must reach it as entries that are off.
 List<engine.TrackEffect> trackEffectsToEngine(List<TrackEffect> effects) =>
-    _chainToEngine(effects);
+    _chainToEngine([
+      for (final fx in effects)
+        if (fx.enabled == fx.effectiveEnabled)
+          fx
+        else
+          switch (fx) {
+            BuiltInEffect() => fx.copyWith(enabled: false),
+            PluginEffect() => fx.copyWith(enabled: false),
+          },
+    ]);
 
 /// [effects] mapped one by one, each with its rack path ([fxEntryPaths]),
 /// which only the whole chain decides.
@@ -1157,7 +1203,8 @@ TrackEffect _withStoredVariant(TrackEffect effect) {
 /// `le_fx_chain_fingerprint`): the [chainEnabled] bit first, but only for a
 /// NON-empty chain — an empty chain still yields the FNV-1a offset basis (a
 /// chain-disabled empty chain and an enabled empty chain are both dry). Then
-/// each entry folds its type code, then its real [TrackEffect.enabled] bit,
+/// each entry folds its type code, then the bit the engine holds for it,
+/// [TrackEffect.effectiveEnabled] (its own switch with its rack's applied),
 /// then (built-ins only) the float bits of the parameters its type reads
 /// (`le_fx_param_width`: the cells past them are never heard, so they never
 /// fold). A plugin entry contributes its type + enabled
@@ -1168,7 +1215,9 @@ TrackEffect _withStoredVariant(TrackEffect effect) {
 /// fingerprint is sound identity, slot ids are entry identity (A9) and a rack
 /// is a grouping and a name — folding either would break the wet cache's
 /// fingerprint-keyed hits on toggle pairs and identical loads, and renaming a
-/// rack would re-render every take it is printed into.
+/// rack would re-render every take it is printed into. A rack's switch reaches
+/// the fold only through the entries' effective bits, as it reaches the
+/// engine.
 int fxChainFingerprint(List<TrackEffect> chain, {bool chainEnabled = true}) {
   var h = engine.FxFingerprint.offset;
   final n = chain.length > engine.kTrackEffectMax
@@ -1180,7 +1229,7 @@ int fxChainFingerprint(List<TrackEffect> chain, {bool chainEnabled = true}) {
   for (var i = 0; i < n; i++) {
     final fx = chain[i];
     h = engine.FxFingerprint.mixU32(h, fx.typeCode);
-    h = engine.FxFingerprint.mixU32(h, fx.enabled ? 1 : 0);
+    h = engine.FxFingerprint.mixU32(h, fx.effectiveEnabled ? 1 : 0);
     if (fx is! BuiltInEffect) continue; // plugin: type + enabled bit only
     for (var p = 0; p < fx.type.params.length; p++) {
       h = engine.FxFingerprint.mixU32(

@@ -117,13 +117,11 @@ output.drm_connector = 'HDMI-A-1'
     setUp(() {
       root = Directory.systemTemp.createTempSync('display-outputs');
       Directory('${root.path}/drm/card1-HDMI-A-1').createSync(recursive: true);
-      File(
-        '${root.path}/drm/card1-HDMI-A-1/status',
-      ).writeAsStringSync('connected\n');
+      File('${root.path}/drm/card1-HDMI-A-1/status')
+          .writeAsStringSync('connected\n');
       Directory('${root.path}/drm/card1-HDMI-A-2').createSync(recursive: true);
-      File(
-        '${root.path}/drm/card1-HDMI-A-2/status',
-      ).writeAsStringSync('disconnected\n');
+      File('${root.path}/drm/card1-HDMI-A-2/status')
+          .writeAsStringSync('disconnected\n');
       File('${root.path}/homescreen.toml').writeAsStringSync(_toml);
       outputs = SystemDisplayOutputs(
         homescreenConfig: '${root.path}/homescreen.toml',

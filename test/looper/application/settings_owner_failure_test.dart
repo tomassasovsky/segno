@@ -193,10 +193,7 @@ void main() {
       (await answer(owner.recover())).status,
       SettingStatus.recoveryRequired,
     );
-    expect(
-      (await answer(owner.set(5))).status,
-      SettingStatus.recoveryRequired,
-    );
+    expect((await answer(owner.set(5))).status, SettingStatus.recoveryRequired);
 
     family.throwOnSettle = false;
     expect((await answer(owner.recover())).isOk, isTrue);

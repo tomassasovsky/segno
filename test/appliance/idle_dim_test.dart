@@ -3,10 +3,10 @@ import 'dart:async';
 import 'package:backing_repository/backing_repository.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:fake_async/fake_async.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:pedal_repository/testing.dart';
@@ -22,13 +22,13 @@ import 'package:settings_repository/settings_repository.dart';
 import '../helpers/helpers.dart';
 
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+    implements LooperBloc;
 
 class _MockPerformanceRecorderCubit extends MockCubit<PerformanceRecorderState>
-    implements PerformanceRecorderCubit {}
+    implements PerformanceRecorderCubit;
 
 class _MockBackingCubit extends MockCubit<BackingCubitState>
-    implements BackingCubit {}
+    implements BackingCubit;
 
 const _playing = LooperState(tracks: [Track(state: TrackState.playing)]);
 
@@ -133,6 +133,21 @@ void main() {
         unawaited(settings.loadIdleDimSeconds().then((s) => saved = s));
         async.flushMicrotasks();
         expect(saved, 300);
+        unawaited(cubit.close());
+      });
+    });
+
+    test('says every activity, for what waits for the player (#1767)', () {
+      fakeAsync((async) {
+        final cubit = loaded(async);
+        var heard = 0;
+        final sub = cubit.activities.listen((_) => heard++);
+        cubit
+          ..activity()
+          ..activity();
+        async.flushMicrotasks();
+        expect(heard, 2);
+        unawaited(sub.cancel());
         unawaited(cubit.close());
       });
     });

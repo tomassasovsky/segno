@@ -2,9 +2,15 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:segno_engine/segno_engine.dart';
+import 'package:segno_engine/src/generated/segno_engine_bindings.dart';
 
 void main() {
   group('PerfTarget', () {
+    test('mirrors the part format constants of the C API', () {
+      expect(PerfTarget.partHeaderBytes, LE_PERF_PART_HEADER_BYTES);
+      expect(PerfTarget.rawStreamBase, LE_PERF_RAW_STREAM_BASE);
+    });
+
     test('copies the take id and requires 16 bytes', () {
       final id = Uint8List(16);
       final target = PerfTarget(captureDir: '/take', takeId: id);
@@ -49,6 +55,24 @@ void main() {
         ),
         throwsArgumentError,
       );
+    });
+
+    test('never stops on its own unless asked, and refuses negative stop '
+        'times (#1767)', () {
+      final target = PerfTarget(captureDir: '/take', takeId: Uint8List(16));
+      expect(target.idleStopSeconds, 0);
+      expect(target.maxSeconds, 0);
+      for (final (idle, max) in [(-1, 0), (0, -1)]) {
+        expect(
+          () => PerfTarget(
+            captureDir: '/take',
+            takeId: Uint8List(16),
+            idleStopSeconds: idle,
+            maxSeconds: max,
+          ),
+          throwsArgumentError,
+        );
+      }
     });
 
     test('refuses a negative part size', () {

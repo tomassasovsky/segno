@@ -14,7 +14,7 @@ enum RemapTrigger {
 /// one identity) instead of its ordinary handling.
 class NoteRemap extends Equatable {
   /// Creates a [NoteRemap].
-  const NoteRemap({
+  const new({
     required this.trigger,
     required this.number,
     required this.notes,
@@ -22,7 +22,7 @@ class NoteRemap extends Equatable {
   });
 
   /// Decodes [json]; throws [FormatException] when it is malformed.
-  factory NoteRemap.fromJson(Map<String, dynamic> json) => NoteRemap(
+  factory fromJson(Map<String, dynamic> json) => NoteRemap(
     trigger: RemapTrigger.values.byName(_string(json, 'trigger')),
     number: _int(json, 'number'),
     channel: json['channel'] as int?,
@@ -56,7 +56,7 @@ class NoteRemap extends Equatable {
 /// How an instrument plays its MIDI device. New instruments start disabled.
 class MidiNoteInput extends Equatable {
   /// Creates a [MidiNoteInput].
-  const MidiNoteInput({
+  const new({
     this.enabled = false,
     this.deviceId,
     this.channel,
@@ -66,7 +66,7 @@ class MidiNoteInput extends Equatable {
   });
 
   /// Decodes [json]; throws [FormatException] when it is malformed.
-  factory MidiNoteInput.fromJson(Map<String, dynamic> json) => MidiNoteInput(
+  factory fromJson(Map<String, dynamic> json) => MidiNoteInput(
     enabled: json['enabled'] == true,
     deviceId: json['deviceId'] as String?,
     channel: json['channel'] as int?,
@@ -131,10 +131,10 @@ class MidiNoteInput extends Equatable {
 /// One computer-key row: a key that plays [notes].
 class KeyMapping extends Equatable {
   /// Creates a [KeyMapping].
-  const KeyMapping({required this.key, required this.notes});
+  const new({required this.key, required this.notes});
 
   /// Decodes [json]; throws [FormatException] when it is malformed.
-  factory KeyMapping.fromJson(Map<String, dynamic> json) =>
+  factory fromJson(Map<String, dynamic> json) =>
       KeyMapping(key: _string(json, 'key'), notes: _ints(json, 'notes'));
 
   /// The key's label as the keyboard reports it (`A`, `W`, …).
@@ -155,10 +155,10 @@ class KeyMapping extends Equatable {
 /// default rows.
 class ComputerKeys extends Equatable {
   /// Creates [ComputerKeys].
-  const ComputerKeys({this.enabled = false, this.mappings = defaultMappings});
+  const new({this.enabled = false, this.mappings = defaultMappings});
 
   /// Decodes [json]; throws [FormatException] when it is malformed.
-  factory ComputerKeys.fromJson(Map<String, dynamic> json) => ComputerKeys(
+  factory fromJson(Map<String, dynamic> json) => ComputerKeys(
     enabled: json['enabled'] == true,
     mappings: [
       for (final m in (json['mappings'] as List<dynamic>? ?? const []))
@@ -202,7 +202,7 @@ class ComputerKeys extends Equatable {
 /// One instrument definition: a stable identity in a fixed engine slot.
 class Instrument extends Equatable {
   /// Creates an [Instrument].
-  const Instrument({
+  const new({
     required this.id,
     required this.slot,
     required this.name,
@@ -213,7 +213,7 @@ class Instrument extends Equatable {
   });
 
   /// Decodes [json]; throws [FormatException] when it is malformed.
-  factory Instrument.fromJson(Map<String, dynamic> json) {
+  factory fromJson(Map<String, dynamic> json) {
     final params = (json['params'] as List<dynamic>? ?? const [])
         .map((v) => (v as num).toDouble())
         .toList(growable: false);
@@ -297,10 +297,10 @@ class Instrument extends Equatable {
 /// labels the source, and the slot is not reused while it stands.
 class Tombstone extends Equatable {
   /// Creates a [Tombstone].
-  const Tombstone({required this.slot, required this.name});
+  const new({required this.slot, required this.name});
 
   /// Decodes [json]; throws [FormatException] when it is malformed.
-  factory Tombstone.fromJson(Map<String, dynamic> json) =>
+  factory fromJson(Map<String, dynamic> json) =>
       Tombstone(slot: _int(json, 'slot'), name: _string(json, 'name'));
 
   /// The slot it holds.

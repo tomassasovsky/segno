@@ -4,17 +4,21 @@ library;
 import 'dart:async';
 
 import 'package:bloc_test/bloc_test.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:pedal_repository/pedal_repository.dart';
 import 'package:routing_graph/routing_graph.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
 import 'package:segno/audio_setup/cubit/outputs_cubit.dart';
+import 'package:segno/control/binding/external_controls.dart';
+import 'package:segno/control/binding/external_pedal.dart';
+import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/fx_presets_cubit.dart';
@@ -29,11 +33,12 @@ import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/helpers.dart';
+import '../looper/view/fx/stomp/factory_pedals.dart';
 
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+    implements LooperBloc;
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 BuiltInEffect _fx(
   String slot,
@@ -88,13 +93,58 @@ final _rackRig = LooperState(
           module: 'Pumper',
           enabled: false,
         ),
-        _module(
-          'r1c',
-          TrackEffectType.reverb,
-          rackId: 'R1',
-          module: 'Reverb',
-        ),
+        _module('r1c', TrackEffectType.reverb, rackId: 'R1', module: 'Reverb'),
         _fx('s1', TrackEffectType.echo),
+      ],
+    ),
+  ],
+  status: const EngineStatus(
+    isConnected: true,
+    devicePresent: true,
+    deviceName: 'Scarlett 18i20',
+    inputChannels: 4,
+    outputChannels: 4,
+  ),
+  outputBusCount: 2,
+);
+
+/// A rack whose pedals the catalogue names in words Spanish translates: the
+/// Lo-Fi Rack's Distortion (on the Overdrive), its low-pass filter and vinyl,
+/// and the Studio Rack's Pitch shift (on the octaver) (#1752).
+final _loFiRig = LooperState(
+  tracks: [
+    Track(
+      state: TrackState.playing,
+      lanes: const [Lane(inputChannel: 0, lengthFrames: 48000)],
+      effects: [
+        _module(
+          'g1',
+          TrackEffectType.lpf,
+          rackId: 'G',
+          module: 'Low-pass filter',
+          rackName: 'Grubby',
+        ),
+        _module(
+          'g2',
+          TrackEffectType.vinyl,
+          rackId: 'G',
+          module: 'Vinyl',
+          rackName: 'Grubby',
+        ),
+        _module(
+          'g3',
+          TrackEffectType.overdrive,
+          rackId: 'G',
+          module: 'Distortion',
+          rackName: 'Grubby',
+        ),
+        _module(
+          'g4',
+          TrackEffectType.octaver,
+          rackId: 'G',
+          module: 'Pitch shift',
+          rackName: 'Grubby',
+        ),
       ],
     ),
   ],
@@ -133,6 +183,8 @@ final _rig = LooperState(
     ),
     const Track(channel: 1, lanes: [Lane(inputChannel: 2, outputMask: 0xC)]),
   ],
+  laneCounts: const {0: 2},
+  laneInputs: const {(0, 0): 0, (0, 1): 1, (1, 0): 2},
   outputChains: {
     0: FxChainEnvelope(entries: [_fx('o1', TrackEffectType.reverb)]),
   },
@@ -152,6 +204,25 @@ final _rig = LooperState(
   outputBusCount: 2,
 );
 
+/// One recording track whose chain is [effects], and nothing else.
+LooperState _chainRig(List<TrackEffect> effects) => LooperState(
+  tracks: [
+    Track(
+      state: TrackState.playing,
+      lanes: const [Lane(inputChannel: 0, lengthFrames: 48000)],
+      effects: effects,
+    ),
+  ],
+  status: const EngineStatus(
+    isConnected: true,
+    devicePresent: true,
+    deviceName: 'Scarlett 18i20',
+    inputChannels: 4,
+    outputChannels: 4,
+  ),
+  outputBusCount: 2,
+);
+
 /// A stand-in catalogue: the wide family, two ordinary ones, real slugs.
 const _library = FxCatalogue(
   families: [
@@ -159,6 +230,66 @@ const _library = FxCatalogue(
     FxFamily(name: 'Guitar Rack', slug: 'guitar', presets: []),
     FxFamily(name: 'Vocal Rack', slug: 'vocal', presets: []),
   ],
+);
+
+class _MockControlCubit extends MockCubit<ControlState> implements ControlCubit;
+
+/// The console's second track switch on the reverb, and CTRL 1 on it too:
+/// the Recorded track card names both (#1757).
+final _assigned = ControlState(
+  globalBindings: PedalBindingSet([
+    PedalBinding(
+      key: const PedalBindingKey(button: PedalButton.track2, bank: 0),
+      target: const FxSlotTarget(
+        address: FxAddress(stage: FxStage.track),
+        slotId: 't3',
+      ).canonicalString(),
+    ),
+  ]),
+  pedalSetup: PedalSetup(
+    external: ExternalPedalSetup(
+      jacks: {
+        PedalCtrlJack.ctrl1: ExternalJackSetup(
+          single: ExternalSwitchSetup(
+            controls: ExternalControls(
+              activations: const [
+                ExternalActivation(
+                  target: FxSlotTarget(
+                    address: FxAddress(stage: FxStage.track),
+                    slotId: 't3',
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      },
+    ),
+  ),
+);
+
+/// CTRL 1 switching the Funk Wah rack: its card names it (#1760).
+final _rackAssigned = ControlState(
+  pedalSetup: PedalSetup(
+    external: ExternalPedalSetup(
+      jacks: {
+        PedalCtrlJack.ctrl1: ExternalJackSetup(
+          single: ExternalSwitchSetup(
+            controls: ExternalControls(
+              activations: const [
+                ExternalActivation(
+                  target: FxRackTarget(
+                    address: FxAddress(stage: FxStage.track),
+                    rackId: 'R1',
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      },
+    ),
+  ),
 );
 
 void main() {
@@ -189,18 +320,22 @@ void main() {
     monitorParams = StreamController<int>.broadcast();
     addTearDown(monitorChanges.close);
     addTearDown(monitorParams.close);
-    when(
-      () => repository.looperState,
-    ).thenAnswer((_) => const Stream<LooperState>.empty());
-    when(
-      () => repository.mixSettingsFailures,
-    ).thenAnswer((_) => const Stream.empty());
+    when(() => repository.looperState)
+        .thenAnswer((_) => const Stream<LooperState>.empty());
+    when(() => repository.mixSettingsFailures)
+        .thenAnswer((_) => const Stream.empty());
     when(() => repository.state).thenReturn(_rig);
     when(() => repository.mixGeneration).thenReturn(0);
     when(() => repository.fxRoomNs).thenReturn(1 << 40);
     when(() => repository.fxChainHeld(any())).thenReturn(false);
     when(() => repository.fxHeldChainFits(any())).thenReturn(true);
-    when(() => repository.fxGrowthNs(any())).thenAnswer(
+    registerFallbackValue(<FxAddress, bool>{});
+    when(
+      () => repository.fxGrowthNs(
+        any(),
+        chainSwitches: any(named: 'chainSwitches'),
+      ),
+    ).thenAnswer(
       (call) => fxChainCostNs(
         (call.positionalArguments[0] as Map<FxAddress, List<TrackEffect>>)
             .values
@@ -223,12 +358,10 @@ void main() {
       _fx('m2', TrackEffectType.reverb),
     ]);
     when(() => repository.monitorChainEnabled(any())).thenReturn(true);
-    when(
-      () => repository.monitorChanges,
-    ).thenAnswer((_) => monitorChanges.stream);
-    when(
-      () => repository.monitorParamChanges,
-    ).thenAnswer((_) => monitorParams.stream);
+    when(() => repository.monitorChanges)
+        .thenAnswer((_) => monitorChanges.stream);
+    when(() => repository.monitorParamChanges)
+        .thenAnswer((_) => monitorParams.stream);
     when(() => repository.allMonitors()).thenReturn({
       0: InputMonitor(
         input: 0,
@@ -268,6 +401,8 @@ void main() {
     required FxDestination destination,
     LooperState? state,
     FxCatalogue catalogue = FxCatalogue.empty,
+    Locale? locale,
+    ControlState control = const ControlState(),
   }) async {
     tester.view
       ..physicalSize = const Size(1920, 1080)
@@ -276,11 +411,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     final rig = state ?? _rig;
     when(() => bloc.state).thenReturn(rig);
-    whenListen(
-      bloc,
-      const Stream<LooperState>.empty(),
-      initialState: rig,
-    );
+    whenListen(bloc, const Stream<LooperState>.empty(), initialState: rig);
     final inputs = InputsCubit(repository: repository, settings: settings);
     final outputs = OutputsCubit(repository: repository, settings: settings);
     final fxPersistence = FxChainPersistence(looper: repository);
@@ -308,10 +439,13 @@ void main() {
     await outputs.rename(0, 'Main output');
     await outputs.rename(1, 'Monitor output');
     await tracks.rename(0, 'drums');
+    final controlCubit = _MockControlCubit();
+    when(() => controlCubit.state).thenReturn(control);
 
     await tester.pumpWidget(
       MaterialApp(
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        locale: locale,
+        localizationsDelegates: appLocalizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         theme: ThemeData(
           fontFamily: SurfaceTheme.displayFont,
@@ -326,9 +460,7 @@ void main() {
           providers: [
             RepositoryProvider<LooperRepository>.value(value: repository),
             RepositoryProvider<SettingsRepository>.value(value: settings),
-            RepositoryProvider<FxChainPersistence>.value(
-              value: fxPersistence,
-            ),
+            RepositoryProvider<FxChainPersistence>.value(value: fxPersistence),
           ],
           child: MultiBlocProvider(
             providers: [
@@ -338,6 +470,7 @@ void main() {
               BlocProvider.value(value: monitors),
               BlocProvider.value(value: tracks),
               BlocProvider.value(value: presets),
+              BlocProvider<ControlCubit>.value(value: controlCubit),
             ],
             child: FxPage(initial: destination, catalogue: catalogue),
           ),
@@ -361,8 +494,34 @@ void main() {
   }, skip: !rendersScreenshots);
 
   testWidgets('Recorded track, whole track', (tester) async {
-    await pump(tester, destination: const FxDestination.recordedTrack(0));
+    await pump(
+      tester,
+      destination: const FxDestination.recordedTrack(0),
+      control: _assigned,
+    );
     await shoot(tester, 'recorded_track');
+  }, skip: !rendersScreenshots);
+
+  // Spanish: a single effect's card has no title, and its pedal prints the
+  // effect's English name in every locale (#1754).
+  testWidgets('Recorded track, in Spanish', (tester) async {
+    await pump(
+      tester,
+      destination: const FxDestination.recordedTrack(0),
+      state: _rackRig,
+      locale: const Locale('es'),
+    );
+    await shoot(tester, 'recorded_track_es');
+  }, skip: !rendersScreenshots);
+
+  testWidgets('Recorded track, the part picker', (tester) async {
+    await pump(tester, destination: const FxDestination.recordedTrack(0));
+    await tester.tap(find.byKey(const Key('fx_part_picker')));
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(MaterialApp),
+      matchesGoldenFile('goldens/fx_recorded_track_parts.png'),
+    );
   }, skip: !rendersScreenshots);
 
   testWidgets('All tracks', (tester) async {
@@ -386,11 +545,81 @@ void main() {
     );
   }, skip: !rendersScreenshots);
 
+  // Every standalone effect's own page: the seven built-ins the singles
+  // library offers, each alone on the track (#1730).
+  for (final type in TrackEffectType.values) {
+    if (type == TrackEffectType.none || type.isRackKind) continue;
+    testWidgets('The ${type.name} effect page', (tester) async {
+      await pump(
+        tester,
+        destination: const FxDestination.recordedTrack(0),
+        state: _chainRig([_fx('s1', type)]),
+      );
+      await tester.tap(find.byKey(const Key('fx_card_s1')));
+      await tester.pumpAndSettle();
+
+      await expectLater(
+        find.byType(FxEffectEditor),
+        matchesGoldenFile('goldens/fx_effect_${type.name}.png'),
+      );
+    }, skip: !rendersScreenshots);
+  }
+
+  // A factory rack's pedals that carry a choice parameter, one rack per
+  // family that has them, as its preset loads them (#1730).
+  for (final (family, name) in const [
+    ("Ed's Rack", 'Acoustic Rhythm 1'),
+    ('Rhythmic Rack', 'Funk Wah'),
+    ('Guitar Rack', 'Clean Rhythm'),
+    ('Studio Rack', 'AC Guitar Chorus'),
+    ('Vocal Tuner Rack', 'Auto Harm Hi Dry'),
+    ('Drum Rack', 'Ballad'),
+  ]) {
+    testWidgets('The rack editor, $family choices', (tester) async {
+      final preset = factoryPresets().firstWhere(
+        (p) => p.family == family && p.name == name,
+      );
+      final entries = [
+        for (final entry in fxFactoryRack(
+          preset,
+          placement: FxPlacement.post,
+          into: FxRack(
+            id: 'R1',
+            name: preset.name,
+            art: kFxFamilySlugs[family],
+          ),
+        ))
+          if (fxEntryControls(entry).params
+              .any((i) => fxEntryParam(entry, i).unit == FxParamUnit.choice))
+            entry,
+      ];
+      await pump(
+        tester,
+        destination: const FxDestination.recordedTrack(0),
+        state: _chainRig([
+          for (final (i, entry) in entries.indexed)
+            entry.copyWith(slotId: 'r$i'),
+        ]),
+      );
+      await tester.tap(find.byKey(const Key('fx_card_R1')));
+      await tester.pumpAndSettle();
+      await settleArtwork(tester);
+
+      await expectLater(
+        find.byType(FxRackEditor),
+        matchesGoldenFile(
+          'goldens/fx_rack_choices_${kFxFamilySlugs[family]}.png',
+        ),
+      );
+    }, skip: !rendersScreenshots);
+  }
+
   testWidgets('A chain of racks', (tester) async {
     await pump(
       tester,
       destination: const FxDestination.recordedTrack(0),
       state: _rackRig,
+      control: _rackAssigned,
     );
 
     await shoot(tester, 'racks');
@@ -409,6 +638,44 @@ void main() {
     await expectLater(
       find.byType(FxRackEditor),
       matchesGoldenFile('goldens/fx_rack_editor.png'),
+    );
+  }, skip: !rendersScreenshots);
+
+  // Spanish: a rack's pedals by their translated module names, and the
+  // single effects by their translated kinds (#1752).
+  testWidgets('The rack editor, in Spanish', (tester) async {
+    await pump(
+      tester,
+      destination: const FxDestination.recordedTrack(0),
+      state: _loFiRig,
+      locale: const Locale('es'),
+    );
+    await tester.tap(find.byKey(const Key('fx_card_G')));
+    await tester.pumpAndSettle();
+    await settleArtwork(tester);
+
+    await expectLater(
+      find.byType(FxRackEditor),
+      matchesGoldenFile('goldens/fx_rack_editor_es.png'),
+    );
+  }, skip: !rendersScreenshots);
+
+  testWidgets('Single effects, in Spanish', (tester) async {
+    await pump(
+      tester,
+      destination: const FxDestination.recordedTrack(0),
+      state: _loFiRig,
+      catalogue: _library,
+      locale: const Locale('es'),
+    );
+    await tester.tap(find.byKey(const Key('fx_add_effects')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('fx_library_single')));
+    await tester.pumpAndSettle();
+
+    await expectLater(
+      find.byType(FxLibraryPage),
+      matchesGoldenFile('goldens/fx_single_es.png'),
     );
   }, skip: !rendersScreenshots);
 
@@ -455,12 +722,7 @@ void main() {
     await presets.save(
       name: 'Warm rhythmic guitar',
       entries: [
-        _module(
-          'a',
-          TrackEffectType.modeDelay,
-          rackId: 'X',
-          module: 'Delay',
-        ),
+        _module('a', TrackEffectType.modeDelay, rackId: 'X', module: 'Delay'),
         _module('b', TrackEffectType.reverb, rackId: 'X', module: 'Reverb'),
       ],
       art: 'guitar',

@@ -1,5 +1,6 @@
 import 'package:meta/meta.dart';
 import 'package:performance_repository/src/models/performance_chains.dart';
+import 'package:performance_repository/src/models/performance_names.dart';
 import 'package:performance_repository/src/models/recording_format.dart';
 import 'package:segno_engine/segno_engine.dart';
 
@@ -61,11 +62,13 @@ bool _outputMuted(Object? value, {bool omitted = false}) {
 @immutable
 class PerformanceLaneSnapshot {
   /// Creates a [PerformanceLaneSnapshot].
-  const PerformanceLaneSnapshot({
+  const new({
     required this.lane,
     required this.lengthFrames,
     required this.deferred,
     this.pcmFile,
+    this.heardFile,
+    this.playsClean = false,
     this.effects = const [],
     this.chainEnabled = true,
     this.takeId = 0,
@@ -78,23 +81,24 @@ class PerformanceLaneSnapshot {
   /// Rebuilds a [PerformanceLaneSnapshot] from a decoded JSON map. An absent
   /// `chainEnabled` reads as engaged — see [chainEnabled]. An absent `takeId`
   /// reads as `0` (unknown / not a settled lane-0 entry) — see [takeId].
-  factory PerformanceLaneSnapshot.fromJson(Map<String, dynamic> json) =>
-      PerformanceLaneSnapshot(
-        lane: (json['lane'] as num).toInt(),
-        lengthFrames: (json['lenFrames'] as num).toInt(),
-        deferred: json['deferred'] as bool,
-        pcmFile: json['pcmRef'] as String?,
-        chainEnabled: json['chainEnabled'] as bool? ?? true,
-        takeId: (json['takeId'] as num?)?.toInt() ?? 0,
-        volume: (json['volume'] as num?)?.toDouble() ?? 1,
-        pan: (json['pan'] as num?)?.toDouble() ?? 0,
-        muted: json['muted'] as bool? ?? false,
-        outputMask: (json['outputMask'] as num?)?.toInt() ?? 3,
-        effects: [
-          for (final e in (json['effects'] as List<dynamic>? ?? const []))
-            TrackEffect.fromJson(e as Map<String, dynamic>),
-        ],
-      );
+  factory fromJson(Map<String, dynamic> json) => PerformanceLaneSnapshot(
+    lane: (json['lane'] as num).toInt(),
+    lengthFrames: (json['lenFrames'] as num).toInt(),
+    deferred: json['deferred'] as bool,
+    pcmFile: json['pcmRef'] as String?,
+    heardFile: json['heardPcmRef'] as String?,
+    playsClean: json['source'] == 'clean',
+    chainEnabled: json['chainEnabled'] as bool? ?? true,
+    takeId: (json['takeId'] as num?)?.toInt() ?? 0,
+    volume: (json['volume'] as num?)?.toDouble() ?? 1,
+    pan: (json['pan'] as num?)?.toDouble() ?? 0,
+    muted: json['muted'] as bool? ?? false,
+    outputMask: (json['outputMask'] as num?)?.toInt() ?? 3,
+    effects: [
+      for (final e in (json['effects'] as List<dynamic>? ?? const []))
+        TrackEffect.fromJson(e as Map<String, dynamic>),
+    ],
+  );
 
   /// Lane index within the track.
   final int lane;
@@ -108,6 +112,17 @@ class PerformanceLaneSnapshot {
   /// The lane's exported WAV filename relative to the bundle directory (e.g.
   /// `loops/track0-lane0.wav`), or `null` when [deferred] or empty.
   final String? pcmFile;
+
+  /// The lane's heard image (#1713) as a stereo WAV beside [pcmFile]
+  /// (e.g. `loops/track0-lane0-heard.wav`), or `null` when the take has
+  /// none. The offline renderer's wet stem plays it where the lane played
+  /// its image; the dry stem keeps [pcmFile].
+  final String? heardFile;
+
+  /// Whether the lane played its clean take through its chain at this
+  /// snapshot although it has a [heardFile] (#1713): its effects were edited
+  /// after it was recorded. Written as `"source": "clean"` only when true.
+  final bool playsClean;
 
   /// The lane's effect chain, in order (each entry carrying its own `enabled`
   /// bit). Only ever populated on an arm-time snapshot ("chain at t=0" — the
@@ -160,6 +175,8 @@ class PerformanceLaneSnapshot {
     'lenFrames': lengthFrames,
     'deferred': deferred,
     if (pcmFile != null) 'pcmRef': pcmFile,
+    'heardPcmRef': ?heardFile,
+    if (playsClean) 'source': 'clean',
     if (!chainEnabled) 'chainEnabled': false,
     if (takeId > 0) 'takeId': takeId,
     'volume': volume,
@@ -174,7 +191,7 @@ class PerformanceLaneSnapshot {
 @immutable
 class PerformanceTrackSnapshot {
   /// Creates a [PerformanceTrackSnapshot].
-  const PerformanceTrackSnapshot({
+  const new({
     required this.channel,
     required this.state,
     required this.volume,
@@ -183,25 +200,27 @@ class PerformanceTrackSnapshot {
     this.solo = false,
     this.anchorLap = 0,
     this.lanes = const [],
+    this.name,
   });
 
   /// Rebuilds a [PerformanceTrackSnapshot] from a decoded JSON map.
-  factory PerformanceTrackSnapshot.fromJson(Map<String, dynamic> json) =>
-      PerformanceTrackSnapshot(
-        channel: (json['channel'] as num).toInt(),
-        state: TrackState.values.byName(json['state'] as String),
-        volume: (json['volume'] as num).toDouble(),
-        muted: json['muted'] as bool,
-        multiple: (json['multiple'] as num).toInt(),
-        // Absent in manifests written before per-track solo existed.
-        solo: json['solo'] as bool? ?? false,
-        // Absent when 0, and in manifests written before #854.
-        anchorLap: (json['anchorLap'] as num?)?.toInt() ?? 0,
-        lanes: [
-          for (final l in (json['lanes'] as List<dynamic>? ?? const []))
-            PerformanceLaneSnapshot.fromJson(l as Map<String, dynamic>),
-        ],
-      );
+  factory fromJson(Map<String, dynamic> json) => PerformanceTrackSnapshot(
+    channel: (json['channel'] as num).toInt(),
+    state: TrackState.values.byName(json['state'] as String),
+    volume: (json['volume'] as num).toDouble(),
+    muted: json['muted'] as bool,
+    multiple: (json['multiple'] as num).toInt(),
+    // Absent in manifests written before per-track solo existed.
+    solo: json['solo'] as bool? ?? false,
+    // Absent when 0, and in manifests written before #854.
+    anchorLap: (json['anchorLap'] as num?)?.toInt() ?? 0,
+    lanes: [
+      for (final l in (json['lanes'] as List<dynamic>? ?? const []))
+        PerformanceLaneSnapshot.fromJson(l as Map<String, dynamic>),
+    ],
+    // Absent when the player gave none, and before #1799.
+    name: json['name'] as String?,
+  );
 
   /// Track channel index.
   final int channel;
@@ -231,9 +250,14 @@ class PerformanceTrackSnapshot {
   /// Per-lane snapshots, in lane order.
   final List<PerformanceLaneSnapshot> lanes;
 
+  /// The name the player gave the track ([PerformanceNames.tracks]), or
+  /// `null` when it has none. Recorded on the arm pass only (#1799).
+  final String? name;
+
   /// Serializes this track snapshot to a JSON map.
   Map<String, dynamic> toJson() => {
     'channel': channel,
+    if (name != null) 'name': name,
     'state': state.name,
     'volume': volume,
     'muted': muted,
@@ -261,7 +285,7 @@ class PerformanceTrackSnapshot {
 @immutable
 class PerformanceArmSnapshot {
   /// Creates a [PerformanceArmSnapshot].
-  const PerformanceArmSnapshot({
+  const new({
     required this.masterGain,
     required this.limiterEnabled,
     required this.limiterCeiling,
@@ -280,6 +304,7 @@ class PerformanceArmSnapshot {
     this.outputEnabledMask = 0xFFFFFFFF,
     this.outputLevel = 1,
     this.outputMuted = false,
+    this.inputNames = const {},
   });
 
   /// Presence-keyed, matching the session manifest's own migration style (no
@@ -289,7 +314,7 @@ class PerformanceArmSnapshot {
   /// is not read: the renderer takes the arm phase from events.log's
   /// `LE_PLOG_PERF_ARMED` fact now (#262), so any such keys in an older bundle
   /// are ignored.
-  factory PerformanceArmSnapshot.fromJson(Map<String, dynamic> json) {
+  factory fromJson(Map<String, dynamic> json) {
     final bus = _captureBus(
       json['captureBus'],
       omitted: !json.containsKey('captureBus'),
@@ -310,6 +335,11 @@ class PerformanceArmSnapshot {
         json['outputEnabledMask'],
         omitted: !json.containsKey('outputEnabledMask'),
       ),
+      inputNames: {
+        for (final e in (json['inputs'] as List<dynamic>? ?? const []))
+          ((e as Map<String, dynamic>)['input'] as num).toInt():
+              e['name'] as String,
+      },
       outputLevel: _outputLevel(
         json['outputLevel'],
         omitted: !json.containsKey('outputLevel'),
@@ -362,6 +392,7 @@ class PerformanceArmSnapshot {
     latencyOffsetFrames: latencyOffsetFrames,
     tempoBpm: tempoBpm,
     tracks: tracks,
+    inputNames: inputNames,
     monitors: monitors,
     trackChains: trackChains,
     outputChains: outputChains,
@@ -438,6 +469,11 @@ class PerformanceArmSnapshot {
   /// Every track's state at arm time.
   final List<PerformanceTrackSnapshot> tracks;
 
+  /// Hardware input to the name the player gave it
+  /// ([PerformanceNames.inputs]), written as `inputs`: `[{input, name}]`.
+  /// Empty when no input is named, and before #1799.
+  final Map<int, String> inputNames;
+
   /// Every monitor input's configuration at arm time (the Input stage), as
   /// pre-encoded JSON maps (`{input, enabled, outputMask, volume, muted,
   /// chainEnabled?, effects}`).
@@ -489,6 +525,11 @@ class PerformanceArmSnapshot {
       if (fxStagesVersion != legacyFxStagesVersion)
         'fxStagesVersion': fxStagesVersion,
       'tracks': [for (final t in tracks) t.toJson()],
+      if (inputNames.isNotEmpty)
+        'inputs': [
+          for (final input in inputNames.keys.toList()..sort())
+            {'input': input, 'name': inputNames[input]},
+        ],
       'monitors': monitors,
       if (trackChains.isNotEmpty)
         'trackChains': [for (final c in trackChains) c.toJson()],
@@ -508,17 +549,16 @@ class PerformanceArmSnapshot {
 @immutable
 class PerformanceDisarmSnapshot {
   /// Creates a [PerformanceDisarmSnapshot].
-  const PerformanceDisarmSnapshot({this.tempoBpm = 0, this.tracks = const []});
+  const new({this.tempoBpm = 0, this.tracks = const []});
 
   /// Rebuilds a [PerformanceDisarmSnapshot] from a decoded JSON map.
-  factory PerformanceDisarmSnapshot.fromJson(Map<String, dynamic> json) =>
-      PerformanceDisarmSnapshot(
-        tempoBpm: (json['tempoBpm'] as num?)?.toDouble() ?? 0,
-        tracks: [
-          for (final t in (json['tracks'] as List<dynamic>? ?? const []))
-            PerformanceTrackSnapshot.fromJson(t as Map<String, dynamic>),
-        ],
-      );
+  factory fromJson(Map<String, dynamic> json) => PerformanceDisarmSnapshot(
+    tempoBpm: (json['tempoBpm'] as num?)?.toDouble() ?? 0,
+    tracks: [
+      for (final t in (json['tracks'] as List<dynamic>? ?? const []))
+        PerformanceTrackSnapshot.fromJson(t as Map<String, dynamic>),
+    ],
+  );
 
   /// Denominator-note beats per minute the engine read at disarm; `0` =
   /// unset, stored verbatim (session-manifest parity), and what a pre-#281
@@ -545,7 +585,7 @@ class PerformanceDisarmSnapshot {
 @immutable
 class PerformanceLayerEntry {
   /// Creates a [PerformanceLayerEntry].
-  const PerformanceLayerEntry({
+  const new({
     required this.channel,
     required this.slot,
     required this.generation,
@@ -556,16 +596,15 @@ class PerformanceLayerEntry {
   });
 
   /// Rebuilds a [PerformanceLayerEntry] from a decoded JSON map.
-  factory PerformanceLayerEntry.fromJson(Map<String, dynamic> json) =>
-      PerformanceLayerEntry(
-        channel: (json['channel'] as num).toInt(),
-        slot: (json['slot'] as num).toInt(),
-        generation: (json['generation'] as num).toInt(),
-        frame: (json['frame'] as num).toInt(),
-        frameCount: (json['frame_count'] as num).toInt(),
-        laneCount: (json['lane_count'] as num).toInt(),
-        filename: json['filename'] as String,
-      );
+  factory fromJson(Map<String, dynamic> json) => PerformanceLayerEntry(
+    channel: (json['channel'] as num).toInt(),
+    slot: (json['slot'] as num).toInt(),
+    generation: (json['generation'] as num).toInt(),
+    frame: (json['frame'] as num).toInt(),
+    frameCount: (json['frame_count'] as num).toInt(),
+    laneCount: (json['lane_count'] as num).toInt(),
+    filename: json['filename'] as String,
+  );
 
   /// Track channel the layer belongs to.
   final int channel;
@@ -602,7 +641,7 @@ class PerformanceLayerEntry {
 @immutable
 class PerformanceManifest {
   /// Creates a [PerformanceManifest].
-  const PerformanceManifest({
+  const new({
     required this.slug,
     required this.finalized,
     required this.native,
@@ -620,7 +659,7 @@ class PerformanceManifest {
   /// finalize pass that doesn't happen to supply a fresh replacement (see
   /// `PerformanceRepository._finalize`, which re-finalizes via this factory
   /// for exactly that reason).
-  factory PerformanceManifest.fromJson(Map<String, dynamic> json) {
+  factory fromJson(Map<String, dynamic> json) {
     final armJson = json['armSnapshot'];
     final disarmJson = json['disarmSnapshot'];
     final native = Map<String, dynamic>.of(json)

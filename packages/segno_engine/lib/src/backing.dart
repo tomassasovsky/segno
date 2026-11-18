@@ -74,7 +74,7 @@ enum BackingEndEvent {
 @immutable
 class BackingState {
   /// Creates a [BackingState].
-  const BackingState({
+  const new({
     this.epoch = 0,
     this.item = -1,
     this.nextItem = -1,
@@ -191,7 +191,7 @@ class BackingState {
 @immutable
 class AudioFileInfo {
   /// Creates an [AudioFileInfo].
-  const AudioFileInfo({
+  const new({
     required this.sourceRate,
     required this.sourceChannels,
     required this.sourceFrames,
@@ -236,7 +236,7 @@ class AudioFileInfo {
 @immutable
 class AudioProbe {
   /// Creates an [AudioProbe].
-  const AudioProbe({required this.info, required this.peaks});
+  const new({required this.info, required this.peaks});
 
   /// The file's facts.
   final AudioFileInfo info;
@@ -285,7 +285,7 @@ enum DecodedAudioOwnership {
 /// transfer, does nothing.
 class DecodedAudio {
   /// Creates a [DecodedAudio] over [payload]; a decoder is the only caller.
-  DecodedAudio({
+  new({
     required this.frames,
     required this.sampleRate,
     required this.info,

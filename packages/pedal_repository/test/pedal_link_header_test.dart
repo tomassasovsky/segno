@@ -10,14 +10,12 @@ import 'package:pedal_repository/pedal_repository.dart';
 /// firmware's own liveness relation (frame timeout vs hello) is the C test's.
 void main() {
   group('pedal_link.h', () {
-    final header = File(
-      '../../firmware/console_board/pedal_link.h',
-    ).readAsStringSync();
+    final header = File('../../firmware/console_board/pedal_link.h')
+        .readAsStringSync();
 
     int define(String name) {
-      final match = RegExp('#define $name (0x[0-9A-Fa-f]+|\\d+)u').firstMatch(
-        header,
-      );
+      final match = RegExp('#define $name (0x[0-9A-Fa-f]+|\\d+)u')
+          .firstMatch(header);
       expect(match, isNotNull, reason: '$name is not defined in pedal_link.h');
       return int.parse(match!.group(1)!);
     }
@@ -89,10 +87,7 @@ void main() {
         define('PEDAL_AMBIENT_STEPS_PER_DOUBLING'),
         PedalAmbientLight.stepsPerDoubling,
       );
-      expect(
-        define('PEDAL_LINK_LED_LEVEL_FULL'),
-        PedalLinkCodec.ledLevelFull,
-      );
+      expect(define('PEDAL_LINK_LED_LEVEL_FULL'), PedalLinkCodec.ledLevelFull);
     });
 
     test('clear-hold cadence', () {

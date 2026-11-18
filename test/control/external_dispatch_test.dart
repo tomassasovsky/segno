@@ -22,6 +22,7 @@ import 'package:segno/control/binding/external_expression.dart';
 import 'package:segno/control/binding/external_pedal.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/control/model/foot_mixer.dart';
+import 'package:segno/looper/cubit/fx_cubit.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/pedal/console_ctrl_source.dart';
 import 'package:segno_engine/segno_engine.dart'
@@ -65,9 +66,7 @@ double _pitchSemitones(LooperRepository looper) {
   final pitch = looper
       .trackEffects(0)
       .whereType<BuiltInEffect>()
-      .firstWhere(
-        (e) => e.slotId == 'pitch',
-      );
+      .firstWhere((e) => e.slotId == 'pitch');
   return pitch.type.params[0].valueAt(pitch.params[0]);
 }
 
@@ -134,7 +133,7 @@ class _Store extends FakeKeyValueStore {
 }
 
 class _Midi extends MidiDeviceRepository {
-  _Midi(SettingsRepository settings)
+  new(SettingsRepository settings)
     : super(captures: null, settings: settings, pollInterval: Duration.zero);
   final inputs = StreamController<MidiInputMessage>.broadcast();
   MidiInputSession get session => const MidiInputSession('test-midi', 1);
@@ -153,7 +152,7 @@ class _Midi extends MidiDeviceRepository {
 }
 
 class _Rig {
-  _Rig(
+  new(
     this.clock,
     this.engine,
     this.looper,
@@ -181,9 +180,7 @@ class _Rig {
       device: () => 'dispatch test rig',
     );
     pedal = PedalRepository(link, clock: () => clock.elapsed);
-    controller = ControllerRepository(
-      sources: [ConsoleCtrlSource(pedal)],
-    );
+    controller = ControllerRepository(sources: [ConsoleCtrlSource(pedal)]);
     performance = PerformanceRepository(
       guards: GuardRegistry(),
       engine: engine,
@@ -330,9 +327,6 @@ class _Rig {
 }
 
 void main() {
-  final skip = Platform.environment['SEGNO_ENGINE_LIB'] == null
-      ? 'Requires the native pump library'
-      : null;
   late _RefusingEngine engine;
   late LooperRepository looper;
   setUp(() async {
@@ -362,7 +356,7 @@ void main() {
     engine.pump(frames: 0);
     await looper.settleFxRecipes();
   });
-  tearDown(() async => looper.dispose());
+  tearDown(() async => await looper.dispose());
 
   void check(
     String name,
@@ -387,7 +381,7 @@ void main() {
           rig.close();
         }
       });
-    }, skip: skip);
+    });
   }
 
   ExternalJackSetup button(
@@ -492,11 +486,7 @@ void main() {
       }
       expect(engine.taps, 0);
       r
-        ..bindMidi(
-          controls: [
-            MidiActionControl(key: 'command:tap-tempo'),
-          ],
-        )
+        ..bindMidi(controls: [MidiActionControl(key: 'command:tap-tempo')])
         ..midiValue(127)
         ..midiValue(127);
       expect(engine.taps, 1);
@@ -512,11 +502,7 @@ void main() {
     ExternalJackSetup.empty,
     (r) {
       r
-        ..bindMidi(
-          controls: [
-            MidiActionControl(key: 'command:tap-tempo'),
-          ],
-        )
+        ..bindMidi(controls: [MidiActionControl(key: 'command:tap-tempo')])
         ..store.failMidi = true;
       unawaited(r.cubit.setMidiControlEnabled(enabled: false));
       r
@@ -543,11 +529,7 @@ void main() {
     'old editor cannot resume new editor and Learn never dispatches',
     ExternalJackSetup.empty,
     (r) {
-      r.bindMidi(
-        controls: [
-          MidiActionControl(key: 'command:tap-tempo'),
-        ],
-      );
+      r.bindMidi(controls: [MidiActionControl(key: 'command:tap-tempo')]);
       final first = Object();
       final second = Object();
       r
@@ -1268,10 +1250,7 @@ void main() {
       monitor.projectFromRepository();
       unawaited(
         r.fx
-            .saveConfirmed(
-              const FxAddress(stage: FxStage.input),
-              r.settings,
-            )
+            .saveConfirmed(const FxAddress(stage: FxStage.input), r.settings)
             .then((_) => saved = true),
       );
       r
@@ -1321,20 +1300,28 @@ void main() {
         EngineResult.ok,
       );
       r.settle();
-      final monitor = MonitorCubit(
+      final fx = FxCubit(
         repository: looper,
         settings: r.settings,
-        mixSettings: r.mix,
-        fxPersistence: r.fx,
-      )..projectFromRepository();
+        persistence: r.fx,
+      );
       r
         ..clock.flushMicrotasks()
         ..settle()
         ..store.monitorFxGate = Completer<void>();
-      monitor.setEffectEnabled(0, 0, enabled: false);
+      expect(
+        fx
+            .setEffectEnabled(
+              const FxAddress(stage: FxStage.input),
+              'monitor-drive',
+              enabled: false,
+            )
+            .status,
+        FxEditStatus.applied,
+      );
       r.settle();
       done = false;
-      unawaited(monitor.flushPersistence().then((_) => done = true));
+      unawaited(r.fx.flush().then((_) => done = true));
       r.clock.flushMicrotasks();
       expect(done, isFalse);
       r
@@ -1342,7 +1329,7 @@ void main() {
         ..clock.flushMicrotasks()
         ..settle();
       expect(done, isTrue);
-      unawaited(monitor.close());
+      unawaited(fx.close());
       r.clock.flushMicrotasks();
     },
   );
@@ -1653,9 +1640,7 @@ void main() {
   );
   check(
     'saved source intent survives downstream changes and queued toggles',
-    button([
-      const ExternalActivation(target: _chain),
-    ]),
+    button([const ExternalActivation(target: _chain)]),
     (r) {
       const input = PedalCtrlInput(PedalCtrlJack.ctrl1, PedalCtrlContact.tip);
       expect(r.cubit.state.pedalSetup.external.logicalOn[input], isTrue);
@@ -1672,9 +1657,9 @@ void main() {
         ..settle();
       expect(looper.trackChainEnabled(0), isFalse);
       expect(
-        PedalSetup.decode(
-          r.store.values['pedal.setup']! as String,
-        ).external.logicalOn[input],
+        PedalSetup.decode(r.store.values['pedal.setup']! as String)
+            .external
+            .logicalOn[input],
         isFalse,
       );
     },
@@ -1682,9 +1667,7 @@ void main() {
   );
   check(
     'failed persistence keeps live direction and permits same-value retry',
-    button([
-      const ExternalActivation(target: _chain),
-    ]),
+    button([const ExternalActivation(target: _chain)]),
     (r) {
       const input = PedalCtrlInput(PedalCtrlJack.ctrl1, PedalCtrlContact.tip);
       r
@@ -1705,9 +1688,9 @@ void main() {
       r.clock.flushMicrotasks();
       expect(r.cubit.state.pedalSetupRuntimeUnsaved, isFalse);
       expect(
-        PedalSetup.decode(
-          r.store.values['pedal.setup']! as String,
-        ).external.logicalOn[input],
+        PedalSetup.decode(r.store.values['pedal.setup']! as String)
+            .external
+            .logicalOn[input],
         isFalse,
       );
     },
@@ -1807,9 +1790,7 @@ void main() {
       engine.refuseRecipes = false;
       expect(
         looper.applyMixSettings(
-          looper.mixSettingsSnapshot.copyWith(
-            trackLevels: {0: .5},
-          ),
+          looper.mixSettingsSnapshot.copyWith(trackLevels: {0: .5}),
         ),
         EngineResult.ok,
       );
@@ -1957,9 +1938,7 @@ void main() {
   void mixBoundary(_Rig r) {
     expect(
       looper.applyMixSettings(
-        looper.mixSettingsSnapshot.copyWith(
-          trackLevels: {0: .43},
-        ),
+        looper.mixSettingsSnapshot.copyWith(trackLevels: {0: .43}),
       ),
       EngineResult.ok,
     );

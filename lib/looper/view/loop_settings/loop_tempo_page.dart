@@ -1,9 +1,9 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/app/app_notices.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
@@ -39,12 +39,12 @@ _TempoValues _tempoValues(LooperState state) => (
 /// types an exact tempo on the keypad), the tempo slider with whole and fine
 /// steps, Clear tempo and Tap tempo, the time signature (a button to its own
 /// page), and the Hear click and Count-in rows (the pen's `timing-layout`,
-/// 458 high at y 313, across the content width). While recording starts on
-/// Sound, a note under Count-in says a count-in switches the start to Pedal
-/// (#1659), since Start recording is on the Recording tab.
+/// 458 high, under the tabs and across the content width). While recording
+/// starts on Sound, a note under Count-in says a count-in switches the start
+/// to Pedal (#1659), since Start recording is on the Recording tab.
 class LoopTempoPage extends StatefulWidget {
   /// Creates a [LoopTempoPage].
-  const LoopTempoPage({required this.onOpenSignature, super.key});
+  const new({required this.onOpenSignature, super.key});
 
   /// Opens the Time signature page.
   final VoidCallback onOpenSignature;
@@ -64,9 +64,6 @@ class _LoopTempoPageState extends State<LoopTempoPage> {
 
   /// The room right of the slider, where the time signature sits.
   static const double _sliderEndInset = 328;
-
-  /// Where the time signature's column starts, from the right edge.
-  static const double _signatureInset = 280;
 
   /// The Tap and Clear tempo buttons' width.
   static const double _tapWidth = 213;
@@ -149,9 +146,10 @@ class _LoopTempoPageState extends State<LoopTempoPage> {
     final width = LoopSettingsFrame.contentWidthOf(context);
     final sliderWidth = width - _controlsLeft - _sliderEndInset;
     final tapLeft = _controlsLeft + sliderWidth - _tapWidth;
+    // Under the tabs, where every Loop settings tab starts (#1672).
     return Positioned(
       left: 0,
-      top: 313,
+      top: kLoopTabContentTop,
       child: SizedBox(
         width: width,
         height: 458 + 45,
@@ -164,10 +162,7 @@ class _LoopTempoPageState extends State<LoopTempoPage> {
               child: _TempoReadout(
                 bpm: bpm,
                 // Its column, short of the controls by the page's gap.
-                size: Size(
-                  _controlsLeft - context.spacing.xxl,
-                  _readoutHeight,
-                ),
+                size: Size(_controlsLeft - context.spacing.xxl, _readoutHeight),
                 onTap: () => unawaited(_enterTempo(bpm)),
               ),
             ),
@@ -188,9 +183,7 @@ class _LoopTempoPageState extends State<LoopTempoPage> {
                 value: fraction,
                 onChanged: _previewTempo,
                 onChangeEnd: _commitTempo,
-                onDoubleTap: () => unawaited(
-                  tempo.setTempo(_openingBpm!),
-                ),
+                onDoubleTap: () => unawaited(tempo.setTempo(_openingBpm!)),
                 onEditCancel: (_) => setState(() => _draftBpm = null),
                 keyboardStep: (_fine ? 0.01 : 1) / (_maxBpm - _minBpm),
                 width: sliderWidth,
@@ -252,15 +245,17 @@ class _LoopTempoPageState extends State<LoopTempoPage> {
                 onTap: tempo.tapTempo,
               ),
             ),
-            // ---- time signature
+            // ---- time signature: label and button end at the content edge,
+            // where the click rows and the tabs end, and the button starts on
+            // the tools row's top line (#1672).
             Positioned(
-              left: width - _signatureInset + 48,
+              right: 0,
               top: 21,
               child: LoopSectionLabel(l10n.loopTempoSignature),
             ),
             Positioned(
-              left: width - _signatureInset + 80,
-              top: 77,
+              right: 0,
+              top: 81,
               child: LoopOutlinedButton(
                 key: const Key('loop_tempo_signature'),
                 width: 120,
@@ -378,11 +373,7 @@ class _LoopTempoPageState extends State<LoopTempoPage> {
 /// The tempo in large figures over its unit, or `not set`: a button that
 /// opens the keypad, with the console's pressed and encoder-focus states.
 class _TempoReadout extends StatelessWidget {
-  const _TempoReadout({
-    required this.bpm,
-    required this.size,
-    required this.onTap,
-  });
+  const new({required this.bpm, required this.size, required this.onTap});
 
   final double bpm;
   final Size size;
@@ -455,7 +446,7 @@ class _TempoReadout extends StatelessWidget {
 /// The beat lights under the tempo: one 20 px cell per beat of the bar, the
 /// downbeat ringed, the sounding beat lit while the transport runs.
 class _BeatStrip extends StatelessWidget {
-  const _BeatStrip({required this.beats, required this.lit});
+  const new({required this.beats, required this.lit});
 
   final int beats;
   final int lit;
@@ -491,7 +482,7 @@ class _BeatStrip extends StatelessWidget {
 /// the content width (the pen's `signature-grid`, 424 high at y 124).
 class LoopTimeSignaturePage extends StatelessWidget {
   /// Creates a [LoopTimeSignaturePage].
-  const LoopTimeSignaturePage({required this.onChosen, super.key});
+  const new({required this.onChosen, super.key});
 
   /// Called after a signature is taken.
   final VoidCallback onChosen;
@@ -507,7 +498,7 @@ class LoopTimeSignaturePage extends StatelessWidget {
     final cell = (width - 4 * gap) / 5;
     return Positioned(
       left: 0,
-      top: 124,
+      top: kLoopTabContentTop,
       child: SizedBox(
         width: width,
         height: 424,

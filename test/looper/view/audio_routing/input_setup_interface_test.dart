@@ -1,10 +1,10 @@
 import 'dart:async';
 
 import 'package:bloc_test/bloc_test.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/app/app_notices.dart';
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
@@ -12,6 +12,7 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/view/audio_routing/audio_routing_widgets.dart';
 import 'package:segno/looper/view/audio_routing/input_setup_tab.dart';
+import 'package:segno/looper/view/audio_routing/interface_switches_row.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/notices/notices.dart';
 import 'package:segno/theme/theme.dart';
@@ -20,9 +21,9 @@ import 'package:settings_repository/settings_repository.dart';
 import '../../../helpers/helpers.dart';
 
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+    implements LooperBloc;
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 const _rig = LooperState(
   tracks: [Track(), Track(channel: 1)],
@@ -81,27 +82,20 @@ void main() {
     when(() => repository.state).thenReturn(_rig);
     when(() => repository.mixGeneration).thenReturn(0);
     when(() => repository.meters).thenReturn(const MeterLevels());
-    when(
-      () => repository.meterLevels,
-    ).thenAnswer((_) => const Stream<MeterLevels>.empty());
-    when(
-      () => repository.readInterfaceInputs(),
-    ).thenAnswer((_) async => onInterface);
-    when(
-      () => repository.setInterfaceInputLevel(any(), any()),
-    ).thenAnswer((_) async => EngineResult.ok);
-    when(
-      () => repository.setInterfaceInputPad(any(), on: any(named: 'on')),
-    ).thenAnswer((_) async => EngineResult.ok);
-    when(
-      () => repository.setInterfaceInputAir(any(), any()),
-    ).thenAnswer((_) async => EngineResult.ok);
-    when(
-      () => repository.setInterfacePhantomPower(any(), on: any(named: 'on')),
-    ).thenAnswer((_) async => EngineResult.ok);
-    when(
-      () => repository.turnOffInterfaceSetupMode(),
-    ).thenAnswer((_) async => EngineResult.ok);
+    when(() => repository.meterLevels)
+        .thenAnswer((_) => const Stream<MeterLevels>.empty());
+    when(() => repository.readInterfaceInputs())
+        .thenAnswer((_) async => onInterface);
+    when(() => repository.setInterfaceInputLevel(any(), any()))
+        .thenAnswer((_) async => EngineResult.ok);
+    when(() => repository.setInterfaceInputPad(any(), on: any(named: 'on')))
+        .thenAnswer((_) async => EngineResult.ok);
+    when(() => repository.setInterfaceInputAir(any(), any()))
+        .thenAnswer((_) async => EngineResult.ok);
+    when(() => repository.setInterfacePhantomPower(any(), on: any(named: 'on')))
+        .thenAnswer((_) async => EngineResult.ok);
+    when(() => repository.turnOffInterfaceSetupMode())
+        .thenAnswer((_) async => EngineResult.ok);
   });
 
   Future<void> pump(WidgetTester tester, {LooperState state = _rig}) async {
@@ -126,7 +120,7 @@ void main() {
             BlocProvider.value(value: notices),
           ],
           child: MaterialApp(
-            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            localizationsDelegates: appLocalizationsDelegates,
             supportedLocales: AppLocalizations.supportedLocales,
             theme: ThemeData(
               extensions: const [
@@ -179,6 +173,45 @@ void main() {
       expect(key('routing_interface_level'), findsNothing);
       expect(key('routing_interface_phantom'), findsNothing);
       expect(key('routing_interface_no_switches'), findsOneWidget);
+    });
+
+    testWidgets('its controls are one visible gap apart (#1672)', (
+      tester,
+    ) async {
+      await pump(tester);
+      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+      Rect textOf(String text) => tester.getRect(find.text(text));
+      Rect pillOf(String name) => tester.getRect(
+        find.descendant(
+          of: key(name),
+          matching: find.byType(AnimatedContainer),
+        ),
+      );
+      final level = tester.getRect(key('routing_interface_level'));
+      final pad = textOf(l10n.routingInterfacePad);
+      final air = textOf(l10n.routingInterfaceAir);
+      final phantom = textOf(l10n.routingInterfacePhantomInputs(1, 2));
+      expect(pad.left - level.right, 32);
+      expect(air.left - pillOf('routing_interface_pad').right, 32);
+      expect(phantom.left - pillOf('routing_interface_air').right, 32);
+    });
+
+    testWidgets('a row that starts with a switch starts on the column line '
+        '(#1672)', (tester) async {
+      onInterface = const InterfaceInputs(
+        status: InterfaceInputsStatus.controls,
+        inputs: [InterfaceInput(phantomSwitch: 0)],
+        phantomSwitches: [
+          PhantomSwitch(firstInput: 0, lastInput: 0, on: false),
+        ],
+      );
+      await pump(tester);
+      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+      final row = tester.getRect(find.byType(InterfaceSwitchesRow));
+      expect(
+        tester.getRect(find.text(l10n.routingInterfacePhantom)).left,
+        row.left + InterfaceSwitchesRow.contentLeft,
+      );
     });
 
     testWidgets('a shared 48 V switch shows on both inputs and names both', (
@@ -298,10 +331,7 @@ void main() {
     testWidgets('one input names just that input', (tester) async {
       onInterface = const InterfaceInputs(
         status: InterfaceInputsStatus.controls,
-        inputs: [
-          InterfaceInput.none,
-          InterfaceInput(phantomSwitch: 0),
-        ],
+        inputs: [InterfaceInput.none, InterfaceInput(phantomSwitch: 0)],
         phantomSwitches: [
           PhantomSwitch(firstInput: 1, lastInput: 1, on: false),
         ],
@@ -438,6 +468,22 @@ void main() {
       expect(tag(second, l10n.routingTagPhantom), findsOneWidget);
       expect(tag(third, l10n.routingTagPhantom), findsNothing);
     });
+
+    testWidgets('keep their names on one line whether or not they have tags '
+        '(#1672)', (tester) async {
+      onInterface = _fourI4(phantom: true);
+      await pump(tester);
+      double nameTop(int index) => tester
+          .getRect(
+            find.descendant(
+              of: find.byKey(Key('routing_input_card_$index')),
+              matching: find.text('Input ${index + 1}'),
+            ),
+          )
+          .top;
+      // The first card has tags and the third none.
+      expect(nameTop(2), nameTop(0));
+    });
   });
 
   group('the meter', () {
@@ -460,9 +506,8 @@ void main() {
   });
 
   testWidgets('a change the interface refuses is said', (tester) async {
-    when(
-      () => repository.setInterfaceInputPad(any(), on: any(named: 'on')),
-    ).thenAnswer((_) async => EngineResult.device);
+    when(() => repository.setInterfaceInputPad(any(), on: any(named: 'on')))
+        .thenAnswer((_) async => EngineResult.device);
     await pump(tester);
     final log = NoticeLog(notices);
     addTearDown(() => unawaited(log.close()));

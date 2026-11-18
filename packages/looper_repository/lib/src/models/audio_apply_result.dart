@@ -24,7 +24,7 @@ enum AudioApplyStatus {
 /// The outcome of `LooperRepository.applyAudioConfig`.
 class AudioApplyResult extends Equatable {
   /// Creates an [AudioApplyResult].
-  const AudioApplyResult({
+  const new({
     required this.status,
     required this.result,
     this.reopen,

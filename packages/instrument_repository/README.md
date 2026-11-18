@@ -58,13 +58,8 @@ void addPiano(AudioEngine engine, Stream<EngineSnapshot> snapshots) {
 flutter test
 ```
 
-`test/instrument_native_test.dart` runs against the real engine library and
-skips itself unless `SEGNO_ENGINE_LIB` is set:
-
-```sh
-export SEGNO_ENGINE_LIB="$(bash ../segno_engine/tool/build_test_lib.sh)"
-flutter test
-```
+`test/instrument_native_test.dart` runs against the real engine library,
+which `segno_engine`'s build hook builds for the test run.
 
 ## License
 

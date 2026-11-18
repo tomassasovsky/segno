@@ -22,7 +22,7 @@ enum InterfaceSwitch {
 /// open (#1646).
 class InterfaceInputsState extends Equatable {
   /// Creates an [InterfaceInputsState].
-  const InterfaceInputsState({
+  const new({
     this.inputs = InterfaceInputs.none,
     this.loaded = false,
     this.failures = 0,

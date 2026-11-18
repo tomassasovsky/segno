@@ -3,36 +3,35 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:bloc_test/bloc_test.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/l10n/gen/app_localizations.dart';
-import 'package:segno/library/application/removable_volumes.dart';
 import 'package:segno/library/view/library_page.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/session/session.dart';
 import 'package:session_repository/session_repository.dart';
+import 'package:storage_repository/storage_repository.dart';
 
 import '../../helpers/helpers.dart';
 import '../helpers/fake_drive.dart';
 
-class _MockSessionCubit extends MockCubit<SessionState>
-    implements SessionCubit {}
+class _MockSessionCubit extends MockCubit<SessionState> implements SessionCubit;
 
-class _MockSessionRepository extends Mock implements SessionRepository {}
+class _MockSessionRepository extends Mock implements SessionRepository;
 
-class _MockPerformance extends Mock implements PerformanceRepository {}
+class _MockPerformance extends Mock implements PerformanceRepository;
 
-class _MockPedalRepository extends Mock implements PedalRepository {}
+class _MockPedalRepository extends Mock implements PedalRepository;
 
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+    implements LooperBloc;
 
 void main() {
   late AppLocalizations l10n;
@@ -109,21 +108,17 @@ void main() {
           const SessionMixdown(frames: 48000 * 61, sampleRate: 48000, bytes: 4),
     );
     when(() => sessions.mixdownOf('s-empty')).thenAnswer((_) async => null);
-    when(
-      () => sessions.readMixdownPeaks(any(), buckets: any(named: 'buckets')),
-    ).thenAnswer((_) async => null);
+    when(() => sessions.readMixdownPeaks(any(), buckets: any(named: 'buckets')))
+        .thenAnswer((_) async => null);
     when(() => sessions.stopAudition()).thenReturn(EngineResult.ok);
-    when(
-      () => sessions.auditionState(),
-    ).thenReturn(const AuditionState(frames: 480000, position: 96000));
+    when(() => sessions.auditionState())
+        .thenReturn(const AuditionState(frames: 480000, position: 96000));
     performance = _MockPerformance();
     when(() => performance.rendering).thenReturn(false);
-    when(
-      () => performance.listCaptures(),
-    ).thenAnswer((_) async => [single, recovered]);
-    when(
-      () => performance.readPeaks(any(), buckets: any(named: 'buckets')),
-    ).thenAnswer((_) async => Float32List.fromList([0.2, 0.9, 0.4]));
+    when(() => performance.listCaptures())
+        .thenAnswer((_) async => [single, recovered]);
+    when(() => performance.readPeaks(any(), buckets: any(named: 'buckets')))
+        .thenAnswer((_) async => Float32List.fromList([0.2, 0.9, 0.4]));
     pedalEvents = StreamController<PedalEvent>.broadcast();
     pedal = _MockPedalRepository();
     when(() => pedal.events).thenAnswer((_) => pedalEvents.stream);
@@ -139,7 +134,7 @@ void main() {
   /// section.
   Future<void> openAudio(
     WidgetTester tester, {
-    RemovableVolumes? volumes,
+    StorageRepository? volumes,
     Stream<LooperState> looperStates = const Stream.empty(),
     GuardRegistry? guards,
   }) async {
@@ -159,7 +154,7 @@ void main() {
           RepositoryProvider<GuardRegistry>.value(
             value: guards ?? GuardRegistry(),
           ),
-          RepositoryProvider<RemovableVolumes>.value(value: volumes ?? drive),
+          RepositoryProvider<StorageRepository>.value(value: volumes ?? drive),
         ],
         child: MultiBlocProvider(
           providers: [
@@ -341,7 +336,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(drive.files, ['Segno/Performances/Evening loop.wav']);
-    expect(drive.leases, [l10n.libraryAudioPurpose('Evening loop')]);
+    expect(drive.leasePurposes, [WritePurpose.export]);
     expect(find.text(l10n.libraryAudioExported), findsOneWidget);
     expect(find.text('Evening loop.wav'), findsOneWidget);
     expect(
@@ -420,17 +415,14 @@ void main() {
     await tester.tap(find.byKey(const Key('library_export_keep_both')));
     await tester.pumpAndSettle();
 
-    expect(
-      drive.files,
-      contains('Segno/Performances/Evening loop (2).wav'),
-    );
+    expect(drive.files, contains('Segno/Performances/Evening loop (2).wav'));
     expect(find.text('Evening loop (2).wav'), findsOneWidget);
   });
 
   testWidgets('without a drive, 20/10 asks for one and Cancel closes it', (
     tester,
   ) async {
-    await openAudio(tester, volumes: const InternalOnlyVolumes());
+    await openAudio(tester, volumes: NoDrive());
     await openPerformances(tester);
     await tester.tap(row(single.path));
     await tester.pumpAndSettle();
@@ -464,6 +456,31 @@ void main() {
     expect(drive.copies, isEmpty);
   });
 
+  testWidgets('a file a FAT32 drive cannot hold is reported on the card, '
+      'with nothing written (#1794)', (tester) async {
+    await drive.close();
+    drive = FakeDrive('${temp.path}/usb', fsType: 'vfat');
+    // Sparse: 4 GiB long, nothing written.
+    File('${single.path}/master-001.wav').openSync(mode: FileMode.write)
+      ..truncateSync(1 << 32)
+      ..closeSync();
+    await openAudio(tester);
+    await openPerformances(tester);
+    await tester.tap(row(single.path));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('library_audio_export')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('library_export_choose_recording')));
+    await tester.pumpAndSettle();
+
+    expect(
+      inCard(find.text(l10n.libraryAudioTooLargeForDrive)),
+      findsOneWidget,
+    );
+    expect(drive.copies, isEmpty);
+    expect(drive.files, isEmpty);
+  });
+
   testWidgets('Delete asks first, then deletes the recording', (tester) async {
     when(() => performance.deleteCapture(any())).thenAnswer((_) async {});
     await openAudio(tester);
@@ -486,9 +503,7 @@ void main() {
   testWidgets("Sessions lists each session's mixdown with its exports", (
     tester,
   ) async {
-    when(() => sessions.exportMixdown('s-gig', any())).thenAnswer((
-      call,
-    ) async {
+    when(() => sessions.exportMixdown('s-gig', any())).thenAnswer((call) async {
       File(call.positionalArguments[1] as String).writeAsBytesSync([5]);
     });
     await openAudio(tester);
@@ -534,9 +549,7 @@ void main() {
     expect(find.text(l10n.libraryListenStop), findsOneWidget);
 
     looperStates.add(
-      const LooperState(
-        tracks: [Track(state: TrackState.recording)],
-      ),
+      const LooperState(tracks: [Track(state: TrackState.recording)]),
     );
     await tester.pump();
     await tester.pump();

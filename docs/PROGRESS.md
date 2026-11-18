@@ -1,4 +1,4 @@
-<!-- cspell:words heatsinks Omron -->
+<!-- cspell:words heatsinks Omron lofi powf -->
 # Segno — Progress & Roadmap
 
 <!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs multicore -->
@@ -38,6 +38,12 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 | Issue | Thread | Stage | Autonomy | Branch |
 |-------|--------|-------|----------|--------|
+| #1821 | Devlog and RSS feed on segno.aquiles.dev: Markdown entries in `site/log`, built by `site/build_log.py` | in-review | merge-gate | `claude/devlog-1821` |
+| #1795 | NVMe drive drops off the bus mid-recording: the Pi 5 cmdline turns off APST and PCIe ASPM on every link | in-review | blocked-verify | `claude/nvme-power-1795` |
+| #1740 | Penpot: the Effects page frames for the compact single-effect card and the built-in pedal faces (#1754, PR #1756 merged) and the cards' assignment lines (#1757, #1760), the Source-note clean-up and a segno-design snapshot; waits for a connected Penpot MCP tab | build | merge-gate | (none yet) |
+| #1797 | A finished export to a FAT stick is on the device: copies and the export end with a volume sync | in-review | blocked-verify | `claude/usb-export-durable-1797` |
+| #1760 | A rack card names the controls bound to the rack itself; a switch's press and hold on one target read as one control | in-review | auto | `claude/rack-card-assignment-1760` |
+| #1674 | Anti-aliasing under Impeller: ivi-homescreen renders into a 4x MSAA framebuffer and resolves it before each flip | in-review | auto | `claude/ivi-msaa-1674` |
 | #1496 | Split design and hardware into their own repos, slim this one | in-review | merge-gate | `claude/repo-split-1496` |
 | #1367 | Start helper programs with posix_spawn, never fork the app | in-review | merge-gate | `claude/no-fork-1367` |
 | #887 | Looper X factory racks: all parts merged, Harmonizer parked; Pi benches and by-ear sign-off owed (#1459) | in-review | blocked-verify | trunk |
@@ -72,10 +78,1025 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1540 | Drive pedals' aliasing at 48 kHz: bench and blind A/B built, the owner's listening decides on oversampling | in-review | auto | `claude/alias-ab-1540` |
 | #1498 | Restart and shut down also wait for RAUC's own install, after an app restart | in-review | blocked-verify | `claude/rauc-power-gate-1498` |
 | #1527 | Reboot warm, with a kernel record, when exec or storage dies while PID 1 lives (segno-freeze-watchdog); device check owed | in-review | auto | `claude/freeze-watchdog-1527` |
-| #1515 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track chains) next | build | plan-gate | `claude/fx-multicore-1515-p1b` |
+| #1755 | Every effect cheaper without changing its sound: the pitch family merged (#1764); its state out of the mixer's structs so the arm64 mixer gate is back where it was | in-review | auto | `claude/pitch-gate-1755` |
+| #1771 | PR checks in a fraction of the time and job-minutes: native suites built once and run in parallel, ccache, cached packages, path filters, one job for the package suites, ASan in three parts, trunk-saved caches | in-review | auto | `claude/ci-speed-1771` |
+| #1724 | Effects budget from the console's measured headroom: charges at the configured rate and period, share 77 % from the 48 kHz / 32 stress run | in-review | auto | `claude/fx-headroom-1724` |
+| #1755 | Cheaper effects at no loss of quality: the drives and the amp (Overdrive, Distortion, Amp+Cab), bit-identical on the console but for the cabinet's direct taps | in-review | auto | `claude/fx-opt-drives-1755` |
+| #1729 | Track and lane chains on the effects workers (#1515 part 2): engine part 1 and the admission (part 2, kFxTrackJobNs from the console stress) in review | in-review | auto | `claude/fx-track-workers-1729*` |
+| #1515 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track and lane chains) is #1729 | build | plan-gate | `claude/fx-multicore-1515-p1b` |
 | #1564 | Automatic LED brightness from a light sensor on J22: board, firmware (console 2.7, ring 1.2, still protocol 12) and app parts in review; the enclosure part is a separate thread | in-review | merge-gate | `claude/ambient-light-1564-p*` |
+| #1674 | Screens without anti-aliasing under Impeller, and the 7in readout's colours: the readout palette (decision 3) in review | in-review | auto | `claude/readout-palette-1674` |
+| #1675 | The pitch bridge after a tempo change: a better search for held notes and a shorter wait for the stretch render; owner's listening call | in-review | merge-gate | `claude/pitch-bridge-quality-1675` |
+| #1755 | Cheaper effects, same sound: the reverbs, delays, filters and the rest (pitch and drives are their own threads); bit-identical, guarded by bench_fx_equiv | in-review | auto | `claude/fx-opt-rest-1755` |
+| #1836 | A take's effect switching and setting changes as Live automation: the plugin's Enabled (1100) is the engine's switch, every change a step at its frame (#1806 part 6) | in-review | merge-gate | `claude/fx-automation-1836` |
+| #1816 | Console WiFi against an ASUS RT-AX89X with 802.11ax on: firmware already matches Pi OS; brcmfmac options aligned with Pi OS and a troubleshooting note; failure not reproduced, issue stays open until it recurs | in-review | auto | `claude/wifi-firmware-1816` |
 
 ---
+
+## November 2026 Effect switching and setting changes as Live automation (#1836)
+
+Part 6 of #1806 (decisions D4 to D6): the Live set replays what changed in
+a take's chains, where it used to hold each effect as it stood at arm.
+
+- `ChainTimeline` (`packages/daw_export/lib/src/chain_timeline.dart`) reads
+  `events.log` for each lane's chain and each input's monitor chain and
+  replays it as the offline render replays the lane's wet stem
+  (`le_pr_wet_render`): an entry's switch (310, 312) and the chain's (311,
+  313), each setting (306, 307), each type (20, 31: an actual change puts
+  the new effect at its defaults and on, as the setter does unlogged) and
+  the chain's length (21, 32: a slot past it is not run, one entering it
+  comes on). Entries at one frame all apply before it plays; the two log
+  streams are merged in frame order, ties in file order
+  (`EventLogReader.sortedByFrame`, as `le_pr_frame_cmp`).
+- Every change is a step in a device envelope, two events at the beat of
+  its frame, the value before and the value after, as Live draws a step.
+  Nothing is thinned: the console logs a setting at most once a block, when
+  it moves, and an entry's switch once a press. A switch is automation of
+  the plugin's Enabled; a setting of its parameter, normalized, as Live
+  keeps a setting that is not a list (in steps only for the input, the
+  output and Enabled). A rack switch or an A/B press is its entries'
+  switches (D5), so racks stay on. A slot whose effect changed holds one
+  plugin per effect, side by side, each on while the slot held it (D6). A
+  Dub Rack's Amb / Dub section is on while any entry of the rack runs (the
+  engine fades the section to its input when none does). Every envelope
+  sits on its track, a device in a rack included; the track shows its
+  volume lane or its first device envelope.
+- The plugin's 1100 is now **Enabled**, an ordinary automatable parameter
+  (Off / On, default On), not the VST3 bypass: Live lists no bypass
+  parameter, and its Device On stops the plugin, cutting a delay's echoes
+  and freezing its line until it comes back on (the owner's check of
+  `test/corpus/plugin_automation.als`, Live 12.2.7). Enabled runs the
+  engine's switch for every kind: the 5 ms ramp, a delay's or a reverb's
+  drain, a fresh start on a re-enable from a settled switch-off, and for a
+  kind that delays its output its warm-up and, while off, its input
+  without the delay. The plugin used
+  to switch such a kind to its input delayed by its latency. The pedal's
+  footswitch and LED drive Enabled; an exported device stays on in Live.
+- Every plugin reports no latency (owner call, reversing #1804 part 2's
+  reported latency and its padding to the largest at any rate). The console
+  compensates no effect's latency: a kind that delays its output plays
+  late by it while on and on time while off. The Octaver, Dual octaver,
+  Whammy and Smart Tune delay theirs by 1188 to 2568 frames from 44.1 to
+  96 kHz (about 25 ms); the Amp, Overdrive, Distortion, Vinyl, LPF and
+  Degrade by 2 to 27 frames at some rates (the null test prints each). Unreported, Live plays each lane exactly as the console
+  did in both states, and a render nulls against "as heard" at offset 0
+  for every chain. A plugin added by hand in Live behaves the same: the
+  octaver family sounds about 25 ms late while on, uncompensated. The
+  tail a plugin reports is still its delay, the largest at any of those
+  rates, since a host may not ask again when it renders at another.
+- When the host starts playing, the values it sets at the block's first
+  frame land before the plugin starts again as at arm, so a plugin
+  automated off at the start starts settled off.
+- The null test (`vst3/test/null_test.cpp`) switches through Enabled on a
+  block boundary and inside a block, off and on again 1 ms apart (inside
+  the ramp), and from an entry off at arm that the host turns on; at 44.1,
+  48, 88.2 and 96 kHz, every kind is bit-identical to the engine's offline
+  render at lag 0, the latency-bearing kinds included, and reports no
+  latency: checked at 37-, 128- and 512-frame blocks here; CI runs
+  128-frame blocks.
+- `test/corpus/plugin_automation.als` is the reference Live saved (see the
+  corpus README); `test/device_automation_test.dart` checks the writer
+  against it and `test/fx_automation_end_to_end_test.dart` runs a synthetic
+  capture with presses, an A/B switch, a replaced effect, knob moves and a
+  monitor switch through to the set.
+- Not reproduced: a switch's frame is the control thread's stamp, within a
+  block of the one the console applied it at (the offline render and so the
+  "as heard" stem use the same stamp; the block-tail observer of #1806 Part
+  3 would make it exact); a type change crossfades over the ramp in Live
+  and lets the old effect's tail drain, where the console swaps at once; a
+  type set again to the same effect resets its state on the console only;
+  a slot the chain's length leaves out stops at once on the console and
+  comes back where it stopped, where in Live its Enabled goes off, so it
+  ramps out and drains, and comes back fresh once settled;
+  a Dub Rack switched off as a whole stops its section in Live, cutting the
+  paths' tails, and a change of its Amb-Dub Mix is not replayed in the
+  chains' volumes; chains published by a recipe and the Track and All
+  tracks stages are not logged yet (#1806 Part 2).
+
+## November 2026 Each Segno plugin draws its pedal (#1815)
+
+- Each plugin's editor is the console's single-effect page in a plugin
+  window: the pedal the Effects page draws for its kind, and beside it the
+  settings the face has no knob for and every choice, drawn as the effect
+  page draws them (sliders, a row of buttons, or a select), then the
+  entry's input, output and balance or pan as the effect page's footer
+  draws them, and its level as an effect page slider (the console shows a
+  single effect's level nowhere). The panel takes a second column past
+  seven controls. Every parameter but the bypass has exactly one control:
+  a choice the face has a knob for is set by its selector, the knob only
+  shows it. The kinds the
+  console runs only in racks wear the look of the first catalogue module
+  that runs on them; Distortion, which no factory rack builds, has no face
+  and keeps the host's own controls.
+- The art cannot drift from the console's: `test/vst3_faces` lays out and
+  renders the faces with the console's own widgets
+  (`lib/looper/view/fx/stomp`, `FxBuiltInParamControl`). The committed
+  layout, `packages/segno_engine/vst3/faces/faces.json`, says where each
+  control is, how it works and which parameter it drives;
+  `vst3_faces_test.dart` fails when it no longer matches the drawing code
+  (`--update-goldens` rewrites it). `install.sh` renders the pictures (a
+  background, the LED lit, and each control at each of its settings, at 1x
+  and 2x) with `vst3_faces_render_test.dart` and the build bundles them in
+  `Contents/Resources/faces`; the pictures are build output, not tracked.
+- The editor (`editor_mac.mm`) is an IPlugView holding an NSView, macOS
+  only: it draws the pictures at the parameters' values, edits through the
+  controller (beginEdit, performEdit, endEdit) so a host records
+  automation, and redraws when the host changes a value. Knobs drag up and
+  down (Shift for finer), sliders follow the pointer, a select opens a menu
+  of the console's position names, the footswitch is the bypass and the LED
+  shows it. Every value is printed all the time, in the effect page's mono
+  face and colours (the manifest's theme, the font bundled with the
+  pictures): a slider's at its readout, at the exact value; a knob's in a
+  chip under its label (nudged, or beside the label, where under it does
+  not fit) where every knob of the face has room clear of the knobs,
+  labels, title, LED and footswitch (the chip may cover the face's
+  painting, the owner's call), and otherwise as read-only rows at the top
+  of the panel. The entry's level is "Output level" in the editor and the
+  host: the console's name for it, Level, is also many effects' own
+  setting. Selects and button
+  rows show their position, the LED the bypass. Linux, and a bundle built
+  without the pictures, open no editor.
+- Every plugin's parameter text is the console's (`value_text.cpp`, a
+  port of `fxParamValueText` and the footer's readouts), so a host's own
+  parameter list reads "348 ms" and "1/8D". `vst3/test/value_texts.json`,
+  which `vst3_faces_test.dart` writes from the Dart, holds the console's
+  text for every parameter of every kind at 41 settings and each position.
+- `test/binding_test.cpp` loads the bundle and checks every control of the
+  layout against its plugin's parameters, that every parameter but the
+  bypass has exactly one control, and every value text against
+  `value_texts.json` (CI, in `run_null_test.sh`); after an install, also
+  that every plugin with a face opens an editor of the layout's size.
+
+## November 2026 Every lane of a track has its own stems (#1824)
+
+- The performance render rendered lane 0 of each looper track only: what
+  lanes 1 and up played during a take reached the Live set only as their
+  last loop, a Session clip, though the master held it. `perf_render.c` now
+  renders every lane to `stems/dry/track<c>-lane<l>.wav` and
+  `stems/wet/track<c>-lane<l>.wav`, and the master from all of them. The
+  track-level `track<c>.wav` stems are gone: the DAW export was their only
+  reader. `stems/stems.json` lists the lane stems a render published
+  (docs/formats/performance-manifest-format.md).
+- The lanes share the track's transport, so each lane is rebuilt from the
+  same facts (takes, overdub passes placed as #1813 places them, history
+  images, fades, Reverse, Speed, Transpose) with its own images: lane `l` of
+  each layer file and snapshot, silence where the lane held nothing of a
+  take. Each lane's wet stem runs its own volume, pan, mute, output routing,
+  chain, heard image and hop seed; the track gain, fade, solo and Cut apply
+  to every lane, and the track-addressed mute and output mask to lane 0, as
+  in the callback. The Track stage chain is still not replayed.
+- Lanes added or removed during a take: the engine logs the lane count
+  (`LE_CMD_SET_LANE_COUNT`, events.log version 17) for every track at the
+  arm and whenever it applies, on the command path, and the renderer
+  silences a lane at or past it. A version-16 capture has no count and
+  renders every lane as mixed throughout. The engine removes only a lane
+  that holds nothing, so the count matters for a lane's effect tail. A lane
+  added after its track's take keeps a length of 0, so no snapshot exports
+  it: the renderer keeps what it played before its last pass, and what that
+  pass added is not in the capture (#1825).
+- The Live set gives each looper track a Group track holding `<track> L<n>`
+  (the lane's dry stem and clean loop through the lane's chain as Segno's
+  plugins, playing, with its volume and mute as automation) and
+  `<track> L<n> (as heard)` (its wet stem and loop as it played, off) for
+  each lane. The Group carries the Track stage chain as plugins, where Live
+  sums the lanes as the callback's track bus does. Lane loops sit in the
+  first scene. Group tracks are copied from
+  `test/corpus/group.als`, built from `automation.als` and the Group track of
+  Live 12.2's own Podcast & Radio template; opening and saving it in Live is
+  owed (the corpus README says how).
+- A take with no stem index (rendered before this, or whose render failed)
+  renders its stems first when the Library writes its DAW project or DAW
+  package (`PerformanceRepository.renderStems`, with the export's progress
+  and cancel), and `writeDawProject` never replaces a `project.als` with a
+  set that has no stems: a failed render leaves it as it was. A lane whose
+  wet render failed keeps its `L<n>` track with its plugins, and the take's
+  render reports the track failed.
+- A live-engine golden test (`test_engine_lane_stems.h`) records one track
+  with four lanes, a delay and mute on one, two lanes added while it plays
+  and one removed, and four overdub passes, then plays the take again with
+  one input at a time: each lane's wet stem equals what that lane alone sent
+  to the master, and the rendered master the captured one, within 1e-5.
+
+## November 2026 A take records each input raw (#1805)
+
+- A performance take recorded only the inputs monitored at arm, and only as
+  their monitor played them (`mix_monitors_frame`): after its effects,
+  volume and pan, and as silence while monitoring was off or muted, so an
+  input played with monitoring off came out silent or not at all. Now every
+  input the interface has (loopback channels aside) and every instrument
+  with a patch at arm is also recorded raw, monitored or not: its clean
+  sample, before the monitor's gate, chain, volume and pan, every frame
+  while armed. The monitored inputs are still recorded as heard too.
+- The audio thread pushes the raw samples once per block, out of the frame
+  loop, in a cold function (`perf_tap_raw_block`), into one mono ring per
+  input (`le_engine.perf_raw_ring`, `perf_raw_mask`, at the end of the
+  struct so no field the mixer reads moves). A full ring drops the frame and
+  counts an overrun, as the other taps do. A block with no input buffer
+  records silence.
+- The drain writes them as `input-raw-<n>-NNN.wav` parts, mono float,
+  stream `100 + n` (`LE_PERF_RAW_STREAM_BASE`, a format constant). The
+  sidecar lists them under `channel_layout.raw_inputs`, the parts in
+  `parts`; the checkpoint lists the streams. Recovery, the Library's parts,
+  the DAW package, Segno Transfer and the FAT32 cap test cover them. A raw
+  input over the activity level counts as playing for the idle stop
+  (#1767). `le_snapshot.perf_capture_frame_bytes` counts 4 bytes a frame
+  per raw input. A monitor left on a loopback channel is not captured.
+- The Live set gives each input `<name> raw`, switched on, and, when the
+  input was monitored, `<name> (as heard)` beside it, switched off. A take
+  from before #1805 keeps one input track as heard, switched on. The raw
+  track is where a later layer of #1806 puts the monitor chain as plugins
+  and the monitor volume, pan and mute as automation.
+
+## November 2026 The Network page follows the console (#1817)
+
+- On 2026-11-17 a WiFi 6 router timed out the 802.11 authentication (iwd
+  `connect-failed, status: 16`, #1816), NetworkManager ended the join as
+  `no-secrets`, and the page said "Incorrect password" for a key the access
+  point never tested; the owner forgot two good networks over it.
+- `segno-wifi-ctl connect` now prints why a join failed, `{"error":<code>}`:
+  `wrong-password` only when iwd logged "4-Way handshake failed" during this
+  attempt (the journal is read from the attempt's start, never a window that
+  can hold another network's failure), `not-found`, `no-address`, and
+  `no-connection` for everything else. NM's own reason is not read: on a
+  console with no secret agent it ends every failed activation that asked
+  for secrets as `no-secrets`. The app shows the code's words, names the
+  network, and offers Try again (with the key that was typed) for everything
+  but a wrong password, which goes back to the sheet.
+- A join is checked against the scan first (the cached list, then one fresh
+  scan), so a network out of range fails as `not-found` without dropping the
+  one that is up.
+- A failed join never deletes a saved network; only Forget does. A profile
+  the helper made for a new network is removed when its join fails.
+- Live state: `segno-wifi-ctl monitor` wraps `nmcli monitor` and prints one
+  line per NetworkManager change. The app starts it once, with posix_spawn,
+  when the page opens and kills it when the page closes, and re-reads
+  `status` 300 ms after each burst. `status` says `connecting` while an
+  activation is in flight, so a rejoin NetworkManager or `segno-wifi-retry`
+  makes by itself shows as Connecting on the card. A long-lived nmcli
+  rather than a D-Bus client in the app keeps NetworkManager behind the
+  helper, like every other Wi-Fi call.
+- While the page is open it scans every 10 s (quietly: no Scanning label,
+  a failure stays on screen), skipping while the radio is off, a join runs
+  or NM is joining; the list keeps its order between scans (saved, in range,
+  signal bars, name). `scan` no longer switches the radio on.
+
+## November 2026 The Live set plays the take through Segno's plugins (#1804 part 2)
+
+- A looper track whose take recorded its chains (#1803 on) exports as its
+  dry stem through those chains as Segno's plugins, under the track's
+  name, with lane 0's clean loop as a Session clip, and the wet stem beside
+  it as `<name> (as heard)`, off, with the heard loops and the other lanes'
+  loops (they ran other chains). Takes without
+  chains, or whose chains hold nothing Segno runs (only hosted plugins),
+  keep the earlier layout.
+- `devicesOfChain` (`packages/daw_export/lib/src/device_chain.dart`): lane
+  0's chain, which the wet stem renders, then the track's Track stage. Each
+  built-in effect becomes its plugin with the plugin's own state
+  (`SegnoPluginState`, the bytes `segno_fx_state.h` reads): settings,
+  channel handling, enable bit (the entry's, and off with its chain), chain
+  slot, the owner's hop seed (`le_fx_lane_hop_seed`, `le_fx_bus_hop_seed`),
+  and the take's PERF_ARMED FX clock and arm beat from `events.log`. A rack
+  becomes an Audio Effect Rack named as the rack, off when it was; a Dub
+  Rack's parallel Amb and Dub paths become a rack of two chains at the
+  gains `fx_path_targets` gives the section's Amb-Dub Mix. Hosted plugins
+  are left out, as the offline render passes them dry.
+- The devices are copied from a set Live saved with Segno's plugins
+  (`test/corpus/segno_vst3.als`, built in Live, through
+  `lib/src/live_device_template.dart`): a plugin device and a rack with one
+  chain. Each plugin gets its own parameter list, as Live writes one for a
+  plugin loaded fresh (`SegnoPlugin.parameters`, checked against every
+  plugin by the null test), so Live shows and automates its parameters. An
+  entry that was off is the device switched off; the plugin's own switch
+  stays on. A volume lane picks the Mixer after the devices and chain mixers
+  in Live's lane chooser.
+- The plugins start again as at arm whenever the host starts playing
+  (`segno_fx_slot_rearm`; a jump while playing, such as a loop wrap, keeps
+  the tails), so a render from the start of the set is
+  the console's: without it, LFOs, noise and octaver hops run on while
+  Live's transport stands.
+- A plugin reports one latency at every rate, its kind's largest at 44.1,
+  48, 88.2 and 96 kHz (`segno_fx_reported_latency`; more at a host rate
+  whose own is larger), and delays its output by the rest: Live asks for
+  the latency at its device's rate and not again when it exports at
+  another, so a rate-dependent latency (the octavers, the Amp) was
+  compensated wrongly. Superseded by #1836: every plugin reports no
+  latency, so a lane plays as late as the console played it.
+- Checked in Live 12.2.7: an export of `perf-20261112-130713` with a chain
+  written in (Compressor, a Dub Rack with its Amb and Dub paths, an Echo
+  Rack, an Octaver off) renders the dry track through the plugins within
+  -139.6 dBFS of its "as heard" stem over 150 s.
+- An input recorded raw (#1805) plays its raw recording through its
+  monitor chain at arm, as plugins, on `<input> raw` (the hop seed is
+  `le_fx_monitor_hop_seed`); the input as heard already has the chain in
+  its audio. The monitor's volume, pan and on/off are not replayed yet.
+- Not reproduced: the lane volume, which the engine applies before the
+  lane chain, and the track gain, which it applies inside the Track stage
+  (after its Pre entries), where Live applies both after the devices (the
+  same at unity); a switched-off rack's modules' own switches, which the
+  arm snapshot does not record (they are exported on, in a rack that is
+  off); a rack's input choice and output side when its first or last
+  entry is off or on a parallel path (each plugin carries its own); the
+  Track stage, which the offline render does not apply, so a take with one
+  differs from its "as heard" stem by it. Switching during the take is the control-events layer of #1806.
+- `packages/segno_engine/vst3/test/render_capture.c` renders a capture's
+  stems on the Mac as the console does, for checking an export.
+
+## November 2026 Segno's effects as VST3 plugins (#1804 part 1)
+
+- The owner's call of 2026-11-12 reverses Q13 (#940): the effects come back
+  as VST3 plugins, built and installed on the owner's Mac only (no signing,
+  no installer), so an exported performance can be edited in Live with the
+  effects the console ran.
+- `packages/segno_engine/vst3/` builds one bundle, `Segno.vst3`, with one
+  class per built-in kind (31: every `le_fx_type` but none and plugin),
+  named as the console names them ("Segno Delay", "Segno Room reverb").
+  The class ids in `segno_fx_kinds.h` are new (the seven removed plugins'
+  ids are not reused) and never change.
+- Each plugin runs the engine's effects island (`engine_fx.c`, with the
+  console's `tanhf` and `powf`) on one chain slot (`fx_slot.c`), set up and
+  clocked as the offline render (`perf_render.c`) sets up a slot that holds
+  an effect at arm. Its state (`segno_fx_state.h`) carries the settings, the
+  entry's channel handling and enable bit, the chain slot it held, and the
+  take's hop seed, FX clock and beat at the host's sample 0. The plugin runs
+  the kind on that slot, so clock LFOs, octaver hops, update cadences, noise
+  seeds and beat-locked kinds fall where the console's did.
+- Parameter ids are the engine's parameter indexes (id p is `params[p]`,
+  the normalized value is the engine's 0..1 setting); the channel handling
+  is 1000 to 1003 and the bypass (the engine's enable bit) 1100
+  (`params.h`). A host's bypass runs the engine's switch (delays and reverbs
+  drain, the rest crossfade), except for a kind that delays its output (the
+  octaver family, 1216 frames; the oversampled drives and the vinyl, 3 or
+  4): it reports that latency on and off, and its bypass crossfades to its
+  input delayed as much, so a host's delay compensation holds either way.
+  The engine's settled bypass passes such a kind's input without the
+  delay, so the two agree while it is on and differ by the latency while it
+  is off. Superseded by #1836: 1100 is Enabled, the engine's switch for
+  every kind, and no plugin reports a latency.
+- The null test (`vst3/test/null_test.cpp`) writes a one-track capture per
+  kind and case (defaults; other settings with a mono output, balance and
+  level on chain slot 5; a setting change, a switch off and on again
+  mid-take), has the
+  engine's `le_perf_render_begin` render its wet stem, plays the dry stem
+  through the plugin loaded from the built bundle, and compares: every kind
+  and case is bit-identical, at 128-, 37- and 512-frame blocks, on macOS and
+  Linux. CI builds the bundle and runs the test in `native-tests`.
+
+## November 2026 The Live set carries the whole capture (#1799)
+
+- A take's arm records the rig again: the app had stopped handing
+  `PerformanceRecorderCubit` and `ControlCubit` the rig's chains (#375's
+  wiring was lost), so every arm recorded no effects, `fx-chains.txt` came
+  out empty and the wet stems were rendered without effects. Both now get
+  `performanceChainsFromLooper`, and a `PerformanceNames` of what the player
+  calls each track and input (`armSnapshot.tracks[].name`,
+  `armSnapshot.inputs`). `InputsCubit` moved into `AppRuntime` beside
+  `TracksCubit`, so the pedal path reads both.
+- The Live set holds every looper track's wet stem, its dry stem on a
+  switched-off `<name> dry` track (with the volume and mute as volume
+  automation), each captured input, and `Master (as heard)` switched off,
+  each named, with its effect chains in the track's info text.
+- Captured inputs are recorded after their monitor chain, volume and pan
+  (`mix_monitors_frame`), so they already are the inputs as heard, and play
+  in the set. No dry input is recorded: re-processing an input would need a
+  second tap before the monitor chain.
+- The DAW package now copies `loops/`: without it the Session clips were
+  missing media on the drive.
+
+## November 2026 Exported Live sets open in Live (#1791)
+
+- Ableton Live 12.2.7 refused every `project.als` Segno exported: "corrupt
+  and cannot be loaded (Not all list members have Ids)", because automation
+  events carried no `Id`. The XML had been written from public knowledge of
+  the format and never opened in Live.
+- `buildAls` now generates from a set Live saved
+  (`packages/daw_export/lib/src/live_set_template.dart`, generated from
+  `test/corpus/automation.als` by `tool/generate_live_set_template.dart`):
+  its audio track is copied once per channel with fresh pointee ids, and its
+  clip and envelope are the prototypes for every clip and envelope. The
+  corpus (`test/corpus/README.md`) holds six sets saved by Live 12.2.7
+  (empty, clips, automation, tempo, a looping warped Session clip, a VST3
+  effect), and the tests compare the generated XML with them.
+- Fixed with it: clip lengths (unwarped clips' loop markers are seconds,
+  not beats; lengths and rates come from the WAV headers, and a lane loop is
+  as long as its file instead of the whole capture), `FileRef` type 2,
+  looping Session clips (warped in Re-Pitch at the set's tempo), volume as
+  the track gain times lane 0's level, envelopes that start from the arm-time
+  values, no set for a capture with no tracks (Live refuses one), and the set
+  opening in the Arrangement zoomed to the capture with automation lanes
+  shown.
+- Checked by opening exports of console captures in Live (screenshots in the
+  PR). Envelopes are still written only over a dry stem, since the wet render
+  already applies them (#1622).
+
+## November 2026 Exports to a FAT32 stick (#1794)
+
+- FAT32 holds no file of 4 GiB or more, and most sticks come formatted
+  with it. The longest take (3 h, #1767) was held to what a WAV's RIFF size
+  allows, which is 8 bytes past FAT32's limit with the header: a stereo
+  master at 88.2 or 96 kHz that ran to its cap rendered at 4 GiB + 4 bytes.
+  `le_wav_max_frames` now counts the 44-byte header against FAT32's
+  largest file (`LE_WAV_MAX_FILE_BYTES`), one frame less; the drain takes
+  the longest take from `le_perf_longest_take_frames`. 3 h at 48 kHz and
+  93 min for a stereo master at 96 kHz are unchanged. The render still
+  writes a master up to what `le_wav_seal` accepts
+  (`le_wav_sealable_frames`), so re-rendering a take an earlier build
+  stopped at the RIFF limit keeps its master.
+  `test_perf_longest_take_fits_one_fat32_file` renders a take with a mono
+  and a stereo master, reads every stem's header, and fails if any could
+  pass 4 GiB less one byte at the longest take, for any cap and rate.
+- Before an export or a backup touches the drive, `AudioExporter` checks
+  every file against the largest file the drive's filesystem holds
+  (`StorageRepository.checkFileSizes`, `RemovableVolume.maxFileBytes`:
+  4 GiB less one byte on `vfat`, no limit on exFAT, NTFS or ext4) and
+  refuses with `StorageFileTooLarge`; `copyFile` checks its source the same
+  way. The Library's card line, and the backup's interrupted dialog, say
+  "FAT32 drives can't hold files over 4 GB. Use an exFAT drive." A take
+  this build records renders no file that reaches the limit (recording
+  parts are 2 GB, session files are loops of 10 minutes at most); the check
+  covers a master rendered at 4 GiB + 4 bytes for a take an earlier build
+  stopped at the RIFF limit, and any later writer.
+
+## November 2026 The Library writes to USB through the storage repository (#1790)
+
+- Export to USB, Back up to USB and the Library's USB location never saw a
+  drive on the appliance. The Library read drives through its own
+  `RemovableVolumes` port, and the app never replaced its no-drive default
+  (`InternalOnlyVolumes`) with #1177's `StorageRepository` once that landed,
+  so every export asked for a drive with a stick mounted.
+- The port, its copies of the storage models and `InternalOnlyVolumes` are
+  gone. `LibraryCubit`, `LibraryAudioCubit` and `AudioExporter` take the
+  app's `StorageRepository`, as the Storage page and the recorder do. The
+  drive's lease names `WritePurpose.export` or `WritePurpose.backup`; the
+  translated purpose stays on the guards, where a take's disabled Delete
+  shows it. A `StorageBusy` from the lease reads as busy, like a
+  `GuardRefused`.
+- Two exporter faults the stand-in hid, now that a real drive reaches
+  `AudioExporter`: an export's recovery of its folder deleted every
+  `.segno-export-*` directory there, including the staging of a backup or
+  export still running into the same folder (a backup and a mixdown export
+  both write `Segno/Sessions`); exports into one folder now run one after
+  the other, across the Library's exporters. And
+  the swap's renames were never synced, so "Exported to USB" could show
+  before a pulled stick would keep the export.
+- A directory sync was not enough either (#1797). On vfat a rename writes
+  the new entry with size 0 and cluster 0 (`vfat_rename`, then
+  `vfat_build_slots`), and only the file's inode, written back about 30 s
+  later, fills it in. A stick pulled after "Exported to USB" showed the
+  late files at 0 bytes. `StorageRepository.copyFile` now syncs the whole
+  volume after its rename (`StorageIo.syncVolume`: the engine's
+  `le_fs_sync_volume_errno`, which runs `syncfs(2)` and then an fsync of
+  the root to flush the device cache, since FAT has no `sync_fs`). The
+  exporter runs `StorageRepository.syncVolume` once more after the swap
+  and its clean-up, before it reports. `StorageRepository.syncDirectory`
+  is gone. Once "Exported to USB" shows, the stick can be pulled without
+  Eject.
+- Tests fake the repository (`FakeDrive`, `NoDrive` in
+  `test/library/helpers/fake_drive.dart`). One cubit test exports through a
+  real `StorageRepository` over the console's own records (an `iso9660`
+  whole-disk record the helper refused beside the mounted FAT partition),
+  and one app test opens the Library and reads the repository's drive.
+
+## November 2026 Flutter 3.50 and Dart 3.14 (#1777)
+
+- CI, the app and every package build on Flutter 3.50.0 (Dart 3.14.0):
+  `flutter_version: "3.50.x"`, `sdk: ^3.14.0`, `flutter: ^3.50.0`. Locally
+  the 3.50 SDK is `/Users/Tomas/development/flutter-3.50` until the shared
+  `/Users/Tomas/development/flutter` moves to it (How to build / test). The
+  appliance's engine moves with them (`flutter-engine-version.inc`, below):
+  the bundle's AOT snapshot loads only on its own engine.
+- Material comes from `package:material_ui` (the SDK's
+  `package:flutter/material.dart` is deprecated in 3.50). Import
+  `package:material_ui/material_ui.dart`, never the SDK library. Use
+  `appLocalizationsDelegates` (`lib/l10n/l10n.dart`), not
+  `AppLocalizations.localizationsDelegates`: gen-l10n still lists
+  flutter_localizations' delegates there, whose `MaterialLocalizations` type
+  is not the one material_ui reads: under `es`, `MaterialLocalizations.of`
+  finds none. `test/l10n/app_localizations_test.dart` checks both, and
+  `test/tool/bloc_imports_test.dart` keeps material_ui and cupertino_ui out
+  of blocs and cubits (bloc_lint's `avoid_flutter_imports` sees only
+  `package:flutter/`).
+- The lint set is very_good_analysis 11 as shipped: the app's and every
+  package's `analysis_options.yaml` include
+  `package:very_good_analysis/analysis_options.yaml` directly and override
+  none of its rules or its formatter. So `dart format` automates trailing
+  commas, a constructor named after its class is declared `new(...)`
+  (`unnecessary_type_name_in_constructor`), and an empty class body is `;`
+  (`empty_container_bodies`). #1784 applied this, and its description lists
+  the commands. Code from a branch cut before it needs them again after the
+  merge, in order, on the 3.50 SDK: `flutter pub get` in the app and every
+  package, `dart fix --apply --code=unnecessary_type_name_in_constructor .`,
+  `dart fix --apply --code=empty_container_bodies .`,
+  `dart run tool/ffigen.dart` in `packages/segno_engine` if the engine
+  header changed, `dart format .`, then `dart analyze` for lines the
+  formatter leaves over 80 columns.
+- Private named parameters (`required this._x`, Dart 3.12) replace
+  `_x = x` initializer lists; `async` functions `return await` a future.
+- The engine bindings are generated by `packages/segno_engine/tool/ffigen.dart`
+  (ffigen 23's Dart configuration; the YAML file is gone).
+- The image ships meta-flutter's prebuilt engine for Flutter 3.50.0 (engine
+  `371f77202a73e8dff57a8b3bff75bca55c090aee`), the release the app bundle is
+  built on. The embedder API only gained members between 3.47 and 3.50
+  (Vulkan external textures, frozen-struct notes), and
+  `MakeRenderTargetFromBackingStoreImpeller` is unchanged, so ivi-homescreen
+  stays at its pinned revision and its three patches apply as they are,
+  the MSAA framebuffer (#1687) included.
+- Until meta-flutter publishes the 371f772 engine (their build was queued,
+  runners offline, on 2026-11-12), both engine digests on the branch are
+  from a build of meta-flutter's own workflow on our runner, and only the
+  self-hosted image build can fetch it (the tarball is in its Yocto
+  downloads directory). Swapping in meta-flutter's digests gates the merge
+  of PR #1781.
+- 3.50 adds `--impeller-use-sdfs`: rects, rounded rects, circles, ovals and
+  lines drawn from signed distance fields and anti-aliased in the shader.
+  Flutter's GTK, macOS and Windows embedders always pass it; the embedder API
+  does not, and the console does not either. Measured on the console at
+  48 kHz / 32 with a loop playing, release mode, 30 s windows: on the stage
+  the V3D render queue was 27% busy without SDF and 63-66% with it (7.8 ms a
+  render job against 3.1), the profile build drew about 10% fewer frames on
+  the main screen, and the readout's raster time went from 5.9 to 10.4 ms
+  (p50). Paths (the pen icons and the stomp art) still alias
+  without MSAA, so SDF cannot replace it.
+- Against build 243 (3.47.5), 3.50 without SDF is level: app CPU 11.4% of the
+  machine on the stage against 11.8-11.9%, GPU 26% against 27%, build p50
+  0.2-0.4 ms on both screens in profile mode.
+- Scanout dumps read through KMS for every combination: MSAA 4x / 2x / off,
+  with and without SDF, against build 243, are in PR #1781.
+
+---
+
+## November 2026 A capture left running stops on its own (#1767)
+
+- The owner's call on the #1747 recommendation. The drain (`perf_drain.c`)
+  ends a take, keeping everything recorded, once 20 minutes pass with
+  nothing happening (`LE_PERF_STOP_IDLE`, sidecar `stopped_early: "idle"`),
+  and at 3 hours (`LE_PERF_STOP_LENGTH_LIMIT`, `"length_limit"`), never past
+  what a 32-bit WAV of the rendered master holds (a stereo master at
+  96 kHz: 93 minutes). The times come from the repository
+  (`PerformanceRepository.idleStopAfter`, `longestTake`) on
+  `le_perf_target.idle_stop_seconds` and `max_seconds`.
+- Something happening is a logged event a player's action leaves (a
+  press, a transport change, an edit; not the facts the engine logs on its
+  own, such as a loop top's tempo anchor or an overdub pass retiring) or a
+  captured input sample over the engine's activity level (-40 dBFS)
+  through the sound trigger's 100 Hz high-pass, measured in the drain, not
+  the callback. Entries the engine logs past the idle end wait for the
+  cycle's decision, so the log ends where the take does (#1549). The paused
+  #1747 capture's idle 18 minutes peaked at -46 dBFS. An input whose noise
+  stays over the level keeps the take going until the 3-hour stop.
+- Only high-passed input counts (#1772 caught it): the drain also read the
+  device's raw input meter once a cycle, at the same -40 dBFS, so mains hum
+  over that level counted as playing whenever a cycle happened to read it,
+  and on a console with hum a take would never idle-stop. The meter read is
+  gone. Playing the captured streams do not carry (a monitor turned down or
+  muted, the player on the interface's direct monitoring, an input not
+  monitored at arm) does not keep a take going; high-passing the meter
+  would need work in the callback.
+- Nobody is there, so the capture dialog does not open for such a take
+  (`PerformanceRecorderRendering.stoppedOnItsOwn`); `PerformanceAutoStopNotice`
+  says it as a passing warning at the player's next touch, key, encoder,
+  pedal or MIDI message (`IdleDimCubit.activities`). A stem that failed to
+  render is the news instead: the take completes as partial and the dialog
+  opens.
+
+## November 2026 Cheaper effects, the same sound: reverbs, delays, filters (#1755)
+
+<!-- cspell:words Freeverb ulp tanhf exp2f log2f NEON equiv diffusers -->
+- The owner's rule: no loss of quality. Every change here is bit-identical
+  to the trunk it started from (65f85a3b4), on every factory setting, at
+  44.1, 48, 88.2 and 96 kHz, in 32- and 64-frame blocks, tails included:
+  `bench_fx_equiv` (How to build / test) proves it, with macOS clang -O2,
+  GCC 13 and 14 and clang 18 -O3 (the appliance's) on arm64; CI runs its
+  subset on x86 and arm64.
+- The reverbs' network (Dub, Amb and Room): its eight lines run as two
+  four-lane vectors (`engine_fx_simd.h`, GCC and clang vector extensions,
+  NEON on the console), the two sides' diffusers in step, and a redesign
+  while Length or Dec glides computes the lines four at a time. The sums
+  that mix the lines still run in line order.
+- Mode delay: the Drum and Dub voicings design each section once for both
+  sides and only what a gliding setting moves; the time in frames is kept
+  until the tempo or note value changes. EQ: both channels as one double
+  vector. Freeverb: each bank's combs four at a time. Filter, Echo,
+  Tremolo: one design, read position or gain a sample for both channels.
+  Mod: the phaser's stage spreads once a rate.
+- One instance on the console (Pi 5, GCC build, offline, core 3, ns a
+  frame at 48 kHz): Room reverb 377 -> 309 still and 644 -> 426 with
+  Length moving; Dub and Amb 198 -> 142 still, 351 -> 224 moving; Filter
+  132 -> 82; Freeverb 128 -> 116; EQ 77 -> 63; Mode delay 80 -> 71 (the
+  Dub voicing gliding 120 -> 104); Echo 117 -> 110; Mod 98 -> 92. The
+  others are unchanged.
+- The charges (`kFxKindCostNs`): the table at 44.1, 48 and 96 kHz, 32 and
+  64 frames, and the moving runs at 48 kHz / 32, before and after on the
+  same day; each kind charges the larger of its largest new reading and
+  its old charge scaled by the median after-to-before ratio of the
+  scenario that set it, so a worst case an earlier run caught keeps its
+  margin. Room 735 -> 552, Amb 272 -> 225, Dub 221 -> 197, Reverb 234 ->
+  223, Mode delay 179 -> 171, Filter 166 -> 99, EQ 88 -> 71, Echo 144 ->
+  141, Mod 113 -> 110, Tremolo 52 -> 50. Ed's Rack 3407 -> 3199 at 96 kHz
+  / 64 (2, 3, 4 and 5 racks with 0 to 3 workers, was 2, 2, 3 and 4) and
+  4640 -> 4432 at 48 kHz / 32 (four inputs leave room for two track racks,
+  was one).
+- What was left: the Room reverb's early taps (up to 64 a side, about
+  140 ns a frame) keep the trunk's loop character for character. The
+  compilers decide per loop shape whether to fuse each tap's multiply-add
+  (clang -O3 interleaves the trunk's loop and splits them), and a Drum
+  room's low cut, a float biquad at 8 to 65 Hz, carries a one-ulp change
+  to about -62 dBFS: the trunk's own clang -O2 and -O3 builds differ by
+  that. So any non-identical change ahead of it fails the -120 dBFS rule;
+  conditioning that filter is an owner's call (#1761). The
+  dynamics, the Spring, the LPF and the modulation kinds spend their time
+  in serial filter chains and per-sample `tanhf`, `log2f`, `exp2f` and
+  `sinf` that an identical result cannot avoid.
+
+## November 2026 A long capture recovers in bounded memory (#1747)
+
+- Cause: the performance render (`perf_render.c`) held whole-length
+  buffers, 33 bytes a capture frame for a track with a heard image (dry,
+  wet, both heard sides, the heard marks, the routed pair) plus 8 for the
+  master. The 1 h 36 min capture (277M frames) needed 8.7 GB; the console
+  has 8 GB and no swap, so boot recovery was OOM-killed on every start.
+  The per-track segment table (#1717) is a fixed 0.6 MB and not a cause.
+- The render now runs every channel together a block of 65536 frames at a
+  time and writes its stems as it goes (`le_wav_open`/`append`/`seal`):
+  peak 7.5 MB above the process for 3 min, 1 h 36 min or 3 h on the console
+  (under a 256 MB address-space limit), byte-identical stems and master to
+  the whole-buffer render (all 160 native fixtures, the real capture at
+  full length on the Mac, and the console's own build-238 stems). A cancel
+  is seen at the next block and removes the stems it began; a stem that
+  fails after some of its audio is in the master leaves no master.
+- A device reconfigure (the audio warm-up, seconds after start) no longer
+  cancels a running render: it used to join a worker that was rendering a
+  whole stem, which held "Audio is starting" until the OOM, and dropped the
+  recovery's stems.
+- A salvage the app does not survive is not run again by every start: the
+  bundle carries `.boot-recovery-attempt` (a count) while its salvage runs,
+  a render that outlives the wait included. One interrupted salvage is run
+  again (a restart or a power cut also stops one); at the second the bundle
+  is marked `.boot-recovery-failed`, kept, and counted as not recovered.
+  The not-recovered notice (a passing warning, said at every start) has Try
+  again (`PerformanceRecorderCubit.retryRecovery`), which gives the take one
+  more salvage.
+- Stems are written as `<stem>.wav.part`, synced and published on sealing,
+  so a cancelled re-render keeps an earlier render's stems; a render that
+  runs to its end removes any stem it did not publish, so a bundle never
+  mixes two renders. The render handle is its own engine field
+  (`perf_render`), outside the capture state a reconfigure resets.
+- A master past the 32-bit WAV sizes (stereo over 3 h 6 min at 48 kHz) is
+  not rendered and the stems stand; a master that could not be written is
+  left out without failing the tracks, as before.
+
+## November 2026 The Studio Dist and the Overdrive's polarity (#1743)
+
+- The Studio Rack's Dist is the Looper X's amp simulator without a cabinet
+  (#891 rig, s19std). Its variant now builds the Amp+Cab on the D.I.
+  cabinet, Bass and Modern 50 %, Treble 35 %, each Dist Drive read as the
+  Amp's drive with the same 1 kHz small-signal gain (a table: 10 % is 5 %,
+  50 % is 54 %, 66.5 % is 82 %, 80 % and up is 100 %). The 19 Studio presets
+  against the captures at their settings: response 63 Hz to 8 kHz within
+  1.9 to 2.6 dB (7.4 to 11.9 before), rms 0.8 to 2.4 dB, sample residual
+  -2.8 to -12.9 dB. At 5 to 10 % the Looper X clips inputs above -12 dBFS
+  harder than the Amp does (8.6 dB at 0 dBFS; Bass Di, Crunchy Tremolo,
+  Oct Up Atmos). The Distortion kind is no longer built by any factory rack;
+  chains saved with it keep it.
+- The Overdrive no longer inverts. s20pol (stim_full, each rack against its
+  own all-off pass) shows the OvDrive's onset positive and 2 samples late,
+  as the dry path's, ringing to a larger negative swing 23 to 30 samples
+  later, which Phase 0 read as an inverted output. The residual against the
+  captures went from +4 dB to -10 to -13 dB (Ed's, Guitar and Lo-Fi).
+
+## November 2026 The Lo-Fi Rack's Distort is the overdrive (#1737)
+
+- The Looper X's Lo-Fi Distort is its overdrive: the Guitar Rack's OvDrive
+  times 1.6 (+4.08 dB) to a residual of -73 dB at Drive 0, 53.5 and 100 %
+  and Tone 0, 50 and 100 % (#891 rig, session s19lofi). The Lo-Fi variant
+  (`_loFiDistortion`) now builds the Overdrive kind, Dist Drive and Dist
+  Tone on its drive and tone (both 0 to 100 % on the Looper X), with the
+  Overdrive's new level (0 to +12 dB, 0 dB by default) fixed at +4.08 dB.
+  The module is still the catalogue's Distortion; the Studio Rack's Dist
+  stays on the Distortion kind.
+- Each Lo-Fi preset's Distort against the capture at its settings: the
+  response from 63 Hz to 8 kHz within 1.7 dB, the 1 kHz ladder within
+  2.1 dB, the level 0.6 to 1.4 dB under (the Overdrive kind's own fit error
+  against the OvDrive, to the hundredth); the Distortion kind it replaced was
+  17 to 25 dB off in response. Every other rack builds the same entries, and
+  the Ed's and Guitar overdrives render the same samples (level 0 dB is a
+  gain of exactly 1). A Lo-Fi rack charges the Overdrive's cost now.
+
+## November 2026 Every FX control reads in units (#1731)
+
+- "Scale unverified" is gone, with `FxParamInfo.taperUnverified` and the
+  native `LE_FX_PARAM_TAPER_UNVERIFIED` flag. Every built-in parameter prints
+  its value in its descriptor's unit (`fxParamValueText`), a factory module
+  on one of the seven built-ins included (that case is reached only by a
+  chain saved before #887 moved those modules to Looper X kinds; it plays its
+  values on the built-in's scale, so those units are what it plays).
+- Measured on the #891 rig (sessions s19std, s19lofi, s19oct; rig check:
+  s6amp seg 0 repeats bit for bit, s7oct seg 0 within 0.01 dB):
+  the Dual Octaver's Octave 1 Vol is linear in amplitude as the kernel has it
+  (-2.50, -6.02, -12.04 dB at 75, 50, 25 %); the Studio Rack's Dist follows
+  the Distortion's drive law (1 kHz small-signal gain within 3.1 dB from 0
+  to 100 %). Dist Drive and Dist Tone are 0 to 100 % linear on the Looper X
+  in both racks, and read as that percent here; the tone plays our own 2 kHz
+  shelf. The settings and the sound are unchanged.
+- Found: the Lo-Fi Rack's Distort is the Looper X's overdrive (the Guitar
+  Rack's OvDrive at +4.08 dB, to -73 dB residual), not the amp simulator the
+  Distortion kind models. Rebuilding it on the overdrive kind changes the
+  Lo-Fi presets' sound, so it waits for the owner (#1737).
+
+## November 2026 A switched-off tail keeps its charge until it drains (#1733)
+
+- The snapshot reports which chain slots still drain a tail: `le_snapshot`
+  carries the masks by chain (`fx_draining_monitor`, `_lane`, `_track`,
+  `_all_tracks`, `_output`), and `EngineSnapshot.fxDraining` (`FxDraining`)
+  reads them; no new polling. The chain's thread stores each slot's
+  `enable_drain` flag whole with a relaxed atomic store (`LE_FX_DRAIN_STORE`,
+  a plain store on arm64 and x86), and `le_engine_get_snapshot` reads the
+  chain's own slots (up to `a_fx_count`) with relaxed loads. A first version
+  kept an atomic mask in `le_fx_state` and set it from the pinned
+  `fx_apply_chain_with_gain`: that grew the struct (changing the mixer's own
+  code) and the driver (moving every hot function after it), and CI's arm64
+  64-lane mixer went from 24.2 % to 24.95 % of its budget. This one leaves
+  the struct and every hot function but the driver byte-identical, at the
+  same addresses (the driver grows 32 bytes inside its last line), and CI
+  reads 24.20 % (#1745).
+- The repository reads the masks against its chains at each snapshot (a
+  chain whose recipe the engine has not adopted keeps its last reading) and
+  charges an effect of a draining kind while its slot drains, however it was
+  switched off: the screen, a chain switch, a rack, or a hold. A held chain
+  charges the tails it already drains, not the effects it was running, so
+  R2 can still hold a running chain of reverbs; a chain whose hold would
+  free nothing is not held, and a hold the engine has not taken yet charges
+  the chain in full. Every snapshot (each poll and each write's
+  re-projection) notes the draining-kind effects that stopped running, and
+  one counts as draining until the engine has run two blocks past that
+  snapshot (two snapshots if it processes nothing), so a switch-off the
+  engine has not yet seen still counts. Once the engine reports the tail
+  quiet, the room comes back with the next snapshot.
+- `test/looper/cubit/fx_drain_budget_test.dart`: a Room reverb switched off
+  at the limit refuses an Overdrive switched on until its tail drains, then
+  admits it; a kind without a tail frees its room at once.
+
+## November 2026 The effects budget reserves room only for what a switch can turn on (#1723)
+
+- An effect is charged when it runs or a control can make it run: its own
+  switch, its rack's (`FxRack.bypassed`) and its chain's are each on, or a
+  control reaches that switch. An effect that is off and that no control
+  reaches charges nothing. The rule lives in the repository's load
+  (`LooperRepository._fxLoadAt`), so every admission (adds, loads, takes,
+  rate and buffer changes, the rig coming up) and every readout follows it.
+- What the controls reach is worked out from the binding set by
+  `fxReachOf(ControlState)` (`lib/control/binding/fx_assignments.dart`,
+  beside `fxAssignmentsTo`, which walks the same stores) and handed to
+  `LooperRepository.setFxReach` on every change. It counts the console
+  bindings in force (press and hold, a selected-scope binding on every
+  track), every Track-stage chain (an unbound track switch in FX mode, the
+  digit keys and the Track effects on command), each enabled MIDI mapping's
+  effect switches and each external switch's activations under its jack's
+  type.
+- Switches one control alternates and no other control reaches (an
+  external switch's On rows against its Off rows, Held against Released, a
+  MIDI button's top against its bottom) charge their larger side
+  (`FxReach.states`): the load is the largest over each side of each
+  alternation, plus the state the screen left them in. An external or MIDI
+  press weighs all the chains it writes as landed together
+  (`LooperRepository.fxPress`), so the side it switches on is never admitted
+  on top of the side it switches off.
+- The screen weighs switching on an effect, a rack or a chain
+  (`FxCubit.setEffectEnabled`, `setGroupEnabled`, `setChainEnabled`) and
+  refuses it with the over-budget notice when it does not fit. A press never
+  is: what it can turn on is already charged. The per-effect enable paths no
+  view used (`MonitorCubit.setEffectEnabled`, LooperBloc's
+  `Looper*EffectEnabledToggled`) are gone, so `FxCubit` is the screen's only
+  writer of an effect's switch.
+- A binding that would put the reservation over budget is refused at save
+  (`ControlCubit.setGlobalBindings`, the pedal setup's save and the MIDI
+  save throw `FxReachOverBudget` or return `MidiSaveResult.overBudget()`),
+  and the screen says "Not enough processing left for what this switch can
+  turn on". Those three saves share one queue (`ControlCubit._serializeReach`),
+  so a check and its commit are one step and two pages cannot both pass. A
+  change that only takes reach away (`fxReachShrinks`) is never refused; if
+  the charge rises anyway (an alternation moving past the cap of 6), chains
+  are held off as R2 does and come back once it fits. A session's bindings that come in over budget are admitted as a
+  restore is (R2): chains are held off until the rest fits, and a reach that
+  shrinks brings them back. R2 never holds a chain that charges nothing.
+- A switched-off delay, echo, Mode delay or reverb keeps running until its
+  tail drains (`le_fx_type_drains`; `kFxDrainingKinds` mirrors it and a test
+  reads the engine's table). The side a press turns off is still charged for
+  those, so an alternation charges the larger of each side plus the other
+  side's draining effects (a console stress test switching an A/B pair every
+  second at the limit showed the xruns without this). One switched off from
+  the screen keeps its charge until the engine says its tail is quiet
+  (#1733, above).
+
+## November 2026 A take plays back what was heard (#1713)
+
+- Plan and the owner's decisions: the comment on #1713. Engine part 1
+  (`engine_heard.c`): a lane pool slot can hold a heard image, two more
+  planes (left, right) beside the clean take, in lockstep with it (same slot,
+  same capacity, the same allocation, retire, standby and zero-spare rules),
+  so Undo, Redo, Peel and Clear's restore carry it with no code of their own.
+- Capture: `le_record_image.heard_mask` gives a fresh take an image. The
+  first frame loop logs where it wrote the clean take and the content
+  operations it made mid-block (seam folds, #730 tapers and fades, the stop
+  tail copy); after the monitor jobs the post-pass writes the input chain's
+  output (times the capture trim) at the same places and replays the
+  operations in order. Block-start operations (the punch-out drain,
+  truncation) apply to the planes at once. A layer with heard images is
+  announced to control only after its post-pass. The input chain runs while
+  a lane captures through it even if its monitor is muted or off.
+- Playback: a lane with source HEARD (the default) whose live slot holds an
+  image reads its planes through the same head as the clean take and does
+  not run its chain; `le_engine_set_lane_source` switches to the clean take
+  through the chain with a 10 ms crossfade (the chain re-enters through its
+  re-enable ramp). The wet cache does not print such a lane.
+  `le_engine_heard_attach` gives a dry take an
+  image copied from its clean take, for an overdub through effects.
+- Part 2a: Double and the halves build the edited image's heard image with
+  the clean take's arithmetic (and their Undo shrinks both). The render
+  recipe (Bounce, Save selected) plays a heard lane as its image at level
+  with no chain, read backward on a reversed track. A whole-track print
+  assembles a heard part from its image (its key folds whether the part
+  plays its image). Sessions: `le_engine_export_layer_heard`,
+  `le_engine_import_layer_heard` and `le_engine_export_track_lane_heard`
+  carry each image's heard image as interleaved stereo.
+- Part 2b: a lane's Transpose and stretch renders carry its image (one
+  stereo-linked stretch of the two planes, `le_stretch_render_loop_planar`),
+  and the pitch bridge reads the image with the clean take's grains. Until a
+  render with the image lands the lane plays its clean take at the track's
+  pitch.
+- Part 2c: a performance capture stages each layer's and restore image's
+  heard images (after the clean lanes in its file, `heard_mask` in the
+  manifest), logs each heard lane's source (`LE_PLOG_HEARD_SOURCE`,
+  events.log version 16), and the wet stem plays lane 0's heard image where
+  it sounded, with a crossfade at a switch as the callback does. The arm and
+  disarm snapshots' `heardPcmRef` is read when the app writes it (part 4).
+- CPU: a block where no lane holds an image runs the trunk's mixer
+  (`mix_tracks_frame`, the heard copy is `mix_tracks_frame_heard`), checked
+  under Valgrind against the trunk's instruction count.
+- Part 3 (`engine_heard_tail.c`): when a capture pass on a lane holding an
+  image ends (a take closing into play, a punch-out), the cache worker
+  renders the input chain's tail from the last 12 s of that input (kept in a
+  16 s ring per input a heard lane records, mapped by the control poll) and
+  the callback adds it into the image after the pass's last written
+  position, one frame per frame of time since the end, wrapping at the loop:
+  always behind the read head, so the live ring-out on the first repeat is
+  not doubled and the tail plays from the second. A take running straight
+  into overdub renders none (the overdub records the ring-out). A new
+  capture, Stop, a slot or length change, Reverse or Speed drop what is not
+  added yet; Undo of the pass takes its tail with it.
+- Part 4 (the app, dormant): `AudioEngine` reads and writes heard images
+  (`exportLayerHeard`, `exportTrackLaneHeard`, `importLayerHeard`), sets a
+  lane's source and attaches an image (`setLaneSource`, `heardAttach`), and
+  arms a take with `RecordImage.heardLanes`. Sessions are schema 19: each
+  layer names its heard image (`heard`, a stereo WAV beside the layer; the
+  18 to 19 step fills in nothing), a recall imports it right after its
+  layer, and the stem export writes it beside the clean stem. A performance
+  capture writes `heardPcmRef` for the arm and disarm snapshots, and the
+  Ableton export's session clip uses it.
+- Part 5 (the switch-over, looper_repository): a take records heard on
+  every lane whose input chain it inherits (`RecordImage.heardLanes`), keeps
+  that chain on the lane by value, and remembers it as what the take was
+  printed with (`_lanePrinted`). The lane plays its image while its chain is
+  that one (compared as the chains persist) and its clean take through the
+  chain once the chain is edited or switched off (a re-amp,
+  `setLaneSource`); editing back plays the image again. A lane playing its
+  image charges nothing in `_fxLoadAt`, so a re-amp is weighed like any
+  edit, and R2 never holds one (holding it frees nothing). When R2 holds an
+  edited chain, the lane plays its image. Takes are never switched off for
+  the budget: `_takeOverBudget`, `fxTakeHeld`, its toast and strings are
+  gone. A take
+  the engine could not give an image plays its chain live and is weighed by
+  R2. An overdub over a take recorded dry, on a lane with no chain of its
+  own, attaches an image first (`heardAttach`) and records through the
+  input's effects. The printed chain persists in the lane envelope's meta
+  (`FxChainMeta.printed`) only while it differs from the lane's chain;
+  absent, it is the lane's chain. The saved mixdown sums a lane playing its
+  image as that image, its sides averaged.
+- #1741: a take records its input chain's Pre run only (the input
+  recipe now carries its split, `heard_mon_pre`; the monitor job notes the
+  signal after the run, `heard_tap_*`, where a heard lane records a chain
+  with Post entries). The Post entries are copied onto the take's lane as
+  before #1713 and run live over the image (`le_heard_lane_wet`,
+  `fx_apply_chain_from`), so they ring out past a Stop, and the render
+  recipe and the performance stems run them too. The lane plays its image
+  while its chain's Pre run is the one recorded, so an edit of a Post entry
+  is not a re-amp; a heard lane charges its Post entries. An input chain
+  with no Pre entry records clean. The rendered tail is the Pre run's. A
+  re-amp the Effects page did not weigh that does not fit is held and named
+  by the standing notice.
+- Local tool: `SEGNO_HEARD_FORCE=1` runs the whole native core suite with
+  every take recording an image of an input with no chain, which must equal
+  the clean take after every callback.
+
+## November 2026 A pedal switches a rack, so one switch alternates two racks (#1711)
+
+- Each rack INSTANCE in a chain is a binding target of its own,
+  `FxRackTarget` (`{stage, index, lane?, rack}`), keyed by `FxRack.id`. That
+  id is already an instance id: every addition mints one (`SlotIds.mint`), it
+  is saved with the chain, and a rename or reorder never rewrites it, so a
+  second copy of the same sound in one chain is a different rack. A rack
+  that is removed makes its bindings show as missing (R25); they never fall
+  back to the chain or the other rack. Re-adding a factory rack asks first,
+  counting bindings to the rack with those to its pedals in its one
+  question, and removes them on confirm.
+- A rack's switch is `FxRack.bypassed`, on every module of the rack and
+  saved with the chain (session file, settings and performance snapshot
+  alike). Off and on change only that flag, so each pedal's own `enabled`
+  is as it was, and a round trip (a hold, a Released value) is exact.
+  `TrackEffect.effectiveEnabled` is the pedal's own switch with its rack's
+  applied. The engine has no rack switch: the repository hands it the
+  effective state through the existing per-entry atomic stores and recipe
+  slots (`LooperRepository.setRackEnabled`), so the callback, wet cache,
+  fingerprints and performance log see it without knowing racks, and nothing
+  native changed.
+- Offered in External pedals Controls, MIDI controls and FX pedal
+  assignments, each rack after its chain and before its own effects. A chain
+  that is one rack end to end (`fxSoleRack`) offers that rack in place of
+  its "Every effect" row, so the pedal switches what the rack's card
+  switches; an older binding to such a chain still works. Custom controls
+  carry actions, not activations, so they offer none.
+- The Effects page's rack power is the same switch: its button reads
+  `FxChainGroup.isOn` (the rack's switch), the card lights when
+  `FxChainGroup.audible` (switch on and a pedal on), and a bypassed rack's
+  editor dims its pedals, which keep their own switches.
+- A pedal LED follows what the Effects page shows (`bindingLit`): a chain or
+  rack binding lights with its own switch, an effect binding only while the
+  effect sounds (its own switch, its rack's and its chain's on, the chain not
+  held off for room). Pressing still flips the effect's own switch.
+- A console binding's toggle now saves the chain it changed, so a rack (or a
+  chain or an effect) switched from the pedal survives a reload. A momentary
+  returns to what is saved, and an empty chain switched off is not saved.
+- The performance arm snapshot carries each entry's effective state, since
+  its native reader knows no racks.
+- One external switch with Rack A active while On and Rack B active while
+  Off alternates them on every press (the Line 6 Helix pattern);
+  `test/control/rack_activation_dispatch_test.dart` drives exactly that
+  through the control path.
+
+## November 2026 Undo after a track clear (#1707)
+
+- Undo right after a track clear restores the cleared track, whichever track
+  is selected. A Track Hold clear in Mute leaves the selection where it was
+  (#1671), so on build 234 the Undo pedal undid the selected track instead.
+  The clear from the screen, a Custom Clear track and the Track Hold all go
+  through `LooperRepository.clear`, which now records the clear as the last
+  undoable clear, the same group a Clear all forms (#1634).
+- `LooperState.undoRestoresClear(channel)` is the one rule: a clear can be
+  undone, and the asked track has no record arm or Count-in launch and is
+  either empty or not capturing and not edited since the clear
+  (`editedSinceClear`).
+- "Edited since the clear" reads the engine's history order: every undo
+  entry (a layer, a Peel, a length edit, a Bounce, a Clear restore point)
+  is numbered as it is filed, and numbered again when a Redo files it back,
+  and `le_track_snapshot.history_seq` publishes the number of the entry the
+  next Undo takes back. A track is edited since the clear when that number
+  is newer than the newest one at the clear, when it was empty or recording
+  its first take at the clear and has a take now, or when a Clear all was
+  refused on it. So Undo works
+  newest first across tracks: after an overdub on the selected track since
+  the clear, the first Undo takes the overdub back and the next restores
+  the clear.
+- The clear stops being "the last thing" as with Clear all: a later clear
+  replaces it, a fresh take on the cleared track retires it, its Undo spends
+  it, and a newer edit on the asked track, or a running capture, is that
+  track's own Undo. An edit on a third track does not stop it. A clear of an
+  empty track, which leaves nothing to restore, keeps the clear before it
+  (as an empty Clear all does, #1642), and leaves an undone Clear all's
+  grouped Redo alone, and so does undoing it. A Redo of a restored track
+  clear on that track makes it the last clear again; a Redo on another
+  track is that track's own, as after Clear all (#1634).
+- The cleared notice still offers only a Clear all: `clearAllUndoable` is
+  `undoableClear == UndoableClear.all`, so a later track clear ends it.
+
+## November 2026 Clear track Hold also clears in Mute mode (#1671)
+
+- With Track Hold set to Clear track, holding a track pedal in Mute mode
+  clears the held track as in Record: the 350 ms pause, the pill fill and
+  the flash (#1534, #1652). Bank-following, take locks and mode changes end
+  it as before.
+- With Clear track set, Mute's track press acts on release, and a hold that
+  fires cancels it (the owner's option B on #1671), the rule Custom pairs
+  follow. So nothing unmutes, rejoins the mix or parks the loop before a
+  clear, and Undo brings the track back as it was. With Arm overdub or None
+  set, Mute keeps its press on contact.
+- Arm overdub still runs only in Record (`ControlCubit._armTrackHold`). A
+  Song section that is capturing is not cleared from Mute, as Mute's press
+  leaves it alone. The Looper X's Hold Track Pedal is one setting with no
+  mode limit; the RC-600 has no Mute mode but puts Clear on the long press
+  of its Play/Stop and Stop track functions.
+
+## November 2026 Readout palette (#1674)
+
+- The 7in readout draws with `AppTheme.readout`: `AppTheme.neon` with
+  `SurfaceTheme.readout`, which lifts only the two dimmest tiers of
+  `SurfaceTheme.dark` (owner decision 3 on #1674). Muted text takes the
+  `textTertiary` grey 8A8A92 (5.9:1 on the readout's background, 3.8:1
+  before), and `borderSubtle` is an opaque 4A4A50 (2.05:1 against the card,
+  1.41:1 before). The ink tiers stay translucent. The main screen keeps
+  `SurfaceTheme.dark`.
+- Everything muted on the readout lifts together: "Empty", the BPM unit, the
+  Loop panel's section labels, lock icons and dotted rule, the keypad title
+  and the waveform's bar numbers; so do the footer strip's border, the tempo
+  card's border and the plain buttons' edges.
 
 ## November 2026 Clear tempo on the 7in readout (#1654)
 
@@ -203,6 +1224,19 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 - Owed: the Penpot frames (plan part 3, #1658; geometry in PR #1651's
   "Design writeback"), the device checks listed on PR #1655, and #1648 (the
   routing rules into the same adapters).
+
+## November 2026 Takes remember the input they were recorded from (#1678)
+
+- A lane's take keeps the input it was captured from (`Lane.recordedInput`),
+  fixed when the take starts, the same way the lane's image pan and balance
+  are fixed (`_laneSource` in `LooperRepository`, filled from the pending
+  image when the take publishes). Changing the lane's input afterwards only
+  changes where the next take comes from.
+- A Session saves it per lane (`recordedInput`, schema 18). Older bundles
+  convert by taking the lane's saved `inputChannel`. A recall restores it.
+- Effects → Recorded tracks lists the inputs a track is set to record
+  (`laneCounts`, `laneInputs`), whether or not anything is recorded yet, and
+  names a part that holds audio by its recorded input.
 
 ## November 2026 Takes keep the lap they were played on (#854)
 
@@ -1730,9 +2764,11 @@ travel and diffuser bridge anchoring still require validation; #1074 stays
 ## How to build / test (environment gotchas — read first)
 
 - **Dart/Flutter tests:** the very_good_cli MCP `test` tool is broken in this
-  env (exit 69, machine-output parser vs Flutter 3.44). Use the working SDK:
-  `/Users/Tomas/development/flutter/bin/flutter test`. Codex does not install
-  the former Claude hook that blocked bare CLI test commands.
+  env (exit 69, machine-output parser vs Flutter 3.44). Use the Flutter 3.50
+  SDK: `/Users/Tomas/development/flutter-3.50/bin/flutter test`
+  (`/Users/Tomas/development/flutter` is still 3.47, which cannot resolve
+  `sdk: ^3.14.0`; once it moves to 3.50 this path goes back). Codex does not
+  install the former Claude hook that blocked bare CLI test commands.
 - **Screenshot suites** (`test/screenshots/`, tag `screenshots`): no goldens
   are committed. They render only with `--update-goldens`, into
   `test/screenshots/goldens/` (ignored), using the SDK's Roboto and every font
@@ -1745,14 +2781,45 @@ travel and diffuser bridge anchoring still require validation; #1074 stays
   blobless), at the commit in `.github/segno-design.sha`. Compare the PNGs
   against the Penpot file.
 - **Scaffolding:** prefer the Very Good CLI templates for normal packages.
-  The Very Good MCP `create` tool only makes federated method-channel plugins. The
-  FFI plugin (`segno_engine`) is **hand-authored** (`ffiPlugin: true` + CMake +
-  podspec). Native engine lives **inside** the plugin at
-  `packages/segno_engine/src/` (Flutter symlinks plugins at build time, so
-  out-of-package native paths dangle).
-- **macOS FFI loading:** the podspec sets `MACH_O_TYPE => mh_dylib` and uses
-  `Classes/` forwarder TUs that `#include` `../src`; `DynamicLibrary.process()`
-  on Apple (SPM static-links into the Runner). Don't revert these.
+  The Very Good MCP `create` tool only makes federated method-channel plugins.
+- **The engine is a code asset (#1783).** `segno_engine` is a plain package
+  with a build hook, not a Flutter FFI plugin. `packages/segno_engine/hook/build.dart`
+  runs CMake on `src/CMakeLists.txt` (the one description of the shipped
+  library) whenever Dart code that uses the package is built: `flutter run`,
+  `flutter build`, `flutter test` in the app or any package that depends on
+  it, and the appliance's `flutter assemble`. The bindings are `@Native`
+  externals (`tool/ffigen.dart`), so nothing opens the library, in any
+  isolate. Building needs CMake, clang (or Xcode's compiler) and, on Linux,
+  `libasound2-dev`. The hook sees only the environment variables
+  `hooks_runner` passes (PATH, HOME, TMPDIR, `CCACHE_*` and a few others):
+  `CC`, `CXX`, `CFLAGS` and `SEGNO_ENABLE_PLUGINS` do not reach CMake, so the
+  hook names the compiler and the plugin option itself. The build tree is
+  under `.dart_tool/hooks_runner/shared/segno_engine/build/`.
+  - **macOS:** plugin hosting on; Flutter bundles the library as
+    `segno_engine.framework`.
+  - **Appliance:** plugin hosting off, clang, `Release`; the manifest
+    (`flutter_assets/NativeAssetsManifest.json`) names the library
+    `libsegno_engine.so`, which the Flutter engine `dlopen`s through the
+    loader's path, so `segno-kiosk-launch` puts `/opt/segno/lib` on
+    `LD_LIBRARY_PATH` (ivi-homescreen's run path does not include it).
+- **Segno.vst3** (#1804), the effects as VST3 plugins for a DAW on the dev
+  Mac: `FLUTTER=/Users/Tomas/development/flutter-3.50/bin/flutter bash
+  packages/segno_engine/vst3/install.sh` runs `build.sh`, which renders the
+  editors' pedal faces (#1815, about a minute) and builds it (Release, into
+  `packages/segno_engine/build/vst3`), then installs it in
+  `~/Library/Audio/Plug-Ins/VST3`; `--test` also runs the null test and the
+  binding test against the installed bundle (`test/run_bundle_tests.sh`).
+  Its `CFBundleVersion` is the commit time of the checkout's HEAD, which
+  Segno Transfer compares with the copy it carries (#1829). After a change
+  to the pedal faces, `/Users/Tomas/development/flutter-3.50/bin/flutter test
+  --update-goldens test/vst3_faces/vst3_faces_test.dart` rewrites the layout
+  the editors read. Live finds it on its next plugin scan (start, or
+  Settings > Plug-Ins > Rescan) under Plug-Ins > Segno. Signed ad hoc;
+  Segno Transfer's `build-app.sh` builds it the same way and ships it in
+  the app's `Contents/PlugIns`, to install on request (#1829).
+  `bash packages/segno_engine/vst3/test/run_null_test.sh` builds a separate
+  tree and runs the null test, as CI does on Linux (clang, CMake,
+  `libasound2-dev`).
 - **Native engine tests** (deterministic, no device — the real safety net since
   the audio thread can't be runtime-tested here):
   ```sh
@@ -1768,6 +2835,22 @@ travel and diffuser bridge anchoring still require validation; #1074 stays
   scan/slot native tests against the vendored VST3/CLAP SDKs. Each suite
   prints "ALL PASSED"; the script exits non-zero on any compile or test
   failure.
+
+  Since #1771 it compiles each engine TU once per flag set, in parallel and
+  through `ccache` when installed, then runs the test binaries side by side,
+  each in a `TMPDIR` of its own, and prints each one's output when all are
+  done (the failed ones last). `BUILD_JOBS` sets how many run at once (one
+  per CPU). The core suite runs as `SEGNO_CORE_SHARDS` processes (16, on
+  every machine, so every run splits it the same way): each takes every
+  n-th entry of `test_engine_core.c`'s
+  `main` (`SEGNO_TEST_TOTAL_SHARDS`, `SEGNO_TEST_SHARD_INDEX`), so every
+  entry there goes through `SHARD(...)` (the script refuses a bare call)
+  and every test must pass without the ones before it. The engine source
+  list for this script, the benches, the pitch oracle and the test library
+  is `ENGINE_SRC` in `src/test/engine_build.sh`. `NATIVE_TESTS_ONLY` takes
+  a comma-separated list of `races`, `core` and `rest`, and
+  `SEGNO_CORE_PART=k/n` a share of the core shards; CI's ASan job runs as
+  three such parts.
 
   CI runs the same script in **two more configurations**, both of which must
   stay green and both of which are worth running locally after touching the
@@ -1805,21 +2888,35 @@ travel and diffuser bridge anchoring still require validation; #1074 stays
   listed one that now passes. The settings come from
   `src/test/bench/fx_factory_settings.inc`, generated from the catalogue;
   after a catalogue or module-build change, regenerate it with
-  `/Users/Tomas/development/flutter/bin/flutter test
+  `/Users/Tomas/development/flutter-3.50/bin/flutter test
   tool/generate_fx_factory_settings.dart` in `packages/looper_repository`
   (its test fails until then).
-- **Regenerate FFI bindings** after touching `src/segno_engine_api.h`:
+- **Effects against the reference engine (#1755):**
+  `bash packages/segno_engine/src/test/bench/bench_fx_equiv.sh` builds the
+  effects island twice, from the commit pinned in the script (`REF`) and
+  from the working tree, and runs every kind through both at every factory
+  setting, 44.1 to 96 kHz, 32 and 64 frames, tails included: bit-identical
+  but for the kinds in `k_reordered` (`bench_fx_equiv.c`), which must stay
+  under -120 dBFS. About 4 minutes on an M4 Pro; `--kind NAME`, `--detail`
+  (the first frame that differs), `--ci` (one setting a kind, which
+  `run_native_tests.sh` runs). `FX_EQUIV_OPT=-O3 CC=clang` checks the
+  appliance library's build. A change meant to alter a kind's sound moves
+  `REF` to the commit that makes it, in the same PR. Bit-identity depends on
+  each compiler forming the same fused multiply-adds: a loop of taps
+  rewritten in another shape can make clang split them (#1755), and GCC
+  fuses the other product of `b x - a y` in vector code (`LE_ROUNDED`,
+  `engine_fx_simd.h`).
+- **Regenerate FFI bindings** after touching `src/core/segno_engine_api.h`:
   ```sh
   cd packages/segno_engine
-  dart run ffigen --config ffigen.yaml
-  dart format lib/src/generated/segno_engine_bindings.dart
+  dart run tool/ffigen.dart
   ```
-  The `dart format` step is required: ffigen emits legacy short-style code,
-  but the committed bindings are canonical `dart format` (tall) style. Without
-  it, every regen rewrites the whole file and buries the real diff. With it,
-  regens are field-scoped regardless of your local SDK's formatter version.
-- **FFI symbol parity — the skew a clean build will not catch.** Dart reaches
-  the engine only through `dlsym`, which resolves at *first call*. A bundle
+  The configuration is `tool/ffigen.dart` (ffigen's Dart API; its YAML format
+  is deprecated since ffigen 23). ffigen formats the file with the package's
+  own formatter settings, so a regen needs no `dart format` pass and its diff
+  is only what the header changed. Declarations come out sorted by name.
+- **FFI symbol parity — the skew a clean build will not catch.** The `@Native`
+  bindings resolve through `dlsym` at *first call*. A bundle
   whose bindings name an entry point its `libsegno_engine.so` does not export
   therefore compiles, packages, installs and launches — then throws
   `Failed to lookup symbol '...'` on the device, on whatever path reaches it
@@ -2451,11 +3548,12 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
 - **Undo/redo** — multi-level, per track, overdub layers only. A **user clear
   is undoable**: it leaves a per-track restore point (take + layers + FX chains
   + mutes) that undo brings back; a post-clear-all toast and `⌘⇧C` restore the
-  whole rig at once (undo-clear-all, derived from live restore points). Any
-  Undo on an empty track with nothing of its own to undo (no take, arm or
-  restore point) restores a pending clear-all too (#1634): Clear all selects
-  track 1, so the Undo pedal, the keyboard and MIDI or CTRL bindings restore
-  the cleared tracks from there.
+  whole rig at once (undo-clear-all, derived from live restore points). The
+  last clear, a Clear all or one track's (#1634, #1707), is restored by an
+  Undo on any track with nothing newer of its own: no arm, and either empty
+  or not capturing and not edited since the clear. So the Undo pedal, the
+  keyboard and MIDI or CTRL bindings restore it from track 1 after Clear all
+  and from whatever track a Track Hold clear left selected.
   Session-load clears stay destructive. Immediate swap (tiny click on undo
   accepted).
 - **#4 loop multiples** — **auto-round on stop** (record freely from the loop
@@ -2509,9 +3607,9 @@ remains open — see "On-hardware validations" below.
   mappings learned from it (#1040). Hardware-gated only for a live DIN-MIDI
   smoke test and a two-controller check.
 - **VST3/CLAP plugin hosting on Linux.** Hosting is on by default only on
-  macOS; the Linux CMake build leaves `SEGNO_ENABLE_PLUGINS` off unless the
-  environment overrides it, since third-party plugins rarely ship for aarch64
-  Linux.
+  macOS; the build hook (`packages/segno_engine/hook/build.dart`) passes
+  `SEGNO_ENABLE_PLUGINS=OFF` for Linux, since third-party plugins rarely ship
+  for aarch64 Linux. Turning it on is a change to the hook.
 - **Readout screen** — the console's 7″ runs as the second Flutter engine under
   ivi-homescreen, fed over the screen link (`lib/visualizer/screen_link.dart`,
   #1318, #1330); the on-device check is in `docs/HARDWARE_VALIDATION.md`.

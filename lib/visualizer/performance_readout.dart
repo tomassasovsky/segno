@@ -8,7 +8,7 @@ import 'package:segno/notices/model/notice.dart';
 /// number, name, crown, state and the facts under the name.
 class ReadoutTrack extends Equatable {
   /// Creates a [ReadoutTrack].
-  const ReadoutTrack({
+  const new({
     required this.channel,
     required this.name,
     required this.state,
@@ -19,7 +19,7 @@ class ReadoutTrack extends Equatable {
   });
 
   /// Rebuilds a track from [map] as pushed across the window channel.
-  factory ReadoutTrack.fromMap(Map<Object?, Object?> map) => ReadoutTrack(
+  factory fromMap(Map<Object?, Object?> map) => ReadoutTrack(
     channel: map['channel'] as int? ?? 0,
     name: map['name'] as String? ?? '',
     state: map['state'] as String? ?? 'empty',
@@ -80,12 +80,7 @@ class ReadoutTrack extends Equatable {
 /// is a separate engine.
 class ReadoutNotice extends Equatable {
   /// Creates a [ReadoutNotice].
-  const ReadoutNotice({
-    required this.title,
-    required this.tone,
-    this.body,
-    this.track,
-  });
+  const new({required this.title, required this.tone, this.body, this.track});
 
   /// Rebuilds a notice from [map] as pushed across the window channel, or
   /// null when [map] is not one.
@@ -133,7 +128,7 @@ class ReadoutNotice extends Equatable {
 /// edits.
 class ReadoutLoopSettings extends Equatable {
   /// Creates a [ReadoutLoopSettings].
-  const ReadoutLoopSettings({
+  const new({
     this.lengthBars = 0,
     this.trackLengthBars,
     this.timing = RecordTiming.immediately,
@@ -144,7 +139,7 @@ class ReadoutLoopSettings extends Equatable {
 
   /// Rebuilds the settings from [map] as pushed across the window channel;
   /// anything missing or garbled reads as the defaults, not ready.
-  factory ReadoutLoopSettings.fromMap(Object? map) {
+  factory fromMap(Object? map) {
     if (map is! Map<Object?, Object?>) return const ReadoutLoopSettings();
     final timings = RecordTiming.values.asNameMap();
     final lengthBars = map['lengthBars'];
@@ -236,7 +231,7 @@ enum ReadoutGoodbye {
 /// readout schemas or promise compatibility between different app versions.
 class PerformanceReadout extends Equatable {
   /// Creates a [PerformanceReadout].
-  const PerformanceReadout({
+  const new({
     this.selected,
     this.tempoBpm = 0,
     this.hasTempo = false,
@@ -256,7 +251,7 @@ class PerformanceReadout extends Equatable {
   });
 
   /// Rebuilds a readout from [map] as pushed across the window channel.
-  factory PerformanceReadout.fromMap(Map<Object?, Object?> map) {
+  factory fromMap(Map<Object?, Object?> map) {
     final selected = map['selected'];
     final tempoBpm = (map['tempoBpm'] as num? ?? 0).toDouble();
     return PerformanceReadout(

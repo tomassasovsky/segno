@@ -10,13 +10,13 @@ import 'package:pedal_repository/src/pedal_state_frame.dart';
 /// The console board's Pico 2 and segno exchange these over the Pi's uart3.
 /// `PedalLinkCodec` is the byte form; a `PedalLink` carries them.
 sealed class PedalLinkMessage extends Equatable {
-  const PedalLinkMessage();
+  const new();
 }
 
 /// A footswitch went down or came up (board → segno).
 final class ButtonMessage extends PedalLinkMessage {
   /// Creates a [ButtonMessage].
-  const ButtonMessage(this.button, {required this.pressed});
+  const new(this.button, {required this.pressed});
 
   /// The footswitch.
   final PedalButton button;
@@ -31,7 +31,7 @@ final class ButtonMessage extends PedalLinkMessage {
 /// The encoder turned (board → segno).
 final class EncoderMessage extends PedalLinkMessage {
   /// Creates an [EncoderMessage].
-  const EncoderMessage(this.delta)
+  const new(this.delta)
     : assert(delta >= -128 && delta <= 127, 'delta must fit an int8');
 
   /// Signed detents since the previous message; positive is clockwise.
@@ -44,7 +44,7 @@ final class EncoderMessage extends PedalLinkMessage {
 /// The encoder's push switch went down or came up (board → segno).
 final class EncoderButtonMessage extends PedalLinkMessage {
   /// Creates an [EncoderButtonMessage].
-  const EncoderButtonMessage({required this.pressed});
+  const new({required this.pressed});
 
   /// `true` on press, `false` on release.
   final bool pressed;
@@ -57,7 +57,7 @@ final class EncoderButtonMessage extends PedalLinkMessage {
 /// expression pedal's raw position.
 final class CtrlMessage extends PedalLinkMessage {
   /// Creates a [CtrlMessage].
-  const CtrlMessage({
+  const new({
     required this.jack,
     required this.kind,
     required this.value,
@@ -94,7 +94,7 @@ final class CtrlMessage extends PedalLinkMessage {
 /// few seconds is what "disconnected" means.
 final class HelloMessage extends PedalLinkMessage {
   /// Creates a [HelloMessage].
-  const HelloMessage({
+  const new({
     required this.protocolVersion,
     required this.firmwareMajor,
     required this.firmwareMinor,
@@ -120,7 +120,7 @@ final class HelloMessage extends PedalLinkMessage {
 /// once a second after the hello.
 final class PdStatusMessage extends PedalLinkMessage {
   /// Creates a [PdStatusMessage].
-  const PdStatusMessage(this.supply);
+  const new(this.supply);
 
   /// What the board read from the trigger.
   final PedalPowerSupply supply;
@@ -133,7 +133,7 @@ final class PdStatusMessage extends PedalLinkMessage {
 /// hello from a board that knows the message (firmware 2.7 and later).
 final class AmbientLightMessage extends PedalLinkMessage {
   /// Creates an [AmbientLightMessage].
-  const AmbientLightMessage(this.light);
+  const new(this.light);
 
   /// What the board read.
   final PedalAmbientLight light;
@@ -149,7 +149,7 @@ final class AmbientLightMessage extends PedalLinkMessage {
 /// stays at full brightness.
 final class LedLevelMessage extends PedalLinkMessage {
   /// Creates a [LedLevelMessage].
-  const LedLevelMessage(this.level)
+  const new(this.level)
     : assert(level >= 1 && level <= 255, 'level must be 1..255');
 
   /// `1`..`255` of full output. Dark is the state frame's goodbye.
@@ -162,7 +162,7 @@ final class LedLevelMessage extends PedalLinkMessage {
 /// Everything the board renders (segno → board).
 final class StateMessage extends PedalLinkMessage {
   /// Creates a [StateMessage].
-  const StateMessage(this.frame);
+  const new(this.frame);
 
   /// The frame to render.
   final PedalStateFrame frame;
@@ -182,7 +182,7 @@ final class StateMessage extends PedalLinkMessage {
 /// keeps rendering the state frame, so it shows no fill and nothing wrong.
 final class ClearHoldMessage extends PedalLinkMessage {
   /// Creates a [ClearHoldMessage]; no [button] ends the fill.
-  const ClearHoldMessage({this.button, this.progress = 0})
+  const new({this.button, this.progress = 0})
     : assert(progress >= 0 && progress <= 255, 'progress must fit a byte'),
       assert(button != null || progress == 0, 'no fill without a button');
 

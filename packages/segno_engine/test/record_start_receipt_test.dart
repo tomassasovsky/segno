@@ -1,13 +1,10 @@
 @Tags(['fuzz'])
 library;
 
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:segno_engine/segno_engine.dart';
 
 void main() {
-  final library = Platform.environment['SEGNO_ENGINE_LIB'];
   group('actual native recording-start pair', () {
     late PumpedNativeEngine engine;
     const config = EngineConfig(
@@ -102,7 +99,7 @@ void main() {
       expect(restarted.recordStartRevision, 0);
       expect(restarted.recordStartResult, 0);
     });
-  }, skip: library == null ? 'SEGNO_ENGINE_LIB is required' : false);
+  });
 
   test('mock validates pair and exposes a completed receipt', () {
     final engine = MockAudioEngine();

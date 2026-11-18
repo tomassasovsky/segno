@@ -25,10 +25,7 @@ void main() {
       final steps = [for (var r = 40; r <= 160; r += 16) at(r)];
       for (var i = 1; i < steps.length; i++) {
         expect(steps[i], greaterThan(steps[i - 1]));
-        expect(
-          steps[i] - steps[i - 1],
-          closeTo(steps[1] - steps[0], 1e-9),
-        );
+        expect(steps[i] - steps[i - 1], closeTo(steps[1] - steps[0], 1e-9));
       }
       expect(at(100), closeTo((consoleLedCurve.floor + 1) / 2, 1e-9));
     });

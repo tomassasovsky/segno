@@ -13,7 +13,7 @@ import 'package:meta/meta.dart';
 @immutable
 class CapturePart {
   /// Creates a [CapturePart].
-  const CapturePart({
+  const new({
     required this.stream,
     required this.index,
     required this.file,
@@ -23,7 +23,7 @@ class CapturePart {
 
   /// Reads one entry of the sidecar's `parts` array. Throws
   /// [FormatException] for a malformed entry.
-  factory CapturePart.fromJson(Map<String, dynamic> json) {
+  factory fromJson(Map<String, dynamic> json) {
     final stream = json['stream'];
     final index = json['index'];
     final file = json['file'];
@@ -52,7 +52,8 @@ class CapturePart {
     );
   }
 
-  /// 0 for the main output, 1 + n for captured input n.
+  /// 0 for the main output, 1 + n for captured input n as heard,
+  /// `PerfTarget.rawStreamBase` + n for its raw recording (#1805).
   final int stream;
 
   /// Position in its stream, from 1.
@@ -90,7 +91,7 @@ class CapturePart {
 @immutable
 class CaptureSummary {
   /// Creates a [CaptureSummary].
-  const CaptureSummary({
+  const new({
     required this.path,
     required this.name,
     required this.durationFrames,

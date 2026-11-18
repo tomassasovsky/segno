@@ -358,9 +358,10 @@ void main() {
     });
 
     test('a part-4 entry without paramValues decodes to an empty map', () {
-      final decoded =
-          TrackEffect.fromJson({'type': kPluginFxCode, 'plugin': ref.toJson()})
-              as PluginEffect;
+      final decoded = TrackEffect.fromJson({
+        'type': kPluginFxCode,
+        'plugin': ref.toJson(),
+      }) as PluginEffect;
       expect(decoded.paramValues, isEmpty);
     });
 
@@ -386,9 +387,10 @@ void main() {
     });
 
     test('a pre-state entry decodes to an empty state', () {
-      final decoded =
-          TrackEffect.fromJson({'type': kPluginFxCode, 'plugin': ref.toJson()})
-              as PluginEffect;
+      final decoded = TrackEffect.fromJson({
+        'type': kPluginFxCode,
+        'plugin': ref.toJson(),
+      }) as PluginEffect;
       expect(decoded.state, isEmpty);
     });
 
@@ -510,8 +512,8 @@ void main() {
         TrackEffectType.doubler: [1.0, 1.0],
         TrackEffectType.chorus: [0.45, 0.21, 0.5],
         TrackEffectType.wah: [0.619],
-        // Ed's overdrive; the Lo-Fi Rack's distortion.
-        TrackEffectType.overdrive: [0.09, 0.5],
+        // Ed's overdrive at 0 dB; the distortion at 20 %.
+        TrackEffectType.overdrive: [0.09, 0.5, 0.0],
         TrackEffectType.distortion: [0.2, 0.5],
         // The Lo-Fi Rack's vinyl, degrade and low-pass filter.
         TrackEffectType.vinyl: [0.4, 0.35, 0.3, 0.9],
@@ -584,27 +586,6 @@ void main() {
       expect(formants.defaultValue, 0);
     });
 
-    test('only the chosen mappings carry the taper-unverified flag', () {
-      // The seven built-ins are segno's own; the Looper X kinds' ranges are
-      // the Looper X's, and the EQ, dynamics, doubler, chorus, wah, vinyl,
-      // degrade, low-pass filter, Mod and the overdrive's tone are measured
-      // (#891, #1445, #1663). The controls whose effect is chosen or
-      // inferred from one capture carry it: the distortion (fit to the
-      // Studio Rack's, used for Lo-Fi's too) and the Dual Octaver's Octave 1
-      // level (always at 100 % in the presets).
-      for (final type in TrackEffectType.values) {
-        for (final p in type.params) {
-          expect(
-            p.taperUnverified,
-            type == TrackEffectType.distortion ||
-                (type == TrackEffectType.dualOctaver &&
-                    p.key == 'octave_1_vol'),
-            reason: '${type.name}.${p.key}',
-          );
-        }
-      }
-    });
-
     test("the compressor's ratio is the Looper X's reciprocal taper", () {
       // 1 / (1 - v / 1.0101): 1 at 0, 100 at 1, and every Ed's preset's
       // 0.758 is 4:1.
@@ -639,18 +620,7 @@ void main() {
     test('codes match the native enums', () {
       expect(
         [for (final u in FxParamUnit.values) u.code],
-        [
-          0,
-          1,
-          2,
-          3,
-          4,
-          5,
-          6,
-          7,
-          8,
-          9,
-        ],
+        [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
       );
       expect(FxParamUnit.choice.code, 5);
       expect(FxParamCurve.linear.code, 0);
@@ -748,15 +718,15 @@ void main() {
       );
       expect(linear, same);
       expect(linear.hashCode, same.hashCode);
-      const flagged = FxParamInfo(
+      const offAtMin = FxParamInfo(
         key: 'time',
         unit: FxParamUnit.ms,
         atMin: 0,
         atMax: 1000,
         defaultValue: 0.35,
-        taperUnverified: true,
+        off: FxParamOff.atMin,
       );
-      expect(linear, isNot(flagged));
+      expect(linear, isNot(offAtMin));
       expect(linear, isNot(exponential));
     });
   });
@@ -808,33 +778,30 @@ void main() {
       expect((decoded.first as PluginEffect).ref.id, 'keep.me');
     });
 
-    test(
-      'the exact pre-plugin bare-array string still decodes',
-      () {
-        // Back-compat: a v1 chain is a bare array of {type, params} with no
-        // envelope and no plugin entries; it must decode unchanged.
-        const v1 =
-            '[{"type":1,"params":[0.5,0.8,0.0,0.0]},'
-            '{"type":3,"params":[0.35,0.35,0.35,0.0]}]';
-        final decoded = decodeTrackEffects(v1);
-        expect(decoded, [
-          BuiltInEffect(type: TrackEffectType.drive),
-          BuiltInEffect(type: TrackEffectType.delay),
-        ]);
-        for (final e in decoded) {
-          expect(e, isA<BuiltInEffect>());
-        }
-        // Re-encoding yields a bare array — no envelope, no plugin keys —
-        // carrying only the cells each type reads, which decodes back to the
-        // same entries.
-        expect(
-          encodeTrackEffects(decoded),
-          '[{"type":1,"params":[0.5,0.8]},'
-          '{"type":3,"params":[0.35,0.35,0.35]}]',
-        );
-        expect(decodeTrackEffects(encodeTrackEffects(decoded)), decoded);
-      },
-    );
+    test('the exact pre-plugin bare-array string still decodes', () {
+      // Back-compat: a v1 chain is a bare array of {type, params} with no
+      // envelope and no plugin entries; it must decode unchanged.
+      const v1 =
+          '[{"type":1,"params":[0.5,0.8,0.0,0.0]},'
+          '{"type":3,"params":[0.35,0.35,0.35,0.0]}]';
+      final decoded = decodeTrackEffects(v1);
+      expect(decoded, [
+        BuiltInEffect(type: TrackEffectType.drive),
+        BuiltInEffect(type: TrackEffectType.delay),
+      ]);
+      for (final e in decoded) {
+        expect(e, isA<BuiltInEffect>());
+      }
+      // Re-encoding yields a bare array — no envelope, no plugin keys —
+      // carrying only the cells each type reads, which decodes back to the
+      // same entries.
+      expect(
+        encodeTrackEffects(decoded),
+        '[{"type":1,"params":[0.5,0.8]},'
+        '{"type":3,"params":[0.35,0.35,0.35]}]',
+      );
+      expect(decodeTrackEffects(encodeTrackEffects(decoded)), decoded);
+    });
 
     test('decodes a legacy chain that still carries stage keys', () {
       final legacy = jsonEncode([
@@ -966,9 +933,7 @@ void main() {
       );
       expect(builtIn.toJson()['placement'], 'pre');
       expect(plugin.toJson()['placement'], 'pre');
-      final decoded = decodeTrackEffects(
-        encodeTrackEffects([builtIn, plugin]),
-      );
+      final decoded = decodeTrackEffects(encodeTrackEffects([builtIn, plugin]));
       expect(decoded.map((e) => e.placement), [
         FxPlacement.pre,
         FxPlacement.pre,
@@ -1094,6 +1059,35 @@ void main() {
         channels: const FxChannels(level: 0.5),
       );
       expect(a, isNot(b));
+    });
+  });
+
+  group('FxRack', () {
+    test('saves its switch only when the rack is bypassed (#1711)', () {
+      const on = FxRack(id: 'r1', name: 'Soft Chords', art: 'guitar');
+      final off = on.copyWith(bypassed: true);
+
+      expect(on.toJson().containsKey('bypassed'), isFalse);
+      expect(off.toJson()['bypassed'], isTrue);
+      expect(FxRack.fromJson(off.toJson()), off);
+      expect(FxRack.fromJson(on.toJson()), on);
+      expect(off, isNot(on));
+    });
+
+    test('a bypassed rack rides its entries through a saved chain', () {
+      final chain = [
+        BuiltInEffect(
+          type: TrackEffectType.drive,
+          enabled: false,
+          rack: const FxRack(id: 'r1', name: 'Soft Chords', bypassed: true),
+        ),
+      ];
+
+      final decoded = decodeTrackEffects(encodeTrackEffects(chain));
+
+      expect(decoded, chain);
+      expect(decoded.single.rack!.bypassed, isTrue);
+      expect((decoded.single as BuiltInEffect).enabled, isFalse);
     });
   });
 }

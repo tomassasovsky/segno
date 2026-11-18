@@ -47,9 +47,9 @@ void main() {
       fakeAsync((async) {
         var settled = false;
         unawaited(
-          FakeConsoleFactsClient(
-            latency: Duration.zero,
-          ).storage().then((_) => settled = true),
+          FakeConsoleFactsClient(latency: Duration.zero)
+              .storage()
+              .then((_) => settled = true),
         );
         async.flushMicrotasks();
         expect(settled, isTrue);
@@ -61,9 +61,9 @@ void main() {
       fakeAsync((async) {
         var settled = false;
         unawaited(
-          FakeConsoleFactsClient(
-            latency: const Duration(milliseconds: 50),
-          ).storage().then((_) => settled = true),
+          FakeConsoleFactsClient(latency: const Duration(milliseconds: 50))
+              .storage()
+              .then((_) => settled = true),
         );
         async.flushMicrotasks();
         expect(settled, isFalse);
@@ -95,9 +95,8 @@ void main() {
     });
 
     test('it answers with the rig the mockups draw', () async {
-      final facts = await FakeConsoleFactsClient(
-        latency: Duration.zero,
-      ).facts();
+      final facts = await FakeConsoleFactsClient(latency: Duration.zero)
+          .facts();
       expect(facts.serial, 'VMP-16-0042');
       expect(facts.name, 'VAMP 16');
     });
@@ -354,9 +353,8 @@ void main() {
       // What BlueZ keeps beside the records is not a pairing.
       Directory('$state/AA:BB:CC:DD:EE:FF/cache').createSync();
       File('$state/AA:BB:CC:DD:EE:FF/settings').writeAsStringSync('');
-      Directory(
-        '$state/AA:BB:CC:DD:EE:FF/33:44:55:66:77:88',
-      ).createSync(); // no info file
+      Directory('$state/AA:BB:CC:DD:EE:FF/33:44:55:66:77:88')
+          .createSync(); // no info file
       expect(await build(state).retiredBluetoothPairings(), 3);
     });
 

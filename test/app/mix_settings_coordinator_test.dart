@@ -415,10 +415,7 @@ void main() {
       expect((await coordinator.setTrackPan(.3)).isOk, isTrue);
       expect(persistence.candidates.last.trackLevels[0], closeTo(.2, 1e-12));
       expect(repository.mixSettingsSnapshot.trackLevels[0], closeTo(.8, 1e-12));
-      expect(
-        (await applyTrackLevel(coordinator, .2, channel: 0)).isOk,
-        isTrue,
-      );
+      expect((await applyTrackLevel(coordinator, .2, channel: 0)).isOk, isTrue);
       expect(coordinator.durableSnapshot.trackLevels[0], closeTo(.2, 1e-12));
     },
   );
@@ -529,42 +526,37 @@ void main() {
   });
 
   for (final switchDevice in [false, true]) {
-    test(
-      'queued MIDI cannot cross '
-      '${switchDevice ? 'device' : 'session'} replacement',
-      () async {
-        final gate = Completer<void>();
-        final replacement = coordinator.runExclusive(() async {
-          await gate.future;
-          if (switchDevice) {
-            repository.stopEngine();
-            device = 'rig B';
-            repository.startEngine(const EngineConfig());
-          } else {
-            await repository.applySession(
-              const SessionRig(trackLevels: {0: .4}),
-            );
-          }
-          audio.calls.clear();
-        });
-        await _turn();
-        final oldMessage = applyTrackLevel(
-          coordinator,
-          .8,
-          channel: 0,
-          releasedValue: .2,
-        );
-        gate.complete();
-        await replacement;
-        expect((await oldMessage).status, MixSettingsStatus.superseded);
-        expect(audio.calls, isNot(contains('setMix')));
-        expect(persistence.candidates, isEmpty);
-        expect(
-          coordinator.durableSnapshot.trackLevels[0] ?? 1,
-          switchDevice ? 1 : .4,
-        );
-      },
-    );
+    test('queued MIDI cannot cross '
+        '${switchDevice ? 'device' : 'session'} replacement', () async {
+      final gate = Completer<void>();
+      final replacement = coordinator.runExclusive(() async {
+        await gate.future;
+        if (switchDevice) {
+          repository.stopEngine();
+          device = 'rig B';
+          repository.startEngine(const EngineConfig());
+        } else {
+          await repository.applySession(const SessionRig(trackLevels: {0: .4}));
+        }
+        audio.calls.clear();
+      });
+      await _turn();
+      final oldMessage = applyTrackLevel(
+        coordinator,
+        .8,
+        channel: 0,
+        releasedValue: .2,
+      );
+      gate.complete();
+      await replacement;
+      expect((await oldMessage).status, MixSettingsStatus.superseded);
+      expect(audio.calls, isNot(contains('setMix')));
+      expect(persistence.candidates, isEmpty);
+      expect(
+        coordinator.durableSnapshot.trackLevels[0] ?? 1,
+        switchDevice ? 1 : .4,
+      );
+    });
   }
 
   test('retains the final same-target and distinct-target values', () async {
@@ -756,53 +748,47 @@ void main() {
     },
   );
 
-  test(
-    'flush waits for a draining edit that becomes owed and lets it through: '
-    'storage holds the owed vector',
-    () async {
-      audio
-        ..publishMixCommands = false
-        ..commandsAreSettled = false;
-      final edit = coordinator.setTrackPan(.4);
-      final flushed = await coordinator.flush();
-      expect(flushed.isOk, isTrue);
-      expect((await edit).status, MixSettingsStatus.recoveryRequired);
-      expect(persistence.durable, 'candidate 1 for rig A');
-      expect(persistence.candidates.single.trackPans[0], .4);
-    },
-  );
+  test('flush waits for a draining edit that becomes owed and lets it through: '
+      'storage holds the owed vector', () async {
+    audio
+      ..publishMixCommands = false
+      ..commandsAreSettled = false;
+    final edit = coordinator.setTrackPan(.4);
+    final flushed = await coordinator.flush();
+    expect(flushed.isOk, isTrue);
+    expect((await edit).status, MixSettingsStatus.recoveryRequired);
+    expect(persistence.durable, 'candidate 1 for rig A');
+    expect(persistence.candidates.single.trackPans[0], .4);
+  });
 
-  test(
-    'an unconfirmed restart replay shows the Retry notice, and Retry lets '
-    'Record start again',
-    () async {
-      final errors = <MixSettingsOutcome>[];
-      final sub = coordinator.failures.listen(errors.add);
-      audio
-        ..publishMixCommands = false
-        ..commandsAreSettled = false;
-      repository
-        ..stopEngine()
-        ..startEngine(const EngineConfig());
-      await repository.settleMixSettings(
-        attempts: 1,
-        pollInterval: Duration.zero,
-      );
-      await _turn();
-      expect(repository.mixRecoveryRequired, isTrue);
-      expect(repository.record(), EngineResult.notReady);
-      await _turn();
-      expect(errors, hasLength(1));
-      expect(errors.single.status, MixSettingsStatus.recoveryRequired);
-      audio
-        ..publishMixCommands = true
-        ..commandsAreSettled = true;
-      expect((await coordinator.recover()).isOk, isTrue);
-      expect(repository.mixRecoveryRequired, isFalse);
-      expect(repository.record(), EngineResult.ok);
-      await sub.cancel();
-    },
-  );
+  test('an unconfirmed restart replay shows the Retry notice, and Retry lets '
+      'Record start again', () async {
+    final errors = <MixSettingsOutcome>[];
+    final sub = coordinator.failures.listen(errors.add);
+    audio
+      ..publishMixCommands = false
+      ..commandsAreSettled = false;
+    repository
+      ..stopEngine()
+      ..startEngine(const EngineConfig());
+    await repository.settleMixSettings(
+      attempts: 1,
+      pollInterval: Duration.zero,
+    );
+    await _turn();
+    expect(repository.mixRecoveryRequired, isTrue);
+    expect(repository.record(), EngineResult.notReady);
+    await _turn();
+    expect(errors, hasLength(1));
+    expect(errors.single.status, MixSettingsStatus.recoveryRequired);
+    audio
+      ..publishMixCommands = true
+      ..commandsAreSettled = true;
+    expect((await coordinator.recover()).isOk, isTrue);
+    expect(repository.mixRecoveryRequired, isFalse);
+    expect(repository.record(), EngineResult.ok);
+    await sub.cancel();
+  });
 
   test('failed output rollback stops audio until recovery succeeds', () async {
     persistence.refuseRestore = true;
@@ -1044,81 +1030,76 @@ void main() {
     },
   );
 
-  test(
-    'reset publishes all eight gains and pans atomically, '
-    'preserving other facts',
-    () async {
-      audio.nextSnapshot = _rig();
-      final seed = MixSettingsSnapshot(
-        trackLevels: {
-          for (var channel = 0; channel < 8; channel++) channel: .3,
-        },
-        trackPans: {
-          for (var channel = 0; channel < 8; channel++)
-            channel: -.7 + channel / 10,
-        },
-        laneLevels: {
-          for (var channel = 0; channel < 8; channel++)
-            (channel, 0): .2 + channel / 10,
-          (7, 7): .4,
-        },
-        trackSolos: const {1: true, 6: true},
-        laneOutputs: const {(7, 7): 12},
-        inputSetup: InputSetup(trimDb: const {0: -6}, pan: const {0: -.25}),
-        monitorLevels: const {0: .6},
-        outputSetup: const OutputSetup(
-          buses: {0: OutputBus(level: .7, muted: true)},
-        ),
-      );
-      expect(repository.applyMixSettings(seed), EngineResult.ok);
-      expect(repository.record(), EngineResult.ok);
-      final sourceImages = Map.of(audio.sourceImages);
-      expect(sourceImages[(0, 0)]!.pan, -.25);
-      final pcm = Float32List.fromList([.125, -.375, .5]);
-      audio
-        ..importLayer(0, 0, 0, pcm)
-        ..laneMute[(0, 0)] = true
-        ..laneFxParam[(0, 0, 0, 0)] = .35
-        ..calls.clear()
-        ..publishMixCommands = false
-        ..commandsAreSettled = false;
-      final reset = coordinator.resetMixer();
-      await _turn();
-      expect(repository.mixSettingsSnapshot, seed);
-      expect(persistence.candidates, hasLength(1));
-      for (var channel = 0; channel < 8; channel++) {
-        expect(audio.pendingMix!.trackLevels[channel], 1);
-        expect(audio.pendingMix!.lanes[(channel, 0)]?.pan ?? 0, 0);
-      }
-      expect(audio.pendingMix!.lanes[(7, 7)], isNull);
-      audio
-        ..publishMix()
-        ..commandsAreSettled = true;
-      expect((await reset).isOk, isTrue);
-      for (var channel = 0; channel < 8; channel++) {
-        expect(repository.trackPan(channel), 0);
-        expect(repository.state.tracks[channel].volume, 1);
-        expect(audio.liveMix[(channel, 0)]!.gain, .2 + channel / 10);
-      }
-      final after = repository.mixSettingsSnapshot;
-      expect(after.trackLevels, isEmpty);
-      expect(after.laneLevels, seed.laneLevels);
-      expect(after.trackSolos, {1: true, 6: true});
-      expect(after.laneOutputs, {(7, 7): 12});
-      expect(after.inputSetup, seed.inputSetup);
-      expect(after.outputSetup, seed.outputSetup);
-      expect(after.monitorLevels, {0: .6});
-      expect(audio.sourceImages, sourceImages);
-      expect(audio.lanePan[(0, 0)], -.25);
-      expect(audio.laneMute[(0, 0)], isTrue);
-      expect(audio.laneFxParam[(0, 0, 0, 0)], .35);
-      expect(audio.importedLayers[(0, 0, 0)], orderedEquals(pcm));
-      expect(audio.calls, ['setMix']);
-      expect(persistence.candidates.single.trackPans, isEmpty);
-      expect(persistence.candidates.single.trackLevels, isEmpty);
-      expect(persistence.candidates.single.laneLevels, seed.laneLevels);
-    },
-  );
+  test('reset publishes all eight gains and pans atomically, '
+      'preserving other facts', () async {
+    audio.nextSnapshot = _rig();
+    final seed = MixSettingsSnapshot(
+      trackLevels: {for (var channel = 0; channel < 8; channel++) channel: .3},
+      trackPans: {
+        for (var channel = 0; channel < 8; channel++)
+          channel: -.7 + channel / 10,
+      },
+      laneLevels: {
+        for (var channel = 0; channel < 8; channel++)
+          (channel, 0): .2 + channel / 10,
+        (7, 7): .4,
+      },
+      trackSolos: const {1: true, 6: true},
+      laneOutputs: const {(7, 7): 12},
+      inputSetup: InputSetup(trimDb: const {0: -6}, pan: const {0: -.25}),
+      monitorLevels: const {0: .6},
+      outputSetup: const OutputSetup(
+        buses: {0: OutputBus(level: .7, muted: true)},
+      ),
+    );
+    expect(repository.applyMixSettings(seed), EngineResult.ok);
+    expect(repository.record(), EngineResult.ok);
+    final sourceImages = Map.of(audio.sourceImages);
+    expect(sourceImages[(0, 0)]!.pan, -.25);
+    final pcm = Float32List.fromList([.125, -.375, .5]);
+    audio
+      ..importLayer(0, 0, 0, pcm)
+      ..laneMute[(0, 0)] = true
+      ..laneFxParam[(0, 0, 0, 0)] = .35
+      ..calls.clear()
+      ..publishMixCommands = false
+      ..commandsAreSettled = false;
+    final reset = coordinator.resetMixer();
+    await _turn();
+    expect(repository.mixSettingsSnapshot, seed);
+    expect(persistence.candidates, hasLength(1));
+    for (var channel = 0; channel < 8; channel++) {
+      expect(audio.pendingMix!.trackLevels[channel], 1);
+      expect(audio.pendingMix!.lanes[(channel, 0)]?.pan ?? 0, 0);
+    }
+    expect(audio.pendingMix!.lanes[(7, 7)], isNull);
+    audio
+      ..publishMix()
+      ..commandsAreSettled = true;
+    expect((await reset).isOk, isTrue);
+    for (var channel = 0; channel < 8; channel++) {
+      expect(repository.trackPan(channel), 0);
+      expect(repository.state.tracks[channel].volume, 1);
+      expect(audio.liveMix[(channel, 0)]!.gain, .2 + channel / 10);
+    }
+    final after = repository.mixSettingsSnapshot;
+    expect(after.trackLevels, isEmpty);
+    expect(after.laneLevels, seed.laneLevels);
+    expect(after.trackSolos, {1: true, 6: true});
+    expect(after.laneOutputs, {(7, 7): 12});
+    expect(after.inputSetup, seed.inputSetup);
+    expect(after.outputSetup, seed.outputSetup);
+    expect(after.monitorLevels, {0: .6});
+    expect(audio.sourceImages, sourceImages);
+    expect(audio.lanePan[(0, 0)], -.25);
+    expect(audio.laneMute[(0, 0)], isTrue);
+    expect(audio.laneFxParam[(0, 0, 0, 0)], .35);
+    expect(audio.importedLayers[(0, 0, 0)], orderedEquals(pcm));
+    expect(audio.calls, ['setMix']);
+    expect(persistence.candidates.single.trackPans, isEmpty);
+    expect(persistence.candidates.single.trackLevels, isEmpty);
+    expect(persistence.candidates.single.laneLevels, seed.laneLevels);
+  });
 
   for (final refusal in [
     'storage after write',

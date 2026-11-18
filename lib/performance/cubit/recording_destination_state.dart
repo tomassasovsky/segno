@@ -4,7 +4,7 @@ part of 'recording_destination_cubit.dart';
 /// take fits there.
 class RecordingDestinationState extends Equatable {
   /// Creates a [RecordingDestinationState].
-  const RecordingDestinationState({
+  const new({
     this.destination = const StorageDestination.internal(),
     this.volumes = const [],
     this.remaining,

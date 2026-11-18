@@ -20,14 +20,7 @@ import 'package:settings_repository/settings_repository.dart';
 /// a saved session's `mixdown.wav` decodes through the engine's decoder and
 /// plays on the audition voice, and its live layer reads back as peaks.
 ///
-/// Self-skips when `SEGNO_ENGINE_LIB` is unset:
-///   export SEGNO_ENGINE_LIB="$(bash packages/segno_engine/tool/build_test_lib.sh)"
 void main() {
-  final lib = Platform.environment['SEGNO_ENGINE_LIB'];
-  final skip = lib == null || lib.isEmpty
-      ? 'SEGNO_ENGINE_LIB not set — run packages/segno_engine/tool/build_test_lib.sh'
-      : null;
-
   late PumpedNativeEngine engine;
   late LooperRepository looper;
   late SessionRepository sessions;
@@ -114,51 +107,47 @@ void main() {
     ),
   );
 
-  test(
-    "a saved session's preview plays on the audition voice and its lane "
-    'reads back as peaks',
-    () async {
-      expect(looper.record(), EngineResult.ok);
-      engine.pump(frames: loopFrames, input: 0.5);
-      ticker.add(null);
-      expect(looper.record(), EngineResult.ok);
-      engine.pump(frames: 0);
-      ticker.add(null);
-      await sessions.save(
-        '${root.path}/s-a',
-        chains: chainsFromLooper(
-          looper,
-          projection: FxChainPersistence(looper: looper),
-        ),
-        settings: settings(),
-      );
+  test("a saved session's preview plays on the audition voice and its lane "
+      'reads back as peaks', () async {
+    expect(looper.record(), EngineResult.ok);
+    engine.pump(frames: loopFrames, input: 0.5);
+    ticker.add(null);
+    expect(looper.record(), EngineResult.ok);
+    engine.pump(frames: 0);
+    ticker.add(null);
+    await sessions.save(
+      '${root.path}/s-a',
+      chains: chainsFromLooper(
+        looper,
+        projection: FxChainPersistence(looper: looper),
+      ),
+      settings: settings(),
+    );
 
-      final started = await sessions.startAudition('s-a');
-      expect(started.result, EngineResult.ok);
-      expect(started.frames, loopFrames);
-      expect(started.sourceRate, 48000);
-      expect(started.rate, 48000);
-      expect(started.truncated, isFalse);
-      engine
-        ..pump(frames: 0)
-        ..pump(frames: 64);
-      final now = sessions.auditionState();
-      expect(now.playing, isTrue);
-      expect(now.position, 64);
+    final started = await sessions.startAudition('s-a');
+    expect(started.result, EngineResult.ok);
+    expect(started.frames, loopFrames);
+    expect(started.sourceRate, 48000);
+    expect(started.rate, 48000);
+    expect(started.truncated, isFalse);
+    engine
+      ..pump(frames: 0)
+      ..pump(frames: 64);
+    final now = sessions.auditionState();
+    expect(now.playing, isTrue);
+    expect(now.position, 64);
 
-      expect(sessions.stopAudition(), EngineResult.ok);
-      engine.pump(frames: 64);
-      expect(sessions.auditionState().playing, isFalse);
+    expect(sessions.stopAudition(), EngineResult.ok);
+    engine.pump(frames: 64);
+    expect(sessions.auditionState().playing, isFalse);
 
-      final preview = await sessions.readPreview('s-a');
-      final peaks = await sessions.readPeaks(
-        's-a',
-        preview.tracks.single,
-        buckets: 16,
-      );
-      expect(peaks, hasLength(16));
-      expect(peaks!.reduce((a, b) => a > b ? a : b), greaterThan(0.4));
-    },
-    skip: skip,
-  );
+    final preview = await sessions.readPreview('s-a');
+    final peaks = await sessions.readPeaks(
+      's-a',
+      preview.tracks.single,
+      buckets: 16,
+    );
+    expect(peaks, hasLength(16));
+    expect(peaks!.reduce((a, b) => a > b ? a : b), greaterThan(0.4));
+  });
 }

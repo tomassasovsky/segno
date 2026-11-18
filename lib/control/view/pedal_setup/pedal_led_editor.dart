@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/common/pedal_color_display.dart';
 import 'package:segno/control/binding/pedal_led_labels.dart';
@@ -13,7 +13,7 @@ import 'package:segno/theme/theme.dart';
 /// others it has to be told apart from.
 class PedalLedEditor extends StatelessWidget {
   /// Creates a [PedalLedEditor].
-  const PedalLedEditor({
+  const new({
     required this.title,
     required this.colors,
     required this.onEdit,
@@ -62,7 +62,7 @@ class PedalLedEditor extends StatelessWidget {
 /// in Custom controls without a second visual language.
 class PedalColorField extends StatelessWidget {
   /// Creates a [PedalColorField].
-  const PedalColorField({
+  const new({
     required this.label,
     required this.color,
     required this.onTap,

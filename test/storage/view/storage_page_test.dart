@@ -1,8 +1,8 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/storage/cubit/storage_cubit.dart';
@@ -173,10 +173,7 @@ void main() {
       // A Browse that opened Internal would show the wrong files as the
       // drive's (#1217 review).
       expect(find.text('Browse'), findsNothing);
-      expect(
-        inCard(2, find.byKey(const Key('storage_eject'))),
-        findsOneWidget,
-      );
+      expect(inCard(2, find.byKey(const Key('storage_eject'))), findsOneWidget);
 
       await tester.tap(find.byKey(const Key('storage_open_library')));
       expect(opened, ['library']);

@@ -1,12 +1,12 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart' show CustomSemanticsAction;
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/control/binding/mix_value_scale.dart';
@@ -43,7 +43,7 @@ import 'package:segno/theme/theme.dart';
 /// level; the meter keeps metering underneath.
 class MixerColumn extends StatelessWidget {
   /// Creates a [MixerColumn].
-  const MixerColumn({
+  const new({
     required this.track,
     required this.name,
     required this.selected,
@@ -233,7 +233,7 @@ class MixerColumn extends StatelessWidget {
 /// The strip's head: the crown, the name (which renames on tap) and the meta
 /// row the Track view already prints.
 class _StripInfo extends StatelessWidget {
-  const _StripInfo({
+  const new({
     required this.track,
     required this.name,
     required this.isPrimary,
@@ -320,7 +320,7 @@ class _StripInfo extends StatelessWidget {
 /// The strip's meta row: the track number, its bars and its layers, in the
 /// Track view's own words.
 class _StripMeta extends StatelessWidget {
-  const _StripMeta({
+  const new({
     required this.channel,
     required this.layers,
     required this.bars,
@@ -415,7 +415,7 @@ class _StripMeta extends StatelessWidget {
 /// 147 (edit 97 + bypass 50), 9 apart. Flex keeps those proportions in any
 /// strip width.
 class _StripButtons extends StatelessWidget {
-  const _StripButtons({required this.track});
+  const new({required this.track});
 
   final Track track;
 
@@ -458,64 +458,62 @@ class _StripButtons extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
-    builder: (context, constraints) =>
-        _row(context, _scale(context, constraints.maxWidth)),
+    builder: (context, constraints) {
+      final scale = _scale(context, constraints.maxWidth);
+      final l10n = context.l10n;
+      final bloc = context.read<LooperBloc>();
+      final channel = track.channel;
+      return Row(
+        children: [
+          Expanded(
+            flex: 102,
+            child: _StripButton(
+              key: Key('mixer_mute_$channel'),
+              scale: scale,
+              label: l10n.mixerMute,
+              on: track.muted,
+              semanticLabel: track.muted
+                  ? l10n.a11yMixerUnmute(channel + 1)
+                  : l10n.a11yMixerMute(channel + 1),
+              onTap: () => bloc.add(LooperMuteToggled(channel)),
+            ),
+          ),
+          const SizedBox(width: 9),
+          Expanded(
+            flex: 102,
+            child: _StripButton(
+              key: Key('mixer_solo_$channel'),
+              scale: scale,
+              label: l10n.mixerSolo,
+              on: track.solo,
+              semanticLabel: track.solo
+                  ? l10n.a11yMixerUnsolo(channel + 1)
+                  : l10n.a11yMixerSolo(channel + 1),
+              onTap: () => bloc.add(LooperTrackSoloToggled(channel)),
+              // Clearing every Solo at once has no control of its own in the
+              // accepted design, and the stage already uses a long press for
+              // its second action (a tile's long press stops the track). One
+              // gesture, on the control it is about.
+              onLongPress: () => bloc.add(const LooperSoloCleared()),
+              longPressLabel: l10n.a11yMixerClearSolo,
+            ),
+          ),
+          const SizedBox(width: 9),
+          Expanded(
+            flex: 147,
+            child: _StripFxPair(track: track, scale: scale),
+          ),
+        ],
+      );
+    },
   );
-
-  Widget _row(BuildContext context, double scale) {
-    final l10n = context.l10n;
-    final bloc = context.read<LooperBloc>();
-    final channel = track.channel;
-    return Row(
-      children: [
-        Expanded(
-          flex: 102,
-          child: _StripButton(
-            key: Key('mixer_mute_$channel'),
-            scale: scale,
-            label: l10n.mixerMute,
-            on: track.muted,
-            semanticLabel: track.muted
-                ? l10n.a11yMixerUnmute(channel + 1)
-                : l10n.a11yMixerMute(channel + 1),
-            onTap: () => bloc.add(LooperMuteToggled(channel)),
-          ),
-        ),
-        const SizedBox(width: 9),
-        Expanded(
-          flex: 102,
-          child: _StripButton(
-            key: Key('mixer_solo_$channel'),
-            scale: scale,
-            label: l10n.mixerSolo,
-            on: track.solo,
-            semanticLabel: track.solo
-                ? l10n.a11yMixerUnsolo(channel + 1)
-                : l10n.a11yMixerSolo(channel + 1),
-            onTap: () => bloc.add(LooperTrackSoloToggled(channel)),
-            // Clearing every Solo at once has no control of its own in the
-            // accepted design, and the stage already uses a long press for
-            // its second action (a tile's long press stops the track). One
-            // gesture, on the control it is about.
-            onLongPress: () => bloc.add(const LooperSoloCleared()),
-            longPressLabel: l10n.a11yMixerClearSolo,
-          ),
-        ),
-        const SizedBox(width: 9),
-        Expanded(
-          flex: 147,
-          child: _StripFxPair(track: track, scale: scale),
-        ),
-      ],
-    );
-  }
 }
 
 /// One of the strip's small state buttons: lit when [on], dimmed and inert
 /// without an [onTap]. Shows [label], or [icon] when there is no label, at
 /// the row's shared [scale].
 class _StripButton extends StatelessWidget {
-  const _StripButton({
+  const new({
     required this.on,
     required this.semanticLabel,
     required this.onTap,
@@ -598,7 +596,7 @@ class _StripButton extends StatelessWidget {
 /// The bypass is a TOGGLE event, never a computed set: `track` here is the
 /// polled snapshot, a poll behind any flip another surface just made.
 class _StripFxPair extends StatelessWidget {
-  const _StripFxPair({required this.track, required this.scale});
+  const new({required this.track, required this.scale});
 
   final Track track;
 
@@ -655,7 +653,7 @@ class _StripFxPair extends StatelessWidget {
 
 /// Where the track sits between the two jacks, with its readout.
 class _StripPan extends StatefulWidget {
-  const _StripPan({
+  const new({
     required this.track,
     required this.cursor,
     required this.routeCurrent,
@@ -774,7 +772,7 @@ class _StripPanState extends State<_StripPan> {
 /// from the left, which reads as a level rather than a placement. A pan wants
 /// its centre marked and its fill to grow from there.
 class _StripPanBar extends StatefulWidget {
-  const _StripPanBar({
+  const new({
     required this.channel,
     required this.pan,
     required this.onChanged,
@@ -979,11 +977,7 @@ class _StripPanBarState extends State<_StripPanBar> {
 
 /// The level's caption: the word and the gain the marker below is at.
 class _StripGainCaption extends StatelessWidget {
-  const _StripGainCaption({
-    required this.volume,
-    required this.channel,
-    required this.fade,
-  });
+  const new({required this.volume, required this.channel, required this.fade});
 
   final double volume;
   final int channel;
@@ -1032,9 +1026,10 @@ class _StripGainCaption extends StatelessWidget {
             key: Key('mixer_gain_readout_$channel'),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: signalMono(color: surface.textPrimary, size: 22).copyWith(
-              fontFeatures: const [FontFeature.tabularFigures()],
-            ),
+            style: signalMono(
+              color: surface.textPrimary,
+              size: 22,
+            ).copyWith(fontFeatures: const [FontFeature.tabularFigures()]),
           ),
         ),
       ],
@@ -1044,7 +1039,7 @@ class _StripGainCaption extends StatelessWidget {
 
 /// The two sides' labels under the meter.
 class _StripSideLabels extends StatelessWidget {
-  const _StripSideLabels({required this.left, required this.right});
+  const new({required this.left, required this.right});
 
   final String left;
   final String right;
@@ -1079,7 +1074,7 @@ class _StripSideLabels extends StatelessWidget {
 /// fader beside it — and it is why the meter is a `Stack` rather than a
 /// `Row` of bars.
 class _StripMeter extends StatefulWidget {
-  const _StripMeter({
+  const new({
     required this.track,
     required this.cursor,
     required this.routeCurrent,

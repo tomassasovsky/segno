@@ -3,8 +3,8 @@
 #
 # Links the real engine sources so `--mode real` measures what actually ships
 # on this platform, including the per-OS le_platform_enumerate_devices seam.
-# The source list and the per-OS link flags mirror run_native_tests.sh — keep
-# them in sync with it and with src/CMakeLists.txt.
+# The source list is ENGINE_SRC (src/test/engine_build.sh); the per-OS link
+# flags mirror run_native_tests.sh — keep them in sync.
 #
 # Usage: ./bench_devices.sh [--iters N] [--mode real|ma-lean|ma-full|ctx|all]
 #   SEGNO_ALSA_ONLY=1 ./bench_devices.sh   # appliance path on the Pi
@@ -21,20 +21,16 @@ case "$(uname -s)" in
   *) LIBS="-lpthread -lstdc++ -lm -ldl" ;;   # Linux: miniaudio dlopen()s its backends
 esac
 
-ENGINE_SRC="src/core/engine*.c src/core/lockfree_ring.c src/core/loop_clock.c \
-  src/core/tempo_grid.c src/core/halfband.c \
-  src/core/synth_voice.c src/core/synth_patch.c \
-  src/core/audio_ring.c src/core/rt_alloc.c src/core/perf_drain.c src/core/perf_checkpoint.c src/core/perf_log_ring.c \
-  src/core/layer_staging_ring.c src/core/json_read.c src/core/perf_render.c \
-  src/core/plugin_disabled.c \
-  src/platform/engine_*.c src/miniaudio/miniaudio_impl.c src/midi/le_midi_clock.c src/midi/le_clock_follow.c"
+. src/test/engine_build.sh   # ENGINE_SRC, engine_objects, queue_compile
 
 CXX="${CXX:-c++}"
 echo "== building device bench =="
 # The engine's one C++ unit, the stretch shim (#1179).
-$CXX -std=c++17 -O2 -DNDEBUG -c src/stretch/le_stretch.cpp -o "$OUT/le_stretch_dev.o"
+queue_compile "$OUT/le_stretch_dev.o" $CXX -std=c++17 -O2 -DNDEBUG src/stretch/le_stretch.cpp
+engine_objects ENGINE_OBJS "$OUT/obj/bench_devices" $CC $STD
+run_queue
 # shellcheck disable=SC2086
-$CC $STD src/test/bench/bench_devices.c $ENGINE_SRC "$OUT/le_stretch_dev.o" \
+$CC $STD src/test/bench/bench_devices.c $ENGINE_OBJS "$OUT/le_stretch_dev.o" \
   $LIBS -o "$OUT/segno_device_bench.exe"
 
 "$OUT/segno_device_bench.exe" "$@"

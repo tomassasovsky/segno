@@ -16,7 +16,7 @@ import 'package:settings_repository/settings_repository.dart';
 /// the same reading and calibration, with no change here.
 class AmbientBrightnessCurve {
   /// Creates an [AmbientBrightnessCurve].
-  const AmbientBrightnessCurve({
+  const new({
     required this.floor,
     required this.minimum,
     this.ceiling = 1,

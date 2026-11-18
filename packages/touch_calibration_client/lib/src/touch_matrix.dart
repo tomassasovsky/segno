@@ -15,7 +15,7 @@ typedef TouchPoint = ({double x, double y});
 /// ```
 class TouchMatrix extends Equatable {
   /// Creates a [TouchMatrix] from its six coefficients.
-  const TouchMatrix(this.a, this.b, this.c, this.d, this.e, this.f);
+  const new(this.a, this.b, this.c, this.d, this.e, this.f);
 
   /// The matrix libinput uses when none is set.
   static const identity = TouchMatrix(1, 0, 0, 0, 1, 0);
@@ -56,10 +56,8 @@ class TouchMatrix extends Equatable {
   final double f;
 
   /// Where this matrix maps [point].
-  TouchPoint map(TouchPoint point) => (
-    x: a * point.x + b * point.y + c,
-    y: d * point.x + e * point.y + f,
-  );
+  TouchPoint map(TouchPoint point) =>
+      (x: a * point.x + b * point.y + c, y: d * point.x + e * point.y + f);
 
   /// The matrix that applies [inner] first and this matrix after it.
   TouchMatrix after(TouchMatrix inner) => TouchMatrix(

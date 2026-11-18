@@ -3,7 +3,7 @@ part of 'wifi_cubit.dart';
 /// State for [WifiCubit].
 class WifiState extends Equatable {
   /// Creates a [WifiState].
-  const WifiState({
+  const new({
     this.supported = false,
     this.status = WifiStatus.unsupported,
     this.networks = const [],
@@ -13,7 +13,7 @@ class WifiState extends Equatable {
     this.retrying = false,
     this.disconnecting = false,
     this.errorMessage,
-    this.errorKind,
+    this.joinError,
     this.failedSsid,
     this.leftSsid,
     this.internet,
@@ -48,11 +48,11 @@ class WifiState extends Equatable {
   /// Last error message, if any.
   final String? errorMessage;
 
-  /// How the failure behind [errorMessage] classified — credentials versus
-  /// backend/transient — so the UI never presents an iwd race as a wrong
-  /// password (#824, #829). Null for non-join errors; cleared with the
+  /// Why the join behind [errorMessage] failed, as the helper reported it,
+  /// so the page never presents a failed connection as a wrong password
+  /// (#1817). Null for errors that are not a join's; cleared with the
   /// message.
-  final WifiJoinErrorKind? errorKind;
+  final WifiJoinError? joinError;
 
   /// The SSID [errorMessage] is about.
   ///
@@ -75,6 +75,8 @@ class WifiState extends Equatable {
   String? get lostSsid {
     final last = status.lastSsid;
     if (!supported || !status.enabled || status.connected) return null;
+    // NetworkManager is joining something by itself: not lost yet.
+    if (status.connecting) return null;
     if (connectingSsid != null || last.isEmpty || last == leftSsid) {
       return null;
     }
@@ -104,7 +106,7 @@ class WifiState extends Equatable {
     bool? retrying,
     bool? disconnecting,
     String? errorMessage,
-    WifiJoinErrorKind? errorKind,
+    WifiJoinError? joinError,
     String? failedSsid,
     String? leftSsid,
     ({String ssid, bool online})? internet,
@@ -125,7 +127,7 @@ class WifiState extends Equatable {
       retrying: !clearConnectingSsid && (retrying ?? this.retrying),
       disconnecting: disconnecting ?? this.disconnecting,
       errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
-      errorKind: clearError ? null : (errorKind ?? this.errorKind),
+      joinError: clearError ? null : (joinError ?? this.joinError),
       failedSsid: clearError ? null : (failedSsid ?? this.failedSsid),
       leftSsid: nextStatus.connected ? null : (leftSsid ?? this.leftSsid),
       internet: internet ?? this.internet,
@@ -143,7 +145,7 @@ class WifiState extends Equatable {
     retrying,
     disconnecting,
     errorMessage,
-    errorKind,
+    joinError,
     failedSsid,
     leftSsid,
     internet,

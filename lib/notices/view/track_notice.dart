@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/notices/cubit/notices_cubit.dart';
 import 'package:segno/notices/model/notice.dart';
@@ -34,7 +34,7 @@ Color? trackNoticeRing(BuildContext context, int channel) {
 /// on the track) the message steps aside and the card only rings.
 class TrackNotice extends StatelessWidget {
   /// Creates a [TrackNotice] for [channel] over [child].
-  const TrackNotice({
+  const new({
     required this.channel,
     required this.child,
     this.yields = false,
@@ -74,7 +74,7 @@ class TrackNotice extends StatelessWidget {
 
 /// The message itself, centred in the area.
 class _TrackMessage extends StatelessWidget {
-  const _TrackMessage({required this.channel, required this.shown});
+  const new({required this.channel, required this.shown});
 
   final int channel;
   final ShownNotice shown;

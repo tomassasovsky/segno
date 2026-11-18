@@ -14,7 +14,7 @@ typedef PluginFileStat = ({int mtimeMs, int sizeBytes});
 /// triple, so any change re-scans that file.
 class PluginCacheKey extends Equatable {
   /// Creates a [PluginCacheKey].
-  const PluginCacheKey({
+  const new({
     required this.path,
     required this.mtimeMs,
     required this.sizeBytes,
@@ -39,16 +39,14 @@ class PluginCacheKey extends Equatable {
 /// [PluginCatalog] holds and validates.
 class PluginCatalogCache extends Equatable {
   /// Creates a [PluginCatalogCache].
-  const PluginCatalogCache({
+  const new({
     required this.appVersion,
     required this.descriptors,
     required this.keys,
   });
 
   /// An empty cache for [appVersion].
-  const PluginCatalogCache.empty(this.appVersion)
-    : descriptors = const [],
-      keys = const [];
+  const new empty(this.appVersion) : descriptors = const [], keys = const [];
 
   /// The app version that produced this cache.
   final String appVersion;
@@ -83,21 +81,18 @@ class PluginCatalogCache extends Equatable {
 /// app-version bump or any plugin file change). A minimal scan-result holder —
 /// not a persistence framework (that is part 7).
 class PluginCatalog {
-  /// Creates a [PluginCatalog] driving [engine].
+  /// Creates a [PluginCatalog] driving [_engine].
   ///
-  /// [appVersion] keys the cache so an app upgrade forces a fresh scan.
-  /// [pollInterval] is how often the running scan is polled. [statFile] reads a
-  /// file's (mtime, size) for cache keying; the default stats the real
+  /// [_appVersion] keys the cache so an app upgrade forces a fresh scan.
+  /// [_pollInterval] is how often the running scan is polled. [statFile] reads
+  /// a file's (mtime, size) for cache keying; the default stats the real
   /// filesystem and returns `null` for a missing file (injected in tests).
-  PluginCatalog({
-    required engine.EnginePluginHosting engine,
-    required String appVersion,
-    Duration pollInterval = const Duration(milliseconds: 100),
+  new({
+    required this._engine,
+    required this._appVersion,
+    this._pollInterval = const Duration(milliseconds: 100),
     PluginFileStat? Function(String path)? statFile,
-  }) : _engine = engine,
-       _appVersion = appVersion,
-       _pollInterval = pollInterval,
-       _statFile = statFile ?? _defaultStat;
+  }) : _statFile = statFile ?? _defaultStat;
 
   final engine.EnginePluginHosting _engine;
   final String _appVersion;

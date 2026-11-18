@@ -31,10 +31,9 @@ void openFirstInput() {
 
 ## Notes
 
-- The MIDI functions live in the `segno_engine` native library.
-  `SEGNO_ENGINE_LIB` overrides where it is loaded from (the appliance image
-  sets it); otherwise it is the process itself on macOS and iOS,
-  `segno_engine.dll` on Windows and `libsegno_engine.so` elsewhere.
+- The MIDI functions live in the `segno_engine` native library and are called
+  through its `@Native` bindings, behind `MidiBindings` so tests can pass a
+  fake.
 - Creating a `MidiClient` or `MidiOutClient` throws `MidiException` when the
   platform has no MIDI backend. `open`, `close` and `send` return the native
   result code, where 0 means success.

@@ -109,11 +109,7 @@ void main() {
     expect(engine.simulatedParams(3), [10, 20, 30]);
     expect(
       engine.simulatedRoutes[0],
-      const InstrumentRoute(
-        midiEnabled: true,
-        port: 2,
-        channel: 1,
-      ),
+      const InstrumentRoute(midiEnabled: true, port: 2, channel: 1),
     );
     // A snapshot that changes nothing sends nothing.
     final calls = engine.instrumentCalls.length;
