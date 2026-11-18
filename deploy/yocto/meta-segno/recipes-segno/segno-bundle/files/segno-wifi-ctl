@@ -23,10 +23,13 @@
 #   connectivity           {"internet":true|false}: one HEAD request to the
 #                          update host, 3 s limit
 #   activate <uuid> [secs] {} once the saved profile is up on its stored key
-#                          (up_saved); used by segno-wifi-retry at boot
+#                          (up_saved); used by segno-wifi-retry
 #
-# NetworkManager owns the radio, and nothing else may. There is deliberately no
-# second backend: see reclaim_wifi below for what having one cost us (#468).
+# NetworkManager owns the radio, and nothing else may: it runs wpa_supplicant
+# itself, as on Raspberry Pi OS (#1843). There is deliberately no second
+# backend. One used to exist here, and taking the radio over for it left a
+# console with two supplicants on wlan0 tearing down each other's
+# association (#468).
 set -eu
 
 # A passwd-file holds a key in the clear, so it must not outlive the helper,
@@ -40,9 +43,8 @@ trap 'rm -f "$passf" "$up_keyf"; resume_autoconnect' EXIT
 trap 'exit 1' HUP INT TERM
 
 IFACE="${SEGNO_WIFI_IFACE:-wlan0}"
-# The join budget. This was 20s while a wpa_supplicant fallback existed, so a
-# slow AP would trip it and hand the radio away; with nothing to fall back to,
-# waiting is strictly better than failing.
+# The join budget. With nothing to fall back to, waiting is better than
+# failing early.
 NM_CONNECT_WAIT_SECS="${SEGNO_WIFI_NM_CONNECT_TIMEOUT:-45}"
 # Beats the ephemeral wired profile (autoconnect-priority -999). Used as the
 # floor: next_autoconnect_priority lifts each new join above every saved
@@ -63,43 +65,6 @@ json_escape() {
 }
 
 have_nmcli() { command -v nmcli >/dev/null 2>&1; }
-# The appliance image always ships NetworkManager, so it is the single owner
-# of the radio. There used to be a wpa_supplicant fallback here for when an NM
-# join failed. It was worse than the problem: taking over meant setting wlan0
-# `managed no`, which made every later call pick the fallback again, so a
-# console ran our supplicant and NM's dbus-owned one at the same time. Two
-# supplicants on one interface tear down each other's association — the AP saw
-# the console reconnect every few seconds forever. See #468.
-
-# Undo that state if an older image (or a live-patched helper) left it behind,
-# so the first run after an update repairs the console instead of inheriting a
-# radio nobody owns.
-reclaim_wifi() {
-    have_nmcli || return 0
-    # Only ever our own supplicant, matched by its config path. NM's instance
-    # is `wpa_supplicant -u` and killing it would take WiFi down entirely.
-    if [ -d /proc ]; then
-        for pid in /proc/[0-9]*; do
-            [ -r "$pid/cmdline" ] || continue
-            if tr '\0' ' ' <"$pid/cmdline" 2>/dev/null \
-                | grep -q "wpa_supplicant-${IFACE}.conf"; then
-                log "killing a stale fallback supplicant (${pid##*/})"
-                kill "${pid##*/}" 2>/dev/null || true
-            fi
-        done
-    fi
-    case "$(nmcli -t -f GENERAL.STATE device show "$IFACE" 2>/dev/null | head -n1)" in
-        *unmanaged*)
-            log "reclaiming $IFACE for NetworkManager"
-            nmcli device set "$IFACE" managed yes >/dev/null 2>&1 || true
-            ;;
-    esac
-}
-
-disable_powersave() {
-    command -v iw >/dev/null 2>&1 || return 0
-    iw dev "$IFACE" set power_save off >/dev/null 2>&1 || true
-}
 
 iface_ip() {
     ip -4 -o addr show dev "$IFACE" 2>/dev/null \
@@ -157,10 +122,11 @@ next_autoconnect_priority() {
 # ---------- NetworkManager path ----------
 
 JOURNALCTL="${SEGNO_JOURNALCTL:-journalctl}"
-# How long join_failure waits, at most, for iwd's lines when the journal has
-# none of them yet: journald stores a line a moment after iwd writes it, and
-# a wrong key whose line comes late must not read as no-connection. Read
-# again once a second; only a failure iwd never logs pays the whole wait.
+# How long join_failure waits, at most, for wpa_supplicant's lines when the
+# journal has none of them yet: journald stores a line a moment after
+# wpa_supplicant writes it, and a wrong key whose line comes late must not
+# read as no-connection. Read again once a second; only a failure
+# wpa_supplicant never logs pays the whole wait.
 JOIN_EVIDENCE_WAIT_SECS="${SEGNO_JOIN_EVIDENCE_WAIT:-3}"
 
 # The journal's position now: the cursor of its last entry, or empty.
@@ -169,66 +135,100 @@ join_mark() {
         | sed -n 's/^-- cursor: //p'
 }
 
-# What iwd and NetworkManager logged after <cursor>, the start of this join,
-# or since <epoch> when the journal gave no cursor: never an earlier
-# attempt's lines, which once made a failed join of an open network read as
-# a wrong password (#1817). A cursor rather than the second the join began,
-# which can hold the end of the attempt before it.
+# What wpa_supplicant and NetworkManager logged after <cursor>, the start of
+# this join, or since <epoch> when the journal gave no cursor: never an
+# earlier attempt's lines, which once made a failed join of an open network
+# read as a wrong password (#1817). A cursor rather than the second the join
+# began, which can hold the end of the attempt before it. wpa_supplicant logs
+# to syslog (`-s` in its unit, as on Pi OS), so its lines carry the
+# wpa_supplicant identifier.
 join_evidence() {
     if [ -n "$1" ]; then
-        "$JOURNALCTL" --after-cursor "$1" --no-pager -o cat -t iwd -t NetworkManager \
+        "$JOURNALCTL" --after-cursor "$1" --no-pager -o cat -t wpa_supplicant -t NetworkManager \
             2>/dev/null || true
     else
-        "$JOURNALCTL" --since "@$2" --no-pager -o cat -t iwd -t NetworkManager \
+        "$JOURNALCTL" --since "@$2" --no-pager -o cat -t wpa_supplicant -t NetworkManager \
             2>/dev/null || true
     fi
 }
 
+# The wpa_supplicant 2.11 lines that end an attempt, as an ERE. Each is
+# written after the event it reports, so one of them in the journal means
+# the journal has caught up:
+#
+#   WPA: 4-Way Handshake failed - pre-shared key may be incorrect
+#       events.c, wpa_supplicant_event_disassoc_finish: the link dropped
+#       during the initial 4-way handshake of a PSK network. The access point
+#       sent message 1, so it had the station's association, and then did not
+#       accept the key. It is followed by CTRL-EVENT-SSID-TEMP-DISABLED with
+#       reason=WRONG_KEY.
+#   CTRL-EVENT-ASSOC-REJECT ... status_code=<n>
+#       the access point refused the 802.11 authentication or association,
+#       or let it time out (status 16, #1816).
+#   CTRL-EVENT-AUTH-REJECT ... status_code=<n>
+#       the same refusal, from wpa_supplicant's own authentication (SME).
+#   Authentication with <bssid> timed out.
+#       wpa_supplicant.c, wpa_supplicant_timeout: associated, but the 4-way
+#       handshake never started, because the access point never sent
+#       message 1 (#470). The key was not tested.
+#   CTRL-EVENT-SSID-TEMP-DISABLED ... reason=<why>
+#       wpa_supplicant set the network aside after a failure.
+WPA_END_RE='4-Way Handshake failed|CTRL-EVENT-ASSOC-REJECT|CTRL-EVENT-AUTH-REJECT|Authentication with [0-9a-f:]+ timed out|CTRL-EVENT-SSID-TEMP-DISABLED'
+
 # Why a join failed, as one code on stdout ({"error":<code>}) for the app to
 # word, with the evidence on stderr:
 #
-#   wrong-password  iwd logged "4-Way handshake failed": the access point
-#                   tested the key and refused it. The only proof of a wrong
-#                   key there is.
-#   not-found       the network is not in range.
-#   no-address      the link came up but no IPv4 address did.
-#   no-connection   everything else: an 802.11 authentication or association
-#                   the access point rejected or let time out (iwd
-#                   `connect-failed, status: <802.11 status>`), the join's time
-#                   running out, a backend race. The key was never tested.
+#   wrong-password  wpa_supplicant logged "4-Way Handshake failed": the access
+#                   point started the handshake and did not accept the key.
+#                   The only evidence of a wrong key there is.
+#   not-found       the network is not in range: NetworkManager's
+#                   `ssid-not-found` ("The Wi-Fi network could not be
+#                   found").
+#   no-address      the link came up but no IPv4 address did:
+#                   `ip-config-unavailable` ("IP configuration could not be
+#                   reserved"), DHCP.
+#   no-connection   everything else, the key never tested: the access point
+#                   rejected or timed out the authentication or association
+#                   (CTRL-EVENT-ASSOC-REJECT status_code=16, #1816), never
+#                   started the handshake ("Authentication with ... timed
+#                   out.", #470), or the join ran out of time.
 #
-# NetworkManager's own reason is not evidence about the key. On a headless
-# console there is no secret agent, and NM's iwd backend ends every failed
-# activation that asked for secrets as `no-secrets`, so a WiFi 6 router
-# timing out the 802.11 authentication (iwd status 16, #1816) read as a wrong
-# password, and the owner forgot two good networks over it (#1817, #466).
+# NetworkManager's own reason is not evidence about the key. A join that
+# times out before the handshake makes it ask a secret agent for a new key
+# whenever the profile has not connected before (nm-device-wifi.c,
+# supplicant_connection_timeout_cb), and so does any drop during the
+# handshake (handle_8021x_or_psk_auth_fail). A headless console has no agent,
+# so all of these end as `no-secrets` ("Secrets were required, but not
+# provided"), and reading that as a wrong password made the owner forget good
+# networks (#466, #1817).
 join_failure() {
     err=$1
     lower=$(printf '%s' "$err" | tr '[:upper:]' '[:lower:]')
     evidence=$(join_evidence "$2" "$3")
-    # iwd logs a handshake failure before the connect failure that ends the
-    # attempt, so either line means the journal has caught up; neither may
-    # mean it has not yet, and a wrong key must not read as no-connection.
     waited=0
-    while ! printf '%s' "$evidence" | grep -qaiE '4-way handshake failed|connect-failed' \
+    while ! printf '%s' "$evidence" | grep -qaE "$WPA_END_RE" \
         && [ "$waited" -lt "$JOIN_EVIDENCE_WAIT_SECS" ]; do
         sleep 1
         waited=$((waited + 1))
         evidence=$(join_evidence "$2" "$3")
     done
-    iwd_said=$(printf '%s\n' "$evidence" \
-        | grep -aoiE '4-way handshake failed.*|connect-failed, [a-z]+: [0-9]+' \
-        | tail -n1)
-    if printf '%s' "$evidence" | grep -qai '4-way handshake failed'; then
+    # The line that says most, for the journal: the handshake failure if
+    # there was one, else the last line that ended an attempt.
+    wpa_said=$(printf '%s\n' "$evidence" | grep -aE '4-Way Handshake failed' | tail -n1)
+    [ -n "$wpa_said" ] \
+        || wpa_said=$(printf '%s\n' "$evidence" | grep -aE "$WPA_END_RE" | tail -n1)
+    if printf '%s' "$evidence" | grep -qa '4-Way Handshake failed'; then
         code=wrong-password
-    elif printf '%s' "$lower" | grep -qE 'could not be found|no network with ssid'; then
+    elif printf '%s' "$lower" | grep -qE 'could not be found|no network with ssid' \
+        || printf '%s' "$evidence" | grep -qa "reason 'ssid-not-found'"; then
         code=not-found
-    elif printf '%s' "$lower" | grep -qE 'ip configuration could not be reserved|dhcp'; then
+    elif printf '%s' "$lower" | grep -qE 'ip configuration could not be reserved|dhcp' \
+        || printf '%s' "$evidence" | grep -qa "reason 'ip-config-unavailable'"; then
         code=no-address
     else
         code=no-connection
     fi
-    log "join failed: $code (${iwd_said:-no iwd evidence}; nmcli: $err)"
+    log "join failed: $code (${wpa_said:-no wpa_supplicant evidence}; nmcli: $err)"
     printf '{"error":"%s"}\n' "$code"
 }
 
@@ -444,14 +444,17 @@ write_passwd_file() {
     printf '\n' >>"$1"
 }
 
-# Activates a saved profile on its stored key. NetworkManager's iwd backend
-# hands iwd the stored PSK only until the profile has a recorded attempt;
-# after one failure it asks secret agents for a NEW key (REQUEST_NEW in
-# nm_device_iwd_agent_query). A headless console runs none, so a plain
-# `connection up` then fails in milliseconds with "No agents were available"
-# while the key sits in the keyfile, and Join on a saved network only worked
-# after re-typing the password (#1326). nmcli reading a passwd-file is the
-# agent that answers. Open networks have no key and go up plainly.
+# Activates a saved profile on its stored key. NetworkManager does not always
+# use the key it has stored. When the link drops during the 4-way handshake
+# (handle_8021x_or_psk_auth_fail in nm-device-wifi.c), or a join times out
+# on a profile that has not connected before (supplicant_connection_timeout_cb),
+# it asks secret agents for a NEW key (NM_SECRET_AGENT_GET_SECRETS_FLAG_
+# REQUEST_NEW). A headless console runs none, so the request fails with "No
+# agents were available for this request", the activation ends as
+# `no-secrets`, and NM blocks the profile from autoconnect until an agent
+# registers (nm-policy.c), while the key sits in the keyfile (#1326). nmcli
+# reading a passwd-file is the agent that answers, with the stored key. Open
+# networks have no key and go up plainly.
 up_saved() {
     up_uuid=$1
     up_wait=$2
@@ -570,7 +573,6 @@ do_connect_nm() {
         IFS= read -r psk || true
     fi
     nmcli radio wifi on >/dev/null 2>&1 || true
-    disable_powersave
 
     # A saved hidden network never shows in a scan under its name, so it is
     # tried without the check.
@@ -607,9 +609,9 @@ do_connect_nm() {
         # Reuse the saved profile. Deleting it to "reconnect" is how Join on a
         # saved network threw the PSK away and then failed (#963).
         # A password update (or a leftover secret-less husk) must not flip
-        # autoconnect on before the PSK is stored — same NM/iwd abort race as
-        # a new join. A promptless Join already holds secrets; autoconnect
-        # stays on.
+        # autoconnect on before the PSK is stored: NM's own activation would
+        # race this one, as for a new join. A promptless Join already holds
+        # secrets; autoconnect stays on.
         if [ -n "$psk" ]; then
             ac=no
         else
@@ -618,7 +620,6 @@ do_connect_nm() {
         nmcli connection modify uuid "$existing" \
             connection.autoconnect "$ac" \
             connection.autoconnect-priority "$join_priority" \
-            802-11-wireless.powersave 2 \
             >"$errf" 2>&1
         rc=$?
         if [ "$rc" -eq 0 ] && [ -n "$psk" ]; then
@@ -635,12 +636,11 @@ do_connect_nm() {
             rc=$?
         fi
     elif [ -n "$psk" ]; then
-        # New secured network. autoconnect stays off until the PSK is stored —
-        # otherwise NM auto-activates a secret-less profile, aborts iwd, and
-        # races the real up (#963).
-        # Create the profile without embedding the PSK in argv, then activate
-        # via passwd-file. On this image `connection up` after `wifi-sec.psk=…`
-        # often fails immediately with "Secrets were required".
+        # New secured network. autoconnect stays off until the PSK is stored:
+        # otherwise NM auto-activates the profile before it has a key, and
+        # that activation races the real up (#963).
+        # Create the profile without the PSK, which in argv would be readable
+        # by every process, then activate via passwd-file.
         created=$(new_uuid)
         nmcli connection add type wifi ifname "$IFACE" con-name "$ssid" \
             connection.uuid "$created" \
@@ -649,7 +649,6 @@ do_connect_nm() {
             wifi-sec.auth-alg open \
             connection.autoconnect no \
             connection.autoconnect-priority "$join_priority" \
-            802-11-wireless.powersave 2 \
             >"$errf" 2>&1
         rc=$?
         if [ "$rc" -eq 0 ]; then
@@ -669,7 +668,6 @@ do_connect_nm() {
             ssid "$ssid" \
             connection.autoconnect yes \
             connection.autoconnect-priority "$join_priority" \
-            802-11-wireless.powersave 2 \
             >"$errf" 2>&1 \
             && nmcli --wait "$NM_CONNECT_WAIT_SECS" connection up uuid "$created" \
                 >"$errf" 2>&1
@@ -778,14 +776,11 @@ do_monitor_nm() {
     done
 }
 
-# Every verb repairs the ownership state first: it is idempotent, costs one
-# nmcli read, and means a console does not stay broken until someone reboots it.
 require_nm() {
     if ! have_nmcli; then
         log "NetworkManager (nmcli) is not installed"
         return 1
     fi
-    reclaim_wifi
 }
 
 do_status() {
@@ -793,7 +788,6 @@ do_status() {
         echo '{"supported":false,"enabled":false,"connected":false,"connecting":false,"ssid":"","ip":"","signal":0}'
         return 0
     fi
-    reclaim_wifi
     do_status_nm
 }
 

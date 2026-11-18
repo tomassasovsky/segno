@@ -1,0 +1,38 @@
+# NetworkManager's state on /data (#1843).
+#
+# On Raspberry Pi OS /var/lib/NetworkManager simply persists. Here it is on
+# the A/B root filesystem, so every OS update reset it. It holds:
+#
+# - NetworkManager.state: whether Wi-Fi is switched on. The radio switch in
+#   the app came back on after every update.
+# - timestamps: when each profile last connected. NetworkManager reads it
+#   when a join times out: for a profile that has never connected it asks a
+#   secret agent for a new key instead of retrying the saved one
+#   (nm-device-wifi.c, supplicant_connection_timeout_cb). A headless console
+#   has no agent, so after an update a timed-out join of a network used for
+#   months ended as `no-secrets`.
+# - secret_key, from which NetworkManager derives the stable IPv6 address,
+#   so the address changed with every update.
+#
+# Bound from /data, which no update touches, these behave as on Pi OS.
+[Unit]
+Description=Segno: NetworkManager state on /data (survives an OS update)
+DefaultDependencies=no
+Requires=data.mount
+Wants=segno-nm-persist.service
+After=data.mount segno-nm-persist.service
+Before=local-fs.target NetworkManager.service
+Conflicts=umount.target
+Before=umount.target
+# A missing /data must cost seconds on the boot path, not the default 90 s.
+# NetworkManager then keeps its state on the root filesystem for this boot.
+JobTimeoutSec=10
+
+[Mount]
+What=/data/NetworkManager/state
+Where=/var/lib/NetworkManager
+Type=none
+Options=bind
+
+[Install]
+WantedBy=local-fs.target
