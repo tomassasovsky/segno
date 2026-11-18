@@ -1077,7 +1077,11 @@ class PerformanceRepository {
       for (final entity in entries) {
         final dir = entity.path;
         final armFile = File('$dir/$_armSnapshotFileName');
-        if (entity is! Directory || dir == _armedDir || !armFile.existsSync()) {
+        // A hidden directory is a delete in progress, never a take.
+        if (entity is! Directory ||
+            _basename(dir).startsWith('.') ||
+            dir == _armedDir ||
+            !armFile.existsSync()) {
           continue;
         }
         try {
@@ -1092,24 +1096,23 @@ class PerformanceRepository {
           if (!PerformanceArmSnapshot.writtenBeforeDestinations(arm)) {
             continue;
           }
-          final manifest = PerformanceManifest.fromJson(json);
-          await _publishManifest(
-            dir,
-            PerformanceManifest(
-              slug: manifest.slug,
-              finalized: true,
-              native: manifest.native,
-              armSnapshot: PerformanceArmSnapshot.fromJson(
-                arm,
-                channelLayout: manifest.native['channel_layout'],
-              ),
-              disarmSnapshot: manifest.disarmSnapshot,
-            ).toJson(),
-          );
-          armFile.deleteSync();
-          _warn(dir, 'has its arm snapshot back from $_armSnapshotFileName');
+          // Only the one key is added; the rest of the manifest is written
+          // back as it was read.
+          json['armSnapshot'] = PerformanceArmSnapshot.fromJson(
+            arm,
+            channelLayout: json['channel_layout'],
+          ).toJson();
+          await _publishManifest(dir, json);
         } on Object catch (error) {
           _warn(dir, 'keeps $_armSnapshotFileName unread: $error');
+          continue;
+        }
+        _warn(dir, 'has its arm snapshot back from $_armSnapshotFileName');
+        try {
+          armFile.deleteSync();
+        } on FileSystemException {
+          // Read and kept in the manifest: a leftover file is never read
+          // again, since the manifest now has its snapshot.
         }
       }
     }

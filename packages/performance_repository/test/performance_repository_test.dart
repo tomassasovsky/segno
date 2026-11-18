@@ -2724,7 +2724,11 @@ void main() {
       group('already recovered without it by a build with #1844', () {
         /// The take as that build leaves it: finalized and moved, with no
         /// `armSnapshot` in its manifest and the September file kept.
-        String seedRecoveredWithout(String slug, {String? under}) {
+        String seedRecoveredWithout(
+          String slug, {
+          String? under,
+          String? armOf,
+        }) {
           final parent = under ?? '${tempDir.path}/exports/recovered';
           final dir = '$parent/$slug';
           Directory(dir).createSync(recursive: true);
@@ -2754,7 +2758,7 @@ void main() {
             ..['finalized'] = true;
           File('$dir/performance.json').writeAsStringSync(jsonEncode(sidecar));
           File('$dir/arm-snapshot.json')
-              .writeAsStringSync(consoleArmSnapshot(slug));
+              .writeAsStringSync(consoleArmSnapshot(armOf ?? slug));
           File('$dir/${PerformanceRepository.recoveredAtStampName}')
               .writeAsStringSync('0');
           return dir;
@@ -2780,6 +2784,20 @@ void main() {
           expect(lines, [reattached]);
           expect(local.unrecoveredTakes, isEmpty);
           expect((await local.listCaptures()).single.path, dir);
+        });
+
+        test('not in a hidden directory, which is never a take', () async {
+          // A delete hides a take under a dot name before removing it.
+          final hidden = seedRecoveredWithout(
+            '.perf-20260910-073238',
+            armOf: 'perf-20260910-073238',
+          );
+          final manifest = File('$hidden/performance.json').readAsStringSync();
+
+          await repo.runBootRecovery();
+
+          expect(File('$hidden/performance.json').readAsStringSync(), manifest);
+          expect(File('$hidden/arm-snapshot.json').existsSync(), isTrue);
         });
 
         test('in the exports root as well as the recovered area', () async {

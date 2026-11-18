@@ -345,8 +345,9 @@ class PerformanceArmSnapshot {
       limiterCeiling: (json['limiterCeiling'] as num).toDouble(),
       latencyOffsetFrames: (json['latencyOffsetFrames'] as num).toInt(),
       tempoBpm: (json['tempoBpm'] as num?)?.toDouble() ?? 0,
-      // A capture policy is mandatory; a missing or malformed value is an
-      // invalid manifest rather than a request to infer output behavior.
+      // A capture policy is mandatory, except in the September shape
+      // above; a missing or malformed value is an invalid manifest rather
+      // than a request to infer output behavior.
       followOutput:
           !beforeDestinations && _requiredCapturePolicy(json['followOutput']),
       captureBus: bus,
@@ -477,7 +478,8 @@ class PerformanceArmSnapshot {
   /// mute; `true` (Follow output volume) applies that destination's level
   /// and mute, including their changes during the take. Both policies exclude
   /// Mono, Balance, hardware master gain and limiter. The policy key is
-  /// required for this format.
+  /// required for this format, except in a snapshot written before capture
+  /// destinations, which reads as `false` ([PerformanceArmSnapshot.fromJson]).
   final bool followOutput;
 
   /// The output destination the take captured — the first one with an
