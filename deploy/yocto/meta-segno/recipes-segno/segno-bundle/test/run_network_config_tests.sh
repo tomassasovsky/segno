@@ -23,6 +23,7 @@ WPA="$LAYER/recipes-connectivity/wpa-supplicant"
 NM="$LAYER/recipes-connectivity/networkmanager"
 IMAGE="$LAYER/recipes-core/images/segno-kiosk-image.bb"
 KAS="$LAYER/../kas-segno-common.yml"
+KAS_RPI5="$LAYER/../kas-segno-rpi5.yml"
 
 pass=0
 fail=0
@@ -48,7 +49,7 @@ echo "NetworkManager's configuration is Pi OS's"
 # Debian network-manager 1.52.1-1, debian/NetworkManager.conf.
 check "NetworkManager.conf" "$(printf '%s\n' '[main]' 'plugins=ifupdown,keyfile' '' '[ifupdown]' 'managed=false')" \
     "$(cat "$NM/files/NetworkManager.conf")"
-# raspberrypi-net-mods 1.4.4 (46e7276a).
+# raspberrypi-net-mods 1.4.4 (added in 46e7276a; pios/trixie at 9f03eb4a).
 check "rpi-no-scan-rand-mac-address.conf" "$(printf '%s\n' '[device]' 'wifi.scan-rand-mac-address=no')" \
     "$(cat "$FILES/rpi-no-scan-rand-mac-address.conf")"
 check "installed in /usr/lib, where Pi OS has it" yes \
@@ -69,8 +70,8 @@ check "the regulatory domain is on the kernel command line" yes \
 
 echo "dnsmasq and Avahi are set up as on Pi OS"
 # Pi OS ships dnsmasq-base, the program without a service.
-check "dnsmasq.service is masked" yes \
-    "$(yesno grep -qF 'ln -sf /dev/null ${D}${sysconfdir}/systemd/system/dnsmasq.service' "$RECIPE")"
+check "dnsmasq.service is not enabled" yes \
+    "$(yesno grep -qx 'SYSTEMD_AUTO_ENABLE:${PN} = "disable"' "$LAYER/recipes-support/dnsmasq/dnsmasq_%.bbappend")"
 # pi-gen stage2/01-sys-tweaks, word for word.
 check "avahi publishes the workstation, with pi-gen's edit" yes \
     "$(yesno grep -qF "sed -i 's/^#\\?publish-workstation=.*/publish-workstation=yes/'" "$LAYER/recipes-connectivity/avahi/avahi_%.bbappend")"
@@ -98,7 +99,7 @@ echo "nothing of iwd is left"
 # Settings, not comments, in every file bitbake or NetworkManager reads.
 settings() {
     grep -rhE --include='*.bb' --include='*.bbappend' --include='*.inc' \
-        --include='*.conf' --include='*.yml' "$1" "$LAYER" "$KAS" 2>/dev/null \
+        --include='*.conf' --include='*.yml' "$1" "$LAYER" "$KAS" "$KAS_RPI5" 2>/dev/null \
         | grep -vE '^[[:space:]]*#'
 }
 check "no wifi.backend anywhere (wpa_supplicant is NetworkManager's default)" "" \

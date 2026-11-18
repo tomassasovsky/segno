@@ -36,11 +36,18 @@ fails=0
 on() { ssh "${SSH_OPTS[@]}" "$HOST" "$@"; }
 
 # Runs a script on the console. Its lines are already `ok`, `FAIL` or `look`.
+# No output at all, or ssh's own failure (255), is a failure too: a step
+# whose console cannot be reached has checked nothing.
 run() {
-    local out
+    local out rc
     out=$(on sh -s)
+    rc=$?
     printf '%s\n' "$out"
     fails=$((fails + $(printf '%s\n' "$out" | grep -c '^  FAIL')))
+    if [ "$rc" -eq 255 ] || [ -z "$out" ]; then
+        echo "  FAIL reached $HOST over ssh (exit $rc)"
+        fails=$((fails + 1))
+    fi
 }
 
 ask() {
@@ -96,7 +103,7 @@ check "the kernel's regulatory domain" "country AR: DFS-FCC" "\$(iw reg get | se
 check "radios start blocked (raspberrypi-sys-mods rfkill_default)" 0 "\$(cat /sys/module/rfkill/parameters/default_state)"
 check "NetworkManager lifted the block on wlan" 0 "\$(for d in /sys/class/rfkill/rfkill*; do [ "\$(cat \$d/type)" = wlan ] && cat \$d/soft; done | head -1)"
 check "brcmfmac options (firmware-nonfree)" "options brcmfmac roamoff=1 feature_disable=0x282000" "\$(grep -h '^options brcmfmac' /etc/modprobe.d/*.conf)"
-check "no dnsmasq service (Pi OS has only the program)" masked "\$(systemctl is-enabled dnsmasq 2>/dev/null)"
+check "no dnsmasq service (Pi OS has only the program)" disabled "\$(systemctl is-enabled dnsmasq 2>/dev/null)"
 check "avahi publishes the workstation (pi-gen)" "publish-workstation=yes" "\$(grep '^publish-workstation=' /etc/avahi/avahi-daemon.conf)"
 look "DNS (systemd-resolved; Pi OS has NetworkManager write resolv.conf)" "\$(readlink /etc/resolv.conf) \$(grep '^nameserver' /etc/resolv.conf | tr '\n' ' ')"
 look "saved Wi-Fi networks (name:uuid:autoconnect)" "\$(nmcli -t -f NAME,UUID,TYPE,AUTOCONNECT connection show | awk -F: '\$3 == "802-11-wireless" { print \$1 ":" \$2 ":" \$4 }' | tr '\n' ' ')"
@@ -221,7 +228,10 @@ step_ethernet() {
     ask "Ready to pull the Ethernet cable?" || { echo "  skip ethernet"; return; }
     pause "Pull the Ethernet cable and wait 10 s"
     HOST_SAVED=$HOST
-    HOST="${HOST%@*}@$wifi_ip"
+    case "$HOST" in
+        *@*) HOST="${HOST%@*}@$wifi_ip" ;;
+        *) HOST=$wifi_ip ;;
+    esac
     run <<EOF
 $LIB
 check "eth0 is down" unavailable "\$(nmcli -t -f DEVICE,STATE device | sed -n 's/^eth0://p')"

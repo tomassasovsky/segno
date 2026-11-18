@@ -109,7 +109,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   `rfkill_default.conf`, and the regulatory domain as raspi-config sets it,
   `cfg80211.ieee80211_regdom=AR` on the kernel command line. wpa_supplicant
   is built with Debian's options except PCSC (and the SIM EAP methods),
-  readline and eapol_test. dnsmasq.service is masked (Pi OS ships only the
+  readline and eapol_test. dnsmasq.service is not enabled (Pi OS ships only the
   program) and Avahi publishes the workstation, as pi-gen sets it.
 - Removed: the iwd backend and everything only iwd needed
   (`iwd-main.conf`, `segno-iwd-tame`, `wifi.iwd.autoconnect`, the

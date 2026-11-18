@@ -152,9 +152,8 @@ join_evidence() {
     fi
 }
 
-# The wpa_supplicant 2.11 lines that end an attempt, as an ERE. Each is
-# written after the event it reports, so one of them in the journal means
-# the journal has caught up:
+# The wpa_supplicant 2.11 lines that end an attempt, as an ERE. One in the
+# journal means the journal holds at least part of the attempt:
 #
 #   WPA: 4-Way Handshake failed - pre-shared key may be incorrect
 #       events.c, wpa_supplicant_event_disassoc_finish: the link dropped
@@ -205,13 +204,28 @@ join_failure() {
     err=$1
     lower=$(printf '%s' "$err" | tr '[:upper:]' '[:lower:]')
     evidence=$(join_evidence "$2" "$3")
+    # Read until the handshake failure is there, or until a line that ended
+    # an attempt was there on the read before as well. One join can hold
+    # several attempts (an access point that rejects one association and
+    # accepts the next, then refuses the key), and journald may store the
+    # handshake line a moment after the rejection that came before it, so a
+    # single end line is not enough to stop on: a wrong key must not read as
+    # no-connection. Read once a second, for at most the wait.
     waited=0
-    while ! printf '%s' "$evidence" | grep -qaE "$WPA_END_RE" \
+    ended=no
+    while ! printf '%s' "$evidence" | grep -qa '4-Way Handshake failed' \
         && [ "$waited" -lt "$JOIN_EVIDENCE_WAIT_SECS" ]; do
+        if printf '%s' "$evidence" | grep -qaE "$WPA_END_RE"; then
+            [ "$ended" = no ] || break
+            ended=yes
+        fi
         sleep 1
         waited=$((waited + 1))
         evidence=$(join_evidence "$2" "$3")
     done
+    # NetworkManager's lines about this interface only: another device's
+    # failure (eth0 with no DHCP server) says nothing about this join.
+    nm_wifi=$(printf '%s\n' "$evidence" | grep -aF "device ($IFACE):" || true)
     # The line that says most, for the journal: the handshake failure if
     # there was one, else the last line that ended an attempt.
     wpa_said=$(printf '%s\n' "$evidence" | grep -aE '4-Way Handshake failed' | tail -n1)
@@ -220,10 +234,10 @@ join_failure() {
     if printf '%s' "$evidence" | grep -qa '4-Way Handshake failed'; then
         code=wrong-password
     elif printf '%s' "$lower" | grep -qE 'could not be found|no network with ssid' \
-        || printf '%s' "$evidence" | grep -qa "reason 'ssid-not-found'"; then
+        || printf '%s' "$nm_wifi" | grep -qa "reason 'ssid-not-found'"; then
         code=not-found
     elif printf '%s' "$lower" | grep -qE 'ip configuration could not be reserved|dhcp' \
-        || printf '%s' "$evidence" | grep -qa "reason 'ip-config-unavailable'"; then
+        || printf '%s' "$nm_wifi" | grep -qa "reason 'ip-config-unavailable'"; then
         code=no-address
     else
         code=no-connection

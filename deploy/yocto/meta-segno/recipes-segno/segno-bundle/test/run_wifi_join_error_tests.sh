@@ -20,7 +20,8 @@
 # image runs: wpa_supplicant 2.11 (events.c, wpa_supplicant.c; the interface
 # name prefixes each line) and NetworkManager 1.50.0 (nm-device-wifi.c,
 # nm-device.c; each line starts with its level and a timestamp). The
-# on-device check in tool/appliance/verify-network.sh captures the real ones.
+# on-device check in deploy/rpi/verify-network-on-device.sh captures the real
+# ones.
 set -uo pipefail
 
 here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -207,9 +208,9 @@ setup
 logged <<'LOG'
 wlan0: CTRL-EVENT-SSID-TEMP-DISABLED id=0 ssid="SomeNetwork" auth_failures=1 duration=10 reason=CONN_FAILED
 LOG
-run_connect
+WAIT= run_connect
 check "is a failed connection" no-connection "$(code)"
-check "one read: the line ends the attempt" 1 "$(wc -l < "$work/journalctl-args" | tr -d ' ')"
+check "two reads: the line ends the attempt once it holds" 2 "$(wc -l < "$work/journalctl-args" | tr -d ' ')"
 teardown
 
 echo "no evidence at all"
@@ -279,14 +280,53 @@ check "four reads" 4 "$(wc -l < "$work/journalctl-args" | tr -d ' ')"
 check "then no-connection" no-connection "$(code)"
 teardown
 
-echo "wpa_supplicant's lines already there are read once"
+echo "an attempt that already ended is read once more, a second later"
 setup
 logged <<'LOG'
 wlan0: CTRL-EVENT-ASSOC-REJECT bssid=00:00:00:00:00:00 status_code=16
 LOG
-run_connect
+WAIT= run_connect
+check "two reads" 2 "$(wc -l < "$work/journalctl-args" | tr -d ' ')"
+check "one wait" 1 "$(wc -l < "$work/sleeps" | tr -d ' ')"
+check "a failed connection" no-connection "$(code)"
+teardown
+
+echo "a handshake failure is read at once"
+setup
+logged <<'LOG'
+wlan0: WPA: 4-Way Handshake failed - pre-shared key may be incorrect
+LOG
+WAIT= run_connect
 check "one read" 1 "$(wc -l < "$work/journalctl-args" | tr -d ' ')"
 check "no wait" 0 "$(wc -l < "$work/sleeps" | tr -d ' ')"
+teardown
+
+echo "a rejected attempt, then a wrong key whose line comes late"
+setup
+# One join, two attempts: the access point rejects the first association
+# (status 16, #1816) and accepts the second, and then the key is refused.
+# The rejection is in the journal before the handshake line is.
+logged <<'LOG'
+wlan0: CTRL-EVENT-ASSOC-REJECT bssid=00:00:00:00:00:00 status_code=16
+LOG
+cat > "$work/journal-late" <<'LOG'
+wlan0: CTRL-EVENT-ASSOC-REJECT bssid=00:00:00:00:00:00 status_code=16
+wlan0: Associated with 58:11:22:34:39:1c
+wlan0: CTRL-EVENT-DISCONNECTED bssid=58:11:22:34:39:1c reason=15
+wlan0: WPA: 4-Way Handshake failed - pre-shared key may be incorrect
+LOG
+WAIT= run_connect
+check "is a wrong password" wrong-password "$(code)"
+teardown
+
+echo "another interface's failure says nothing about this join"
+setup
+logged <<'LOG'
+<info>  [1794972330.0500] device (eth0): state change: ip-config -> failed (reason 'ip-config-unavailable', managed-type: 'full')
+wlan0: CTRL-EVENT-ASSOC-REJECT bssid=00:00:00:00:00:00 status_code=16
+LOG
+run_connect
+check "is a failed connection, not no-address" no-connection "$(code)"
 teardown
 
 echo "a journal with no cursor is read from the attempt's second"
