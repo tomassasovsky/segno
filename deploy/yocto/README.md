@@ -167,8 +167,8 @@ prompt. Set as image policy in `kas-segno-common.yml`
 (`hostname:pn-base-files`); older images announced the `MACHINE` name
 (`raspberrypi5`, and before the Pi 5 `raspberrypi4-64`).
 
-No mDNS ships (no avahi), so the name does **not** buy `segno.local` — connect
-by IP unless your router resolves DHCP hostnames.
+Avahi runs, as on Raspberry Pi OS, so the console also answers as
+**`segno.local`** on the local network (#1843).
 
 After updating a unit from an old-name image: `known_hosts` entries keyed by
 the old name go stale (`ssh-keygen -R raspberrypi5`), but the dropbear host

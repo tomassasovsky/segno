@@ -7,10 +7,10 @@
 # Builds two shared libraries from fx_equiv_shim.c and the effects island
 # (engine_fx.c, rt_alloc.c, plugin_disabled.c): the reference from REF's
 # packages/segno_engine/src (git archive), and the working tree's. REF is
-# the trunk the optimisations started from, a commit on the trunk so it
-# stays reachable. A PR that changes how a kind sounds on purpose lists the
+# the commit the optimisations started from, a commit on master so it stays
+# reachable. A PR that changes how a kind sounds on purpose lists the
 # kind in k_moved (bench_fx_equiv.c); once it has landed, a later change
-# moves REF to the trunk's commit and empties k_moved. After a history
+# moves REF to master's commit and empties k_moved. After a history
 # rewrite REF is the rewritten commit of the same tree. A clone without REF
 # fetches it (a CI checkout is shallow).
 #
@@ -38,7 +38,7 @@ else
     echo "== fetching the reference $REF ==" >&2
     if ! git fetch --quiet --depth 1 origin "$REF"; then
       echo "bench_fx_equiv: the reference $REF is not on origin; move REF" \
-        "to a trunk commit (the header says how)" >&2
+        "to a master commit (the header says how)" >&2
       exit 1
     fi
   fi

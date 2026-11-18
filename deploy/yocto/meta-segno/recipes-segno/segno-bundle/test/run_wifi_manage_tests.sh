@@ -234,9 +234,9 @@ check "prints why, then restored" '{"error":"no-connection"}
 {"restored":"Studio"}' "$(cat "$work/stdout")"
 teardown
 
-# After one failure NetworkManager's iwd backend asks secret agents for a NEW
-# key and the console runs none, so the restore hands the stored key over
-# itself (#1326).
+# After a failure that ended as `no-secrets` NetworkManager asks secret agents
+# for a NEW key and the console runs none, so the restore hands the stored key
+# over itself (#1326).
 echo "a failed join restores the previous network on its stored key"
 setup
 SAVED="The Studio" ACTIVE="The Studio" FAIL_UP="Rehearsal" STORED_PSK='old key' \
