@@ -32,25 +32,54 @@ Settings → Privacy & Security → Open Anyway** for Segno Transfer and confirm
 The console writes a Live set (`project.als`) for each take when the take
 finishes. **Open in Live** downloads that set and every file it uses (the main
 recording, inputs, loops and stems) into a folder named after the performance in
-the download folder, keeping the layout the set expects. Each file is verified
-with SHA-256 like any download. Then the set opens in Ableton Live. Progress and
-**Cancel** work as they do for **Download**. A cancelled or failed download
-opens nothing and leaves no folder behind.
+the download folder, keeping the layout the set expects. The folder gets an
+empty `Ableton Project Info` folder, which makes it a Live Project, so saving in
+Live writes the set in place. Each file is verified with SHA-256 like any
+download. Then the set opens in Ableton Live. Progress and **Cancel** work as
+they do for **Download**. A cancelled or failed download opens nothing and
+leaves no folder behind.
 
-Clicking **Open in Live** again opens the copy already downloaded, without
-fetching it again, as long as the console's files have not changed, every file
-in the copy keeps the length and modification time it was verified with, and
-`project.als` still matches its SHA-256. A set saved over in Live
-no longer matches, so the next click downloads a fresh copy beside it with a
-numbered name.
+Clicking **Open in Live** again reopens that copy, with any edits saved in
+Live: the set is yours once downloaded. Before it opens, every console file the
+set uses is checked against the SHA-256 recorded when it was downloaded. A file
+that is missing or does not match is downloaded again while the console still
+has it; one the console no longer has is left for Live to report as missing.
+`project.als` itself is never replaced, since Live rewrites it on save. Files
+you added to the set are left alone. With several copies of a take, the one
+saved last reopens. A fresh copy is downloaded only when the download folder
+holds none for that take.
 
 The button is disabled, with the reason beside it, when Ableton Live is not
 installed or the take has no Live set. A take whose set is missing (for example
 one recorded before the console wrote sets, or one whose set failed to write)
 gets one from **Library > Audio > Performances > DAW project** on the console.
-When the set uses Segno effects and `Segno.vst3` is in neither
-`~/Library/Audio/Plug-Ins/VST3` nor `/Library/Audio/Plug-Ins/VST3`, the app
-warns that the effects open as missing devices and opens the set anyway.
+
+## Segno plugins
+
+The app carries the Segno plugins (`Segno.vst3`, the console's effects with
+their pedal faces) and installs them for you. When a set uses Segno effects
+and the Mac has no `Segno.vst3`, or has an older one in
+`~/Library/Audio/Plug-Ins/VST3`, **Open in Live** asks first:
+
+- **Install** (or **Replace** for an older copy) copies the plugins into
+  `~/Library/Audio/Plug-Ins/VST3`, then opens the set.
+- **Open Without Plugins** (or **Open Without Updating**) opens the set
+  without changing anything. Missing plugins make the effects open as
+  missing devices.
+- **Cancel** opens nothing.
+
+**Plug-ins > Install Segno Plugins** makes the same offer at any time, or says
+the copy on this Mac is up to date. "Older" compares the bundles' versions
+(`CFBundleShortVersionString`, then the `CFBundleVersion` build number).
+Transfer never writes outside `~/Library/Audio/Plug-Ins/VST3`. If an older
+copy is installed for every user in `/Library/Audio/Plug-Ins/VST3`, the app
+says so and leaves it to you to remove. After installing, rescan plug-ins in
+Live (**Settings > Plug-Ins > Rescan**) or restart it.
+
+The installed copy keeps the app's ad hoc signature and, like everything in a
+downloaded app, macOS's quarantine mark; Transfer does not remove either. If
+macOS says it cannot verify `Segno.vst3` when Live scans it, approve it in
+**System Settings > Privacy & Security** with **Open Anyway**, as for the app.
 
 Click the **Play** button beside any audio file to hear it before downloading.
 Playback streams small sections over the existing connection and starts before
@@ -90,11 +119,18 @@ Password entry and first-time pairing are not provided by this version.
 
 ## Build and check
 
+Building the app builds `Segno.vst3` first
+(`packages/segno_engine/vst3/build.sh`): it renders the pedal faces with
+Flutter 3.50 (`FLUTTER=/path/to/flutter-3.50/bin/flutter`), then runs the
+CMake Release build. The plugin adds about 71 MB to the disk image.
+
 ```sh
 python3 -m unittest discover -s apps/segno_transfer/Tests/RemoteTests -v
 swift test --package-path apps/segno_transfer
 swift format lint --strict --recursive apps/segno_transfer/Sources apps/segno_transfer/Tests/TransferCoreTests apps/segno_transfer/Package.swift
-bash apps/segno_transfer/build-app.sh
+FLUTTER=/path/to/flutter-3.50/bin/flutter bash apps/segno_transfer/build-app.sh
+bash packages/segno_engine/vst3/test/run_bundle_tests.sh packages/segno_engine/build/vst3 \
+  "apps/segno_transfer/dist/Segno Transfer.app/Contents/PlugIns/Segno.vst3"
 bash apps/segno_transfer/package-app.sh
 ```
 

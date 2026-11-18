@@ -7,9 +7,17 @@ stream audio with seeking, and download selected files with names you choose.
 
 - **Open in Live** downloads a performance's Live set, with every recording,
   loop and stem it uses, verifies each file and opens it in Ableton Live in one
-  click. A second click opens the verified copy without downloading it again.
-  If the Segno plugins are not installed on the Mac, the app says the effects
-  will open as missing devices and opens the set anyway.
+  click. The folder is a Live Project, so saving in Live writes the set in
+  place, and a second click reopens your copy with its edits. Only a recording,
+  loop or stem that is missing or fails its SHA-256 check is downloaded again.
+- **Segno plugins included.** The app carries `Segno.vst3`, the console's
+  effects with their pedal faces. When a set needs them and they are missing
+  or older, **Open in Live** offers to install them into
+  `~/Library/Audio/Plug-Ins/VST3`, and replaces an older copy only if you
+  confirm. **Plug-ins > Install Segno Plugins** does the same at any time.
+  After installing, rescan plug-ins in Live or restart it. If macOS says it
+  cannot verify `Segno.vst3`, approve it in **System Settings → Privacy &
+  Security** with **Open Anyway**, as for the app.
 
 ## Download and install
 

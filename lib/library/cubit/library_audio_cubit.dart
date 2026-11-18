@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:bloc/bloc.dart';
+import 'package:daw_export/daw_export.dart' show liveProjectInfoFolder;
 import 'package:equatable/equatable.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:performance_repository/performance_repository.dart';
@@ -510,13 +511,19 @@ class LibraryAudioCubit extends Cubit<LibraryAudioState> {
           // Written afresh, not reused: a set an earlier version wrote may
           // be one Live refuses (#1791), and writing one reads no audio.
           await _dawProject(capture.path);
+          final files = _performance.dawPackageFiles(capture);
           return AudioExportPlan(
             name: name,
             folder: AudioExportFolders.performances,
             package: true,
             files: [
-              for (final f in _performance.dawPackageFiles(capture))
-                AudioExportFile('${capture.path}/$f', f),
+              for (final f in files) AudioExportFile('${capture.path}/$f', f),
+            ],
+            // A set lands as a Live Project, which Live saves in place
+            // (#1837).
+            folders: [
+              if (files.contains(PerformanceRepository.dawProjectFiles.first))
+                liveProjectInfoFolder,
             ],
           );
         }

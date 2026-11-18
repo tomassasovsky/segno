@@ -38,7 +38,6 @@ Processor::Processor(const FxKind* kind) : kind_(kind) {
   segno_fx_defaults(kind->type, defaults);
   for (int32_t p = 0; p < width_; ++p) state_.params[p] = defaults[p];
   nextClock_ = state_.clockOffset;
-  reported_ = segno_fx_reported_latency(kind->type);
 }
 
 Processor::~Processor() { freeSlot(); }
@@ -81,10 +80,8 @@ tresult PLUGIN_API Processor::setupProcessing(ProcessSetup& setup) {
   if (result != kResultOk) return result;
   sr_ = (int32_t)std::lround(setup.sampleRate);
   if (sr_ <= 0) sr_ = 48000;
-  latency_ = segno_fx_latency(kind_->type, sr_);
-  /* A rate past the ones segno_fx_reported_latency covers can need more
-   * (a host is to read the latency again after setupProcessing). */
-  reported_ = std::max(segno_fx_reported_latency(kind_->type), latency_);
+  tail_ = std::max(segno_fx_largest_latency(kind_->type),
+                   segno_fx_latency(kind_->type, sr_));
   return kResultOk;
 }
 
@@ -114,18 +111,10 @@ bool Processor::build() {
   c.output = state_.output;
   c.placement = state_.placement;
   c.level = state_.level;
-  /* A kind that delays its output switches in the plugin (process()), so
-   * its slot always runs. */
-  c.enabled = latency_ > 0 ? 1 : state_.enabled;
+  c.enabled = state_.enabled;
   c.params = state_.params;
   c.count = width_;
   slot_ = segno_fx_slot_new(&c);
-  bypassMix_ = latency_ > 0 && state_.enabled == 0 ? 1.0f : 0.0f;
-  for (auto& line : dryLine_) line.assign((size_t)(latency_ > 0 ? latency_ : 1), 0.0f);
-  dryPos_ = 0;
-  const int32_t pad = reported_ - latency_;
-  for (auto& line : padLine_) line.assign((size_t)(pad > 0 ? pad : 1), 0.0f);
-  padPos_ = 0;
   return slot_ != nullptr;
 }
 
@@ -151,10 +140,14 @@ tresult PLUGIN_API Processor::setActive(TBool state) {
 }
 
 uint32 PLUGIN_API Processor::getLatencySamples() {
-  /* The same whether the entry is on or bypassed (bypassed, a kind that
-   * delays its output passes its input delayed as much, process()), and
-   * at every rate (reported_). */
-  return (uint32)reported_;
+  /* None, for every kind (#1836): the console compensates no effect's
+   * latency, so a kind that delays its output (the octaver family by about
+   * 25 ms, a few others by a few frames at some rates) plays late by it
+   * while on and on time while off, and a host that compensated a reported
+   * latency would play the lane early.
+   * Unreported, a host plays the plugin as the console played the entry,
+   * in both states, and a render nulls against the engine's at lag 0. */
+  return 0;
 }
 
 uint32 PLUGIN_API Processor::getTailSamples() {
@@ -163,7 +156,7 @@ uint32 PLUGIN_API Processor::getTailSamples() {
   if (segno_fx_drains(kind_->type)) {
     return kInfiniteTail;
   }
-  return getLatencySamples();
+  return (uint32)tail_;
 }
 
 void Processor::applyParam(ParamID id, double value) {
@@ -184,9 +177,9 @@ void Processor::applyParam(ParamID id, double value) {
       state_.level = levelFromNormalized(value);
       applyChannels();
       return;
-    case kBypassId:
-      state_.enabled = value < 0.5 ? 1 : 0;
-      if (latency_ == 0) segno_fx_slot_set_enabled(slot_, state_.enabled);
+    case kEnabledId:
+      state_.enabled = enabledFromNormalized(value);
+      segno_fx_slot_set_enabled(slot_, state_.enabled);
       return;
     default:
       if (id < (ParamID)width_) {
@@ -264,20 +257,6 @@ tresult PLUGIN_API Processor::process(ProcessData& data) {
               : nextClock_;
   const bool moved = base != nextClock_;
   followHost(ctx, base, moved || playing != wasPlaying_);
-  if (playing && !wasPlaying_) {
-    /* The host starts playing: the slot starts again as it stood at arm,
-     * so a render from the host's start is the console's render of the
-     * take (its tails, LFOs, hops and noise all from there), not shaped by
-     * whatever ran while the host was stopped. A jump while playing (a
-     * loop wrap) keeps the tails. */
-    segno_fx_slot_rearm(slot_, base);
-    for (auto& line : dryLine_) std::fill(line.begin(), line.end(), 0.0f);
-    dryPos_ = 0;
-    for (auto& line : padLine_) std::fill(line.begin(), line.end(), 0.0f);
-    padPos_ = 0;
-    bypassMix_ = latency_ > 0 && state_.enabled == 0 ? 1.0f : 0.0f;
-  }
-  wasPlaying_ = playing;
 
   ParamEvent events[kMaxEvents];
   int count = 0;
@@ -303,6 +282,23 @@ tresult PLUGIN_API Processor::process(ProcessData& data) {
   }
 
   int next = 0;
+  if (playing && !wasPlaying_) {
+    /* The host starts playing: the slot starts again as it stood at arm,
+     * so a render from the host's start is the console's render of the
+     * take (its tails, LFOs, hops and noise all from there), not shaped by
+     * whatever ran while the host was stopped. A jump while playing (a
+     * loop wrap) keeps the tails. The values the host sets at the first
+     * frame (its automation where it starts) land first, so the slot
+     * starts settled at them, switched off included, rather than ramping
+     * from what it last played. */
+    while (next < count && events[next].offset <= 0) {
+      applyParam(events[next].id, events[next].value);
+      ++next;
+    }
+    segno_fx_slot_rearm(slot_, base);
+  }
+  wasPlaying_ = playing;
+
   float* inL = nullptr;
   float* inR = nullptr;
   float* outL = nullptr;
@@ -324,45 +320,7 @@ tresult PLUGIN_API Processor::process(ProcessData& data) {
     if (outL == nullptr) continue;
     float l = inL[i];
     float r = inR[i];
-    if (latency_ > 0) {
-      /* A kind that delays its output: its slot always runs, and its
-       * bypass crossfades, over the engine's ramp, to the input delayed as
-       * much, so the host's delay compensation holds either way. */
-      float& dl = dryLine_[0][(size_t)dryPos_];
-      float& dr = dryLine_[1][(size_t)dryPos_];
-      const float delayedL = dl;
-      const float delayedR = dr;
-      dl = l;
-      dr = r;
-      if (++dryPos_ == latency_) dryPos_ = 0;
-      segno_fx_slot_frame(slot_, base + (uint32_t)i, &l, &r);
-      const float target = state_.enabled ? 0.0f : 1.0f;
-      if (bypassMix_ != target) {
-        const float step = 1000.0f / (5.0f * (float)sr_); /* LE_FX_ENABLE_RAMP_MS */
-        bypassMix_ = target > bypassMix_ ? std::fmin(target, bypassMix_ + step)
-                                         : std::fmax(target, bypassMix_ - step);
-      }
-      if (bypassMix_ >= 1.0f) {
-        l = delayedL;
-        r = delayedR;
-      } else if (bypassMix_ > 0.0f) {
-        l += (delayedL - l) * bypassMix_;
-        r += (delayedR - r) * bypassMix_;
-      }
-    } else {
-      segno_fx_slot_frame(slot_, base + (uint32_t)i, &l, &r);
-    }
-    if (reported_ > latency_) {
-      float& pl = padLine_[0][(size_t)padPos_];
-      float& pr = padLine_[1][(size_t)padPos_];
-      const float wl = l;
-      const float wr = r;
-      l = pl;
-      r = pr;
-      pl = wl;
-      pr = wr;
-      if (++padPos_ == reported_ - latency_) padPos_ = 0;
-    }
+    segno_fx_slot_frame(slot_, base + (uint32_t)i, &l, &r);
     if (outR != nullptr) {
       outL[i] = l;
       outR[i] = r;

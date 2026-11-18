@@ -30,7 +30,7 @@
  *  36  i32     output: le_fx_chan_out (stereo, mono)
  *  40  f32     placement: balance (stereo out) or pan (mono out), -1..1
  *  44  f32     level: the entry's gain, 0..LE_FX_LEVEL_MAX
- *  48  i32     enabled: 1 on, 0 bypassed (the engine's enable bit)
+ *  48  i32     enabled: 1 on, 0 off (the engine's enable bit, Enabled)
  *  52  i32     n: settings that follow
  *  56  f32[n]  the kind's settings, each 0..1 (the engine's params)
  *

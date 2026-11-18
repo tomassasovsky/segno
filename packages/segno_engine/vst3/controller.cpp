@@ -57,11 +57,12 @@ class SettingParameter : public Parameter {
   int32_t type_;
 };
 
-/* The input or the output: its choices by the console's names, shown as
- * the processor reads them. */
+/* The input, the output or the switch: its choices by the console's names,
+ * shown as the processor reads them. */
 class ChannelChoiceParameter : public StringListParameter {
  public:
-  ChannelChoiceParameter(const TChar* title, ParamID id, int32_t positions)
+  ChannelChoiceParameter(const TChar* title, ParamID id, int32_t positions,
+                         ParamValue initial = 0)
       : StringListParameter(title, id, nullptr,
                             ParameterInfo::kCanAutomate | ParameterInfo::kIsList) {
     for (int32_t k = 0; k < positions; ++k) {
@@ -70,6 +71,8 @@ class ChannelChoiceParameter : public StringListParameter {
       toString128(name.c_str(), text);
       appendString(text);
     }
+    info.defaultNormalizedValue = initial;
+    setNormalized(initial);
   }
 
   /* By the position the processor plays (params.h, nearest), where the
@@ -124,9 +127,7 @@ tresult PLUGIN_API Controller::initialize(FUnknown* context) {
       new ChannelParameter(STR16("Balance / Pan"), kPlacementId, placementToNormalized(0.0f)));
   parameters.addParameter(
       new ChannelParameter(STR16("Output level"), kLevelId, levelToNormalized(1.0f)));
-  parameters.addParameter(STR16("Bypass"), nullptr, 1, 0,
-                          ParameterInfo::kCanAutomate | ParameterInfo::kIsBypass,
-                          kBypassId);
+  parameters.addParameter(new ChannelChoiceParameter(STR16("Enabled"), kEnabledId, 2, 1.0));
   return kResultOk;
 }
 
@@ -147,7 +148,7 @@ tresult PLUGIN_API Controller::setComponentState(IBStream* stream) {
   setParamNormalized(kOutputId, outputToNormalized(s.output));
   setParamNormalized(kPlacementId, placementToNormalized(s.placement));
   setParamNormalized(kLevelId, levelToNormalized(s.level));
-  setParamNormalized(kBypassId, s.enabled != 0 ? 0.0 : 1.0);
+  setParamNormalized(kEnabledId, enabledToNormalized(s.enabled));
   return kResultOk;
 }
 

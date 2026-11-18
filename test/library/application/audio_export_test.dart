@@ -439,6 +439,28 @@ void main() {
       expect(drive.volumeSyncs, [drive.files]);
     });
 
+    test(
+      "holds its empty folders, a Live Project's among them (#1837)",
+      () async {
+        await run(
+          AudioExportPlan(
+            name: 'Evening loop',
+            folder: perf,
+            package: true,
+            files: package().files,
+            folders: const ['Ableton Project Info'],
+          ),
+        );
+
+        final info = Directory(
+          '${drive.mount}/$perf/Evening loop/Ableton Project Info',
+        );
+        expect(info.existsSync(), isTrue);
+        expect(info.listSync(), isEmpty);
+        expect(Directory('${drive.mount}/$staging').existsSync(), isFalse);
+      },
+    );
+
     test('ask reports the directory already there before writing', () async {
       onDrive('$perf/Evening loop/old.wav');
 

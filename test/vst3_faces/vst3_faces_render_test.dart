@@ -9,7 +9,7 @@ import '../helpers/helpers.dart';
 import 'vst3_faces.dart';
 
 /// Where the pictures go: `--dart-define=SEGNO_VST3_FACES_OUT=<dir>`, which
-/// `packages/segno_engine/vst3/install.sh` passes. Without it nothing renders.
+/// `packages/segno_engine/vst3/build.sh` passes. Without it nothing renders.
 const String _out = String.fromEnvironment('SEGNO_VST3_FACES_OUT');
 
 /// Only the face of this engine code, while trying one out

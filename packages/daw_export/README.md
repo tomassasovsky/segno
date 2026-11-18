@@ -82,10 +82,25 @@ void exportCapture(String captureDir) {
   and enable bit, the chain slot it held, the owner's hop seed and the
   take's FX clock and beat (`SegnoPluginState`, the plugin's own state
   format), so it renders what the console rendered. A rack is an Audio
-  Effect Rack named as the rack, off when the rack was; a Dub Rack's
+  Effect Rack named as the rack, always on: a switched-off rack's entries
+  are off by their own Enabled, as the engine runs them. A Dub Rack's
   parallel Amb and Dub paths are a rack of two chains at the gains the
   Amb-Dub Mix gives them. A hosted plugin is left out, as the offline render
-  passes it through dry. Changes during the take are not replayed yet.
+  passes it through dry.
+- What changed in a chain during the take is automation of its devices
+  (#1836, `ChainTimeline`): `events.log`'s switches, settings, types and
+  chain lengths for each lane's chain and each input's monitor chain,
+  replayed as the offline render replays them for the wet stem. An
+  entry's switch, a rack switch or an A/B press included (they arrive as
+  the entries' switches), is the plugin's Enabled parameter (1100), which
+  ramps and drains as the engine's switch does; Live's Device On stays on,
+  as it stops the plugin and cuts its tail. A setting is its parameter. Each
+  change is a step, two events at its frame's beat (the value before, then
+  after), with every change kept: the console logs a setting once a block
+  at most, when it moves. A slot whose effect changed holds one plugin per
+  effect, each on while the slot held it. Racks stay on; a Dub Rack's
+  Amb / Dub section is on while any entry of the rack runs. The track shows
+  its volume lane, or its first device envelope's.
 - Each track's info text (Live's Info View) lists the effect chains it
   started with; `fx-chains.txt` holds the same for the whole take.
 - The tempo comes from the manifest; `kFallbackTempoBpm` (120) is used when
