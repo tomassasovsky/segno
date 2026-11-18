@@ -173,8 +173,14 @@ tiles talk to host helpers (same pattern as OTA's `segno-update-ctl`):
 | `/usr/bin/segno-brightness-ctl` | DDC/CI brightness via `ddcutil` VCP 0x10 |
 | `/usr/bin/segno-touch-ctl` | per-screen touchscreen calibration matrix (`get` / `try` / `set` / `reset` / `restore` / `apply`) |
 
-WiFi is owned by **NetworkManager** (eth0 + wlan*). `systemd-networkd` is
-masked on the appliance image so the two managers do not fight. The unit
+WiFi is owned by **NetworkManager** (eth0 + wlan*), which drives the radio
+through **wpa_supplicant**, configured as on Raspberry Pi OS (#1843;
+[`NETWORK_PARITY.md`](NETWORK_PARITY.md) lists every piece and each
+difference). `systemd-networkd` is masked on the appliance image so the two
+managers do not fight. Saved networks live in
+`/data/NetworkManager/system-connections` and NetworkManager's state in
+`/data/NetworkManager/state` (bound at `/var/lib/NetworkManager`), so both
+survive an OS update. The unit
 announces itself as **`segno`** on the router/AP client list and the SSH
 prompt (the image hostname, set in `deploy/yocto/kas-segno-common.yml`; older
 images announced the board name, `raspberrypi5`).
@@ -198,11 +204,20 @@ segno-brightness-ctl set 80
 ```
 
 A failed `connect` exits non-zero and prints why on stdout:
-`{"error":"wrong-password"}` only when iwd logged "4-Way handshake failed"
-during the attempt, otherwise `not-found`, `no-address` or `no-connection`;
-stderr names iwd's evidence (`connect-failed, status: 16` is the access point
-timing out the 802.11 authentication, #1816). NetworkManager's `no-secrets`
-is not evidence about the key. A failed join never deletes a saved network.
+`{"error":"wrong-password"}` only when wpa_supplicant logged "WPA: 4-Way
+Handshake failed - pre-shared key may be incorrect" during the attempt,
+otherwise `not-found`, `no-address` or `no-connection`; stderr names
+wpa_supplicant's evidence (`CTRL-EVENT-ASSOC-REJECT ... status_code=16` is
+the access point timing out the 802.11 authentication, #1816;
+`Authentication with ... timed out.` is an access point that never started
+the handshake, #470). NetworkManager's `no-secrets` is not evidence about the
+key. A failed join never deletes a saved network.
+
+After installing an image, `deploy/rpi/verify-network-on-device.sh
+root@<console>` checks the whole stack from a workstation: the
+configuration, joining each saved network, a wrong password, a reboot,
+Wi-Fi without the Ethernet cable, and an access point that goes away. It
+prints what each step should show.
 
 In the app: Settings → Network (join a network) → Displays (drag brightness
 and confirm the panel dims). Bluetooth is retired (#1199): the image ships no
@@ -214,8 +229,8 @@ does not change the panel — note that for a gamma follow-up.
 Symptom: the console cannot join a saved network it joined before, and every
 attempt fails the same way. `iw event` shows `failed to connect ..., status:
 16: Authentication rejected due to timeout waiting for next frame in
-sequence`, iwd logs `connect-failed, status: 16`, and NetworkManager ends the
-attempt as `no-secrets`. The app treats that as a backend failure and retries;
+sequence`, wpa_supplicant logs `CTRL-EVENT-ASSOC-REJECT ... status_code=16`,
+and NetworkManager ends the attempt as `no-secrets`. The app treats that as a backend failure and retries;
 it does not ask for the password. The same console still joins another access
 point, such as a phone hotspot, on the same channel. Do not forget the network
 and re-enter the password: the saved password is not the problem.
@@ -244,7 +259,8 @@ session):
 ```bash
 iw event -t -f &                     # join attempts and their status codes
 nmcli con up '<saved network name>'  # retries with the saved password
-journalctl -b -u iwd | grep -E 'connect-failed|new: connected'
+journalctl -b -t wpa_supplicant | grep -E 'ASSOC-REJECT|timed out|4-Way|CTRL-EVENT-CONNECTED'
+wpa_cli -i wlan0 status              # wpa_state, the access point, the key management in use
 kill %1                              # stop iw event
 ```
 

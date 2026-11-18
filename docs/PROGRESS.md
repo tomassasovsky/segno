@@ -38,6 +38,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 | Issue | Thread | Stage | Autonomy | Branch |
 |-------|--------|-------|----------|--------|
+| #1843 | Network stack as on Raspberry Pi OS: NetworkManager on wpa_supplicant (part 1); DNS, dnsmasq and Avahi next (part 2) | in-review | merge-gate | `claude/pios-network-1843` |
 | #1821 | Devlog and RSS feed on segno.aquiles.dev: Markdown entries in `site/log`, built by `site/build_log.py` | in-review | merge-gate | `claude/devlog-1821` |
 | #1795 | NVMe drive drops off the bus mid-recording: the Pi 5 cmdline turns off APST and PCIe ASPM on every link | in-review | blocked-verify | `claude/nvme-power-1795` |
 | #1740 | Penpot: the Effects page frames for the compact single-effect card and the built-in pedal faces (#1754, PR #1756 merged) and the cards' assignment lines (#1757, #1760), the Source-note clean-up and a segno-design snapshot; waits for a connected Penpot MCP tab | build | merge-gate | (none yet) |
@@ -92,6 +93,40 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1816 | Console WiFi against an ASUS RT-AX89X with 802.11ax on: firmware already matches Pi OS; brcmfmac options aligned with Pi OS and a troubleshooting note; failure not reproduced, issue stays open until it recurs | in-review | auto | `claude/wifi-firmware-1816` |
 
 ---
+
+## November 2026 The network stack is Raspberry Pi OS's (#1843 part 1)
+
+- NetworkManager drives the radio through wpa_supplicant, as on Raspberry Pi
+  OS, instead of iwd (#470). docs/NETWORK_PARITY.md lists every network
+  piece of Pi OS trixie against the image, with sources, and the reason for
+  each difference; `run_network_config_tests.sh` checks the layer against
+  it, and `deploy/rpi/verify-network-on-device.sh` checks a console.
+- From Pi OS, word for word: Debian's `NetworkManager.conf`,
+  `wpa_supplicant.service` (`-u -s -O "DIR=/run/wpa_supplicant
+  GROUP=netdev"`, enabled), its D-Bus activation file and policy, the
+  `netdev` group, `no-mac-addr-change.conf`, raspberrypi-net-mods'
+  `rpi-no-scan-rand-mac-address.conf`, raspberrypi-sys-mods'
+  `rfkill_default.conf`, and the regulatory domain as raspi-config sets it,
+  `cfg80211.ieee80211_regdom=AR` on the kernel command line. wpa_supplicant
+  is built with Debian's options except PCSC (and the SIM EAP methods),
+  readline and eapol_test.
+- Removed: the iwd backend and everything only iwd needed
+  (`iwd-main.conf`, `segno-iwd-tame`, `wifi.iwd.autoconnect`, the
+  wpa_supplicant mask), `segno-wifi-regdom` and `/etc/segno/wifi-country`,
+  the old `99-segno-wifi.conf`, `segno-wifi-ctl`'s repair of pre-#468
+  consoles and its `iw` power-save call. `PACKAGE_EXCLUDE += "iwd"`.
+- Kept, as deviations: saved networks on `/data` (`keyfile.path`, the same
+  directory as before, so they carry over), NetworkManager's state bound
+  from `/data/NetworkManager/state`, power save off (raspi-config's own
+  "disabled" file), and `segno-wifi-retry`, because a headless console has
+  no secret agent to answer NetworkManager after a failure it ends as
+  `no-secrets`.
+- `segno-wifi-ctl connect` reads wpa_supplicant's lines for the attempt:
+  `wrong-password` only after "WPA: 4-Way Handshake failed - pre-shared key
+  may be incorrect"; `CTRL-EVENT-ASSOC-REJECT status_code=16` (#1816) and
+  "Authentication with ... timed out." (#470) are `no-connection`.
+- Not built in CI: the image needs an appliance-release run, then
+  `verify-network-on-device.sh` on the console.
 
 ## November 2026 Effect switching and setting changes as Live automation (#1836)
 
