@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 # Tests that segno-wifi-ctl owns the radio through NetworkManager and nothing
-# else (#468).
+# else (#468, #1843).
 #
 # The bug these exist to prevent was not a crash, it was a takeover. The helper
 # used to fall back to its own wpa_supplicant when an NM join failed, which
-# meant setting wlan0 `managed no` — and because the backend was then chosen by
+# meant setting wlan0 `managed no`, and because the backend was then chosen by
 # reading that same state, every later call picked the fallback again. A
 # console ended up running our supplicant and NetworkManager's dbus-owned one
 # at the same time, on one interface, forever. The access point saw it
 # reconnect every few seconds and nothing in any log said why.
 #
-# So these assert absence as much as behaviour: no second supplicant, no
-# `managed no`, and — because a shipped console is already in the broken state
-# — that the first run after an update repairs it.
+# NetworkManager runs wpa_supplicant itself now, as on Raspberry Pi OS
+# (#1843), so these assert absence as much as behaviour: no second
+# supplicant, no `managed no`.
 set -uo pipefail
 
 here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -148,22 +148,13 @@ check "skips the banner, keeps each change, escapes quotes" \
     "$(cat "$work/stdout")"
 teardown
 
-# --- repairing a console that already shipped with the bug ------------------
-
-echo "an interface left unmanaged is reclaimed"
+echo "no verb hands the interface back and forth"
 setup
 NM_STATE="10 (unmanaged)" run_ctl status
-check "hands wlan0 back to NetworkManager" yes \
-    "$(called_with 'device set wlan0 managed yes')"
-check "says so" yes \
-    "$(grep -q 'reclaiming' "$work/stderr" && echo yes || echo no)"
-teardown
-
-echo "a managed interface is left alone"
-setup
-run_ctl status
-check "does not churn the managed state" no \
-    "$(called_with 'device set wlan0 managed yes')"
+# A console whose wlan0 NetworkManager does not manage is a fault to see in
+# status, not one the helper papers over by changing who owns the radio.
+check "never sets managed either way" no \
+    "$(grep -qF 'managed' "$work/nmcli-args" && echo yes || echo no)"
 teardown
 
 # --- no nmcli is honest, not a fallback ------------------------------------
