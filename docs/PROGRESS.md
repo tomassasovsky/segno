@@ -40,6 +40,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 |-------|--------|-------|----------|--------|
 | #1857 | No syslog daemon: journald owns `/dev/log`, so wpa_supplicant's lines reach the journal `segno-wifi-ctl` reads | in-review | blocked-verify | `claude/journal-syslog-1857` |
 | #1850 | Land the trunk on master and retire `claude/segno-integration` | build | merge-gate | `claude/land-trunk-1850` |
+| #1860 | "No internet" from a check made during a join sticks to the network the join brings back | in-review | auto | `claude/wifi-internet-check-1860` |
 | #1821 | Devlog and RSS feed on segno.aquiles.dev: Markdown entries in `site/log`, built by `site/build_log.py` | in-review | merge-gate | `claude/devlog-1821` |
 | #1795 | NVMe drive drops off the bus mid-recording: the Pi 5 cmdline turns off APST and PCIe ASPM on every link | in-review | blocked-verify | `claude/nvme-power-1795` |
 | #1740 | Penpot: the Effects page frames for the compact single-effect card and the built-in pedal faces (#1754, PR #1756 merged) and the cards' assignment lines (#1757, #1760), the Source-note clean-up and a segno-design snapshot; waits for a connected Penpot MCP tab | build | merge-gate | (none yet) |

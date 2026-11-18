@@ -66,7 +66,10 @@ class WifiState extends Equatable {
   final String? leftSsid;
 
   /// The last internet check: the connection it was made over and whether the
-  /// internet answered. Null until one has run.
+  /// internet answered. Null until one has run, and again whenever the
+  /// connection drops or a join starts (#1860): a check made then is about a
+  /// link that is going away, and a join that fails can bring back a network
+  /// of the same name that nobody checked.
   final ({String ssid, bool online})? internet;
 
   /// The network the console dropped without being asked to: the saved
@@ -95,7 +98,8 @@ class WifiState extends Equatable {
   /// Returns a copy with the given fields replaced.
   ///
   /// A status that is connected clears [leftSsid]: once the console is on a
-  /// network again, the next drop is a loss whatever came before.
+  /// network again, the next drop is a loss whatever came before. A status
+  /// that is not connected, or a join in flight, clears [internet].
   WifiState copyWith({
     bool? supported,
     WifiStatus? status,
@@ -114,15 +118,16 @@ class WifiState extends Equatable {
     bool clearConnectingSsid = false,
   }) {
     final nextStatus = status ?? this.status;
+    final nextConnectingSsid = clearConnectingSsid
+        ? null
+        : (connectingSsid ?? this.connectingSsid);
     return WifiState(
       supported: supported ?? this.supported,
       status: nextStatus,
       networks: networks ?? this.networks,
       scanning: scanning ?? this.scanning,
       busy: busy ?? this.busy,
-      connectingSsid: clearConnectingSsid
-          ? null
-          : (connectingSsid ?? this.connectingSsid),
+      connectingSsid: nextConnectingSsid,
       // Retrying describes an in-flight join; it cannot outlive the marker.
       retrying: !clearConnectingSsid && (retrying ?? this.retrying),
       disconnecting: disconnecting ?? this.disconnecting,
@@ -130,7 +135,9 @@ class WifiState extends Equatable {
       joinError: clearError ? null : (joinError ?? this.joinError),
       failedSsid: clearError ? null : (failedSsid ?? this.failedSsid),
       leftSsid: nextStatus.connected ? null : (leftSsid ?? this.leftSsid),
-      internet: internet ?? this.internet,
+      internet: nextStatus.connected && nextConnectingSsid == null
+          ? (internet ?? this.internet)
+          : null,
     );
   }
 
