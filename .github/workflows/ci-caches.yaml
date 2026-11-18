@@ -30,6 +30,8 @@ name: ci-caches
 # needs a caller of its own.
 on:
   push:
+    # The default branch. A trigger takes no expression; the jobs' ifs read
+    # the default branch from the event, so a dispatch elsewhere skips them.
     branches:
       - master
   workflow_dispatch:
@@ -42,7 +44,7 @@ concurrency:
 jobs:
   flutter:
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/master' || github.event_name == 'pull_request'
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || github.event_name == 'pull_request'
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
@@ -66,7 +68,7 @@ jobs:
 
   arduino:
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/master' || github.event_name == 'pull_request'
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || github.event_name == 'pull_request'
     timeout-minutes: 20
     steps:
       # The key and paths are console-firmware's in main.yaml.
@@ -96,7 +98,7 @@ jobs:
 
   apt:
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/master' || github.event_name == 'pull_request'
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || github.event_name == 'pull_request'
     timeout-minutes: 10
     steps:
       # The packages and version are the native jobs' in main.yaml.
@@ -110,7 +112,7 @@ jobs:
   # in the job above libasound2-dev is already installed.
   apt-alsa:
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/master' || github.event_name == 'pull_request'
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || github.event_name == 'pull_request'
     timeout-minutes: 10
     steps:
       # The package and version are the Flutter jobs' in main.yaml (#1783).

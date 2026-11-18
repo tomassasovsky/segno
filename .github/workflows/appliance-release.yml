@@ -450,7 +450,7 @@ jobs:
       - name: Save Yocto sstate + downloads (GitHub-hosted, master only)
         if: >-
           inputs.runner != 'self-hosted'
-          && github.ref == 'refs/heads/master'
+          && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
           && steps.sstate-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6
         with:
