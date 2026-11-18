@@ -51,7 +51,7 @@
  * The proxy gates what this plan adds to the joint period (plan D2, "the
  * proxy gate"): the instruments' share (with dense MIDI, minus the base)
  * and the burst's increment, not the total, which is mostly the looper, the
- * monitors and the read head and moves with every trunk change on a runner
+ * monitors and the read head and moves with every change on master on a runner
  * that is not the appliance. The total is printed for reference; the Pi set
  * gates it.
  */

@@ -39,6 +39,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | Issue | Thread | Stage | Autonomy | Branch |
 |-------|--------|-------|----------|--------|
 | #1843 | Network stack as on Raspberry Pi OS: NetworkManager on wpa_supplicant, dnsmasq and Avahi (DNS follows in #1849) | in-review | merge-gate | `claude/pios-network-1843` |
+| #1850 | Land the trunk on master and retire `claude/segno-integration` | build | merge-gate | `claude/land-trunk-1850` |
 | #1821 | Devlog and RSS feed on segno.aquiles.dev: Markdown entries in `site/log`, built by `site/build_log.py` | in-review | merge-gate | `claude/devlog-1821` |
 | #1795 | NVMe drive drops off the bus mid-recording: the Pi 5 cmdline turns off APST and PCIe ASPM on every link | in-review | blocked-verify | `claude/nvme-power-1795` |
 | #1740 | Penpot: the Effects page frames for the compact single-effect card and the built-in pedal faces (#1754, PR #1756 merged) and the cards' assignment lines (#1757, #1760), the Source-note clean-up and a segno-design snapshot; waits for a connected Penpot MCP tab | build | merge-gate | (none yet) |
@@ -47,7 +48,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1674 | Anti-aliasing under Impeller: ivi-homescreen renders into a 4x MSAA framebuffer and resolves it before each flip | in-review | auto | `claude/ivi-msaa-1674` |
 | #1496 | Split design and hardware into their own repos, slim this one | in-review | merge-gate | `claude/repo-split-1496` |
 | #1367 | Start helper programs with posix_spawn, never fork the app | in-review | merge-gate | `claude/no-fork-1367` |
-| #887 | Looper X factory racks: all parts merged, Harmonizer parked; Pi benches and by-ear sign-off owed (#1459) | in-review | blocked-verify | trunk |
+| #887 | Looper X factory racks: all parts merged, Harmonizer parked; Pi benches and by-ear sign-off owed (#1459) | in-review | blocked-verify | `master` |
 | #900, #906 | The audio thread never faults or copies on write (replaces #907, #914) | in-review | blocked-verify | `claude/zero-stall-memory-907-914` |
 | #1299 | Appliance slowdown profiler | in-review | merge-gate | `claude/appliance-responsiveness-08d39b` |
 | #1301 | Idle console redraws at 60 fps | build | merge-gate | `claude/idle-redraw-1301` |
@@ -68,7 +69,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1178 | Library and Sessions redesign | build | merge-gate | `claude/library-1178-*` |
 | #1179 | Pitch and time DSP core | build | merge-gate | `claude/pitch-time-1179-*` |
 | #1197 | Instruments | plan | merge-gate | `claude/instruments-1197-*` |
-| #1198, #1078 | Recording to USB and long recordings: Parts 1-5 and 11 on the trunk; durability and bounded recovery (Part 8's finalize and recovery, fixes #1078) in build | build | merge-gate | `claude/recording-durability-1198-p*` |
+| #1198, #1078 | Recording to USB and long recordings: Parts 1-5 and 11 on master; durability and bounded recovery (Part 8's finalize and recovery, fixes #1078) in build | build | merge-gate | `claude/recording-durability-1198-p*` |
 | #1200 | Backing player | plan | merge-gate | `claude/backing-1200-*` |
 | #1202 | Shared render recipe, Bounce, Save selected | plan | merge-gate | `claude/render-1202-*` |
 | #1228 | MIDI clock | plan | merge-gate | `claude/midi-clock-1228-*` |
@@ -80,7 +81,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1498 | Restart and shut down also wait for RAUC's own install, after an app restart | in-review | blocked-verify | `claude/rauc-power-gate-1498` |
 | #1527 | Reboot warm, with a kernel record, when exec or storage dies while PID 1 lives (segno-freeze-watchdog); device check owed | in-review | auto | `claude/freeze-watchdog-1527` |
 | #1755 | Every effect cheaper without changing its sound: the pitch family merged (#1764); its state out of the mixer's structs so the arm64 mixer gate is back where it was | in-review | auto | `claude/pitch-gate-1755` |
-| #1771 | PR checks in a fraction of the time and job-minutes: native suites built once and run in parallel, ccache, cached packages, path filters, one job for the package suites, ASan in three parts, trunk-saved caches | in-review | auto | `claude/ci-speed-1771` |
+| #1771 | PR checks in a fraction of the time and job-minutes: native suites built once and run in parallel, ccache, cached packages, path filters, one job for the package suites, ASan in three parts, caches saved on master | in-review | auto | `claude/ci-speed-1771` |
 | #1724 | Effects budget from the console's measured headroom: charges at the configured rate and period, share 77 % from the 48 kHz / 32 stress run | in-review | auto | `claude/fx-headroom-1724` |
 | #1755 | Cheaper effects at no loss of quality: the drives and the amp (Overdrive, Distortion, Amp+Cab), bit-identical on the console but for the cabinet's direct taps | in-review | auto | `claude/fx-opt-drives-1755` |
 | #1729 | Track and lane chains on the effects workers (#1515 part 2): engine part 1 and the admission (part 2, kFxTrackJobNs from the console stress) in review | in-review | auto | `claude/fx-track-workers-1729*` |
