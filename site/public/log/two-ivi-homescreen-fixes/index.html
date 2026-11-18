@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Two fixes for ivi-homescreen · Segno devlog</title>
+<meta name="description" content="Segno&#x27;s two screens turned up two bugs in ivi-homescreen, the Flutter embedder Segno runs on. One ignored a screen&#x27;s pixel ratio, the other crashed the app on most shutdowns. Both fixes are now open as pull requests upstream.">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0b0b0c" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f6f6f4" media="(prefers-color-scheme: light)">
+<link rel="canonical" href="https://segno.aquiles.dev/log/two-ivi-homescreen-fixes/">
+<link rel="alternate" type="application/rss+xml" title="Segno devlog" href="/feed.xml">
+<link rel="icon" href="/favicon.svg?v=3c135dbe" type="image/svg+xml">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Segno">
+<meta property="og:title" content="Two fixes for ivi-homescreen · Segno devlog">
+<meta property="og:description" content="Segno&#x27;s two screens turned up two bugs in ivi-homescreen, the Flutter embedder Segno runs on. One ignored a screen&#x27;s pixel ratio, the other crashed the app on most shutdowns. Both fixes are now open as pull requests upstream.">
+<meta property="og:url" content="https://segno.aquiles.dev/log/two-ivi-homescreen-fixes/">
+<meta property="og:image" content="https://segno.aquiles.dev/img/og.jpg?v=999b8210">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Render of the Segno floor console.">
+<meta name="twitter:card" content="summary_large_image">
+<meta property="article:published_time" content="2026-11-17">
+<link rel="preload" href="/fonts/Inter-Regular.woff2?v=5fedeecb" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/Inter-SemiBold.woff2?v=a6a1a4db" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/styles.css?v=682c6f6d">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<svg class="sprite" aria-hidden="true">
+  <symbol id="glyph" viewBox="0 0 1024 1024">
+    <path transform="matrix(0.88590331 0 0 -0.88590331 266.60478372 836.24061069)" fill="currentColor" d="M135 665C141 665 148 663 151 652L153 645C160 618 175 559 226 559C267 559 295 583 295 626C295 641 292 657 287 673C271 719 204 736 153 736C83 736 4 650 4 551C4 527 9 502 20 477C52 404 197 315 205 312C209 310 211 308 211 304C211 300 209 295 205 288C198 274 54 15 54 15C52 11 51 6 51 2C51 -14 63 -27 79 -27C89 -27 99 -21 104 -12C104 -12 259 268 262 274C262 273 270 279 274 279C289 276 489 217 489 122C489 83 465 57 431 52L428 51C407 51 390 65 390 96V107C390 145 365 173 337 173C333 173 329 172 325 171C288 162 254 146 254 106C254 45 316 -8 375 -8C388 -8 402 -6 417 -1C497 26 550 91 550 174C550 183 549 193 548 203C533 313 375 402 363 408C351 415 346 419 346 424C346 426 347 428 348 430C353 438 508 717 508 717C511 722 512 726 512 731C512 747 499 759 484 759C474 759 464 754 459 745C459 745 300 458 294 449C291 444 289 441 285 441C282 441 279 442 275 444C266 447 115 505 89 550C83 561 75 582 75 603C75 630 87 658 129 665ZM415 466C415 435 441 409 472 409C504 409 529 435 529 466C529 498 504 523 472 523C441 523 415 498 415 466ZM140 264C140 295 115 321 83 321C52 321 26 295 26 264C26 232 52 207 83 207C115 207 140 232 140 264Z"/>
+  </symbol>
+</svg>
+
+<header class="bar">
+  <div class="wrap bar-inner">
+    <a class="brand" href="/" aria-label="Segno home page">
+      <svg class="brand-glyph" aria-hidden="true"><use href="#glyph"/></svg>
+      <span class="brand-word">segno</span>
+    </a>
+    <nav class="nav" aria-label="Sections">
+      <a href="/#features">Features</a>
+      <a href="/#hardware">Hardware</a>
+      <a href="/#architecture">Architecture</a>
+      <a href="/log/" aria-current="page">Devlog</a>
+    </nav>
+    <a class="nav-source" href="https://github.com/tomassasovsky/segno">Source</a>
+  </div>
+</header>
+
+<main id="main" tabindex="-1">
+  <article class="post wrap">
+    <p class="eyebrow"><a href="/log/">Devlog</a> &middot; <time datetime="2026-11-17">17 November 2026</time></p>
+    <h1>Two fixes for ivi-homescreen</h1>
+    <p class="lede">Segno&#x27;s two screens turned up two bugs in ivi-homescreen, the Flutter embedder Segno runs on. One ignored a screen&#x27;s pixel ratio, the other crashed the app on most shutdowns. Both fixes are now open as pull requests upstream.</p>
+    <div class="prose">
+<p>Segno's interface runs on <a href="https://github.com/toyota-connected/ivi-homescreen">ivi-homescreen</a>, the Flutter embedder that Toyota Connected maintains for embedded Linux. On the console it draws straight to DRM/KMS: no Wayland, no desktop. The console has two screens, a 15.6-inch main screen and a 7-inch readout, and each screen is its own <code>[[view]]</code> in the embedder's config with its own Flutter engine. Both engines live in one process and share one Dart VM.</p>
+<p>That setup turned up two bugs. I've been carrying a patch for each in Segno's Yocto layer, and this week I sent both upstream:</p>
+<ul>
+<li><a href="https://github.com/toyota-connected/ivi-homescreen/pull/859">#859</a>: apply the configured pixel ratio to window metrics</li>
+<li><a href="https://github.com/toyota-connected/ivi-homescreen/pull/860">#860</a>: keep the AOT snapshot mapped after engine shutdown</li>
+</ul>
+<h2>Why two engines</h2>
+<p>Flutter can draw several views from one engine, and ivi-homescreen supports that mode. In ivi-homescreen v3.0, only the first view receives input. The readout is the console's only touchscreen, so as a second view of a shared engine it could never be touched. With one engine per view, each engine is bound to its own output by connector name (<code>HDMI-A-1</code>, <code>HDMI-A-2</code>), and touch reaches the right view by the input device's name.</p>
+<p>The two engines talk through the Dart VM they share. Each one publishes a <code>SendPort</code> in the <code>IsolateNameServer</code> under a fixed name and looks up the other's, with no plugin involved. The main screen owns the audio engine and all the state. The readout draws what it is sent and reports touches back.</p>
+<h2>Fix 1: the readout ignored its pixel ratio</h2>
+<p>The readout is a 1024x600 panel, and its view is configured with <code>pixel_ratio = 1.6</code>, so it should lay out at 640x375 logical pixels. It laid out at 1024x600 instead, with <code>devicePixelRatio</code> at 1.0, and everything on it was drawn too small.</p>
+<p>The configured ratio did reach the engine, but only as a display property (<code>View.of(context).display.devicePixelRatio</code> was 1.6). Flutter lays out with the view's ratio, which comes from the window metrics, and on the backends without a Wayland window (<code>drm-kms-egl</code>, <code>drm-kms-vulkan</code>, software) the first window metrics always carried 1.0. Only the Wayland window ever changed that value.</p>
+<p>The fix stores the configured ratio before the first window metrics are sent. Later resizes and the views added for extra DRM outputs read the same value, so they get it too. Touch input needed no change, because it is already delivered in physical pixels.</p>
+<h2>Fix 2: a crash on most shutdowns</h2>
+<p>Restarting Segno's service crashed the app on the way out. 12 of 16 stops left a core dump, all with the same crashing thread:</p>
+<pre><code>#0 stub CallNativeThroughSafepoint+0x58
+#2 _libcRead.#ffiClosure3+0x70
+#3 _readerMain+0xb8
+...
+#16 stub InvokeDartCode+0xd8</code></pre>
+<p><code>_readerMain</code> is the isolate that reads the console board's serial link. It spends most of its time blocked in an FFI <code>read()</code> with a 100 ms timeout.</p>
+<p>When an engine shuts down, ivi-homescreen called <code>FlutterEngineCollectAOTData</code> right after <code>FlutterEngineShutdown</code>. That unmaps the compiled Dart code. But shutting down an engine stops only its root isolate. Isolates the app started with <code>Isolate.spawn</code> keep running, the Dart VM keeps running (the other screen's engine is still on it), and the serial reader is usually sitting inside <code>read()</code>. When that call returns, it returns through a stub that is no longer mapped, and the process dies with SIGSEGV.</p>
+<p>The fix leaves the AOT data mapped and lets the process exit release it. After the change there were 0 core dumps in 226 stops, and a clean stop takes about 0.35 seconds. One stop on the first patched build hung until systemd killed it. It didn't happen again in the next 150, and I don't know yet whether it's related.</p>
+<h2>Testing</h2>
+<p>Both branches build at ivi-homescreen v3.0 with gcc 14 and clang 19 and pass the project's 44 unit tests, its format, spelling and config-reference checks, and clang-tidy on the changed files. The on-device results above come from Segno's console: a Raspberry Pi 5 running <code>drm-kms-egl</code>, with both screens connected.</p>
+<p>Both pull requests are waiting for review. Until they're merged, Segno keeps applying the same two patches in its Yocto layer.</p>
+    </div>
+    <p class="post-foot"><a href="/log/">All entries</a> &middot; <a href="/feed.xml">RSS feed</a></p>
+  </article>
+</main>
+
+<footer class="foot">
+  <div class="wrap foot-inner">
+    <p><svg class="foot-glyph" aria-hidden="true"><use href="#glyph"/></svg> Segno is made by <a href="https://github.com/tomassasovsky">Tom&aacute;s Sasovsky</a>.</p>
+    <p>Source under <a href="https://github.com/tomassasovsky/segno/blob/master/LICENSE">GPLv3</a>. Set in Inter and JetBrains Mono (SIL Open Font License).</p>
+  </div>
+</footer>
+</body>
+</html>

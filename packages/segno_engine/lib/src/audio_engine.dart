@@ -575,6 +575,18 @@ abstract interface class LooperTransport {
   /// capture using Record timing. Never starts a new capture from stale state.
   EngineResult stopRecordControl({required int channel});
 
+  /// The Rec-mode Stop of the only audible loop (#1782): [stopRecordControl],
+  /// then the transport parks and the mutes sent after it let track
+  /// [channel]'s Post tail ring out, as [spareTail] does. A playing track
+  /// parks now, and so does an overdub that ends at once. An overdub whose
+  /// end Record timing quantizes runs to that grid end and parks there; until
+  /// then its mute waits for the park, and a second call keeps the arm.
+  ///
+  /// Reserves command room for itself and the [following] commands sent
+  /// right after it (the lane mutes): [EngineResult.notReady], with nothing
+  /// sent, when they would not all fit.
+  EngineResult stopRecordPark({required int channel, int following = 0});
+
   /// Cancels only shared Count-in launches and their one-drain grace.
   /// Ordinary grid/Sound arms and older captures remain untouched.
   EngineResult cancelCountIn();
@@ -1624,10 +1636,11 @@ abstract interface class EnginePluginHosting {
 
 /// Performance-recording capture (parts 1-2 of the DAW-export stack): arming
 /// and disarming the RT-safe audio-thread taps that copy the master capture
-/// (before the master gain and limiter) and each actively-monitored input
-/// into lock-free capture rings, and the background drain thread that writes
-/// each stream as ordered 32-bit float WAV parts (`master-001.wav`, …,
-/// `input-<n>-001.wav`) plus a `performance.json` sidecar (#1198).
+/// (before the master gain and limiter), each actively-monitored input as
+/// heard, and every input and instrument raw (#1805) into lock-free capture
+/// rings, and the background drain thread that writes each stream as ordered
+/// 32-bit float WAV parts (`master-001.wav`, …, `input-<n>-001.wav`,
+/// `input-raw-<n>-001.wav`) plus a `performance.json` sidecar (#1198).
 ///
 /// Status is read back via [EngineSnapshot] ([EngineSnapshot.isPerfArmed] /
 /// [EngineSnapshot.perfFrames] / [EngineSnapshot.perfOverruns]), the same way
@@ -1690,13 +1703,17 @@ abstract interface class EnginePerformanceCapture {
   VolumeSpace? volumeSpace(String path);
 
   /// Starts an offline render of the finalized capture at [captureDir]: a
-  /// worker thread reconstructs each non-empty track's full-length DRY stem
-  /// (part 7 — wet stems are part 8) by replaying `events.log` against the
+  /// worker thread reconstructs every lane of each non-empty track as a
+  /// full-length dry and wet stem by replaying `events.log` against the
   /// capture's snapshots and retired-layer files, and writes
-  /// `stems/dry/track<channel>.wav`. Reads only from disk — no live-engine
-  /// dependency, so a render runs correctly whether or not this engine is
-  /// currently armed or looping. Returns [EngineResult.ok] once the worker
-  /// thread is launched (this call never blocks on the render itself),
+  /// `stems/dry/track<channel>-lane<lane>.wav`,
+  /// `stems/wet/track<channel>-lane<lane>.wav`, their index
+  /// `stems/stems.json` and the master `stems/wet/master.wav`
+  /// (docs/formats/performance-manifest-format.md, #1824). A track's status
+  /// below succeeds when all its lanes do. Reads only from disk — no
+  /// live-engine dependency, so a render runs correctly whether or not this
+  /// engine is currently armed or looping. Returns [EngineResult.ok] once the
+  /// worker thread is launched (this call never blocks on the render itself),
   /// [EngineResult.invalid] for an empty [captureDir], or
   /// [EngineResult.alreadyRunning] if a render is already active.
   EngineResult renderBegin(String captureDir);

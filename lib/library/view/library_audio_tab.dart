@@ -597,6 +597,7 @@ class LibraryAudioLine extends StatelessWidget {
     final failure = switch (state.error) {
       LibraryAudioError.notEnoughSpace => l10n.libraryAudioNotEnoughSpace,
       LibraryAudioError.readOnly => l10n.libraryAudioReadOnly,
+      LibraryAudioError.tooLargeForDrive => l10n.libraryAudioTooLargeForDrive,
       LibraryAudioError.exportFailed => l10n.libraryAudioExportFailed,
       LibraryAudioError.dawProjectFailed => l10n.libraryAudioDawProjectFailed,
       LibraryAudioError.deleteBusy => l10n.libraryAudioDeleteBusy,

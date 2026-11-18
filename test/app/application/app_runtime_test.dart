@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -20,7 +21,13 @@ import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/model/owned_setting.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno_engine/segno_engine.dart'
-    show FxOwner, MockAudioDecoder, MockAudioEngine, TrackSnapshot;
+    show
+        FxOwner,
+        LaneSnapshot,
+        MockAudioDecoder,
+        MockAudioEngine,
+        TrackSnapshot,
+        TrackState;
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 import 'package:storage_repository/storage_repository.dart';
@@ -169,6 +176,61 @@ void main() {
       await controllers.dispose();
       await repository.dispose();
     });
+  });
+
+  test("a pedal or MIDI arm records the rig's chains and the player's "
+      'track names (#1799)', () async {
+    await runtime.start();
+    final directory = await Directory.systemTemp.createTemp('names-');
+    exportsDirectory = directory.path;
+    addTearDown(() => directory.delete(recursive: true));
+    // Track 0 with one lane, so the arm snapshot records it.
+    engine.nextSnapshot = engine.nextSnapshot.copyWith(
+      tracks: [
+        const TrackSnapshot(
+          state: TrackState.stopped,
+          volume: 1,
+          muted: false,
+          lengthFrames: 0,
+          undoDepth: 0,
+          rms: 0,
+          peak: 0,
+          lanes: [
+            LaneSnapshot(
+              inputChannel: 0,
+              outputMask: 1,
+              volume: 1,
+              muted: false,
+              lengthFrames: 0,
+              rms: 0,
+              peak: 0,
+            ),
+          ],
+        ),
+        ...engine.nextSnapshot.tracks.skip(1),
+      ],
+    );
+    await runtime.tracks.rename(0, 'Rhythm');
+
+    final armed = performance.captureStatus.firstWhere(
+      (s) => s == PerformanceCaptureStatus.armed,
+    );
+    runtime.control.togglePerformanceRecord();
+    await armed;
+
+    final snapshot = PerformanceArmSnapshot.fromJson(
+      jsonDecode(
+        File('${performance.armedDirectory}/arm-snapshot.json')
+            .readAsStringSync(),
+      ) as Map<String, dynamic>,
+    );
+    // The rig's limiter: the looper's is on, an empty rig's is off.
+    expect(snapshot.limiterEnabled, repository.limiterEnabled);
+    expect(snapshot.limiterEnabled, isTrue);
+    expect(snapshot.tracks.firstWhere((t) => t.channel == 0).name, 'Rhythm');
+    // Input names come from `runtime.inputs` the same way; they key off an
+    // open device this harness never reports (performance_names_test).
+    await performance.disarm();
   });
 
   test('start takes the session baseline, so a fresh rig edited later is '

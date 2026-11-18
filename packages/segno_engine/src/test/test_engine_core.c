@@ -10401,7 +10401,7 @@ static int poll_file_reaches_size_for_test(const char* path, long min_bytes,
  * (#405); 2 = an aborted take logs LE_PLOG_RECORD_ABORT; 1 = it logged a
  * RECORD_END (every capture written before #264). See the format doc's "What
  * `version` means". */
-#define LE_TEST_EVENTS_VERSION 16
+#define LE_TEST_EVENTS_VERSION 17
 
 static size_t read_binary_file_for_test(const char* path, unsigned char* out,
                                         size_t cap) {
@@ -11151,7 +11151,8 @@ static void test_perf_overflow_counts_and_drops(void) {
   le_snapshot s;
   le_engine_get_snapshot(e, &s);
   CHECK(s.perf_frames == 32);      /* elapsed frames counted regardless of drops */
-  CHECK(s.perf_overruns == 32 - 7); /* only the first 7 fit */
+  /* only the first 7 fit, in the master's ring and in input 0's raw one */
+  CHECK(s.perf_overruns == 2 * (32 - 7));
 
   le_engine_destroy(e);
 }
@@ -11236,6 +11237,13 @@ static void perf_tap_gap_for_test(le_engine* e, uint64_t frames) {
   atomic_fetch_add_explicit(&e->a_perf_frames, frames, memory_order_release);
 }
 
+/* Every input the device has is recorded raw (#1805). A test of one
+ * stream's mechanics marks its fixture's only input loopback before the
+ * arm, so the take writes the master alone. */
+static void perf_master_only(le_engine* e) {
+  le_engine_set_excluded_input_mask_for_test(e, 0x1u);
+}
+
 /* A tap gap leaves the drain thread's file behind wall-clock elapsed frames;
  * it silence-fills the gap so the file stays sample-consistent and records
  * the gap in the sidecar. */
@@ -11292,10 +11300,11 @@ static void test_perf_drain_silence_fills_tap_gap(void) {
   CHECK(strstr(json, "\"duration_frames\": 25") != NULL);
   CHECK(strstr(json, "\"finalized\": false") != NULL);
   /* #710: the silence itself is counted and reported, not just implied by
-   * the gap list — 25 frames padded into the one file this capture writes. */
-  CHECK(strstr(json, "\"zero_filled_frames\": 25") != NULL);
+   * the gap list — 25 frames padded into each file this capture writes, the
+   * master and input 0's raw recording (#1805). */
+  CHECK(strstr(json, "\"zero_filled_frames\": 50") != NULL);
   le_engine_get_snapshot(e, &s);
-  CHECK(s.perf_zero_filled_frames == 25);
+  CHECK(s.perf_zero_filled_frames == 50);
 
   le_engine_destroy(e);
 }
@@ -11320,7 +11329,8 @@ static void test_perf_ring_overflow_ends_the_take(void) {
   process_const(e, 0.0f, 32, big_out); /* 7 pushes succeed, 25 drop */
   le_snapshot s;
   le_engine_get_snapshot(e, &s);
-  CHECK(s.perf_overruns == 32 - 7);
+  /* in the master's ring and in input 0's raw one (#1805) */
+  CHECK(s.perf_overruns == 2 * (32 - 7));
   CHECK(s.perf_first_drop_frame == 7);
   CHECK(le_perf_disarm(e) == LE_OK);
 
@@ -11425,15 +11435,20 @@ static void test_perf_zero_fill_counter_visible_while_armed(void) {
   CHECK(s.perf_armed == 1);
   CHECK(s.perf_zero_filled_frames == 0); /* no cycle has run yet */
 
-  /* 32 frames of mono float = 128 bytes once the gap is padded. */
+  /* 32 frames of mono float = 128 bytes once the gap is padded, in the
+   * master and in input 0's raw recording (#1805). */
   char master_path[600];
   snprintf(master_path, sizeof(master_path), "%s/master-001.wav", perf_test_dir());
+  CHECK(poll_file_reaches_size_for_test(
+      master_path, LE_PERF_PART_HEADER_BYTES + 32 * 4, 3000));
+  snprintf(master_path, sizeof(master_path), "%s/input-raw-0-001.wav",
+           perf_test_dir());
   CHECK(poll_file_reaches_size_for_test(
       master_path, LE_PERF_PART_HEADER_BYTES + 32 * 4, 3000));
 
   le_engine_get_snapshot(e, &s);
   CHECK(s.perf_armed == 1); /* still armed: this is a live reading */
-  CHECK(s.perf_zero_filled_frames == 25);
+  CHECK(s.perf_zero_filled_frames == 50);
 
   CHECK(le_perf_disarm(e) == LE_OK);
   le_engine_destroy(e);
@@ -11664,6 +11679,8 @@ static void perf_mid_cycle_short_ring(void* raw) {
     const float frame[2] = {LE_TEST_SHORT_RING_MARK, LE_TEST_SHORT_RING_MARK};
     for (int i = 0; i < LE_TEST_SHORT_RING_FRAMES; ++i) {
       if (!le_audio_ring_push_frame(&ctx->e->perf.master_ring, frame, 2)) break;
+      /* And input 0's raw recording (#1805), as the audio thread does. */
+      if (!le_audio_ring_push_frame(&ctx->e->perf_raw_ring[0], frame, 1)) break;
       ctx->pushed++;
     }
     /* RELEASE, and after the pushes, exactly like the real tap in
@@ -11799,16 +11816,18 @@ static void test_perf_zero_fill_short_write_does_not_desync_file(void) {
   }
 
   /* Byte-honest, and honest ACROSS the two cycles: 10 frames charged by the
-   * short write plus 15 by the top-up. The gap was charged once. */
+   * short write plus 15 by the top-up. The gap was charged once. Input 0's
+   * raw recording (#1805) is padded after the master, so the failed cycle
+   * left it alone and the final one padded its 25. */
   le_engine_get_snapshot(e, &s);
-  CHECK(s.perf_zero_filled_frames == 25);
+  CHECK(s.perf_zero_filled_frames == 25 + 25);
 
   char json[4096];
   char sidecar_path[600];
   snprintf(sidecar_path, sizeof(sidecar_path), "%s/performance.json",
           perf_test_dir());
   CHECK(read_file_for_test(sidecar_path, json, sizeof(json)) > 0);
-  CHECK(strstr(json, "\"zero_filled_frames\": 25") != NULL);
+  CHECK(strstr(json, "\"zero_filled_frames\": 50") != NULL);
   /* Two gap entries: the span the short write was asked for, then the residue
    * the final cycle topped up. Frame 17 (7 real + 10 padded) is `pf->written`
    * having advanced, read straight off the sidecar. */
@@ -11898,13 +11917,19 @@ static void test_perf_sidecar_bytes_are_exact(void) {
   CHECK(le_digest_bytes(out, sizeof(out), digest) == LE_OK);
   char sha_hex[65];
   for (int i = 0; i < 32; ++i) snprintf(sha_hex + 2 * i, 3, "%02x", digest[i]);
+  /* Input 0's raw recording (#1805): the input as given, 0.5 a frame. */
+  float raw_in[LOOP_N];
+  for (int i = 0; i < LOOP_N; ++i) raw_in[i] = 0.5f;
+  CHECK(le_digest_bytes(raw_in, sizeof(raw_in), digest) == LE_OK);
+  char raw_hex[65];
+  for (int i = 0; i < 32; ++i) snprintf(raw_hex + 2 * i, 3, "%02x", digest[i]);
   char expected[4096];
   snprintf(expected, sizeof(expected),
           "{\n"
           "  \"slug\": \"%s\",\n"
           "  \"sample_rate\": 48000,\n"
           "  \"channel_layout\": {\"master_channels\": 1, "
-          "\"captured_inputs\": []},\n" /* no input monitored in this fixture */
+          "\"captured_inputs\": [], \"raw_inputs\": [0]},\n" /* no input monitored */
           "  \"capture_frames\": %d,\n"
           "  \"overrun_count\": 0,\n"
           "  \"zero_filled_frames\": 0,\n"
@@ -11916,12 +11941,14 @@ static void test_perf_sidecar_bytes_are_exact(void) {
           "  \"overs\": 0,\n"
           "  \"parts\": [{\"stream\": 0, \"index\": 1, "
           "\"file\": \"master-001.wav\", \"frames\": %d, \"bytes\": %d, "
-          "\"overs\": 0, \"sha256\": \"%s\"}],\n"
+          "\"overs\": 0, \"sha256\": \"%s\"}, {\"stream\": 100, "
+          "\"index\": 1, \"file\": \"input-raw-0-001.wav\", \"frames\": %d, "
+          "\"bytes\": %d, \"overs\": 0, \"sha256\": \"%s\"}],\n"
           "  \"layers\": [],\n"
           "  \"finalized\": false\n"
           "}\n",
           slug, LOOP_N, LOOP_N, LE_PERF_PART_HEADER_BYTES + LOOP_N * 4,
-          sha_hex);
+          sha_hex, LOOP_N, LE_PERF_PART_HEADER_BYTES + LOOP_N * 4, raw_hex);
   if (strcmp(json, expected) != 0) {
     printf("  sidecar mismatch\n--- expected ---\n%s--- actual ---\n%s",
           expected, json);
@@ -12026,8 +12053,11 @@ static void test_perf_parts_keep_samples_and_count_overs(void) {
   char json[8192];
   snprintf(path, sizeof(path), "%s/performance.json", perf_test_dir());
   CHECK(read_file_for_test(path, json, sizeof(json)) > 0);
-  CHECK(strstr(json, "\"overs\": 2,\n") != NULL); /* the take's total */
+  /* The take's total: the master's 2 and input 0's raw recording's 2. */
+  CHECK(strstr(json, "\"overs\": 4,\n") != NULL);
   CHECK(strstr(json, "\"file\": \"master-001.wav\", \"frames\": 4, "
+                     "\"bytes\": 100, \"overs\": 2, \"sha256\": ") != NULL);
+  CHECK(strstr(json, "\"file\": \"input-raw-0-001.wav\", \"frames\": 4, "
                      "\"bytes\": 100, \"overs\": 2, \"sha256\": ") != NULL);
   le_engine_destroy(e);
 }
@@ -12116,7 +12146,8 @@ static void test_perf_zero_fill_crosses_part_boundaries(void) {
 
   le_snapshot s;
   le_engine_get_snapshot(e, &s);
-  CHECK(s.perf_zero_filled_frames == 25);
+  /* 25 in the master and 25 in input 0's raw recording (#1805) */
+  CHECK(s.perf_zero_filled_frames == 50);
   const int frames[4] = {10, 10, 10, 2};
   float all[32];
   int at = 0;
@@ -12211,6 +12242,7 @@ static void test_perf_part_list_limit(void) {
   printf("test_perf_part_list_limit\n");
   le_engine* e = le_engine_create();
   le_engine_configure(e, 48000, 1, 1, 1000); /* mono master */
+  perf_master_only(e);
   CHECK(perf_arm_target_for_test(e, perf_test_dir(), 84 + 8, NULL, 0) ==
         LE_OK);
   drain(e);
@@ -12256,7 +12288,8 @@ static void test_perf_live_overs_include_the_open_part(void) {
 
   char path[700];
   snprintf(path, sizeof(path), "%s/performance.json", perf_test_dir());
-  const char* expected = "\"overs\": 2,\n  \"parts\": [";
+  /* two in the master, two in input 0's raw recording (#1805) */
+  const char* expected = "\"overs\": 4,\n  \"parts\": [";
   int seen = 0;
   for (int i = 0; i < 300 && !seen; ++i) {
     char json[16384];
@@ -12297,9 +12330,10 @@ static void test_perf_input_stream_parts(void) {
   le_engine_destroy(e);
 }
 
-/* The ring seconds an arm grants: 8 requested with the master and 8 stereo
- * inputs at 96 kHz is 9 rings of next_pow2(96000 * 2 * s) samples; s = 8, 7
- * and 6 each round to 2^21 samples (72 MiB in all), s = 5 to 2^20 (36 MiB),
+/* The ring seconds an arm grants: 8 requested with the master and 8
+ * inputs at 96 kHz is 9 stereo rings of next_pow2(96000 * 2 * s) samples
+ * and 8 raw mono rings (#1805) of half that; s = 8, 7 and 6 each round to
+ * 2^21 and 2^20 samples (104 MiB in all), s = 5 to 2^20 and 2^19 (52 MiB),
  * so 5 is granted. With 32 inputs even 2 s is over the cap; the default is
  * the floor. */
 static void test_perf_ring_seconds_are_capped(void) {
@@ -12319,6 +12353,7 @@ static void test_perf_ring_seconds_are_capped(void) {
                         << (granted[k] == 5 ? 20 : 19); /* samples per ring */
     CHECK(e->perf.master_ring.capacity == want);
     CHECK(e->perf.monitor_ring[0].capacity == want);
+    CHECK(e->perf_raw_ring[0].capacity == want / 2);
     CHECK(le_perf_disarm(e) == LE_OK);
     char json[16384];
     char path[700];
@@ -12428,6 +12463,9 @@ static void perf_clear_test_dir(void) {
       snprintf(path, sizeof(path), "%s/input-%d-%03d.wav", perf_test_dir(), c,
                p);
       remove(path);
+      snprintf(path, sizeof(path), "%s/input-raw-%d-%03d.wav", perf_test_dir(),
+               c, p);
+      remove(path);
     }
   }
   snprintf(path, sizeof(path), "%s/performance.json", perf_test_dir());
@@ -12514,13 +12552,18 @@ static void test_perf_reserve_stops_at_whole_frames(void) {
   static float out[1000];
   const uint64_t reserve = 1000000;
   const long events = perf_events_bytes_for(0, 0, 1000, out);
+  /* The mono master and input 0's raw recording (#1805): 8 bytes a frame,
+   * two headers. */
   le_perf_drain_set_volume_free_for_test(
       (int64_t)(reserve + LE_PERF_ALLOWANCE_BYTES + (uint64_t)events + 84 +
-                4 * 700));
+                84 + 8 * 700));
   le_engine* e = perf_reserve_take(0, 0, reserve, 1000, out);
   le_perf_drain_set_volume_free_for_test(-1);
 
   CHECK(perf_part_holds("master-001.wav", out, 700, 1));
+  float raw[700];
+  for (int i = 0; i < 700; ++i) raw[i] = perf_indexed_sample(i);
+  CHECK(perf_part_holds("input-raw-0-001.wav", raw, 700, 1));
   CHECK(perf_test_file_size("master-002.wav") == -1);
   CHECK(perf_sidecar_contains("\"stopped_early\": \"reserve_reached\""));
   CHECK(perf_sidecar_contains("\"capture_frames\": 700,"));
@@ -12529,12 +12572,13 @@ static void test_perf_reserve_stops_at_whole_frames(void) {
   le_engine_get_snapshot(e, &s);
   CHECK(s.perf_stop_reason == LE_PERF_STOP_RESERVE_REACHED);
   CHECK(s.perf_zero_filled_frames == 0);
-  CHECK(s.perf_bytes_written == (uint64_t)events + 84 + 4 * 700);
+  CHECK(s.perf_bytes_written == (uint64_t)events + 84 + 84 + 8 * 700);
   le_engine_destroy(e);
 }
 
-/* Every stream ends at the same frame: a mono master (4 bytes a frame) and a
- * stereo input (8) share the budget 12 bytes a frame. */
+/* Every stream ends at the same frame: a mono master (4 bytes a frame), a
+ * stereo input as heard (8) and its raw recording (4, #1805) share the
+ * budget 16 bytes a frame. */
 static void test_perf_reserve_stops_every_stream_together(void) {
   printf("test_perf_reserve_stops_every_stream_together\n");
   static float out[1000];
@@ -12542,12 +12586,13 @@ static void test_perf_reserve_stops_every_stream_together(void) {
   const long events = perf_events_bytes_for(1, 0, 1000, out);
   le_perf_drain_set_volume_free_for_test(
       (int64_t)(reserve + LE_PERF_ALLOWANCE_BYTES + (uint64_t)events + 84 +
-                84 + 12 * 500));
+                84 + 84 + 16 * 500));
   le_engine* e = perf_reserve_take(1, 0, reserve, 1000, out);
   le_perf_drain_set_volume_free_for_test(-1);
 
   CHECK(perf_part_holds("master-001.wav", out, 500, 1));
   CHECK(perf_test_file_size("input-0-001.wav") == 84 + 500 * 8);
+  CHECK(perf_test_file_size("input-raw-0-001.wav") == 84 + 500 * 4);
   CHECK(perf_sidecar_contains("\"stopped_early\": \"reserve_reached\""));
   le_snapshot s;
   le_engine_get_snapshot(e, &s);
@@ -12557,7 +12602,7 @@ static void test_perf_reserve_stops_every_stream_together(void) {
 
 /* The budget pays for the header of every part a stream would still open:
  * room for 300 frames, one more header and one frame ends at 301 frames in
- * two parts. */
+ * two parts, in the master and in input 0's raw recording (#1805) alike. */
 static void test_perf_reserve_counts_the_next_part_header(void) {
   printf("test_perf_reserve_counts_the_next_part_header\n");
   static float out[1000];
@@ -12565,14 +12610,16 @@ static void test_perf_reserve_counts_the_next_part_header(void) {
   const uint64_t part_bytes = 84 + 4 * 300;
   const long events = perf_events_bytes_for(0, part_bytes, 1000, out);
   le_perf_drain_set_volume_free_for_test(
-      (int64_t)(reserve + LE_PERF_ALLOWANCE_BYTES + (uint64_t)events + 84 +
-                4 * 300 + 84 + 4));
+      (int64_t)(reserve + LE_PERF_ALLOWANCE_BYTES + (uint64_t)events +
+                2 * (84 + 4 * 300 + 84 + 4)));
   le_engine* e = perf_reserve_take(0, part_bytes, reserve, 1000, out);
   le_perf_drain_set_volume_free_for_test(-1);
 
   CHECK(perf_part_holds("master-001.wav", out, 300, 1));
   CHECK(perf_part_holds("master-002.wav", out + 300, 1, 1));
   CHECK(perf_test_file_size("master-003.wav") == -1);
+  CHECK(perf_test_file_size("input-raw-0-002.wav") == 84 + 4);
+  CHECK(perf_test_file_size("input-raw-0-003.wav") == -1);
   CHECK(perf_sidecar_contains("\"stopped_early\": \"reserve_reached\""));
   le_engine_destroy(e);
 }
@@ -12894,7 +12941,8 @@ static void test_perf_no_drop_recorded_after_a_stop(void) {
 }
 
 /* A staged layer whose file is written comes off the budget like audio: a
- * 100-frame mono layer leaves room for 100 fewer mono frames. */
+ * 100-frame mono layer (400 bytes) leaves room for 50 fewer frames of the
+ * mono master and input 0's raw recording (#1805), 8 bytes a frame. */
 static void test_perf_reserve_counts_layer_files(void) {
   printf("test_perf_reserve_counts_layer_files\n");
   static float out[1000];
@@ -12902,7 +12950,7 @@ static void test_perf_reserve_counts_layer_files(void) {
   const long events = perf_events_bytes_for(0, 0, 1000, out);
   le_perf_drain_set_volume_free_for_test(
       (int64_t)(reserve + LE_PERF_ALLOWANCE_BYTES + (uint64_t)events + 84 +
-                4 * 700));
+                84 + 8 * 650));
   perf_clear_test_dir();
   le_engine* e = le_engine_create();
   le_engine_configure(e, 48000, 1, 1, 1000);
@@ -12981,9 +13029,10 @@ static void test_perf_reserve_rereads_the_volume(void) {
   float out[64];
   for (int i = 0; i < 4; ++i) process_const(e, 0.5f, 50, out);
   CHECK(perf_wait_flushed(perf_test_dir(), 200));
-  /* Another writer left room for exactly 300 more mono frames. */
+  /* Another writer left room for exactly 300 more frames of the mono master
+   * and input 0's raw recording (#1805). */
   le_perf_drain_set_volume_free_for_test(
-      (int64_t)(reserve + LE_PERF_ALLOWANCE_BYTES + 4 * 300));
+      (int64_t)(reserve + LE_PERF_ALLOWANCE_BYTES + 8 * 300));
   _Atomic int cycles;
   atomic_init(&cycles, 0);
   le_perf_drain_set_mid_cycle_hook_for_test(perf_mid_cycle_count, &cycles);
@@ -12995,6 +13044,7 @@ static void test_perf_reserve_rereads_the_volume(void) {
   le_perf_drain_set_volume_free_for_test(-1);
   le_perf_drain_set_free_sample_cycles_for_test(0);
   CHECK(perf_test_file_size("master-001.wav") == 84 + 500 * 4);
+  CHECK(perf_test_file_size("input-raw-0-001.wav") == 84 + 500 * 4);
   CHECK(perf_sidecar_contains("\"stopped_early\": \"reserve_reached\""));
   le_engine_destroy(e);
 }
@@ -24005,6 +24055,22 @@ static void test_fs_sync_file(void) {
   CHECK(le_fs_sync_file_errno("", NULL) == LE_ERR_INVALID);
 }
 
+static void test_fs_sync_volume(void) {
+  printf("test_fs_sync_volume\n");
+  test_render_mkdir(perf_test_dir());
+  int32_t err = -1;
+  CHECK(le_fs_sync_volume_errno(perf_test_dir(), &err) == LE_OK);
+  CHECK(err == 0);
+  CHECK(le_fs_sync_volume_errno(perf_test_dir(), NULL) == LE_OK);
+  char missing[600];
+  snprintf(missing, sizeof(missing), "%s/no_such_dir_for_volume_sync",
+           perf_test_dir());
+  CHECK(le_fs_sync_volume_errno(missing, &err) == LE_ERR_DEVICE);
+  CHECK(err == ENOENT);
+  CHECK(le_fs_sync_volume_errno(NULL, &err) == LE_ERR_INVALID);
+  CHECK(le_fs_sync_volume_errno("", NULL) == LE_ERR_INVALID);
+}
+
 static void test_fs_rename_noreplace(void) {
   printf("test_fs_rename_noreplace\n");
   test_render_mkdir(perf_test_dir());
@@ -24176,7 +24242,7 @@ static int32_t test_read_wav_fixed(const char* path, float* out, int32_t out_cap
 static int32_t test_read_stem(const char* dir, int32_t channel, float* out,
                               int32_t out_cap) {
   char path[700];
-  snprintf(path, sizeof(path), "%s/stems/dry/track%d.wav", dir, channel);
+  snprintf(path, sizeof(path), "%s/stems/dry/track%d-lane0.wav", dir, channel);
   return test_read_wav_fixed(path, out, out_cap);
 }
 
@@ -24285,14 +24351,15 @@ static void test_perf_render_scripted_log_boundaries(void) {
 /* Shared body for the overdub-pass stitching contract, parameterized by loop
  * length (#227 runs it beyond one quantum) and the arm-time loop phase
  * (`clock_frame`, the PERF_ARMED fact's position — #255 runs it nonzero). Track
- * settled at arm with a base RAMP image; one retired-layer ramp (offset by
- * +2) activates at `retire_frame` — not one loop cycle earlier: a punch-out
- * mid-cycle retires via an async, chunked drain that can land arbitrarily
- * later than "punch-in + one cycle", so the logged retire frame itself is
- * the only value this capture can trust. Frames before it play the pre-pass
- * image; frames from it onward play the retired layer — both PHASE-LOCKED
- * (#255): a layer image is loop-position-indexed and the loop phase is one
- * continuous counter across the capture, so every frame plays
+ * settled at arm with a base RAMP image; one complete overdub pass retires at
+ * `retire_frame`. A pass retires the loop as it was BEFORE it (the shadow its
+ * writes backed the old values up into, #1808), so the layer file holds the
+ * pre-pass ramp, and the pass's result is the disarm snapshot's image (a
+ * ramp offset by +2). With no record offset the pass's last write lands on
+ * the retire frame and is read back a loop later, so frames up to the retire
+ * play the pre-pass image and frames after it the pass's result — both
+ * PHASE-LOCKED (#255): a layer image is loop-position-indexed and the loop
+ * phase is one continuous counter across the capture, so every frame plays
  * image[(clock_frame + f) % loop_len], exactly what the performer heard.
  * Ramps (not constants) so a renderer that indexes an image modulo the
  * wrong length (e.g. one quantum) or from the wrong phase (segment-relative
@@ -24331,11 +24398,14 @@ static void run_perf_render_stitching_case(const char* name, int32_t sr,
   snprintf(wav_path, sizeof(wav_path), "%s/track0-lane0.wav", loops_dir);
   test_write_wav_mono(wav_path, pre, loop_len, sr);
 
+  snprintf(wav_path, sizeof(wav_path), "%s/track0-settled.wav", loops_dir);
+  test_write_wav_mono(wav_path, post, loop_len, sr);
+
   char layer_name[64];
   snprintf(layer_name, sizeof(layer_name), "layer-%s.pcm", name);
   char layer_path[700];
   snprintf(layer_path, sizeof(layer_path), "%s/%s", dir, layer_name);
-  test_write_raw_pcm_mono(layer_path, post, loop_len);
+  test_write_raw_pcm_mono(layer_path, pre, loop_len);
 
   /* The arm phase now comes from the PERF_ARMED fact in events.log, not
    * armSnapshot.clockFrame (deleted, #262) — so the manifest no longer carries
@@ -24347,7 +24417,9 @@ static void run_perf_render_stitching_case(const char* name, int32_t sr,
            "[{\"channel\": 0, \"lanes\": "
            "[{\"lane\": 0, \"deferred\": false, \"pcmRef\": "
            "\"loops/track0-lane0.wav\"}]}]}, "
-           "\"disarmSnapshot\": {\"tracks\": []}, "
+           "\"disarmSnapshot\": {\"tracks\": [{\"channel\": 0, \"lanes\": "
+           "[{\"lane\": 0, \"deferred\": false, \"takeId\": 1, \"pcmRef\": "
+           "\"loops/track0-settled.wav\"}]}]}, "
            "\"layers\": [{\"channel\": 0, \"slot\": 1, \"generation\": 0, "
            "\"frame\": %llu, \"frame_count\": %d, \"lane_count\": 1, "
            "\"filename\": \"%s\"}]}",
@@ -24386,22 +24458,22 @@ static void run_perf_render_stitching_case(const char* name, int32_t sr,
   /* Phase-locked segment semantics (#255, le_pr_append_segment / the stitch
    * loop in perf_render.c): every segment plays its loop-position-indexed
    * image from the phase live playback had actually reached — the arm image
-   * from `clock_frame` at capture frame 0, and the retired layer from the
-   * phase the loop was at when the retire activated — so every frame is
+   * from `clock_frame` at capture frame 0, and the pass's result from the
+   * phase the loop was at when it was first read back — so every frame is
    * image[(clock_frame + f) % loop_len], exactly what the performer heard.
    * The pre-#255 renderer instead restarted each segment at its own index 0
-   * (`pos = (f - start) % image_len`), rotating every mid-cycle retire by
-   * the retire phase; the ramp fill fails loudly on both that rotation and
-   * a modulo-one-quantum indexing wrap. */
+   * (`pos = (f - start) % image_len`), rotating every mid-cycle switch by
+   * its phase; the ramp fill fails loudly on both that rotation and a
+   * modulo-one-quantum indexing wrap. */
   int bad = 0;
-  for (uint64_t f = 0; f < retire_frame && f < capture_frames; ++f) {
+  for (uint64_t f = 0; f <= retire_frame && f < capture_frames; ++f) {
     if (stem[f] != pre[(clock_frame + f) % (uint64_t)loop_len]) {
       bad++; /* pre-pass image, phase-locked to the arm clock */
     }
   }
-  for (uint64_t f = retire_frame; f < capture_frames; ++f) {
+  for (uint64_t f = retire_frame + 1; f < capture_frames; ++f) {
     if (stem[f] != post[(clock_frame + f) % (uint64_t)loop_len]) {
-      bad++; /* retired layer, phase-locked continuation */
+      bad++; /* the pass's result, phase-locked continuation */
     }
   }
   CHECK(bad == 0);
@@ -24414,17 +24486,18 @@ static void run_perf_render_stitching_case(const char* name, int32_t sr,
 
 static void test_perf_render_overdub_stitching(void) {
   printf("test_perf_render_overdub_stitching\n");
-  /* retire_frame 10 is deliberately mid-cycle (10 % 4 == 2, phase 2): a
-   * boundary retire (phase 0) could not tell phase-locked stitching from
-   * the pre-#255 segment-relative rotation. Armed at phase 0. */
+  /* The switch after retire_frame 10 is deliberately mid-cycle (11 % 4 ==
+   * 3, phase 3): a switch on the boundary (phase 0) could not tell
+   * phase-locked stitching from the pre-#255 segment-relative rotation.
+   * Armed at phase 0. */
   run_perf_render_stitching_case("stitch", 4800, 4, 16, 10, 0, 2000);
 }
 
 /* The same contract at a loop longer than one quantum (#227): the pre-pass
- * image, the retired layer, and the stem writer all size and index by the
+ * image, the pass's result, and the stem writer all size and index by the
  * real loop length — a one-quantum image buffer would truncate (loud under
  * ASAN), and the ramp fill catches a modulo-one-quantum indexing wrap that
- * stays in bounds. The retire lands mid-cycle (phase 1234), so this also
+ * stays in bounds. The switch lands mid-cycle (phase 1235), so this also
  * exercises the #255 phase lock beyond one quantum. */
 static void test_perf_render_stitching_long_loop(void) {
   printf("test_perf_render_stitching_long_loop\n");
@@ -24437,11 +24510,12 @@ static void test_perf_render_stitching_long_loop(void) {
 /* The #255 sibling gap: a capture armed MID-LOOP against an already-playing
  * track (PERF_ARMED position != 0). The arm image must play from that logged
  * position at capture frame 0 — pre[(6 + f) % 4], i.e. arm phase 2 — and
- * the mid-cycle retire at frame 9 must inherit the chained phase
- * ((6 + 9) % 4 == 3), locking the whole stem to the live phase counter. */
+ * the mid-cycle switch after the retire at frame 8 must inherit the chained
+ * phase ((6 + 9) % 4 == 3), locking the whole stem to the live phase
+ * counter. */
 static void test_perf_render_stitching_mid_loop_arm(void) {
   printf("test_perf_render_stitching_mid_loop_arm\n");
-  run_perf_render_stitching_case("stitch_armphase", 4800, 4, 16, 9, 6, 2000);
+  run_perf_render_stitching_case("stitch_armphase", 4800, 4, 16, 8, 6, 2000);
 }
 
 /* A logged retire whose layer a full manifest dropped must fail the stem,
@@ -24812,7 +24886,7 @@ static void test_perf_render_partial_success(void) {
   char stems_dir[700];
   char stem_path[700];
   snprintf(stems_dir, sizeof(stems_dir), "%s/stems", dir);
-  snprintf(stem_path, sizeof(stem_path), "%s/stems/dry/track0.wav", dir);
+  snprintf(stem_path, sizeof(stem_path), "%s/stems/dry/track0-lane0.wav", dir);
   CHECK(le_fs_synced_for_test(dir) > 0);
   CHECK(le_fs_synced_for_test(stems_dir) > 0);
   CHECK(le_fs_synced_for_test(stem_path) > 0);
@@ -24931,7 +25005,7 @@ static void test_perf_render_large_manifest_parses(void) {
 static int32_t test_read_wet_stem(const char* dir, int32_t channel, float* out,
                                   int32_t out_cap) {
   char path[700];
-  snprintf(path, sizeof(path), "%s/stems/wet/track%d.wav", dir, channel);
+  snprintf(path, sizeof(path), "%s/stems/wet/track%d-lane0.wav", dir, channel);
   return test_read_wav_fixed(path, out, out_cap);
 }
 
@@ -36630,10 +36704,10 @@ static void test_output_fx_logs_exact_edits_track_fx_stays_manifest_only(void) {
   static unsigned char buf[16384];
   const size_t n = read_binary_file_for_test(path, buf, sizeof(buf));
   CHECK(n >= LE_TEST_EVENTS_HEADER_BYTES);
-  /* Arm + the chains' musical time + complete Fade images + five output
-   * facts: no track FX setter leaks. */
+  /* Arm + the chains' musical time + complete Fade images and lane counts
+   * (#1824) + five output facts: no track FX setter leaks. */
   const size_t entries = log_entry_count(n);
-  CHECK(entries == 7 + LE_MAX_TRACKS);
+  CHECK(entries == 7 + 2 * LE_MAX_TRACKS);
   const int codes[] = {LE_PLOG_PERF_ARMED, LE_CMD_SET_OUTPUT_FX,
     LE_CMD_SET_OUTPUT_FX_COUNT, LE_PLOG_SET_OUTPUT_FX_PARAM,
     LE_PLOG_SET_OUTPUT_FX_ENABLED, LE_PLOG_SET_OUTPUT_FX_CHAIN_ENABLED};
@@ -39623,6 +39697,7 @@ static void test_session_commit_stays_stopped_until_play(void) {
 #include "test_engine_fade.h"
 #include "test_engine_reopen.h"
 #include "test_engine_history_replay.h"
+#include "test_engine_overdub_replay.h"
 #include "test_engine_read_head.h"
 #include "test_engine_stretch.h"
 #include "test_engine_reverse.h"
@@ -39669,12 +39744,16 @@ static void test_session_commit_stays_stopped_until_play(void) {
 #include "test_engine_interface_inputs.h"
 #include "test_engine_heard_edits.h"
 #include "test_engine_heard_perf.h"
+#include "test_engine_lane_stems.h"
 #include "test_engine_perf_autostop.h"
+#include "test_engine_perf_raw.h"
 #include "test_engine_perf_render_memory.h"
+#include "test_engine_perf_file_limit.h"
 #include "test_engine_heard_tail.h"
 #include "test_engine_heard_post.h"
 #include "test_engine_trk_jobs.h"
 #include "test_engine_post_tail_stopped.h"
+#include "test_engine_overdub_stop_park.h"
 
 /* le_platform_name_thread names the thread that calls it (#1563): per-thread
  * tools on the console read these names, and an unnamed engine thread reads
@@ -39761,6 +39840,7 @@ int main(void) {
   SHARD(run_fx_workers_tests);
   SHARD(run_trk_jobs_tests);
   SHARD(run_post_tail_stopped_tests);
+  SHARD(run_overdub_stop_park_tests);
   if (getenv("SEGNO_FX_WORKERS_TESTS_ONLY")) return g_failures ? 1 : 0;
   if (getenv("SEGNO_FADE_STAGING_TESTS_ONLY")) {
     test_fade_restore_staging_and_manifest_capacity();
@@ -39829,6 +39909,8 @@ int main(void) {
   SHARD(test_fade_grouped_muted_restore_stems);
   SHARD(test_fade_restore_overdub_source_end);
   SHARD(run_history_replay_tests);
+  SHARD(run_overdub_replay_tests);
+  SHARD(run_lane_stems_tests);
   if (getenv("SEGNO_HISTORY_TESTS_ONLY")) return g_failures ? 1 : 0;
   SHARD(run_peel_tests);
   SHARD(run_history_seq_tests);
@@ -40007,6 +40089,7 @@ int main(void) {
   SHARD(test_fs_sync_dir);
   SHARD(test_fs_sync_file);
   SHARD(test_wav_publish_syncs_the_renamed_file);
+  SHARD(test_fs_sync_volume);
   SHARD(test_fs_rename_noreplace);
   SHARD(test_perf_arm_requires_configure);
   SHARD(test_perf_reconfigure_while_armed_resets_cleanly);
@@ -40417,6 +40500,12 @@ int main(void) {
   SHARD(test_perf_render_progress_and_cancel);
   SHARD(test_perf_render_memory_is_bounded);
   SHARD(test_perf_render_cancel_leaves_no_partial_stem);
+  SHARD(test_perf_longest_take_fits_one_fat32_file);
+  SHARD(test_perf_raw_tap_is_the_clean_input);
+  SHARD(test_perf_raw_ring_overflow_counts);
+  SHARD(test_perf_raw_drain_writes_mono_parts);
+  SHARD(test_perf_raw_input_counts_as_playing);
+  SHARD(test_perf_arm_skips_loopback_inputs);
   SHARD(test_perf_render_runs_through_reconfigure);
   SHARD(test_perf_render_rerender_leaves_only_its_own_stems);
   SHARD(test_perf_render_concurrent_with_live_engine);

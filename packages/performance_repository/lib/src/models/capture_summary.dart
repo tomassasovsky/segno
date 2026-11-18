@@ -52,7 +52,8 @@ class CapturePart {
     );
   }
 
-  /// 0 for the main output, 1 + n for captured input n.
+  /// 0 for the main output, 1 + n for captured input n as heard,
+  /// `PerfTarget.rawStreamBase` + n for its raw recording (#1805).
   final int stream;
 
   /// Position in its stream, from 1.

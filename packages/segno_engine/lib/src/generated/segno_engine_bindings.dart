@@ -3196,6 +3196,33 @@ external int le_engine_stop_record_control(
   int channel,
 );
 
+/// The Rec-mode Stop of the only audible loop (#1782): Stop as
+/// le_engine_stop_record_control resolves it, then the transport parks, and
+/// the mutes that follow spare the Post tail (le_engine_spare_tail's rule).
+///
+/// A playing track parks at once: every track stops, as le_engine_stop_track
+/// on each would stop it. So does an overdubbing track whose overdub ends at
+/// once; the stop ends the pass. An overdubbing track whose Record timing arms
+/// the end for the grid keeps overdubbing to that boundary and parks there,
+/// after any other arm that boundary fires. Until then the next mute of each
+/// of its lanes waits for the park instead of punching the pass out (a later
+/// one punches out as usual), and a second call keeps the arm. Whatever drops
+/// the arm (a Record press, a Clear, another track's capture) drops the park
+/// with it. A live Count-in is cancelled first, and the park follows. In any
+/// other state the call does what le_engine_stop_record_control does.
+///
+/// `following` is how many commands the caller posts right after it (the
+/// lane mutes): the call reserves room for them as le_engine_spare_tail does,
+/// and returns LE_ERR_NOT_READY with nothing posted when they would not fit.
+/// LE_ERR_INVALID for a bad channel, a negative `following`, or an arm
+/// le_engine_stop_record_control would refuse.
+@ffi.Native<ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)>()
+external int le_engine_stop_record_park(
+  ffi.Pointer<le_engine> engine,
+  int channel,
+  int following,
+);
+
 @ffi.Native<ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)>()
 external int le_engine_stop_track(ffi.Pointer<le_engine> engine, int channel);
 
@@ -3432,6 +3459,21 @@ external int le_fs_sync_file_errno(
   ffi.Pointer<ffi.Int32> out_errno,
 );
 
+/// On Linux, makes everything written to the volume that holds `path`
+/// durable and flushes the device's cache: syncfs(2), then fsync of `path`.
+/// A directory sync is not enough on vfat, where a rename writes the new
+/// entry with size 0 and the file's inode fills it in only when written back
+/// (#1797). Elsewhere it is narrower: F_FULLFSYNC of `path` on macOS, fsync
+/// of `path` on other POSIX systems, and on Windows as le_fs_sync_dir.
+/// `path` must be a directory on that volume. Returns LE_OK; LE_ERR_INVALID
+/// for a NULL or empty `path`; LE_ERR_DEVICE when it cannot be opened or the
+/// sync fails, with *out_errno (when not NULL) the OS error, 0 on LE_OK.
+@ffi.Native<ffi.Int32 Function(ffi.Pointer<ffi.Char>, ffi.Pointer<ffi.Int32>)>()
+external int le_fs_sync_volume_errno(
+  ffi.Pointer<ffi.Char> path,
+  ffi.Pointer<ffi.Int32> out_errno,
+);
+
 /// The number of parameters built-in [type] uses (0 for LE_FX_NONE and
 /// LE_FX_PLUGIN, whose parameters come from le_plugin_param_info_at), or
 /// LE_ERR_INVALID for an unknown type.
@@ -3642,9 +3684,10 @@ external int le_perf_arm(
 external int le_perf_disarm(ffi.Pointer<le_engine> engine);
 
 /// Starts an offline render of the finalized capture at `capture_dir`: spawns
-/// a worker thread that writes `stems/dry/track<channel>.wav` +
-/// `stems/wet/track<channel>.wav` under `capture_dir` for every non-empty
-/// track, and `stems/wet/master.wav`, all a block at a time together (#1747),
+/// a worker thread that writes `stems/dry/track<channel>-lane<lane>.wav` +
+/// `stems/wet/track<channel>-lane<lane>.wav` under `capture_dir` for every
+/// lane of every non-empty track (#1824), `stems/wet/master.wav` and the
+/// index `stems/stems.json`, all a block at a time together (#1747),
 /// each published at its path once it seals, with poll-based progress.
 /// Returns LE_OK once the worker thread is launched (this call never blocks
 /// on the render itself), LE_ERR_INVALID
@@ -4115,6 +4158,8 @@ const int LE_PERF_ALLOWANCE_BYTES = 1048576;
 const int LE_PERF_PART_BYTES = 2000000000;
 
 const int LE_PERF_PART_HEADER_BYTES = 84;
+
+const int LE_PERF_RAW_STREAM_BASE = 100;
 
 const int LE_PERF_RING_BYTES_MAX = 67108864;
 
@@ -4907,7 +4952,10 @@ enum le_command_code {
   /// one complete timing vector and receipt
   LE_CMD_SET_RECORD_TIMING(78),
 
-  /// cohort cancel or non-acquiring capture finish
+  /// cohort cancel or non-acquiring capture
+  /// finish. arg_f: 0 finish now, 1 arm the
+  /// grid end, 2 drop the arm; plus 4 for
+  /// le_engine_stop_record_park's park
   LE_CMD_STOP_RECORD_CONTROL(79),
 
   /// only the shared launch cohort/grace
@@ -6040,8 +6088,9 @@ final class le_perf_target extends ffi.Struct {
   /// Seconds of audio each capture ring holds, 1 to LE_PERF_RING_SECONDS_MAX;
   /// 0 means LE_PERF_RING_SECONDS_DEFAULT. Lowered (never below the default,
   /// nor below the request) so that every ring together stays within
-  /// LE_PERF_RING_BYTES_MAX. At the floor the cap gives way: 32 stereo inputs
-  /// at 96 kHz take 33 rings of 2^19 samples, 66 MiB. The sidecar's
+  /// LE_PERF_RING_BYTES_MAX. At the floor the cap gives way: 32 inputs and 8
+  /// instruments, all monitored, at 96 kHz take 41 stereo rings of 2^19
+  /// samples and 40 raw mono rings of 2^18, 122 MiB. The sidecar's
   /// `ring_seconds` and le_snapshot.perf_ring_seconds report what was
   /// granted.
   @ffi.Int32()
@@ -6074,7 +6123,7 @@ final class le_perf_target extends ffi.Struct {
 
   /// The longest the take runs before it stops on its own
   /// (LE_PERF_STOP_LENGTH_LIMIT), in seconds, and then never past the frames
-  /// the rendered master stem can hold in a 32-bit WAV. 0 sets no limit.
+  /// the rendered master stem can hold in one file on FAT32. 0 sets no limit.
   @ffi.Int32()
   external int max_seconds;
 }
@@ -6998,7 +7047,8 @@ final class le_snapshot extends ffi.Struct {
   external int perf_overs;
 
   /// The streams the armed take captures (or the next arm would: the first
-  /// enabled output pair plus every monitored input the device has), and the
+  /// enabled output pair, every monitored input as heard, and every input
+  /// the device has and every instrument with a patch raw), and the
   /// bytes one frame of all of them takes, so the app can tell whether a
   /// volume holds a minimum take of every stream before it arms. 0 when
   /// nothing could be captured.

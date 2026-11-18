@@ -140,11 +140,12 @@ void main() {
       expect(await repo.listCaptures(), isEmpty);
     });
 
-    test("reads #1198's parts in stream and index order, and sums the main "
-        "output's frames", () async {
+    test("reads #1198's parts in stream and index order, the raw inputs' "
+        "(#1805) last, and sums the main output's frames", () async {
       take(
         'perf-20261006-201500',
         parts: [
+          part(PerfTarget.rawStreamBase, 1, 'input-raw-0-001.wav', frames: 30),
           part(1, 1, 'input-0-001.wav', frames: 30),
           part(0, 2, 'master-002.wav', frames: 200),
           part(0, 1, 'master-001.wav'),
@@ -157,6 +158,7 @@ void main() {
         'master-001.wav',
         'master-002.wav',
         'input-0-001.wav',
+        'input-raw-0-001.wav',
       ]);
       expect(only.masterParts, hasLength(2));
       expect(only.durationFrames, 1200);
@@ -249,37 +251,47 @@ void main() {
   });
 
   group('dawPackageFiles', () {
-    test('lists the parts, the rendered stems and the project files that '
-        'exist, keeping their paths in the bundle', () async {
-      take(
-        'perf-20261006-201500',
-        parts: [
-          part(0, 1, 'master-001.wav'),
-          part(0, 2, 'master-002.wav'),
-          part(1, 1, 'input-0-001.wav'),
-        ],
-        files: {
-          'master-001.wav': 10,
-          'input-0-001.wav': 10,
-          'stems/wet/track1.wav': 4,
-          'stems/wet/track0.wav': 4,
-          'stems/dry/track0.wav': 4,
-          'stems/dry/notes.txt': 4,
-          'project.als': 4,
-          'events.log': 4,
-        },
-      );
-      final capture = (await repo.listCaptures()).single;
+    test(
+      'lists the parts, the rendered stems, the lane loops and the '
+      'project files that exist, keeping their paths in the bundle',
+      () async {
+        take(
+          'perf-20261006-201500',
+          parts: [
+            part(0, 1, 'master-001.wav'),
+            part(0, 2, 'master-002.wav'),
+            part(1, 1, 'input-0-001.wav'),
+            part(PerfTarget.rawStreamBase, 1, 'input-raw-0-001.wav'),
+          ],
+          files: {
+            'master-001.wav': 10,
+            'input-0-001.wav': 10,
+            'input-raw-0-001.wav': 10,
+            'stems/wet/track1.wav': 4,
+            'stems/wet/track0.wav': 4,
+            'stems/dry/track0.wav': 4,
+            'stems/dry/notes.txt': 4,
+            'loops/track0-lane1.wav': 4,
+            'loops/track0-lane0-heard.wav': 4,
+            'project.als': 4,
+            'events.log': 4,
+          },
+        );
+        final capture = (await repo.listCaptures()).single;
 
-      expect(repo.dawPackageFiles(capture), [
-        'master-001.wav',
-        'input-0-001.wav',
-        'stems/dry/track0.wav',
-        'stems/wet/track0.wav',
-        'stems/wet/track1.wav',
-        'project.als',
-      ]);
-    });
+        expect(repo.dawPackageFiles(capture), [
+          'master-001.wav',
+          'input-0-001.wav',
+          'input-raw-0-001.wav',
+          'stems/dry/track0.wav',
+          'stems/wet/track0.wav',
+          'stems/wet/track1.wav',
+          'loops/track0-lane0-heard.wav',
+          'loops/track0-lane1.wav',
+          'project.als',
+        ]);
+      },
+    );
   });
 
   test(

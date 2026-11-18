@@ -50,6 +50,11 @@ class PerfTarget {
   /// and the `data` chunk header. Mirrors `LE_PERF_PART_HEADER_BYTES`.
   static const int partHeaderBytes = 84;
 
+  /// The stream number of input `n`'s raw recording (#1805) is this plus
+  /// `n`; input `n` as heard is stream `1 + n`, the master stream 0.
+  /// Mirrors `LE_PERF_RAW_STREAM_BASE`.
+  static const int rawStreamBase = 100;
+
   /// How often a take is made durable: at most this much is lost to a
   /// power cut (#1198 D4).
   static const int defaultCheckpointMs = 5000;
@@ -108,6 +113,7 @@ class PerfTarget {
 
   /// The longest the take runs, in seconds, before it stops on its own
   /// (`PerfStopReason.lengthLimit`); never past what the rendered master
-  /// stem can hold. 0 sets no limit beyond that one.
+  /// stem can hold in one file on FAT32 (4 GiB less one byte, header
+  /// included). 0 sets no limit.
   final int maxSeconds;
 }

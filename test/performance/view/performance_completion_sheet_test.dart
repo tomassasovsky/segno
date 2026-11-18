@@ -357,14 +357,29 @@ void main() {
     expect(find.byKey(const Key('perfCompletion_banner')), findsNothing);
   });
 
-  testWidgets('the subtitle carries the track count and length', (
-    tester,
-  ) async {
+  testWidgets('the subtitle carries the looper track count and length, not '
+      "the set's lane tracks, inputs or master", (tester) async {
+    const group = DawGroup(name: 'Track 1');
     await pump(
       tester,
       const PerformanceRecorderCompleted(
         PerformanceRecordDone('/exports/perf-1'),
-        tracks: [DawTrack(name: 'Track 0')],
+        tracks: [
+          DawTrack(name: 'Track 1 L1', group: group),
+          DawTrack(
+            name: 'Track 1 L1 (as heard)',
+            kind: DawTrackKind.laneHeard,
+            group: group,
+            active: false,
+          ),
+          DawTrack(name: 'Track 1 L2', group: group),
+          DawTrack(name: 'Input 1', kind: DawTrackKind.input),
+          DawTrack(
+            name: 'Master (as heard)',
+            kind: DawTrackKind.master,
+            active: false,
+          ),
+        ],
         duration: Duration(minutes: 2, seconds: 14),
       ),
     );

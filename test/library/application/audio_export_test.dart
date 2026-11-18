@@ -120,8 +120,41 @@ void main() {
         for (var i = 1; i <= 3; i++) '$perf/Evening loop · Part 00$i.wav',
       ]);
       expect(progress.last, 1);
-      // The swap's renames are synced before the export is reported.
-      expect(drive.synced, [perf]);
+      // The volume is synced once the swap and its clean-up are done.
+      expect(drive.volumeSyncs, [drive.files]);
+    });
+
+    test('is reported only once the volume sync after the swap has finished '
+        '(#1797)', () async {
+      drive.syncHold = Completer<void>();
+      var reported = false;
+
+      final export = run(parts(2)).then((_) => reported = true);
+      await pumpEventQueue();
+
+      // Every file is in place and nothing of the swap is left...
+      expect(drive.volumeSyncs, [
+        [
+          '$perf/Evening loop · Part 001.wav',
+          '$perf/Evening loop · Part 002.wav',
+        ],
+      ]);
+      expect(
+        Directory('${drive.mount}/$perf').listSync().map((e) => e.path),
+        isNot(contains(contains(AudioExporter.stagingPrefix))),
+      );
+      // ...but the export is not done until the sync is.
+      expect(reported, isFalse);
+
+      drive.syncHold!.complete();
+      await export;
+      expect(reported, isTrue);
+    });
+
+    test('a volume sync the drive refuses fails the export', () async {
+      drive.failOnSync = const StorageFailure.io('Input/output error');
+
+      await expectLater(run(parts(2)), throwsA(isA<StorageIo>()));
     });
 
     test(
@@ -310,6 +343,83 @@ void main() {
     });
   });
 
+  group('a file larger than the drive holds (#1794)', () {
+    /// An internal file [bytes] long, sparse: nothing is written to it.
+    String sparse(String relative, int bytes) {
+      final file = File('$internal/$relative')
+        ..parent.createSync(recursive: true)
+        ..createSync();
+      file.openSync(mode: FileMode.write)
+        ..truncateSync(bytes)
+        ..closeSync();
+      return file.path;
+    }
+
+    Future<void> driveOf(String fsType) async {
+      await drive.close();
+      drive = FakeDrive('${temp.path}/usb', fsType: fsType);
+      exporter = AudioExporter(drive);
+    }
+
+    AudioExportPlan withLongStem(int bytes) => AudioExportPlan(
+      name: 'Evening loop',
+      folder: perf,
+      package: true,
+      files: [
+        AudioExportFile(source('take/project.als'), 'project.als'),
+        AudioExportFile(
+          sparse('take/stems/wet/master.wav', bytes),
+          'stems/wet/master.wav',
+        ),
+      ],
+    );
+
+    test('a FAT32 drive refuses a file of 4 GiB before anything on it is '
+        'touched', () async {
+      await driveOf('vfat');
+      // An earlier export's leftovers stay as they are too.
+      onDrive('$staging/project.als');
+
+      await expectLater(
+        run(withLongStem(1 << 32)),
+        throwsA(
+          const StorageFailure.fileTooLarge(
+            fsType: 'vfat',
+            maxFileBytes: 0xFFFFFFFF,
+            fileBytes: 1 << 32,
+          ),
+        ),
+      );
+      expect(drive.copies, isEmpty);
+      expect(drive.files, ['$staging/project.als']);
+    });
+
+    test('a FAT32 drive takes a file one byte under 4 GiB', () async {
+      await driveOf('vfat');
+      // Stops at the long file's copy: it got past the check.
+      drive
+        ..failOnCopy = 2
+        ..failure = const StorageFailure.io('stopped here');
+
+      await expectLater(
+        run(withLongStem(0xFFFFFFFF)),
+        throwsA(isA<StorageIo>()),
+      );
+      expect(drive.copies, hasLength(2));
+      expect(drive.copies.last.relativePath, endsWith('stems/wet/master.wav'));
+    });
+
+    test('an exFAT drive takes a file of 4 GiB', () async {
+      await driveOf('exfat');
+      drive
+        ..failOnCopy = 2
+        ..failure = const StorageFailure.io('stopped here');
+
+      await expectLater(run(withLongStem(1 << 32)), throwsA(isA<StorageIo>()));
+      expect(drive.copies, hasLength(2));
+    });
+  });
+
   group('a package', () {
     test('appears as one directory once every file is in it, its paths '
         'kept', () async {
@@ -326,8 +436,30 @@ void main() {
         ('$staging/Evening loop/stems/wet/track0.wav', ConflictPolicy.replace),
         ('$staging/Evening loop/project.als', ConflictPolicy.replace),
       ]);
-      expect(drive.synced, [perf, '$perf/Evening loop']);
+      expect(drive.volumeSyncs, [drive.files]);
     });
+
+    test(
+      "holds its empty folders, a Live Project's among them (#1837)",
+      () async {
+        await run(
+          AudioExportPlan(
+            name: 'Evening loop',
+            folder: perf,
+            package: true,
+            files: package().files,
+            folders: const ['Ableton Project Info'],
+          ),
+        );
+
+        final info = Directory(
+          '${drive.mount}/$perf/Evening loop/Ableton Project Info',
+        );
+        expect(info.existsSync(), isTrue);
+        expect(info.listSync(), isEmpty);
+        expect(Directory('${drive.mount}/$staging').existsSync(), isFalse);
+      },
+    );
 
     test('ask reports the directory already there before writing', () async {
       onDrive('$perf/Evening loop/old.wav');

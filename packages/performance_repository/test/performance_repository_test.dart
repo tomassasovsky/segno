@@ -1009,6 +1009,37 @@ void main() {
       expect(armSnapshot.outputChainEnabled, isFalse);
     });
 
+    test('records the names the player gave tracks and inputs, trimmed, '
+        'and nothing for the rest (#1799)', () async {
+      engine
+        ..seedLane(0, 0, Float32List.fromList([1, 1]))
+        ..seedLane(1, 0, Float32List.fromList([1, 1]));
+
+      await repo.arm(
+        names: const PerformanceNames(
+          tracks: {0: ' Rhythm ', 1: '  '},
+          inputs: {1: 'Vocal', 0: ''},
+        ),
+      );
+
+      final dir = repo.armedDirectory!;
+      final json = jsonDecode(
+        File('$dir/arm-snapshot.json').readAsStringSync(),
+      ) as Map<String, dynamic>;
+      final armSnapshot = PerformanceArmSnapshot.fromJson(json);
+      expect(armSnapshot.tracks.map((t) => t.name), ['Rhythm', null]);
+      expect(armSnapshot.inputNames, {1: 'Vocal'});
+      expect(json['inputs'], [
+        {'input': 1, 'name': 'Vocal'},
+      ]);
+      expect(
+        (json['tracks'] as List<dynamic>).map(
+          (t) => (t as Map<String, dynamic>).containsKey('name'),
+        ),
+        [true, false],
+      );
+    });
+
     test('a lane the rig defines NO chain for is written dry and engaged, not '
         "given a sibling lane's chain", () async {
       engine
@@ -3451,6 +3482,70 @@ void main() {
           expect(bootRepo.unrecoveredTakes.toSet(), {failed, corrupt});
         },
       );
+    });
+  });
+
+  group('renderStems (#1824)', () {
+    late String dir;
+
+    setUp(() {
+      dir = '${tempDir.path}/exports/perf-old';
+      Directory(dir).createSync(recursive: true);
+    });
+
+    void writeIndex() => (File(
+      '$dir/stems/stems.json',
+    )..createSync(recursive: true)).writeAsStringSync('{"lanes":[]}');
+
+    test('renders a take with no stem index and waits for the render, '
+        'telling its progress', () async {
+      expect(repo.stemsRendered(dir), isFalse);
+      engine.renderProgressAfterBegin = const PerformanceRenderProgress(
+        done: false,
+        progressPercent: 40,
+      );
+      final fractions = <double>[];
+      final rendered = await repo.renderStems(
+        dir,
+        poll: Duration.zero,
+        onProgress: (fraction) {
+          fractions.add(fraction);
+          writeIndex();
+          engine.renderProgress = PerformanceRenderProgress.empty;
+        },
+      );
+      expect(rendered, isTrue);
+      expect(repo.stemsRendered(dir), isTrue);
+      expect(engine.lastRenderCaptureDir, dir);
+      expect(fractions, [0.4]);
+    });
+
+    test('a render that wrote no index, or read no manifest, did not '
+        'render the stems', () async {
+      expect(await repo.renderStems(dir), isFalse);
+      writeIndex();
+      engine
+        ..renderProgressAfterBegin = const PerformanceRenderProgress(
+          done: true,
+          progressPercent: 100,
+          failed: true,
+        )
+        ..renderCancel(); // the slot free for another begin
+      expect(await repo.renderStems(dir), isFalse);
+    });
+
+    test('a busy render slot renders nothing', () async {
+      engine.renderBeginResult = EngineResult.alreadyRunning;
+      expect(await repo.renderStems(dir), isFalse);
+    });
+
+    test('a cancel stops the render', () async {
+      engine.renderProgressAfterBegin = const PerformanceRenderProgress(
+        done: false,
+        progressPercent: 10,
+      );
+      expect(await repo.renderStems(dir, cancelled: () => true), isFalse);
+      expect(engine.renderCancelCalls, 1);
     });
   });
 

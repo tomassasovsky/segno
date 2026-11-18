@@ -539,6 +539,7 @@ class LibraryCubit extends Cubit<LibraryState> {
               StorageUnsupported() => LibraryBackupProblem.driveLost,
               StorageFull() => LibraryBackupProblem.full,
               StorageReadOnly() => LibraryBackupProblem.readOnly,
+              StorageFileTooLarge() => LibraryBackupProblem.tooLargeForDrive,
               _ => LibraryBackupProblem.failed,
             }),
           ),

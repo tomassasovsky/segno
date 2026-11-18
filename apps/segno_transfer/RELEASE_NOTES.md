@@ -1,22 +1,29 @@
-# Segno Transfer 0.2.0
+# Segno Transfer 0.3.0
 
 A small Mac companion for your Segno appliance: browse performance recordings,
 stream audio with seeking, and download selected files with names you choose.
 
 ## What's new
 
-- Lists recordings from appliances that save the main recording as numbered
-  parts (`master-001.wav`, `master-002.wav`, ...) and each live input the same
-  way. Each part has its own row, and **Main recordings shown** selects every
-  part. Recordings from older appliances (`master.wav`) still list as before.
-  Install this version before updating the appliance to a build that records
-  in parts.
+- **Open in Live** downloads a performance's Live set, with every recording,
+  loop and stem it uses, verifies each file and opens it in Ableton Live in one
+  click. The folder is a Live Project, so saving in Live writes the set in
+  place, and a second click reopens your copy with its edits. Only a recording,
+  loop or stem that is missing or fails its SHA-256 check is downloaded again.
+- **Segno plugins included.** The app carries `Segno.vst3`, the console's
+  effects with their pedal faces. When a set needs them and they are missing
+  or older, **Open in Live** offers to install them into
+  `~/Library/Audio/Plug-Ins/VST3`, and replaces an older copy only if you
+  confirm. **Plug-ins > Install Segno Plugins** does the same at any time.
+  After installing, rescan plug-ins in Live or restart it. If macOS says it
+  cannot verify `Segno.vst3`, approve it in **System Settings → Privacy &
+  Security** with **Open Anyway**, as for the app.
 
 ## Download and install
 
 Requires **macOS 14 or newer and Apple Silicon (M1 or newer)**.
 
-1. Download **Segno-Transfer-0.2.0-macos-arm64.dmg** below.
+1. Download **Segno-Transfer-0.3.0-macos-arm64.dmg** below.
 2. Open the disk image and drag **Segno Transfer** into **Applications**.
 3. Open the app from Applications.
 

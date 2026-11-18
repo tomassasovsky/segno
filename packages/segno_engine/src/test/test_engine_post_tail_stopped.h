@@ -4,8 +4,9 @@
  * (#1729), and with every track chain forced through the jobs
  * (le_test_trk_jobs_force), the same sample for sample. The same holds for
  * the Rec-mode Stop of the only audible loop, which parks it and mutes it:
- * its le_engine_spare_tail ahead of the Stop lets that mute leave the gate
- * open until the track runs again. Any other mute gates, tail included
+ * le_engine_stop_record_park (#1782) lets that mute leave the gate open
+ * until the track runs again, as le_engine_spare_tail does for the mute of a
+ * track already stopped. Any other mute gates, tail included
  * (slice 3b). The cases: a reverb and a delay at Post on a plain take's
  * lane, a heard lane's Post delay over its image (#1741), a reverb on the
  * track's own chain, and every kind that drains a tail (le_fx_type_drains).
@@ -96,11 +97,9 @@ static float pts_until_quiet(le_engine* e, int max) {
 }
 
 /* The Rec-mode Stop of the only audible loop, as ControlCubit sends it:
- * the spare, the park, then the mute. */
+ * the park (#1782), with room for the one lane mute, then the mute. */
 static void pts_rec_stop(le_engine* e) {
-  CHECK(le_engine_spare_tail(e, 0, 3) == LE_OK);
-  CHECK(le_engine_stop_track(e, 0) == LE_OK);
-  CHECK(le_engine_stop_track(e, 1) == LE_OK);
+  CHECK(le_engine_stop_record_park(e, 0, 1) == LE_OK);
   CHECK(le_engine_set_track_mute(e, 0, 1) == LE_OK);
 }
 
@@ -222,7 +221,7 @@ static void test_post_tail_every_draining_kind_rings(void) {
 
 /* Any mute but the Rec-mode Stop's gates a stopped track's tail, as it
  * always has: an ordinary Mute after a Stop, and a mute while the track
- * plays, followed by the Rec-mode Stop's spare and park and its re-sent mute
+ * plays, followed by the Rec-mode Stop's park and its re-sent mute
  * (the lane is already muted, so its closed gate stays closed). */
 static void test_post_tail_other_mutes_gate(void) {
   printf("test_post_tail_other_mutes_gate\n");
@@ -292,10 +291,10 @@ static void test_post_tail_spared_mute_gates_when_it_runs(void) {
   le_engine_destroy(e);
 }
 
-/* The Rec-mode Stop is all or nothing: le_engine_spare_tail admits only
- * when the ring holds it and the commands that follow it, so with the ring
- * nearly full it refuses and nothing is posted, and with exactly enough room
- * the whole sequence fits. */
+/* The spare is all or nothing: le_engine_spare_tail admits only when the
+ * ring holds it and the commands that follow it, so with the ring nearly
+ * full it refuses and nothing is posted, and with exactly enough room the
+ * whole sequence fits. */
 static void test_post_tail_spare_reserves_its_sequence(void) {
   printf("test_post_tail_spare_reserves_its_sequence\n");
   le_engine* e = heard_engine(48000);

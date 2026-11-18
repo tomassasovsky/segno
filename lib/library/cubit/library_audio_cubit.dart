@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:bloc/bloc.dart';
+import 'package:daw_export/daw_export.dart' show liveProjectInfoFolder;
 import 'package:equatable/equatable.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:performance_repository/performance_repository.dart';
@@ -395,25 +396,32 @@ class LibraryAudioCubit extends Cubit<LibraryAudioState> {
           purpose: pending.purpose,
         );
       }
-      final plan = await _planFor(pending.item, pending.kind, scratch);
+      void progress(double fraction) {
+        if (isClosed) return;
+        emit(
+          state.copyWith(
+            export: LibraryExportRunning(
+              name: pending.item.name,
+              folder: folder,
+              fraction: fraction,
+            ),
+          ),
+        );
+      }
+
+      final plan = await _planFor(
+        pending.item,
+        pending.kind,
+        scratch,
+        onProgress: progress,
+      );
       final at = await _exporter.run(
         plan,
         generation: drive.generation,
         policy: policy,
         purpose: WritePurpose.export,
         cancelled: () => _cancelRequested,
-        onProgress: (fraction) {
-          if (isClosed) return;
-          emit(
-            state.copyWith(
-              export: LibraryExportRunning(
-                name: pending.item.name,
-                folder: folder,
-                fraction: fraction,
-              ),
-            ),
-          );
-        },
+        onProgress: progress,
       );
       _pending = null;
       if (isClosed) return;
@@ -446,6 +454,7 @@ class LibraryAudioCubit extends Cubit<LibraryAudioState> {
             error: switch (e) {
               StorageFull() => LibraryAudioError.notEnoughSpace,
               StorageReadOnly() => LibraryAudioError.readOnly,
+              StorageFileTooLarge() => LibraryAudioError.tooLargeForDrive,
               StorageBusy() || GuardRefused() => LibraryAudioError.exportBusy,
               _ => LibraryAudioError.exportFailed,
             },
@@ -480,26 +489,44 @@ class LibraryAudioCubit extends Cubit<LibraryAudioState> {
   };
 
   /// The files [kind] of [item] writes. A session export stages them in
-  /// [scratch], which the caller creates and always deletes.
+  /// [scratch], which the caller creates and always deletes. A render the
+  /// plan needs first tells [onProgress].
   Future<AudioExportPlan> _planFor(
     LibraryAudioItem item,
     LibraryAudioExportKind kind,
-    Directory? scratch,
-  ) async {
+    Directory? scratch, {
+    required void Function(double fraction) onProgress,
+  }) async {
     switch (item) {
       case LibraryRecording(:final capture):
         final name = driveSafeName(capture.name);
         if (kind == LibraryAudioExportKind.dawPackage) {
+          // A take rendered before the lanes had stems of their own renders
+          // them first (#1824), shown and cancelled as the copy is.
+          if (!await _ensureStems(
+            capture.path,
+            cancelled: () => _cancelRequested,
+            onProgress: onProgress,
+          )) {
+            if (_cancelRequested) throw const AudioExportCancelled();
+            throw StemsNotRendered(capture.path);
+          }
           // Written afresh, not reused: a set an earlier version wrote may
           // be one Live refuses (#1791), and writing one reads no audio.
           await _dawProject(capture.path);
+          final files = _performance.dawPackageFiles(capture);
           return AudioExportPlan(
             name: name,
             folder: AudioExportFolders.performances,
             package: true,
             files: [
-              for (final f in _performance.dawPackageFiles(capture))
-                AudioExportFile('${capture.path}/$f', f),
+              for (final f in files) AudioExportFile('${capture.path}/$f', f),
+            ],
+            // A set lands as a Live Project, which Live saves in place
+            // (#1837).
+            folders: [
+              if (files.contains(PerformanceRepository.dawProjectFiles.first))
+                liveProjectInfoFolder,
             ],
           );
         }
@@ -552,6 +579,20 @@ class LibraryAudioCubit extends Cubit<LibraryAudioState> {
   static String _lastSegment(String path) =>
       path.split('/').where((s) => s.isNotEmpty).last;
 
+  /// Whether the take in [dir] has its stems, rendering them first when it
+  /// has none ([PerformanceRepository.renderStems]).
+  Future<bool> _ensureStems(
+    String dir, {
+    bool Function()? cancelled,
+    void Function(double fraction)? onProgress,
+  }) async =>
+      _performance.stemsRendered(dir) ||
+      await _performance.renderStems(
+        dir,
+        cancelled: cancelled,
+        onProgress: onProgress,
+      );
+
   /// `DAW project`: writes `project.als` and `fx-chains.txt` into the
   /// selected recording's bundle.
   Future<void> writeProject() async {
@@ -568,6 +609,11 @@ class LibraryAudioCubit extends Cubit<LibraryAudioState> {
     }
     emit(state.copyWith(clearError: true, dawProjectWritten: false));
     try {
+      // A take rendered before the lanes had stems of their own renders
+      // them first (#1824); a render that fails leaves its project alone.
+      if (!await _ensureStems(item.capture.path)) {
+        throw StemsNotRendered(item.capture.path);
+      }
       await _dawProject(item.capture.path);
     } on Object {
       if (!isClosed) {

@@ -1,3 +1,4 @@
+import 'package:daw_export/src/device_chain.dart';
 import 'package:meta/meta.dart';
 
 /// A DAW project ready to be rendered to an Ableton Live 12 `.als` set
@@ -19,8 +20,9 @@ class DawProject {
   const new({required this.tracks, double tempoBpm = kFallbackTempoBpm})
     : tempoBpm = tempoBpm > 0 ? tempoBpm : kFallbackTempoBpm;
 
-  /// One entry per recorded channel. A channel with nothing recorded is left
-  /// out by whoever builds the project.
+  /// The set's audio tracks, in order. Tracks of one [DawGroup] are
+  /// consecutive. A channel with nothing recorded is left out by whoever
+  /// builds the project.
   final List<DawTrack> tracks;
 
   /// The set's tempo in BPM. A capture plays at one tempo from start to
@@ -32,31 +34,96 @@ class DawProject {
 /// content recorded with the grid off.
 const double kFallbackTempoBpm = 120;
 
-/// One Live audio track: the channel's full-length stem in the Arrangement,
-/// one Session clip per lane loop, and the automation reconstructed from the
-/// capture's logged gestures.
+/// What a [DawTrack] holds.
+enum DawTrackKind {
+  /// One lane of a looper track (#1824): its dry stem, at unity and before
+  /// its effects, and its clean loop, played through the lane's chain as
+  /// Segno's plugins when the take recorded one.
+  lane,
+
+  /// One lane of a looper track as heard: its wet stem, after its effects
+  /// and mix, and its loop as it played. A reference.
+  laneHeard,
+
+  /// A captured input: its raw recording (#1805), or, for a take from
+  /// before it, the input as its monitor played it.
+  input,
+
+  /// A captured input as its monitor played it, beside its raw recording: a
+  /// reference.
+  inputHeard,
+
+  /// The captured output.
+  master,
+}
+
+/// A Live Group track: the looper track whose lanes it holds (#1824).
+@immutable
+class DawGroup {
+  /// Creates a [DawGroup].
+  const new({required this.name, this.info = '', this.devices = const []});
+
+  /// The group's name in Live: the looper track's.
+  final String name;
+
+  /// The group's info text in Live (the Info View). Empty for none.
+  final String info;
+
+  /// The group's devices, in order: the looper track's Track stage chain,
+  /// which the callback runs on the sum of its lanes, as Segno's plugins.
+  final List<DawDevice> devices;
+}
+
+/// One Live audio track: what it plays in the Arrangement and the Session,
+/// whether it plays at all, its volume automation, and its info text.
 @immutable
 class DawTrack {
   /// Creates a [DawTrack].
   const new({
     required this.name,
-    this.arrangementClip,
-    this.sessionClips = const [],
-    this.automationLanes = const [],
+    this.kind = DawTrackKind.lane,
+    this.group,
+    this.active = true,
+    this.arrangementClips = const [],
+    this.loop,
+    this.volume,
+    this.devices = const [],
+    this.info = '',
   });
 
-  /// The track's name in Live (for example `Track 0`).
+  /// The track's name in Live.
   final String name;
 
-  /// The channel's stem in the Arrangement, or `null` when the channel has
-  /// no stem and only its lane loops exist.
-  final DawClip? arrangementClip;
+  /// What the track holds.
+  final DawTrackKind kind;
 
-  /// One Session clip per lane that exported a loop.
-  final List<DawSessionClip> sessionClips;
+  /// The Group track it sits in, or `null` for none. The tracks of one group
+  /// are the same instance.
+  final DawGroup? group;
 
-  /// At most one lane per [AutomationTarget].
-  final List<AutomationLane> automationLanes;
+  /// Whether the track's activator is on. A reference track (a lane as
+  /// heard, an input as heard beside its raw recording, the master as heard)
+  /// is off, so the set does not play the same audio twice; switching it on
+  /// in Live plays it.
+  final bool active;
+
+  /// The track's clips in the Arrangement, in timeline order. A long
+  /// recording held in several files has one clip per file.
+  final List<DawClip> arrangementClips;
+
+  /// The lane's loop, a Session clip in the first scene that loops over the
+  /// whole file, or `null` for none.
+  final DawAudioFile? loop;
+
+  /// The track's volume automation, or `null` when it has none.
+  final AutomationLane? volume;
+
+  /// The track's devices, in order: Segno's plugins and racks of them.
+  final List<DawDevice> devices;
+
+  /// The track's info text in Live (the Info View), for example the effect
+  /// chains the take was played through. Empty for none.
+  final String info;
 }
 
 /// A WAV file a clip plays, as the set references it.
@@ -83,36 +150,18 @@ class DawAudioFile {
   double get seconds => frames / sampleRate;
 }
 
-/// Which Live mixer parameter an [AutomationLane] drives.
-enum AutomationTarget {
-  /// The track's volume, a linear gain: one breakpoint per logged change,
-  /// with Live ramping between them.
-  volume,
-
-  /// The track's activator (Live's track on/off switch), which is how a
-  /// mute or a solo elsewhere shows: 1 is audible, 0 is silent. Each
-  /// breakpoint holds until the next one.
-  activator,
-}
-
-/// One automation envelope for a track's [AutomationTarget].
+/// A track's volume envelope.
 @immutable
 class AutomationLane {
   /// Creates an [AutomationLane].
-  const new({
-    required this.target,
-    required this.initialValue,
-    required this.breakpoints,
-  });
+  const new({required this.initialValue, required this.breakpoints});
 
-  /// Which mixer parameter this envelope drives.
-  final AutomationTarget target;
-
-  /// The parameter's value when the capture starts, before the first
-  /// breakpoint.
+  /// The volume when the capture starts, before the first breakpoint, as a
+  /// linear gain.
   final double initialValue;
 
-  /// Ordered by [AutomationBreakpoint.beat], ascending. Never empty.
+  /// Ordered by [AutomationBreakpoint.beat], ascending. Never empty. Two
+  /// breakpoints at one beat make a step.
   final List<AutomationBreakpoint> breakpoints;
 }
 
@@ -125,8 +174,7 @@ class AutomationBreakpoint {
   /// Position on the Arrangement timeline, in beats.
   final double beat;
 
-  /// The parameter's value at [beat]: a linear gain for
-  /// [AutomationTarget.volume], `0` or `1` for [AutomationTarget.activator].
+  /// The volume at [beat], as a linear gain.
   final double value;
 }
 
@@ -142,18 +190,4 @@ class DawClip {
 
   /// The clip's start on the Arrangement timeline, in seconds.
   final double startSeconds;
-}
-
-/// A Session clip: one lane's loop, in the clip slot of scene [laneIndex].
-@immutable
-class DawSessionClip {
-  /// Creates a [DawSessionClip].
-  const new({required this.laneIndex, required this.audio});
-
-  /// The lane the loop belongs to (0-based), which is also the scene its
-  /// clip sits in.
-  final int laneIndex;
-
-  /// The loop's file. The clip loops over the whole file.
-  final DawAudioFile audio;
 }

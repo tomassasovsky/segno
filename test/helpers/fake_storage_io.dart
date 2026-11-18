@@ -4,8 +4,8 @@ import 'package:segno_engine/segno_engine.dart';
 
 /// A [StorageIo] without the native library, for a `PerformanceRepository`
 /// that finalizes takes in a test: every file reads as the same stand-in
-/// digest and a sync does nothing. The real calls are the engine's, tested
-/// there.
+/// digest and a directory, file or volume sync does nothing. The real calls
+/// are the engine's, tested there.
 class FakeStorageIo implements StorageIo {
   /// The stand-in digest every read returns.
   static final String digest = '0' * 64;
@@ -22,6 +22,9 @@ class FakeStorageIo implements StorageIo {
 
   @override
   void syncFile(String path) {}
+
+  @override
+  void syncVolume(String path) {}
 
   @override
   RenameOutcome renameWithoutReplacing(String from, String to) =>

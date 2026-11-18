@@ -456,6 +456,31 @@ void main() {
     expect(drive.copies, isEmpty);
   });
 
+  testWidgets('a file a FAT32 drive cannot hold is reported on the card, '
+      'with nothing written (#1794)', (tester) async {
+    await drive.close();
+    drive = FakeDrive('${temp.path}/usb', fsType: 'vfat');
+    // Sparse: 4 GiB long, nothing written.
+    File('${single.path}/master-001.wav').openSync(mode: FileMode.write)
+      ..truncateSync(1 << 32)
+      ..closeSync();
+    await openAudio(tester);
+    await openPerformances(tester);
+    await tester.tap(row(single.path));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('library_audio_export')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('library_export_choose_recording')));
+    await tester.pumpAndSettle();
+
+    expect(
+      inCard(find.text(l10n.libraryAudioTooLargeForDrive)),
+      findsOneWidget,
+    );
+    expect(drive.copies, isEmpty);
+    expect(drive.files, isEmpty);
+  });
+
   testWidgets('Delete asks first, then deletes the recording', (tester) async {
     when(() => performance.deleteCapture(any())).thenAnswer((_) async {});
     await openAudio(tester);

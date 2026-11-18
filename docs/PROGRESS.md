@@ -1,4 +1,4 @@
-<!-- cspell:words heatsinks Omron lofi -->
+<!-- cspell:words heatsinks Omron lofi powf -->
 # Segno — Progress & Roadmap
 
 <!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs multicore -->
@@ -38,7 +38,10 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 | Issue | Thread | Stage | Autonomy | Branch |
 |-------|--------|-------|----------|--------|
+| #1821 | Devlog and RSS feed on segno.aquiles.dev: Markdown entries in `site/log`, built by `site/build_log.py` | in-review | merge-gate | `claude/devlog-1821` |
+| #1795 | NVMe drive drops off the bus mid-recording: the Pi 5 cmdline turns off APST and PCIe ASPM on every link | in-review | blocked-verify | `claude/nvme-power-1795` |
 | #1740 | Penpot: the Effects page frames for the compact single-effect card and the built-in pedal faces (#1754, PR #1756 merged) and the cards' assignment lines (#1757, #1760), the Source-note clean-up and a segno-design snapshot; waits for a connected Penpot MCP tab | build | merge-gate | (none yet) |
+| #1797 | A finished export to a FAT stick is on the device: copies and the export end with a volume sync | in-review | blocked-verify | `claude/usb-export-durable-1797` |
 | #1760 | A rack card names the controls bound to the rack itself; a switch's press and hold on one target read as one control | in-review | auto | `claude/rack-card-assignment-1760` |
 | #1674 | Anti-aliasing under Impeller: ivi-homescreen renders into a 4x MSAA framebuffer and resolves it before each flip | in-review | auto | `claude/ivi-msaa-1674` |
 | #1496 | Split design and hardware into their own repos, slim this one | in-review | merge-gate | `claude/repo-split-1496` |
@@ -86,9 +89,379 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1674 | Screens without anti-aliasing under Impeller, and the 7in readout's colours: the readout palette (decision 3) in review | in-review | auto | `claude/readout-palette-1674` |
 | #1675 | The pitch bridge after a tempo change: a better search for held notes and a shorter wait for the stretch render; owner's listening call | in-review | merge-gate | `claude/pitch-bridge-quality-1675` |
 | #1755 | Cheaper effects, same sound: the reverbs, delays, filters and the rest (pitch and drives are their own threads); bit-identical, guarded by bench_fx_equiv | in-review | auto | `claude/fx-opt-rest-1755` |
+| #1836 | A take's effect switching and setting changes as Live automation: the plugin's Enabled (1100) is the engine's switch, every change a step at its frame (#1806 part 6) | in-review | merge-gate | `claude/fx-automation-1836` |
+| #1816 | Console WiFi against an ASUS RT-AX89X with 802.11ax on: firmware already matches Pi OS; brcmfmac options aligned with Pi OS and a troubleshooting note; failure not reproduced, issue stays open until it recurs | in-review | auto | `claude/wifi-firmware-1816` |
 
 ---
 
+## November 2026 Effect switching and setting changes as Live automation (#1836)
+
+Part 6 of #1806 (decisions D4 to D6): the Live set replays what changed in
+a take's chains, where it used to hold each effect as it stood at arm.
+
+- `ChainTimeline` (`packages/daw_export/lib/src/chain_timeline.dart`) reads
+  `events.log` for each lane's chain and each input's monitor chain and
+  replays it as the offline render replays the lane's wet stem
+  (`le_pr_wet_render`): an entry's switch (310, 312) and the chain's (311,
+  313), each setting (306, 307), each type (20, 31: an actual change puts
+  the new effect at its defaults and on, as the setter does unlogged) and
+  the chain's length (21, 32: a slot past it is not run, one entering it
+  comes on). Entries at one frame all apply before it plays; the two log
+  streams are merged in frame order, ties in file order
+  (`EventLogReader.sortedByFrame`, as `le_pr_frame_cmp`).
+- Every change is a step in a device envelope, two events at the beat of
+  its frame, the value before and the value after, as Live draws a step.
+  Nothing is thinned: the console logs a setting at most once a block, when
+  it moves, and an entry's switch once a press. A switch is automation of
+  the plugin's Enabled; a setting of its parameter, normalized, as Live
+  keeps a setting that is not a list (in steps only for the input, the
+  output and Enabled). A rack switch or an A/B press is its entries'
+  switches (D5), so racks stay on. A slot whose effect changed holds one
+  plugin per effect, side by side, each on while the slot held it (D6). A
+  Dub Rack's Amb / Dub section is on while any entry of the rack runs (the
+  engine fades the section to its input when none does). Every envelope
+  sits on its track, a device in a rack included; the track shows its
+  volume lane or its first device envelope.
+- The plugin's 1100 is now **Enabled**, an ordinary automatable parameter
+  (Off / On, default On), not the VST3 bypass: Live lists no bypass
+  parameter, and its Device On stops the plugin, cutting a delay's echoes
+  and freezing its line until it comes back on (the owner's check of
+  `test/corpus/plugin_automation.als`, Live 12.2.7). Enabled runs the
+  engine's switch for every kind: the 5 ms ramp, a delay's or a reverb's
+  drain, a fresh start on a re-enable from a settled switch-off, and for a
+  kind that delays its output its warm-up and, while off, its input
+  without the delay. The plugin used
+  to switch such a kind to its input delayed by its latency. The pedal's
+  footswitch and LED drive Enabled; an exported device stays on in Live.
+- Every plugin reports no latency (owner call, reversing #1804 part 2's
+  reported latency and its padding to the largest at any rate). The console
+  compensates no effect's latency: a kind that delays its output plays
+  late by it while on and on time while off. The Octaver, Dual octaver,
+  Whammy and Smart Tune delay theirs by 1188 to 2568 frames from 44.1 to
+  96 kHz (about 25 ms); the Amp, Overdrive, Distortion, Vinyl, LPF and
+  Degrade by 2 to 27 frames at some rates (the null test prints each). Unreported, Live plays each lane exactly as the console
+  did in both states, and a render nulls against "as heard" at offset 0
+  for every chain. A plugin added by hand in Live behaves the same: the
+  octaver family sounds about 25 ms late while on, uncompensated. The
+  tail a plugin reports is still its delay, the largest at any of those
+  rates, since a host may not ask again when it renders at another.
+- When the host starts playing, the values it sets at the block's first
+  frame land before the plugin starts again as at arm, so a plugin
+  automated off at the start starts settled off.
+- The null test (`vst3/test/null_test.cpp`) switches through Enabled on a
+  block boundary and inside a block, off and on again 1 ms apart (inside
+  the ramp), and from an entry off at arm that the host turns on; at 44.1,
+  48, 88.2 and 96 kHz, every kind is bit-identical to the engine's offline
+  render at lag 0, the latency-bearing kinds included, and reports no
+  latency: checked at 37-, 128- and 512-frame blocks here; CI runs
+  128-frame blocks.
+- `test/corpus/plugin_automation.als` is the reference Live saved (see the
+  corpus README); `test/device_automation_test.dart` checks the writer
+  against it and `test/fx_automation_end_to_end_test.dart` runs a synthetic
+  capture with presses, an A/B switch, a replaced effect, knob moves and a
+  monitor switch through to the set.
+- Not reproduced: a switch's frame is the control thread's stamp, within a
+  block of the one the console applied it at (the offline render and so the
+  "as heard" stem use the same stamp; the block-tail observer of #1806 Part
+  3 would make it exact); a type change crossfades over the ramp in Live
+  and lets the old effect's tail drain, where the console swaps at once; a
+  type set again to the same effect resets its state on the console only;
+  a slot the chain's length leaves out stops at once on the console and
+  comes back where it stopped, where in Live its Enabled goes off, so it
+  ramps out and drains, and comes back fresh once settled;
+  a Dub Rack switched off as a whole stops its section in Live, cutting the
+  paths' tails, and a change of its Amb-Dub Mix is not replayed in the
+  chains' volumes; chains published by a recipe and the Track and All
+  tracks stages are not logged yet (#1806 Part 2).
+
+## November 2026 Each Segno plugin draws its pedal (#1815)
+
+- Each plugin's editor is the console's single-effect page in a plugin
+  window: the pedal the Effects page draws for its kind, and beside it the
+  settings the face has no knob for and every choice, drawn as the effect
+  page draws them (sliders, a row of buttons, or a select), then the
+  entry's input, output and balance or pan as the effect page's footer
+  draws them, and its level as an effect page slider (the console shows a
+  single effect's level nowhere). The panel takes a second column past
+  seven controls. Every parameter but the bypass has exactly one control:
+  a choice the face has a knob for is set by its selector, the knob only
+  shows it. The kinds the
+  console runs only in racks wear the look of the first catalogue module
+  that runs on them; Distortion, which no factory rack builds, has no face
+  and keeps the host's own controls.
+- The art cannot drift from the console's: `test/vst3_faces` lays out and
+  renders the faces with the console's own widgets
+  (`lib/looper/view/fx/stomp`, `FxBuiltInParamControl`). The committed
+  layout, `packages/segno_engine/vst3/faces/faces.json`, says where each
+  control is, how it works and which parameter it drives;
+  `vst3_faces_test.dart` fails when it no longer matches the drawing code
+  (`--update-goldens` rewrites it). `install.sh` renders the pictures (a
+  background, the LED lit, and each control at each of its settings, at 1x
+  and 2x) with `vst3_faces_render_test.dart` and the build bundles them in
+  `Contents/Resources/faces`; the pictures are build output, not tracked.
+- The editor (`editor_mac.mm`) is an IPlugView holding an NSView, macOS
+  only: it draws the pictures at the parameters' values, edits through the
+  controller (beginEdit, performEdit, endEdit) so a host records
+  automation, and redraws when the host changes a value. Knobs drag up and
+  down (Shift for finer), sliders follow the pointer, a select opens a menu
+  of the console's position names, the footswitch is the bypass and the LED
+  shows it. Every value is printed all the time, in the effect page's mono
+  face and colours (the manifest's theme, the font bundled with the
+  pictures): a slider's at its readout, at the exact value; a knob's in a
+  chip under its label (nudged, or beside the label, where under it does
+  not fit) where every knob of the face has room clear of the knobs,
+  labels, title, LED and footswitch (the chip may cover the face's
+  painting, the owner's call), and otherwise as read-only rows at the top
+  of the panel. The entry's level is "Output level" in the editor and the
+  host: the console's name for it, Level, is also many effects' own
+  setting. Selects and button
+  rows show their position, the LED the bypass. Linux, and a bundle built
+  without the pictures, open no editor.
+- Every plugin's parameter text is the console's (`value_text.cpp`, a
+  port of `fxParamValueText` and the footer's readouts), so a host's own
+  parameter list reads "348 ms" and "1/8D". `vst3/test/value_texts.json`,
+  which `vst3_faces_test.dart` writes from the Dart, holds the console's
+  text for every parameter of every kind at 41 settings and each position.
+- `test/binding_test.cpp` loads the bundle and checks every control of the
+  layout against its plugin's parameters, that every parameter but the
+  bypass has exactly one control, and every value text against
+  `value_texts.json` (CI, in `run_null_test.sh`); after an install, also
+  that every plugin with a face opens an editor of the layout's size.
+
+## November 2026 Every lane of a track has its own stems (#1824)
+
+- The performance render rendered lane 0 of each looper track only: what
+  lanes 1 and up played during a take reached the Live set only as their
+  last loop, a Session clip, though the master held it. `perf_render.c` now
+  renders every lane to `stems/dry/track<c>-lane<l>.wav` and
+  `stems/wet/track<c>-lane<l>.wav`, and the master from all of them. The
+  track-level `track<c>.wav` stems are gone: the DAW export was their only
+  reader. `stems/stems.json` lists the lane stems a render published
+  (docs/formats/performance-manifest-format.md).
+- The lanes share the track's transport, so each lane is rebuilt from the
+  same facts (takes, overdub passes placed as #1813 places them, history
+  images, fades, Reverse, Speed, Transpose) with its own images: lane `l` of
+  each layer file and snapshot, silence where the lane held nothing of a
+  take. Each lane's wet stem runs its own volume, pan, mute, output routing,
+  chain, heard image and hop seed; the track gain, fade, solo and Cut apply
+  to every lane, and the track-addressed mute and output mask to lane 0, as
+  in the callback. The Track stage chain is still not replayed.
+- Lanes added or removed during a take: the engine logs the lane count
+  (`LE_CMD_SET_LANE_COUNT`, events.log version 17) for every track at the
+  arm and whenever it applies, on the command path, and the renderer
+  silences a lane at or past it. A version-16 capture has no count and
+  renders every lane as mixed throughout. The engine removes only a lane
+  that holds nothing, so the count matters for a lane's effect tail. A lane
+  added after its track's take keeps a length of 0, so no snapshot exports
+  it: the renderer keeps what it played before its last pass, and what that
+  pass added is not in the capture (#1825).
+- The Live set gives each looper track a Group track holding `<track> L<n>`
+  (the lane's dry stem and clean loop through the lane's chain as Segno's
+  plugins, playing, with its volume and mute as automation) and
+  `<track> L<n> (as heard)` (its wet stem and loop as it played, off) for
+  each lane. The Group carries the Track stage chain as plugins, where Live
+  sums the lanes as the callback's track bus does. Lane loops sit in the
+  first scene. Group tracks are copied from
+  `test/corpus/group.als`, built from `automation.als` and the Group track of
+  Live 12.2's own Podcast & Radio template; opening and saving it in Live is
+  owed (the corpus README says how).
+- A take with no stem index (rendered before this, or whose render failed)
+  renders its stems first when the Library writes its DAW project or DAW
+  package (`PerformanceRepository.renderStems`, with the export's progress
+  and cancel), and `writeDawProject` never replaces a `project.als` with a
+  set that has no stems: a failed render leaves it as it was. A lane whose
+  wet render failed keeps its `L<n>` track with its plugins, and the take's
+  render reports the track failed.
+- A live-engine golden test (`test_engine_lane_stems.h`) records one track
+  with four lanes, a delay and mute on one, two lanes added while it plays
+  and one removed, and four overdub passes, then plays the take again with
+  one input at a time: each lane's wet stem equals what that lane alone sent
+  to the master, and the rendered master the captured one, within 1e-5.
+
+## November 2026 A take records each input raw (#1805)
+
+- A performance take recorded only the inputs monitored at arm, and only as
+  their monitor played them (`mix_monitors_frame`): after its effects,
+  volume and pan, and as silence while monitoring was off or muted, so an
+  input played with monitoring off came out silent or not at all. Now every
+  input the interface has (loopback channels aside) and every instrument
+  with a patch at arm is also recorded raw, monitored or not: its clean
+  sample, before the monitor's gate, chain, volume and pan, every frame
+  while armed. The monitored inputs are still recorded as heard too.
+- The audio thread pushes the raw samples once per block, out of the frame
+  loop, in a cold function (`perf_tap_raw_block`), into one mono ring per
+  input (`le_engine.perf_raw_ring`, `perf_raw_mask`, at the end of the
+  struct so no field the mixer reads moves). A full ring drops the frame and
+  counts an overrun, as the other taps do. A block with no input buffer
+  records silence.
+- The drain writes them as `input-raw-<n>-NNN.wav` parts, mono float,
+  stream `100 + n` (`LE_PERF_RAW_STREAM_BASE`, a format constant). The
+  sidecar lists them under `channel_layout.raw_inputs`, the parts in
+  `parts`; the checkpoint lists the streams. Recovery, the Library's parts,
+  the DAW package, Segno Transfer and the FAT32 cap test cover them. A raw
+  input over the activity level counts as playing for the idle stop
+  (#1767). `le_snapshot.perf_capture_frame_bytes` counts 4 bytes a frame
+  per raw input. A monitor left on a loopback channel is not captured.
+- The Live set gives each input `<name> raw`, switched on, and, when the
+  input was monitored, `<name> (as heard)` beside it, switched off. A take
+  from before #1805 keeps one input track as heard, switched on. The raw
+  track is where a later layer of #1806 puts the monitor chain as plugins
+  and the monitor volume, pan and mute as automation.
+
+## November 2026 The Network page follows the console (#1817)
+
+- On 2026-11-17 a WiFi 6 router timed out the 802.11 authentication (iwd
+  `connect-failed, status: 16`, #1816), NetworkManager ended the join as
+  `no-secrets`, and the page said "Incorrect password" for a key the access
+  point never tested; the owner forgot two good networks over it.
+- `segno-wifi-ctl connect` now prints why a join failed, `{"error":<code>}`:
+  `wrong-password` only when iwd logged "4-Way handshake failed" during this
+  attempt (the journal is read from the attempt's start, never a window that
+  can hold another network's failure), `not-found`, `no-address`, and
+  `no-connection` for everything else. NM's own reason is not read: on a
+  console with no secret agent it ends every failed activation that asked
+  for secrets as `no-secrets`. The app shows the code's words, names the
+  network, and offers Try again (with the key that was typed) for everything
+  but a wrong password, which goes back to the sheet.
+- A join is checked against the scan first (the cached list, then one fresh
+  scan), so a network out of range fails as `not-found` without dropping the
+  one that is up.
+- A failed join never deletes a saved network; only Forget does. A profile
+  the helper made for a new network is removed when its join fails.
+- Live state: `segno-wifi-ctl monitor` wraps `nmcli monitor` and prints one
+  line per NetworkManager change. The app starts it once, with posix_spawn,
+  when the page opens and kills it when the page closes, and re-reads
+  `status` 300 ms after each burst. `status` says `connecting` while an
+  activation is in flight, so a rejoin NetworkManager or `segno-wifi-retry`
+  makes by itself shows as Connecting on the card. A long-lived nmcli
+  rather than a D-Bus client in the app keeps NetworkManager behind the
+  helper, like every other Wi-Fi call.
+- While the page is open it scans every 10 s (quietly: no Scanning label,
+  a failure stays on screen), skipping while the radio is off, a join runs
+  or NM is joining; the list keeps its order between scans (saved, in range,
+  signal bars, name). `scan` no longer switches the radio on.
+
+## November 2026 The Live set plays the take through Segno's plugins (#1804 part 2)
+
+- A looper track whose take recorded its chains (#1803 on) exports as its
+  dry stem through those chains as Segno's plugins, under the track's
+  name, with lane 0's clean loop as a Session clip, and the wet stem beside
+  it as `<name> (as heard)`, off, with the heard loops and the other lanes'
+  loops (they ran other chains). Takes without
+  chains, or whose chains hold nothing Segno runs (only hosted plugins),
+  keep the earlier layout.
+- `devicesOfChain` (`packages/daw_export/lib/src/device_chain.dart`): lane
+  0's chain, which the wet stem renders, then the track's Track stage. Each
+  built-in effect becomes its plugin with the plugin's own state
+  (`SegnoPluginState`, the bytes `segno_fx_state.h` reads): settings,
+  channel handling, enable bit (the entry's, and off with its chain), chain
+  slot, the owner's hop seed (`le_fx_lane_hop_seed`, `le_fx_bus_hop_seed`),
+  and the take's PERF_ARMED FX clock and arm beat from `events.log`. A rack
+  becomes an Audio Effect Rack named as the rack, off when it was; a Dub
+  Rack's parallel Amb and Dub paths become a rack of two chains at the
+  gains `fx_path_targets` gives the section's Amb-Dub Mix. Hosted plugins
+  are left out, as the offline render passes them dry.
+- The devices are copied from a set Live saved with Segno's plugins
+  (`test/corpus/segno_vst3.als`, built in Live, through
+  `lib/src/live_device_template.dart`): a plugin device and a rack with one
+  chain. Each plugin gets its own parameter list, as Live writes one for a
+  plugin loaded fresh (`SegnoPlugin.parameters`, checked against every
+  plugin by the null test), so Live shows and automates its parameters. An
+  entry that was off is the device switched off; the plugin's own switch
+  stays on. A volume lane picks the Mixer after the devices and chain mixers
+  in Live's lane chooser.
+- The plugins start again as at arm whenever the host starts playing
+  (`segno_fx_slot_rearm`; a jump while playing, such as a loop wrap, keeps
+  the tails), so a render from the start of the set is
+  the console's: without it, LFOs, noise and octaver hops run on while
+  Live's transport stands.
+- A plugin reports one latency at every rate, its kind's largest at 44.1,
+  48, 88.2 and 96 kHz (`segno_fx_reported_latency`; more at a host rate
+  whose own is larger), and delays its output by the rest: Live asks for
+  the latency at its device's rate and not again when it exports at
+  another, so a rate-dependent latency (the octavers, the Amp) was
+  compensated wrongly. Superseded by #1836: every plugin reports no
+  latency, so a lane plays as late as the console played it.
+- Checked in Live 12.2.7: an export of `perf-20261112-130713` with a chain
+  written in (Compressor, a Dub Rack with its Amb and Dub paths, an Echo
+  Rack, an Octaver off) renders the dry track through the plugins within
+  -139.6 dBFS of its "as heard" stem over 150 s.
+- An input recorded raw (#1805) plays its raw recording through its
+  monitor chain at arm, as plugins, on `<input> raw` (the hop seed is
+  `le_fx_monitor_hop_seed`); the input as heard already has the chain in
+  its audio. The monitor's volume, pan and on/off are not replayed yet.
+- Not reproduced: the lane volume, which the engine applies before the
+  lane chain, and the track gain, which it applies inside the Track stage
+  (after its Pre entries), where Live applies both after the devices (the
+  same at unity); a switched-off rack's modules' own switches, which the
+  arm snapshot does not record (they are exported on, in a rack that is
+  off); a rack's input choice and output side when its first or last
+  entry is off or on a parallel path (each plugin carries its own); the
+  Track stage, which the offline render does not apply, so a take with one
+  differs from its "as heard" stem by it. Switching during the take is the control-events layer of #1806.
+- `packages/segno_engine/vst3/test/render_capture.c` renders a capture's
+  stems on the Mac as the console does, for checking an export.
+
+## November 2026 Segno's effects as VST3 plugins (#1804 part 1)
+
+- The owner's call of 2026-11-12 reverses Q13 (#940): the effects come back
+  as VST3 plugins, built and installed on the owner's Mac only (no signing,
+  no installer), so an exported performance can be edited in Live with the
+  effects the console ran.
+- `packages/segno_engine/vst3/` builds one bundle, `Segno.vst3`, with one
+  class per built-in kind (31: every `le_fx_type` but none and plugin),
+  named as the console names them ("Segno Delay", "Segno Room reverb").
+  The class ids in `segno_fx_kinds.h` are new (the seven removed plugins'
+  ids are not reused) and never change.
+- Each plugin runs the engine's effects island (`engine_fx.c`, with the
+  console's `tanhf` and `powf`) on one chain slot (`fx_slot.c`), set up and
+  clocked as the offline render (`perf_render.c`) sets up a slot that holds
+  an effect at arm. Its state (`segno_fx_state.h`) carries the settings, the
+  entry's channel handling and enable bit, the chain slot it held, and the
+  take's hop seed, FX clock and beat at the host's sample 0. The plugin runs
+  the kind on that slot, so clock LFOs, octaver hops, update cadences, noise
+  seeds and beat-locked kinds fall where the console's did.
+- Parameter ids are the engine's parameter indexes (id p is `params[p]`,
+  the normalized value is the engine's 0..1 setting); the channel handling
+  is 1000 to 1003 and the bypass (the engine's enable bit) 1100
+  (`params.h`). A host's bypass runs the engine's switch (delays and reverbs
+  drain, the rest crossfade), except for a kind that delays its output (the
+  octaver family, 1216 frames; the oversampled drives and the vinyl, 3 or
+  4): it reports that latency on and off, and its bypass crossfades to its
+  input delayed as much, so a host's delay compensation holds either way.
+  The engine's settled bypass passes such a kind's input without the
+  delay, so the two agree while it is on and differ by the latency while it
+  is off. Superseded by #1836: 1100 is Enabled, the engine's switch for
+  every kind, and no plugin reports a latency.
+- The null test (`vst3/test/null_test.cpp`) writes a one-track capture per
+  kind and case (defaults; other settings with a mono output, balance and
+  level on chain slot 5; a setting change, a switch off and on again
+  mid-take), has the
+  engine's `le_perf_render_begin` render its wet stem, plays the dry stem
+  through the plugin loaded from the built bundle, and compares: every kind
+  and case is bit-identical, at 128-, 37- and 512-frame blocks, on macOS and
+  Linux. CI builds the bundle and runs the test in `native-tests`.
+
+## November 2026 The Live set carries the whole capture (#1799)
+
+- A take's arm records the rig again: the app had stopped handing
+  `PerformanceRecorderCubit` and `ControlCubit` the rig's chains (#375's
+  wiring was lost), so every arm recorded no effects, `fx-chains.txt` came
+  out empty and the wet stems were rendered without effects. Both now get
+  `performanceChainsFromLooper`, and a `PerformanceNames` of what the player
+  calls each track and input (`armSnapshot.tracks[].name`,
+  `armSnapshot.inputs`). `InputsCubit` moved into `AppRuntime` beside
+  `TracksCubit`, so the pedal path reads both.
+- The Live set holds every looper track's wet stem, its dry stem on a
+  switched-off `<name> dry` track (with the volume and mute as volume
+  automation), each captured input, and `Master (as heard)` switched off,
+  each named, with its effect chains in the track's info text.
+- Captured inputs are recorded after their monitor chain, volume and pan
+  (`mix_monitors_frame`), so they already are the inputs as heard, and play
+  in the set. No dry input is recorded: re-processing an input would need a
+  second tap before the monitor chain.
+- The DAW package now copies `loops/`: without it the Session clips were
+  missing media on the drive.
 ## November 2026 A take on a FAT stick keeps its renamed files (#1801)
 
 - On vfat a rename writes the new directory entry with size 0 and first
@@ -107,8 +480,9 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   (`PerformanceRepository.writeTakeFile`, which `writeDawProject` now writes
   through). A renamed or salvaged take's folder is synced under its new name
   and in its parent, and the render syncs `stems/` and the take folder once
-  it creates the stem folders. No volume sync: nothing here needs a
-  volume-wide flush, and none of it runs on the audio thread.
+  it creates the stem folders. No volume sync (#1797's export runs one at
+  its end): nothing here needs a volume-wide flush, and none of it runs on
+  the audio thread.
 - Not changed: the checkpoint slots are written in place and fsynced, which
   already writes their entries; the drain's live `performance.json` is
   rewritten four times a second while capturing and finalize replaces it,
@@ -144,6 +518,34 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   PR). Envelopes are still written only over a dry stem, since the wet render
   already applies them (#1622).
 
+## November 2026 Exports to a FAT32 stick (#1794)
+
+- FAT32 holds no file of 4 GiB or more, and most sticks come formatted
+  with it. The longest take (3 h, #1767) was held to what a WAV's RIFF size
+  allows, which is 8 bytes past FAT32's limit with the header: a stereo
+  master at 88.2 or 96 kHz that ran to its cap rendered at 4 GiB + 4 bytes.
+  `le_wav_max_frames` now counts the 44-byte header against FAT32's
+  largest file (`LE_WAV_MAX_FILE_BYTES`), one frame less; the drain takes
+  the longest take from `le_perf_longest_take_frames`. 3 h at 48 kHz and
+  93 min for a stereo master at 96 kHz are unchanged. The render still
+  writes a master up to what `le_wav_seal` accepts
+  (`le_wav_sealable_frames`), so re-rendering a take an earlier build
+  stopped at the RIFF limit keeps its master.
+  `test_perf_longest_take_fits_one_fat32_file` renders a take with a mono
+  and a stereo master, reads every stem's header, and fails if any could
+  pass 4 GiB less one byte at the longest take, for any cap and rate.
+- Before an export or a backup touches the drive, `AudioExporter` checks
+  every file against the largest file the drive's filesystem holds
+  (`StorageRepository.checkFileSizes`, `RemovableVolume.maxFileBytes`:
+  4 GiB less one byte on `vfat`, no limit on exFAT, NTFS or ext4) and
+  refuses with `StorageFileTooLarge`; `copyFile` checks its source the same
+  way. The Library's card line, and the backup's interrupted dialog, say
+  "FAT32 drives can't hold files over 4 GB. Use an exFAT drive." A take
+  this build records renders no file that reaches the limit (recording
+  parts are 2 GB, session files are loops of 10 minutes at most); the check
+  covers a master rendered at 4 GiB + 4 bytes for a take an earlier build
+  stopped at the RIFF limit, and any later writer.
+
 ## November 2026 The Library writes to USB through the storage repository (#1790)
 
 - Export to USB, Back up to USB and the Library's USB location never saw a
@@ -165,9 +567,19 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   both write `Segno/Sessions`); exports into one folder now run one after
   the other, across the Library's exporters. And
   the swap's renames were never synced, so "Exported to USB" could show
-  before a pulled stick would keep the export; the exporter now syncs the
-  folder (and a package's own directory) through the new
-  `StorageRepository.syncDirectory` before it reports.
+  before a pulled stick would keep the export.
+- A directory sync was not enough either (#1797). On vfat a rename writes
+  the new entry with size 0 and cluster 0 (`vfat_rename`, then
+  `vfat_build_slots`), and only the file's inode, written back about 30 s
+  later, fills it in. A stick pulled after "Exported to USB" showed the
+  late files at 0 bytes. `StorageRepository.copyFile` now syncs the whole
+  volume after its rename (`StorageIo.syncVolume`: the engine's
+  `le_fs_sync_volume_errno`, which runs `syncfs(2)` and then an fsync of
+  the root to flush the device cache, since FAT has no `sync_fs`). The
+  exporter runs `StorageRepository.syncVolume` once more after the swap
+  and its clean-up, before it reports. `StorageRepository.syncDirectory`
+  is gone. Once "Exported to USB" shows, the stick can be pulled without
+  Eject.
 - Tests fake the repository (`FakeDrive`, `NoDrive` in
   `test/library/helpers/fake_drive.dart`). One cubit test exports through a
   real `StorageRepository` over the console's own records (an `iso9660`
@@ -2420,6 +2832,24 @@ travel and diffuser bridge anchoring still require validation; #1074 stays
     `libsegno_engine.so`, which the Flutter engine `dlopen`s through the
     loader's path, so `segno-kiosk-launch` puts `/opt/segno/lib` on
     `LD_LIBRARY_PATH` (ivi-homescreen's run path does not include it).
+- **Segno.vst3** (#1804), the effects as VST3 plugins for a DAW on the dev
+  Mac: `FLUTTER=/Users/Tomas/development/flutter-3.50/bin/flutter bash
+  packages/segno_engine/vst3/install.sh` runs `build.sh`, which renders the
+  editors' pedal faces (#1815, about a minute) and builds it (Release, into
+  `packages/segno_engine/build/vst3`), then installs it in
+  `~/Library/Audio/Plug-Ins/VST3`; `--test` also runs the null test and the
+  binding test against the installed bundle (`test/run_bundle_tests.sh`).
+  Its `CFBundleVersion` is the commit time of the checkout's HEAD, which
+  Segno Transfer compares with the copy it carries (#1829). After a change
+  to the pedal faces, `/Users/Tomas/development/flutter-3.50/bin/flutter test
+  --update-goldens test/vst3_faces/vst3_faces_test.dart` rewrites the layout
+  the editors read. Live finds it on its next plugin scan (start, or
+  Settings > Plug-Ins > Rescan) under Plug-Ins > Segno. Signed ad hoc;
+  Segno Transfer's `build-app.sh` builds it the same way and ships it in
+  the app's `Contents/PlugIns`, to install on request (#1829).
+  `bash packages/segno_engine/vst3/test/run_null_test.sh` builds a separate
+  tree and runs the null test, as CI does on Linux (clang, CMake,
+  `libasound2-dev`).
 - **Native engine tests** (deterministic, no device — the real safety net since
   the audio thread can't be runtime-tested here):
   ```sh

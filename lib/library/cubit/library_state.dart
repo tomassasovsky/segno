@@ -151,6 +151,11 @@ enum LibraryBackupProblem {
   /// The drive is mounted read-only.
   readOnly,
 
+  /// A file of the session is larger than the drive's filesystem holds (a
+  /// FAT32 drive holds no file of 4 GiB or more, #1794). Nothing was
+  /// written.
+  tooLargeForDrive,
+
   /// Another operation forbids a copy now (the guard table).
   busy,
 

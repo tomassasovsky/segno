@@ -463,6 +463,10 @@ int le_image_valid(const le_engine* engine, int32_t channel,
                    const le_record_image* image);
 int32_t le_push_cmd(le_engine* engine, le_command cmd);
 
+/* Logs [cmd] from the control thread at the current capture frame, onto
+ * perf.log_ctrl_ring (engine_commands.c); a no-op when not armed. */
+void le_plog_push_ctrl(le_engine* engine, le_command cmd);
+
 /* Backing player (#1200, engine_backing.c): frees every engine-owned backing
  * buffer with the callback stopped, except, when [keep_loaded] is set, the
  * loaded and staged ones (a retained reopen). Resets the voices to Stopped at

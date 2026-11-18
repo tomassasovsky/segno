@@ -583,6 +583,29 @@ class StorageRepository implements ActiveOperationSource {
   static bool isLowInternalSpace(VolumeSpace? internal) =>
       internal != null && internal.freeBytes < internalReserveBytes;
 
+  /// Refuses a write to [destination] of files of [fileBytes] when one is
+  /// larger than its filesystem holds (#1794): a FAT32 stick holds no file
+  /// of 4 GiB or more ([RemovableVolume.maxFileBytes]). Throws
+  /// [StorageFileTooLarge] naming the largest such file, so a writer that
+  /// calls it before its first write refuses with nothing written. Internal
+  /// has no such limit, and a volume that is not listed is left to the
+  /// write's own checks.
+  void checkFileSizes(StorageDestination destination, Iterable<int> fileBytes) {
+    if (destination is! RemovableDestination) return;
+    final record = _records[destination.generation];
+    if (record == null) return;
+    final limit = RemovableVolume.maxFileBytesOf(record.fsType);
+    if (limit == null) return;
+    final largest = fileBytes.fold<int>(0, max);
+    if (largest > limit) {
+      throw StorageFailure.fileTooLarge(
+        fsType: record.fsType,
+        maxFileBytes: limit,
+        fileBytes: largest,
+      );
+    }
+  }
+
   String? _mountedPath(int generation) {
     final record = _records[generation];
     return switch (record?.status) {
@@ -611,10 +634,14 @@ class StorageRepository implements ActiveOperationSource {
   /// The bytes go to a part file of the copy's own (`.<name>.<random>.part`,
   /// hidden, so neither the Library nor a computer lists it, and never shared
   /// with another copy in flight), are fsynced, and are renamed to the final
-  /// name; then the directory is synced so the rename itself is durable, and
-  /// so is every parent the copy created, bottom up, so a new directory's own
-  /// entry survives too. A sync the device refuses fails the copy as `io`:
-  /// the file is in place but not known to be durable, and "copied" is not
+  /// name; then the whole volume is synced (`syncfs`, then a flush of the
+  /// device's cache, on the appliance's Linux: see `StorageIo.syncVolume`
+  /// for elsewhere), so the rename, every directory the copy created and
+  /// the file's size in its new entry are on the device before the copy
+  /// returns. A directory sync would not do: on vfat a rename writes the new
+  /// entry with size 0, and only the file's inode, written back later, fills
+  /// it in (#1797). A sync the device refuses fails the copy as `io`: the
+  /// file is in place but not known to be durable, and "copied" is not
   /// claimed. The destination never holds a half-written file under its final
   /// name, and on any failure the part is deleted and the source is not
   /// touched. Parts a crash left behind are swept by the first copy into each
@@ -633,8 +660,10 @@ class StorageRepository implements ActiveOperationSource {
   ///
   /// Failures are typed [StorageFailure]s: `full` (ENOSPC), `readOnly` (EROFS,
   /// or a read-only volume), `volumeLost` when the volume goes away before or
-  /// during the copy, `unsupported` for a volume that cannot be written, `io`
-  /// for the rest, a source that cannot be read included. A lease with
+  /// during the copy, `unsupported` for a volume that cannot be written,
+  /// `fileTooLarge` before anything is written for a source larger than the
+  /// destination's filesystem holds ([checkFileSizes]), `io` for the rest, a
+  /// source that cannot be read included. A lease with
   /// purpose `copy` is held throughout, so eject and shutdown wait for it.
   ///
   /// [relativePath] must stay inside the root: not empty, not absolute, and
@@ -648,7 +677,9 @@ class StorageRepository implements ActiveOperationSource {
     final segments = _insideRoot(relativePath);
     final held = acquire(destination, WritePurpose.copy);
     try {
-      final wanted = '${await _writeRoot(destination)}/$relativePath';
+      checkFileSizes(destination, [_lengthOf(sourcePath)]);
+      final root = await _writeRoot(destination);
+      final wanted = '$root/$relativePath';
       if (onConflict == ConflictPolicy.ask && _taken(wanted)) {
         throw NameConflict(wanted);
       }
@@ -658,16 +689,13 @@ class StorageRepository implements ActiveOperationSource {
       );
       _liveParts.add(part.path);
       try {
-        final created = _createDirectories(directory);
+        directory.createSync(recursive: true);
         _sweepStaleParts(directory);
         await _copyBytes(File(sourcePath), part, () => held.isLost);
         if (held.isLost) throw const FileSystemException('volume lost');
         final target = _publish(part, wanted, onConflict);
         try {
-          _io.syncDirectory(directory.path);
-          for (final made in created) {
-            _io.syncDirectory(made.parent.path);
-          }
+          _io.syncVolume(root);
         } on FileSystemException catch (e) {
           // The file is in place and complete; only its durability is in
           // doubt. A pulled drive is still a lost volume (the sync carries
@@ -695,27 +723,23 @@ class StorageRepository implements ActiveOperationSource {
     }
   }
 
-  /// Makes the entries of the directory at [relativePath] under
-  /// [destination]'s root durable, as [copyFile] does after its own rename.
-  /// For a writer that renames what it copied into place itself (the
-  /// Library's export swap), so it reports nothing as written before the
-  /// renames would survive a pulled drive. A `copy` lease is held for the
-  /// sync, as for a copy.
+  /// Makes everything written to [destination] durable, as [copyFile] does
+  /// after its own rename: the whole volume is synced and the device's cache
+  /// flushed. For a writer that renames or deletes on the volume after its
+  /// copies (the Library's export swap and its clean-up), so it reports
+  /// nothing as written before it would survive a pulled drive. A `copy`
+  /// lease is held for the sync, as for a copy.
   ///
   /// Fails as [copyFile] does: `volumeLost` when the volume is gone or goes
   /// with the sync, `readOnly` or `unsupported` for a volume that cannot be
-  /// written, `io` when the device refuses the sync. [relativePath] follows
-  /// [copyFile]'s rule.
-  Future<void> syncDirectory(
-    StorageDestination destination,
-    String relativePath,
-  ) async {
-    _insideRoot(relativePath);
+  /// written, `io` when the device refuses the sync or lost an earlier
+  /// write.
+  Future<void> syncVolume(StorageDestination destination) async {
     final held = acquire(destination, WritePurpose.copy);
     try {
-      final path = '${await _writeRoot(destination)}/$relativePath';
+      final root = await _writeRoot(destination);
       try {
-        _io.syncDirectory(path);
+        _io.syncVolume(root);
       } on FileSystemException catch (e) {
         throw await _classify(e, destination, held);
       }
@@ -813,6 +837,16 @@ class StorageRepository implements ActiveOperationSource {
     }
   }
 
+  /// [path]'s length, or 0 when it cannot be read (the copy then reports
+  /// the source as unreadable).
+  static int _lengthOf(String path) {
+    try {
+      return File(path).lengthSync();
+    } on FileSystemException {
+      return 0;
+    }
+  }
+
   /// Whether anything (a file, a directory, a link) is at [path].
   static bool _taken(String path) =>
       FileSystemEntity.typeSync(path, followLinks: false) !=
@@ -825,21 +859,6 @@ class StorageRepository implements ActiveOperationSource {
   ].join();
 
   static final _partName = RegExp(r'^\..+\.[0-9a-f]{16}\.part$');
-
-  /// Creates [directory] and the parents it lacks, and returns the ones it
-  /// created, deepest first.
-  static List<Directory> _createDirectories(Directory directory) {
-    final missing = <Directory>[];
-    for (
-      var dir = directory;
-      !_taken(dir.path) && dir.parent.path != dir.path;
-      dir = dir.parent
-    ) {
-      missing.add(dir);
-    }
-    directory.createSync(recursive: true);
-    return missing;
-  }
 
   /// Deletes the part files a crash left in [directory]; never one a copy in
   /// flight is writing. Once per directory per run: a crash leaves its parts

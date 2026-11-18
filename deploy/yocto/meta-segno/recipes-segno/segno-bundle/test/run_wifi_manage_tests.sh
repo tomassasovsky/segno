@@ -63,6 +63,8 @@ case "\$*" in
         printf '%s\n' "\${PRIOR_AC:-yes}"
         ;;
     *"-g connection.autoconnect-priority connection show"*) printf '0\n' ;;
+    *"-g 802-11-wireless.hidden connection show"*) printf '%s\n' "\${HIDDEN:-no}" ;;
+    *"-f SSID device wifi list"*) [ -n "\${LIST:-}" ] && printf '%s\n' "\$LIST" ;;
     *"-g connection.id connection show"*|*"-g 802-11-wireless.ssid connection show"*)
         name_of "\$last"
         ;;
@@ -82,7 +84,7 @@ case "\$*" in
         printf '%s' "\$target" > "$work/active"
         ;;
     *"WIFI radio"*) printf 'enabled\n' ;;
-    *"GENERAL.STATE device show"*) printf 'GENERAL.STATE:30 (disconnected)\n' ;;
+    *"GENERAL.STATE device show"*) printf 'GENERAL.STATE:%s\n' "\${GENERAL_STATE:-30 (disconnected)}" ;;
     *"GENERAL.AUTOCONNECT device show"*) printf '%s\n' "\${DEV_AC:-yes}" ;;
     *) : ;;
 esac
@@ -118,6 +120,8 @@ run_with_stdin() {
     printf '%s' "$stdin" | PATH="$work/bin:$PATH" SEGNO_JOURNALCTL="$work/bin/journalctl" \
         SAVED="${SAVED:-}" ACTIVE="${ACTIVE:-}" FAIL_UP="${FAIL_UP:-<none>}" \
         LISTING="${LISTING:-}" PRIOR_AC="${PRIOR_AC:-yes}" \
+        GENERAL_STATE="${GENERAL_STATE:-30 (disconnected)}" \
+        HIDDEN="${HIDDEN:-no}" LIST="${LIST:-}" SEGNO_JOIN_EVIDENCE_WAIT=0 \
         STORED_PSK="${STORED_PSK:-}" DEV_AC="${DEV_AC:-yes}" \
         HTTP_CODE="${HTTP_CODE:-200}" CURL_RC="${CURL_RC:-0}" \
         "$TEST_SHELL" "$CTL" "$@" >"$work/stdout" 2>"$work/stderr"
@@ -146,7 +150,8 @@ ACTIVE="The Studio" FAIL_UP="Rehearsal" run_with_stdin 'wrongpass' connect Rehea
 check "the join fails" 1 "$rc"
 check "reactivates the previous connection" yes \
     "$(has 'connection up uuid uuid-The Studio' "$work/nmcli-args")"
-check "prints restored" '{"restored":"The Studio"}' "$(cat "$work/stdout")"
+check "prints why, then restored" '{"error":"no-connection"}
+{"restored":"The Studio"}' "$(cat "$work/stdout")"
 check "still explains the failure" yes \
     "$(has 'segno-wifi-ctl:' "$work/stderr")"
 created=$(sed -n 's/.*connection\.uuid \([^ ]*\) .*/\1/p' "$work/nmcli-args" | head -n1)
@@ -163,7 +168,7 @@ echo "a failed join with nothing active before restores nothing"
 setup
 FAIL_UP="Rehearsal" run_with_stdin 'wrongpass' connect Rehearsal
 check "the join fails" 1 "$rc"
-check "prints nothing" "" "$(cat "$work/stdout")"
+check "prints only why" '{"error":"no-connection"}' "$(cat "$work/stdout")"
 check "only the one activation" 1 \
     "$(grep -c 'connection up' "$work/nmcli-args" | tr -d ' ')"
 teardown
@@ -187,13 +192,46 @@ check "the saved profile is kept" no \
     "$(has 'connection delete' "$work/nmcli-args")"
 teardown
 
+# Only Forget deletes a saved network (#1817): the owner forgot two good
+# networks after the page blamed their keys, and a join that deleted one on
+# failure would do the same without asking.
+echo "a failed join never deletes a saved network"
+setup
+SAVED="Rehearsal" FAIL_UP="uuid-Rehearsal" STORED_PSK='s3cret' run connect Rehearsal
+check "the join on its stored key fails" 1 "$rc"
+check "the saved profile is kept" no "$(has 'connection delete' "$work/nmcli-args")"
+check "and no second one is made" no "$(has 'connection add' "$work/nmcli-args")"
+teardown
+setup
+SAVED="Rehearsal" FAIL_UP="uuid-Rehearsal" run_with_stdin 'n3w-key' connect Rehearsal
+check "the join with a new key fails" 1 "$rc"
+check "the saved profile is still kept" no "$(has 'connection delete' "$work/nmcli-args")"
+teardown
+
+# A hidden network never shows in a scan under its name; segno-wifi-retry
+# allows for saved ones, and so must a join.
+echo "a saved hidden network is joined without the scan check"
+setup
+SAVED="Backstage" HIDDEN=yes LIST="Studio" run connect Backstage
+check "goes up" yes "$(has 'connection up uuid uuid-Backstage' "$work/nmcli-args")"
+teardown
+
+echo "a saved network that is not hidden and not in the scan is not found"
+setup
+SAVED="Backstage" LIST="Studio" run connect Backstage
+check "fails" 1 "$rc"
+check "as not found" '{"error":"not-found"}' "$(cat "$work/stdout")"
+check "activates nothing" no "$(has 'connection up' "$work/nmcli-args")"
+teardown
+
 echo "a wrong new password for the network that is up brings it back on its old key"
 setup
 SAVED="Studio" ACTIVE="Studio" FAIL_UP="passwd-file" run_with_stdin 'wrongpass' connect Studio
 check "the join fails" 1 "$rc"
 check "reactivates it without the new key" yes \
     "$(grep -qxF 'connection up uuid uuid-Studio' <(sed 's/^--wait [0-9]* //' "$work/nmcli-args") && echo yes || echo no)"
-check "prints restored" '{"restored":"Studio"}' "$(cat "$work/stdout")"
+check "prints why, then restored" '{"error":"no-connection"}
+{"restored":"Studio"}' "$(cat "$work/stdout")"
 teardown
 
 # After one failure NetworkManager's iwd backend asks secret agents for a NEW
@@ -207,7 +245,8 @@ check "the join fails" 1 "$rc"
 check "restores through a passwd-file" yes \
     "$(grep 'connection up uuid uuid-The Studio' "$work/nmcli-args" | grep -q passwd-file && echo yes || echo no)"
 check "on the stored key, escaped" '802-11-wireless-security.psk:old\ key' "$(cat "$work/passwd-file")"
-check "prints restored" '{"restored":"The Studio"}' "$(cat "$work/stdout")"
+check "prints why, then restored" '{"error":"no-connection"}
+{"restored":"The Studio"}' "$(cat "$work/stdout")"
 teardown
 
 echo "activate brings a saved profile up on its stored key"
@@ -399,6 +438,12 @@ check "the saved list" yes \
     "$(has '"saved":[{"ssid":"The Studio","autoconnect":true},{"ssid":"Cafe","autoconnect":false},{"ssid":"New","autoconnect":true}]' "$work/stdout")"
 check "last is the most recent activation" yes \
     "$(has '"last":"The Studio"' "$work/stdout")"
+teardown
+
+echo "status says when an activation is in flight"
+setup
+GENERAL_STATE='70 (connecting (getting IP configuration))' run status
+check "connecting" yes "$(has '"connected":false,"connecting":true' "$work/stdout")"
 teardown
 
 echo "status with nothing saved"

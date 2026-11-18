@@ -155,9 +155,62 @@ void main() {
         0,
       );
     });
+
+    test('carries the name the player gave it only when it has one '
+        '(#1799)', () {
+      const named = PerformanceTrackSnapshot(
+        channel: 0,
+        state: TrackState.playing,
+        volume: 1,
+        muted: false,
+        multiple: 1,
+        name: 'Rhythm',
+      );
+      expect(named.toJson()['name'], 'Rhythm');
+      expect(PerformanceTrackSnapshot.fromJson(named.toJson()).name, 'Rhythm');
+      const unnamed = PerformanceTrackSnapshot(
+        channel: 0,
+        state: TrackState.playing,
+        volume: 1,
+        muted: false,
+        multiple: 1,
+      );
+      expect(unnamed.toJson().containsKey('name'), isFalse);
+      expect(PerformanceTrackSnapshot.fromJson(unnamed.toJson()).name, isNull);
+    });
   });
 
   group('PerformanceArmSnapshot', () {
+    test('writes the named inputs as a list in input order, and none when '
+        'no input is named (#1799)', () {
+      const named = PerformanceArmSnapshot(
+        masterGain: 1,
+        limiterEnabled: false,
+        limiterCeiling: 1,
+        latencyOffsetFrames: 0,
+        inputNames: {2: 'Vocal', 0: 'Guitar'},
+      );
+      expect(named.toJson()['inputs'], [
+        {'input': 0, 'name': 'Guitar'},
+        {'input': 2, 'name': 'Vocal'},
+      ]);
+      expect(PerformanceArmSnapshot.fromJson(named.toJson()).inputNames, {
+        0: 'Guitar',
+        2: 'Vocal',
+      });
+      const unnamed = PerformanceArmSnapshot(
+        masterGain: 1,
+        limiterEnabled: false,
+        limiterCeiling: 1,
+        latencyOffsetFrames: 0,
+      );
+      expect(unnamed.toJson().containsKey('inputs'), isFalse);
+      expect(
+        PerformanceArmSnapshot.fromJson(unnamed.toJson()).inputNames,
+        isEmpty,
+      );
+    });
+
     test('round-trips through JSON, including monitors', () {
       const snapshot = PerformanceArmSnapshot(
         masterGain: 0.9,

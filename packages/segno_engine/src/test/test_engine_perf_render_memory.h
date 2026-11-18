@@ -46,8 +46,10 @@ static int64_t render_memory_now(void) {
 
 /* A capture of `frames` frames at 48 kHz: track 0 plays a clean take of 0.5
  * with a heard image of (0.3, 0.1), track 1 a clean take of 0.25, both a
- * 0.1 s loop from the arm, and an events.log holding only the arm fact. */
-static const char* render_memory_fixture(const char* name, uint64_t frames) {
+ * 0.1 s loop from the arm, and an events.log holding only the arm fact. The
+ * master is the output pair's sides in [capture_mask] (1: mono, 3: stereo). */
+static const char* render_fixture_masked(const char* name, uint64_t frames,
+                                         int capture_mask) {
   test_render_mkdir(perf_test_dir());
   const char* dir = render_test_dir(name);
   char loops[700];
@@ -70,14 +72,14 @@ static const char* render_memory_fixture(const char* name, uint64_t frames) {
   char manifest[2048];
   snprintf(manifest, sizeof(manifest),
            "{\"sample_rate\": %d, \"capture_frames\": %llu, "
-           "\"armSnapshot\": {\"followOutput\": false, \"captureMask\": 1, "
+           "\"armSnapshot\": {\"followOutput\": false, \"captureMask\": %d, "
            "\"tracks\": [{\"channel\": 0, \"lanes\": [{\"lane\": 0, "
            "\"deferred\": false, \"pcmRef\": \"loops/clean0.wav\", "
            "\"heardPcmRef\": \"loops/heard0.wav\"}]}, "
            "{\"channel\": 1, \"lanes\": [{\"lane\": 0, \"deferred\": false, "
            "\"pcmRef\": \"loops/clean1.wav\"}]}]}, "
            "\"disarmSnapshot\": {\"tracks\": []}, \"layers\": []}",
-           RM_SR, (unsigned long long)frames);
+           RM_SR, (unsigned long long)frames, capture_mask);
   test_write_manifest(dir, manifest);
   snprintf(path, sizeof(path), "%s/events.log", dir);
   FILE* lf = fopen(path, "wb");
@@ -92,6 +94,11 @@ static const char* render_memory_fixture(const char* name, uint64_t frames) {
     fclose(lf);
   }
   return dir;
+}
+
+/* The fixture above with a mono master. */
+static const char* render_memory_fixture(const char* name, uint64_t frames) {
+  return render_fixture_masked(name, frames, 1);
 }
 
 /* The stem at `rel` under [dir]: its frame count from the header (-1 when
@@ -129,10 +136,10 @@ static int render_memory_exists(const char* dir, const char* rel) {
 
 /* Removes the stems a fixture rendered: they are tens of megabytes. */
 static void render_memory_clean(const char* dir) {
-  static const char* const rels[] = {"stems/dry/track0.wav",
-                                     "stems/dry/track1.wav",
-                                     "stems/wet/track0.wav",
-                                     "stems/wet/track1.wav",
+  static const char* const rels[] = {"stems/dry/track0-lane0.wav",
+                                     "stems/dry/track1-lane0.wav",
+                                     "stems/wet/track0-lane0.wav",
+                                     "stems/wet/track1-lane0.wav",
                                      "stems/wet/master.wav"};
   for (size_t i = 0; i < sizeof(rels) / sizeof(rels[0]); ++i) {
     char path[760];
@@ -147,16 +154,16 @@ static void render_memory_clean(const char* dir) {
 static void render_memory_check_stems(const char* dir, uint64_t frames) {
   const uint64_t last = frames - 1;
   float v = 0.0f;
-  CHECK(render_memory_stem(dir, "stems/dry/track0.wav", last, 1, &v) ==
+  CHECK(render_memory_stem(dir, "stems/dry/track0-lane0.wav", last, 1, &v) ==
         (int64_t)frames);
   CHECK(fabsf(v - 0.5f) < 1e-6f);
-  CHECK(render_memory_stem(dir, "stems/dry/track1.wav", last, 1, &v) ==
+  CHECK(render_memory_stem(dir, "stems/dry/track1-lane0.wav", last, 1, &v) ==
         (int64_t)frames);
   CHECK(fabsf(v - 0.25f) < 1e-6f);
-  CHECK(render_memory_stem(dir, "stems/wet/track0.wav", last, 1, &v) ==
+  CHECK(render_memory_stem(dir, "stems/wet/track0-lane0.wav", last, 1, &v) ==
         (int64_t)frames);
   CHECK(fabsf(v - 0.2f) < 1e-6f);
-  CHECK(render_memory_stem(dir, "stems/wet/track1.wav", last, 1, &v) ==
+  CHECK(render_memory_stem(dir, "stems/wet/track1-lane0.wav", last, 1, &v) ==
         (int64_t)frames);
   CHECK(fabsf(v - 0.25f) < 1e-6f);
   CHECK(render_memory_stem(dir, "stems/wet/master.wav", last, 1, &v) ==
@@ -245,10 +252,10 @@ static void test_perf_render_cancel_leaves_no_partial_stem(void) {
   printf("test_perf_render_cancel_leaves_no_partial_stem\n");
   enum { FRAMES = 8000000 };
   const char* dir = render_memory_fixture("memory-cancel", FRAMES);
-  static const char* const parts[] = {"stems/dry/track0.wav.part",
-                                      "stems/dry/track1.wav.part",
-                                      "stems/wet/track0.wav.part",
-                                      "stems/wet/track1.wav.part",
+  static const char* const parts[] = {"stems/dry/track0-lane0.wav.part",
+                                      "stems/dry/track1-lane0.wav.part",
+                                      "stems/wet/track0-lane0.wav.part",
+                                      "stems/wet/track1-lane0.wav.part",
                                       "stems/wet/master.wav.part"};
   for (int pass = 0; pass < 2; ++pass) {
     le_engine* e = le_engine_create();
@@ -263,10 +270,10 @@ static void test_perf_render_cancel_leaves_no_partial_stem(void) {
     }
     if (pass == 0) {
       /* Nothing was rendered before: no stem at all. */
-      CHECK(!render_memory_exists(dir, "stems/dry/track0.wav"));
-      CHECK(!render_memory_exists(dir, "stems/dry/track1.wav"));
-      CHECK(!render_memory_exists(dir, "stems/wet/track0.wav"));
-      CHECK(!render_memory_exists(dir, "stems/wet/track1.wav"));
+      CHECK(!render_memory_exists(dir, "stems/dry/track0-lane0.wav"));
+      CHECK(!render_memory_exists(dir, "stems/dry/track1-lane0.wav"));
+      CHECK(!render_memory_exists(dir, "stems/wet/track0-lane0.wav"));
+      CHECK(!render_memory_exists(dir, "stems/wet/track1-lane0.wav"));
       CHECK(!render_memory_exists(dir, "stems/wet/master.wav"));
       /* Then a whole render, which the next pass re-renders. */
       CHECK(le_perf_render_begin(e, dir) == LE_OK);
@@ -328,11 +335,11 @@ static void test_perf_render_rerender_leaves_only_its_own_stems(void) {
   test_wait_for_render(e, 60000);
   le_perf_render_force_dry_write_failure_for_test(-1);
 
-  CHECK(!render_memory_exists(dir, "stems/dry/track0.wav")); /* the old one */
+  CHECK(!render_memory_exists(dir, "stems/dry/track0-lane0.wav")); /* the old one */
   float v = 0.0f;
-  CHECK(render_memory_stem(dir, "stems/wet/track0.wav", FRAMES - 1, 1, &v) ==
+  CHECK(render_memory_stem(dir, "stems/wet/track0-lane0.wav", FRAMES - 1, 1, &v) ==
         (int64_t)FRAMES);
-  CHECK(render_memory_stem(dir, "stems/dry/track1.wav", FRAMES - 1, 1, &v) ==
+  CHECK(render_memory_stem(dir, "stems/dry/track1-lane0.wav", FRAMES - 1, 1, &v) ==
         (int64_t)FRAMES);
   /* The master is this render's: track 1 alone, track 0 failed. */
   CHECK(render_memory_stem(dir, "stems/wet/master.wav", FRAMES - 1, 1, &v) ==

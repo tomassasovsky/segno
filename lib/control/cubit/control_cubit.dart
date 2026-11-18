@@ -210,7 +210,9 @@ class ControlCubit extends Cubit<ControlState> {
   /// toolbar path, so both arm gestures record the same rig. It is injected
   /// rather than mapped here: the mapping lives in the session feature, and a
   /// feature never imports another feature. Defaults to the empty snapshot
-  /// (what this call site passed before it was wired).
+  /// (what this call site passed before it was wired). [_currentNames]
+  /// resolves what the player calls each track and input, injected the same
+  /// way (#1799).
   /// [controller] is the external-MIDI seam (part 7): its resolved binding
   /// events land at the same dispatch point the pedal's do, so a discrete CC
   /// stomps exactly like a footswitch. [midiDevices] supplies every captured
@@ -240,6 +242,7 @@ class ControlCubit extends Cubit<ControlState> {
     this._midiClock,
     this._learnTimeout = const Duration(seconds: 15),
     this._currentChains = _noChains,
+    this._currentNames = _noNames,
     this._takeLocked = _neverLocked,
     this._inputLocked = _neverLocked,
     Future<int?> Function(String path)? freeSpaceBytes,
@@ -1102,6 +1105,9 @@ class ControlCubit extends Cubit<ControlState> {
   /// [PerformanceRepository.arm] already assumes when given nothing.
   static PerformanceChains _noChains() => const PerformanceChains();
 
+  /// The default `currentNames`: nothing named.
+  static PerformanceNames _noNames() => const PerformanceNames();
+
   static bool _neverLocked() => false;
 
   final LooperRepository _looper;
@@ -1112,6 +1118,7 @@ class ControlCubit extends Cubit<ControlState> {
   final FxChainPersistence _fxPersistence;
   final Duration _learnTimeout;
   final PerformanceChains Function() _currentChains;
+  final PerformanceNames Function() _currentNames;
   final bool Function() _takeLocked;
 
   /// Holds continuous writes (expression, External values, MIDI values)
@@ -2037,12 +2044,15 @@ class ControlCubit extends Cubit<ControlState> {
   }
 
   /// Rec mode: mute the cursor track (finalizing a capture first). Muting the
-  /// only audible loop parks the whole transport. When the track ends up
-  /// stopped (this Stop parks it, or it already was), its mute spares the
-  /// Post tail: the tail rings out while it is stopped, as a Stop's does, and
-  /// the engine gates it once the track runs again (#1773,
-  /// [LooperRepository.spareTail]). The park goes before the mute, so the
-  /// mute lands on the stopped track.
+  /// only audible loop parks the whole transport, and its mute spares the
+  /// Post tail: the tail rings out while the track is stopped, as a Stop's
+  /// does, and the engine gates it once the track runs again (#1773). The
+  /// engine parks it ([LooperRepository.stopRecordPark], #1782): a playing
+  /// loop at the press, an overdubbing one where its overdub ends, which is
+  /// the grid end when Record timing quantizes it. Until then the pass runs
+  /// on and the mute waits for the park. A track already stopped (after a
+  /// Once end or a second Stop) only gets the spare
+  /// ([LooperRepository.spareTail]) ahead of its mute.
   bool _recStop(int channel) {
     final track = _trackAt(channel);
     if (track == null) return false;
@@ -2050,27 +2060,23 @@ class ControlCubit extends Cubit<ControlState> {
     if (_l.isSection(channel) && _l.songWaitingSection == channel) {
       return _looper.cancelArm(channel: channel).isOk;
     }
-    if (!_looper.stopRecordControl(channel: channel).isOk) {
-      return false;
-    }
+    final lanes = _looper.laneCount(channel);
     final parks =
-        track.state == TrackState.playing && _isLastAudibleTrack(channel);
-    // All or nothing: the spare reserves room for the stops and the lane
-    // mutes after it, and a refusal refuses the whole Stop, so a full
-    // command ring never leaves the loop parked but unmuted.
-    if ((parks || track.state == TrackState.stopped) &&
-        !_looper
-            .spareTail(
-              channel: channel,
-              following:
-                  (parks ? _tracks.length : 0) + _looper.laneCount(channel),
-            )
-            .isOk) {
-      return false;
-    }
+        (track.state == TrackState.playing ||
+            track.state == TrackState.overdubbing) &&
+        _isLastAudibleTrack(channel);
+    // All or nothing: the park and the spare reserve room for the lane mutes
+    // after them, and a refusal refuses the whole Stop, so a full command
+    // ring never leaves the loop parked but unmuted.
     if (parks) {
-      for (final t in _tracks) {
-        _looper.stopTrack(channel: t.channel);
+      if (!_looper.stopRecordPark(channel: channel, following: lanes).isOk) {
+        return false;
+      }
+    } else {
+      if (!_looper.stopRecordControl(channel: channel).isOk) return false;
+      if (track.state == TrackState.stopped &&
+          !_looper.spareTail(channel: channel, following: lanes).isOk) {
+        return false;
       }
     }
     return _setTrackMute(muted: true, channel: channel).isOk;
@@ -3735,7 +3741,10 @@ class ControlCubit extends Cubit<ControlState> {
         return (result: EngineResult.device, announced: true);
       }
     }
-    final result = await _performance.arm(chains: _currentChains());
+    final result = await _performance.arm(
+      chains: _currentChains(),
+      names: _currentNames(),
+    );
     return (result: result, announced: result == EngineResult.notReady);
   }
 

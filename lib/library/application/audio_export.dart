@@ -40,6 +40,7 @@ class AudioExportPlan {
     required this.folder,
     required this.files,
     this.package = false,
+    this.folders = const [],
     this.earlier,
   });
 
@@ -54,6 +55,10 @@ class AudioExportPlan {
 
   /// Whether the files go into one directory named [name].
   final bool package;
+
+  /// Empty directories a [package] holds besides its [files], by their path
+  /// inside it: a Live Project's `Ableton Project Info` (#1837).
+  final List<String> folders;
 
   /// Entries in [folder] that an earlier export under [name] left and that
   /// `Replace` takes away with the ones it overwrites: a recording exported
@@ -73,8 +78,12 @@ class AudioExportCancelled implements Exception {
 
 /// Runs the Library's exports and backups to a removable drive through the
 /// [StorageRepository] (#1178 Part 7, #1177): every byte goes through its
-/// `copyFile` (`.part`, fsync, rename), under a write lease that names what
-/// the write is for, after a space check against the export's total.
+/// `copyFile` (`.part`, fsync, rename, volume sync), under a write lease
+/// that names what the write is for, after a check of every file against
+/// the largest file the drive's filesystem holds and a space check against
+/// the export's total. The volume is synced once more after the swap, so a
+/// finished export is on the device and the drive may be pulled without
+/// Eject (#1797).
 ///
 /// An export is all or nothing on the drive, whatever stops it:
 /// - Every file is first copied into a hidden staging directory named after
@@ -129,7 +138,9 @@ class AudioExporter {
   /// directory, or the first file.
   ///
   /// Throws [NameConflict] (only under [ConflictPolicy.ask]), a
-  /// [StorageFailure], or [AudioExportCancelled].
+  /// [StorageFailure], or [AudioExportCancelled]. A file larger than the
+  /// drive's filesystem holds is refused ([StorageFileTooLarge]) before
+  /// anything on the drive is touched.
   Future<String> run(
     AudioExportPlan plan, {
     required int generation,
@@ -181,9 +192,12 @@ class AudioExporter {
     void Function(double fraction)? onProgress,
     bool Function()? cancelled,
   }) async {
+    final sizes = [for (final f in plan.files) _sizeOf(f.source)];
+    // Before anything touches the drive: a file its filesystem cannot hold
+    // (4 GiB or more on FAT32) refuses the whole export (#1794).
+    _storage.checkFileSizes(destination, sizes);
     final folder = Directory('$mount/${plan.folder}');
     _guardIo(() => recoverFolder(folder));
-    final sizes = [for (final f in plan.files) _sizeOf(f.source)];
     final total = sizes.fold<int>(0, (a, b) => a + b);
     final space = await _storage.space(destination);
     if (space != null && space.freeBytes < total) {
@@ -210,6 +224,11 @@ class AudioExporter {
         done += sizes[i];
         onProgress?.call(total == 0 ? 1 : done / total);
       }
+      if (plan.package) {
+        for (final f in plan.folders) {
+          Directory('$mount/$staging/$name/$f').createSync(recursive: true);
+        }
+      }
       if (cancelled?.call() ?? false) throw const AudioExportCancelled();
       _swap(
         folder: folder,
@@ -217,13 +236,12 @@ class AudioExporter {
         entries: entries,
         earlier: policy == ConflictPolicy.replace ? plan.earlier : null,
       );
-      // The swap's renames are plain renames: sync them before the export
-      // is reported, as the copy syncs its own (a moved package directory
-      // keeps its `..` entry in its own clusters, so it is synced too).
-      await _storage.syncDirectory(destination, plan.folder);
-      if (plan.package) {
-        await _storage.syncDirectory(destination, '${plan.folder}/$name');
-      }
+      // The swap's renames and its clean-up are plain filesystem calls:
+      // the volume is synced before the export is reported, as each copy
+      // syncs it after its own rename. A directory sync would not do: on
+      // vfat a renamed file's new entry reads size 0 until its inode is
+      // written back, and a stick pulled before that keeps the 0 (#1797).
+      await _storage.syncVolume(destination);
     } on FileSystemException catch (e) {
       _bestEffort(() => stagingDir.deleteSync(recursive: true));
       throw StorageFailure.io(e.osError?.message ?? e.message);

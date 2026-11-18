@@ -47,7 +47,7 @@ void main() {
                   {
                     'lane': 0,
                     'deferred': false,
-                    'pcmRef': 'stems/wet/track0.wav',
+                    'pcmRef': 'loops/track0-lane0.wav',
                   },
                 ],
               },
@@ -57,12 +57,27 @@ void main() {
     );
   }
 
+  /// The render's stem index, listing [lanes] (#1824).
+  void writeIndex(List<Map<String, Object>> lanes) =>
+      File('${dir.path}/stems/stems.json')
+        ..createSync(recursive: true)
+        ..writeAsStringSync(jsonEncode({'lanes': lanes}));
+
+  /// A rendered lane stem holding [bytes], and the index that lists it
+  /// (#1824).
+  File writeStem(List<int> bytes) {
+    writeIndex(const [
+      {'channel': 0, 'lane': 0, 'dry': 'stems/dry/track0-lane0.wav'},
+    ]);
+    return File('${dir.path}/stems/dry/track0-lane0.wav')
+      ..createSync(recursive: true)
+      ..writeAsBytesSync(bytes);
+  }
+
   test('writes project.als and fx-chains.txt from the bundle and leaves its '
       'audio alone', () async {
     writeManifest(withTrack: true);
-    final stem = File('${dir.path}/stems/wet/track0.wav')
-      ..createSync(recursive: true)
-      ..writeAsBytesSync([1, 2, 3, 4]);
+    final stem = writeStem([1, 2, 3, 4]);
     final stamp = stem.lastModifiedSync();
 
     final tracks = await writeProject();
@@ -71,14 +86,16 @@ void main() {
     expect(File('${dir.path}/project.als').existsSync(), isTrue);
     expect(File('${dir.path}/fx-chains.txt').existsSync(), isTrue);
     expect(stem.readAsBytesSync(), [1, 2, 3, 4]);
+    // The bundle is a Live Project, so Live saves the set in place (#1837).
+    final info = Directory('${dir.path}/Ableton Project Info');
+    expect(info.existsSync(), isTrue);
+    expect(info.listSync(), isEmpty);
     expect(stem.lastModifiedSync(), stamp);
   });
 
   test("writes both files through the take's durable writer (#1801)", () async {
     writeManifest(withTrack: true);
-    File('${dir.path}/stems/wet/track0.wav')
-      ..createSync(recursive: true)
-      ..writeAsBytesSync([0]);
+    writeStem([0]);
 
     await writeProject();
 
@@ -91,25 +108,50 @@ void main() {
 
     expect(await writeProject(), isEmpty);
     expect(File('${dir.path}/project.als').existsSync(), isFalse);
+    expect(Directory('${dir.path}/Ableton Project Info').existsSync(), isFalse);
     expect(File('${dir.path}/fx-chains.txt').existsSync(), isTrue);
   });
 
   test('removes a project.als an earlier version wrote for a take with no '
       'tracks, which Live refuses', () async {
     writeManifest();
+    writeIndex(const []);
     File('${dir.path}/project.als').writeAsBytesSync([1, 2, 3]);
+    Directory('${dir.path}/Ableton Project Info').createSync();
 
     expect(await writeProject(), isEmpty);
     expect(File('${dir.path}/project.als').existsSync(), isFalse);
+    expect(Directory('${dir.path}/Ableton Project Info').existsSync(), isFalse);
+  });
+
+  test('never replaces a project with one that has no stems: a take with '
+      'no stem index leaves its project as it was (#1824)', () async {
+    writeManifest(withTrack: true);
+    File('${dir.path}/project.als').writeAsBytesSync([1, 2, 3]);
+
+    await expectLater(writeProject(), throwsA(isA<StemsNotRendered>()));
+    expect(File('${dir.path}/project.als').readAsBytesSync(), [1, 2, 3]);
+    expect(
+      const StemsNotRendered('/take').toString(),
+      'StemsNotRendered: /take has no stems/stems.json',
+    );
+  });
+
+  test('writes the project again into a bundle that is already a Live '
+      'Project', () async {
+    writeManifest(withTrack: true);
+    writeStem([0]);
+    await writeProject();
+
+    expect(await writeProject(), hasLength(1));
+    expect(Directory('${dir.path}/Ableton Project Info').existsSync(), isTrue);
   });
 
   test('reads the manifest afresh on every call', () async {
     writeManifest();
     expect(await writeProject(), isEmpty);
 
-    File('${dir.path}/stems/wet/track0.wav')
-      ..createSync(recursive: true)
-      ..writeAsBytesSync([0]);
+    writeStem([0]);
     writeManifest(withTrack: true);
 
     expect(await writeProject(), hasLength(1));
@@ -117,12 +159,22 @@ void main() {
 
   test('throws what the write throws, so the caller can report it', () async {
     writeManifest(withTrack: true);
-    File('${dir.path}/stems/wet/track0.wav')
-      ..createSync(recursive: true)
-      ..writeAsBytesSync([0]);
+    writeStem([0]);
     // A directory where the Live Set goes: the write fails for real.
     Directory('${dir.path}/project.als').createSync();
 
     await expectLater(writeProject(), throwsA(isA<FileSystemException>()));
+  });
+
+  test('a Live Project folder that cannot be made leaves the previous '
+      'project whole', () async {
+    writeManifest(withTrack: true);
+    writeStem([0]);
+    File('${dir.path}/project.als').writeAsBytesSync([1, 2, 3]);
+    File('${dir.path}/Ableton Project Info').writeAsBytesSync([0]);
+
+    await expectLater(writeProject(), throwsA(isA<FileSystemException>()));
+
+    expect(File('${dir.path}/project.als').readAsBytesSync(), [1, 2, 3]);
   });
 }

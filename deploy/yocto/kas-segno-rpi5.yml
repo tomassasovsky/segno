@@ -92,9 +92,48 @@ local_conf_header:
     # the root device it was told to mount does not exist.
     #
     # Gen 3 is above the officially qualified Gen 2 rate. It is what the carrier
-    # is sold for and what the drive can do; drop this line first if the NVMe
-    # link proves flaky under load.
+    # is sold for and what the drive can do. The one link drop on record (#1795)
+    # came with no AER error, so the power-saving arguments below went first;
+    # if the link drops again with them in place, drop pciex1_gen=3 next.
     RPI_EXTRA_CONFIG:append = "\ndtparam=pciex1\ndtparam=pciex1_gen=3"
+
+  rpi5-nvme-power: |
+    # Keep the NVMe drive and its link out of their power-saving states (#1795).
+    # On 2026-11-12 the console's WD_BLACK SN770 (firmware 731100WD) dropped off
+    # the bus mid-recording, 255 s after boot: "controller is down; will reset:
+    # CSTS=0xffffffff", then a failed reset, /data read-only and a watchdog
+    # reboot. The command register read back as 0000, so the drive had been
+    # reset and lost its configuration. Nothing came before it: no AER error,
+    # no under-voltage, nothing in the drive's error log.
+    #
+    # Two mechanisms act on every idle gap, and a recording is full of them:
+    #
+    #   - APST. nvme_core builds the drive's APST table from the power states
+    #     the drive lists and its own apst_* timeouts. On this drive that table
+    #     drops it into the non-operational PS3 after 100 ms idle and into PS4
+    #     after 2 s, because the default latency tolerance (100000 us) allows
+    #     both. default_ps_max_latency_us=0 turns APST off.
+    #   - ASPM L1 on the link, which the kernel enables under its default
+    #     powersave policy. pcie_aspm.policy=performance makes the kernel
+    #     clear ASPM on every link. The kernel warning suggests pcie_aspm=off,
+    #     but that only stops the kernel from touching ASPM, so whatever the
+    #     firmware set stays set, and it makes the kernel refuse any policy.
+    #
+    # Turning both off is what the kernel's warning suggests and the usual fix
+    # in SN770 and Pi 5 NVMe reports. The kernel has no quirk for this drive
+    # (15b7:5017). pcie_port_pm=off, the warning's third argument, is left out:
+    # the root port never runtime-suspends on this board (power/control "on",
+    # zero suspended time).
+    #
+    # The cost: the drive idles in PS0 at about 1 W instead of 15 mW in PS3 and
+    # runs a few degrees warmer, and the RP1 link also stays out of L1. The
+    # console always runs on mains power, so that is acceptable.
+    #
+    # The cmdline reaches both boot slots, in the .wic and through the bundle's
+    # boot files; tryboot-cmdline and the install hook rewrite only root=.
+    # deploy/yocto/test/run_kernel_cmdline_tests.sh fails if either argument
+    # is missing, changes value or appears twice.
+    CMDLINE:append = " nvme_core.default_ps_max_latency_us=0 pcie_aspm.policy=performance"
 
   rpi5-rtc: |
     # Charge the coin cell on J5, so the RTC keeps time across a power cut and

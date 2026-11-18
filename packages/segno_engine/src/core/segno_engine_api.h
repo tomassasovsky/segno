@@ -552,7 +552,10 @@ typedef enum le_command_code {
                             * end), generation (le_heard_pass.gen). */
   LE_CMD_SET_FX_RECIPE = 77,
   LE_CMD_SET_RECORD_TIMING = 78, /* one complete timing vector and receipt */
-  LE_CMD_STOP_RECORD_CONTROL = 79, /* cohort cancel or non-acquiring capture finish */
+  LE_CMD_STOP_RECORD_CONTROL = 79, /* cohort cancel or non-acquiring capture
+                                    * finish. arg_f: 0 finish now, 1 arm the
+                                    * grid end, 2 drop the arm; plus 4 for
+                                    * le_engine_stop_record_park's park */
   LE_CMD_CANCEL_COUNT_IN = 80, /* only the shared launch cohort/grace */
   LE_CMD_FADE = 81, /* checked internal Fade request; never raw-posted */
   LE_CMD_RESET_TRANSFORMS = 82, /* internal material-import transform reset
@@ -1908,7 +1911,8 @@ typedef struct le_snapshot {
   /* Samples above full scale (|x| > 1.0) across every stream so far. */
   uint64_t perf_overs;
   /* The streams the armed take captures (or the next arm would: the first
-   * enabled output pair plus every monitored input the device has), and the
+   * enabled output pair, every monitored input as heard, and every input
+   * the device has and every instrument with a patch raw), and the
    * bytes one frame of all of them takes, so the app can tell whether a
    * volume holds a minimum take of every stream before it arms. 0 when
    * nothing could be captured. */
@@ -2825,6 +2829,29 @@ LE_EXPORT int32_t le_engine_set_record_offset(le_engine* engine,
  * Cancel Count-in touches only that cohort/grace, never ordinary arms or an
  * older running capture. Both report queue/admission refusal synchronously. */
 LE_EXPORT int32_t le_engine_stop_record_control(le_engine* engine, int32_t channel);
+/* The Rec-mode Stop of the only audible loop (#1782): Stop as
+ * le_engine_stop_record_control resolves it, then the transport parks, and
+ * the mutes that follow spare the Post tail (le_engine_spare_tail's rule).
+ *
+ * A playing track parks at once: every track stops, as le_engine_stop_track
+ * on each would stop it. So does an overdubbing track whose overdub ends at
+ * once; the stop ends the pass. An overdubbing track whose Record timing arms
+ * the end for the grid keeps overdubbing to that boundary and parks there,
+ * after any other arm that boundary fires. Until then the next mute of each
+ * of its lanes waits for the park instead of punching the pass out (a later
+ * one punches out as usual), and a second call keeps the arm. Whatever drops
+ * the arm (a Record press, a Clear, another track's capture) drops the park
+ * with it. A live Count-in is cancelled first, and the park follows. In any
+ * other state the call does what le_engine_stop_record_control does.
+ *
+ * `following` is how many commands the caller posts right after it (the
+ * lane mutes): the call reserves room for them as le_engine_spare_tail does,
+ * and returns LE_ERR_NOT_READY with nothing posted when they would not fit.
+ * LE_ERR_INVALID for a bad channel, a negative `following`, or an arm
+ * le_engine_stop_record_control would refuse. */
+LE_EXPORT int32_t le_engine_stop_record_park(le_engine* engine,
+                                             int32_t channel,
+                                             int32_t following);
 LE_EXPORT int32_t le_engine_cancel_count_in(le_engine* engine);
 
 LE_EXPORT int32_t le_engine_cancel_arm(le_engine* engine, int32_t channel);
@@ -4045,9 +4072,13 @@ LE_EXPORT int32_t le_engine_set_output_enabled(le_engine* engine, int32_t output
  * While armed, the audio thread copies two kinds of streams into pre-published
  * lock-free rings: the master capture (the first enabled output pair, tapped
  * BEFORE the master gain and limiter; mono when only one channel of it is
- * enabled), and each hardware input actively monitored AT ARM (post-monitor-
- * FX, pre-route; frozen for the whole arm session — an input enabled later is
- * not retroactively captured). Rings are allocated control-side at arm and
+ * enabled), each hardware input actively monitored AT ARM as heard (stereo,
+ * post-monitor-FX, volume and pan, silent while its monitor is off or
+ * muted), and every input the device has (loopback channels aside) and every
+ * instrument with a patch raw (#1805: mono, the clean sample before any of
+ * that, every frame, whatever the monitor). Both sets are frozen at arm: an
+ * input enabled or added later is not retroactively captured. Rings are
+ * allocated control-side at arm and
  * published to the audio thread with LE_CMD_PERF_ARM; on overflow the audio
  * thread drops the frame and increments the overrun atomic — it never blocks
  * or allocates. Status (armed / frames / overruns) is exposed only via
@@ -4055,11 +4086,12 @@ LE_EXPORT int32_t le_engine_set_output_enabled(le_engine* engine, int32_t output
  *
  * A dedicated background drain thread (perf_drain.h; spawned by le_perf_arm,
  * joined by le_perf_disarm) writes each stream as ORDERED 32-bit float WAV
- * PARTS (#1198): `master-001.wav`, `master-002.wav`, … and
- * `input-<n>-001.wav`, each at most `part_bytes` long, header included. Every
- * part starts with the same 84-byte header — RIFF/WAVE, a 16-byte `fmt `
- * chunk (IEEE float, tag 3, 32 bits), a 32-byte `sgno` chunk (the take id,
- * the stream: 0 master, 1 + n input n, and the part index from 1), then
+ * PARTS (#1198): `master-001.wav`, `master-002.wav`, …,
+ * `input-<n>-001.wav` and `input-raw-<n>-001.wav`, each at most `part_bytes`
+ * long, header included. Every part starts with the same 84-byte header —
+ * RIFF/WAVE, a 16-byte `fmt ` chunk (IEEE float, tag 3, 32 bits), a 32-byte
+ * `sgno` chunk (the take id, the stream: 0 master, 1 + n input n as heard,
+ * LE_PERF_RAW_STREAM_BASE + n input n raw, and the part index from 1), then
  * `data` — written with zero sizes and patched when the part is SEALED (full,
  * or at the end of the take), at which point its SHA-256 over the payload is
  * recorded. Samples are written as captured, never clamped; samples whose
@@ -4117,8 +4149,9 @@ typedef struct le_perf_target {
   /* Seconds of audio each capture ring holds, 1 to LE_PERF_RING_SECONDS_MAX;
    * 0 means LE_PERF_RING_SECONDS_DEFAULT. Lowered (never below the default,
    * nor below the request) so that every ring together stays within
-   * LE_PERF_RING_BYTES_MAX. At the floor the cap gives way: 32 stereo inputs
-   * at 96 kHz take 33 rings of 2^19 samples, 66 MiB. The sidecar's
+   * LE_PERF_RING_BYTES_MAX. At the floor the cap gives way: 32 inputs and 8
+   * instruments, all monitored, at 96 kHz take 41 stereo rings of 2^19
+   * samples and 40 raw mono rings of 2^18, 122 MiB. The sidecar's
    * `ring_seconds` and le_snapshot.perf_ring_seconds report what was
    * granted. */
   int32_t ring_seconds;
@@ -4142,7 +4175,7 @@ typedef struct le_perf_target {
   int32_t idle_stop_seconds;
   /* The longest the take runs before it stops on its own
    * (LE_PERF_STOP_LENGTH_LIMIT), in seconds, and then never past the frames
-   * the rendered master stem can hold in a 32-bit WAV. 0 sets no limit. */
+   * the rendered master stem can hold in one file on FAT32. 0 sets no limit. */
   int32_t max_seconds;
 } le_perf_target;
 
@@ -4150,6 +4183,10 @@ typedef struct le_perf_target {
  * fields, and 2^31 for readers that keep RIFF sizes in a signed int. */
 #define LE_PERF_PART_BYTES 2000000000ULL
 #define LE_PERF_PART_HEADER_BYTES 84
+/* The stream number of input n's raw recording (#1805) is this plus n; as
+ * heard, input n is stream 1 + n. A file-format constant, independent of
+ * LE_MAX_MONITORED_INPUTS so a capture keeps its meaning if that grows. */
+#define LE_PERF_RAW_STREAM_BASE 100
 #define LE_PERF_RING_SECONDS_DEFAULT 2
 #define LE_PERF_RING_SECONDS_MAX 8
 #define LE_PERF_RING_BYTES_MAX (64u * 1024u * 1024u)
@@ -4305,6 +4342,18 @@ LE_EXPORT int32_t le_fs_sync_dir_errno(const char* path, int32_t* out_errno);
  * error, 0 on LE_OK. */
 LE_EXPORT int32_t le_fs_sync_file_errno(const char* path, int32_t* out_errno);
 
+/* On Linux, makes everything written to the volume that holds `path`
+ * durable and flushes the device's cache: syncfs(2), then fsync of `path`.
+ * A directory sync is not enough on vfat, where a rename writes the new
+ * entry with size 0 and the file's inode fills it in only when written back
+ * (#1797). Elsewhere it is narrower: F_FULLFSYNC of `path` on macOS, fsync
+ * of `path` on other POSIX systems, and on Windows as le_fs_sync_dir.
+ * `path` must be a directory on that volume. Returns LE_OK; LE_ERR_INVALID
+ * for a NULL or empty `path`; LE_ERR_DEVICE when it cannot be opened or the
+ * sync fails, with *out_errno (when not NULL) the OS error, 0 on LE_OK. */
+LE_EXPORT int32_t le_fs_sync_volume_errno(const char* path,
+                                          int32_t* out_errno);
+
 /* Renames `from` to `to` (both UTF-8) only if nothing is at `to`, as one
  * atomic step: renameat2(RENAME_NOREPLACE) on Linux, renamex_np(RENAME_EXCL)
  * on macOS, MoveFileExW without MOVEFILE_REPLACE_EXISTING on Windows. A copy
@@ -4335,18 +4384,21 @@ LE_EXPORT int32_t le_wav_patch_sizes(const char* path, uint64_t max_frames,
 /* ---- offline performance renderer (parts 7-8 of the DAW-export stack) ----
  * Reconstructs, from a FINALIZED capture directory (part 6's
  * `performance.json` + `events.log` + `loops/` + retired-layer PCM), on a
- * dedicated worker thread: full-length per-track dry stems (part 7,
- * `stems/dry/track<channel>.wav`), per-track wet (FX-applied) stems and a
- * reconstructed master bus (part 8, `stems/wet/track<channel>.wav` +
- * `stems/wet/master.wav`: track sum + master gain + limiter — this
- * feature's golden-parity guardrail against the live-captured master).
+ * dedicated worker thread: full-length per-lane dry stems (part 7,
+ * `stems/dry/track<channel>-lane<lane>.wav`, #1824), per-lane wet
+ * (FX-applied) stems and a reconstructed master bus (part 8,
+ * `stems/wet/track<channel>-lane<lane>.wav` + `stems/wet/master.wav`: the
+ * lanes' sum + the captured output's stages — this feature's golden-parity
+ * guardrail against the live-captured master), listed in
+ * `stems/stems.json`.
  * Reads exclusively from disk — no live-engine dependency — so a render can
  * run concurrently with live looping, and a crash-salvage render is free. */
 
 /* Starts an offline render of the finalized capture at `capture_dir`: spawns
- * a worker thread that writes `stems/dry/track<channel>.wav` +
- * `stems/wet/track<channel>.wav` under `capture_dir` for every non-empty
- * track, and `stems/wet/master.wav`, all a block at a time together (#1747),
+ * a worker thread that writes `stems/dry/track<channel>-lane<lane>.wav` +
+ * `stems/wet/track<channel>-lane<lane>.wav` under `capture_dir` for every
+ * lane of every non-empty track (#1824), `stems/wet/master.wav` and the
+ * index `stems/stems.json`, all a block at a time together (#1747),
  * each published at its path once it seals, with poll-based progress.
  * Returns LE_OK once the worker thread is launched (this call never blocks
  * on the render itself), LE_ERR_INVALID

@@ -6962,6 +6962,17 @@ class LooperRepository {
     return _engine.stopRecordControl(channel: channel);
   }
 
+  /// The Rec-mode Stop of the only audible loop (#1782): Rec Stop, then the
+  /// engine parks the transport, now or at the grid end Record timing gives
+  /// an overdub, and the mutes sent after it let the Post tail ring out. It
+  /// reserves room for the [following] commands (the lane mutes) and refuses
+  /// ([EngineResult.notReady]) when they would not all fit. Nothing to
+  /// remember across a restart: an armed end does not survive one.
+  EngineResult stopRecordPark({required int channel, int following = 0}) {
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.stopRecordPark(channel: channel, following: following);
+  }
+
   /// Retires only Count-in membership/grace, preserving ordinary live work.
   EngineResult cancelCountIn() {
     if (!_intendRunning) return EngineResult.ok;
