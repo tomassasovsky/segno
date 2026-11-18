@@ -108,7 +108,7 @@ What a standalone tool should conclude from each combination:
 | `overs` | int | Samples with a magnitude above 1.0 across every part, sealed and open. Kept as written, never clipped. |
 | `parts` | array | The take's audio parts in playback order — see "Audio parts" below. |
 | `stopped_early` | string? | Why the take stopped before a normal disarm; absent otherwise. `"disk_full"`: a write failed (a full disk, a quota, a read-only remount, an I/O error). `"device_changed"`: the audio device changed. `"reserve_reached"` (#1198): the destination reached its reserve, and every stream ends at the last whole frame it could hold above it. `"slow_storage"` (#1198): a capture ring overflowed because the storage fell behind, and every stream ends at the first frame that could not be kept, with nothing filled in after it. `"idle"` (#1767): nothing happened for the arm's idle period (20 minutes): no logged event a player's action leaves (the facts the engine logs on its own, a loop top's tempo anchor or a retired overdub pass, do not count) and no captured input above -40 dBFS through the sound trigger's 100 Hz high-pass; the take ends that long after the last thing that happened. `"length_limit"` (#1767): the take reached its longest length (3 hours, and never past what a 32-bit WAV of the rendered master holds). For the last four, `capture_frames` is the frame the take ends at, and everything up to it is kept. |
-| `armSnapshot` | object? | See below. `null`/absent only if the app crashed before arm's own crash-survival file (`arm-snapshot.json`, deleted at finalize) could even be written. |
+| `armSnapshot` | object? | See below. `null`/absent only if the app crashed before arm's own crash-survival file (`arm-snapshot.json`, deleted at finalize) could even be written, or if a recovery could not read that file (it is then kept; see "Crash consistency" below). |
 | `disarmSnapshot` | object? | See below. Absent for a capture recovered from a crash — there is no live engine left for a second pass. |
 | `finalized` | bool | `true` once finalize completed. The salvage *trigger* (D-SALVAGE): `false`/absent is what routes a bundle to crash recovery — but since the silent boot salvage (#679) it is no longer the sole salvage marker; the `.boot-recovery` / `.recovered-at` sibling files carry the move half of the story (see "Salvage sibling files" above). |
 
@@ -438,7 +438,11 @@ were merged into `performance.json` immediately at arm: `performance_repository`
 writes it to its own crash-survival file, `arm-snapshot.json`, right at arm
 time, and only folds it into `performance.json` (deleting `arm-snapshot.json`)
 once finalize actually runs — normal disarm, or `recoverCapture` reading it
-back after a crash.
+back after a crash. A recovery that finds an `arm-snapshot.json` this build
+cannot read (one written before `followOutput` and `captureMask` existed, or
+torn by the crash) finalizes the take without `armSnapshot`, logs why, and
+keeps the file in the bundle (#1842). The audio is all there; the stem render,
+which needs the snapshot, is refused.
 
 ## Checkpoints (`checkpoint-a.json`, `checkpoint-b.json`; #1198 D4, #727)
 
