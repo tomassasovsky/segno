@@ -42,8 +42,8 @@ settings and the RT environment, and starts `/usr/bin/segno` with
   1024x768 fallback first (#1591). Change the pin and the command line
   together: a pinned mode the connector does not list stops the app at start.
 - **No seat.** Both views set `no_seat = true` and open the DRM master and the
-  input devices themselves. `seatd` is installed with ivi-homescreen's libseat
-  but not enabled.
+  input devices themselves. ivi-homescreen is built without libseat, and the
+  image has no `seatd`.
 - **A unit wired the other way round.** Swap the two `drm_connector` values in
   `/etc/segno/homescreen.toml` and restart `segno.service`. The Displays page
   reads the connectors from the same file, so brightness follows.

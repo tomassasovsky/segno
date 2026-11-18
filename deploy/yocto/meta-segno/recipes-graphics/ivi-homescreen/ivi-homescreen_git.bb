@@ -22,15 +22,17 @@ S = "${WORKDIR}/git"
 
 inherit cmake pkgconfig
 
-# libseat is required at build time even though the Segno config bypasses the
-# seat at runtime (no_seat): drm-cxx's session support defaults to required.
-# -DDRM_CXX_SESSION=OFF would build without it; not done here yet.
+# No libseat: both views set no_seat, so the shell opens the DRM master and
+# the input devices itself and never starts a seat session (see
+# DRM_CXX_SESSION below).
 # libdisplay-info must be >= 0.2.0 (walnascar's poky carries 0.2.0).
 DEPENDS = "libdrm virtual/libgbm virtual/egl virtual/libgles2 libinput udev \
-           libxkbcommon libdisplay-info seatd"
+           libxkbcommon libdisplay-info"
 
 # The minimal binary: drm-kms-egl plus the compositor it is meant to run with,
 # and nothing else. Plain GCC/libstdc++ (C++17) builds it; clang is not needed.
+# DRM_CXX_SESSION=OFF compiles drm-cxx's stub seat, whose open() fails, so
+# libseat.so.1 is not linked; upstream supports it since 9f954858.
 EXTRA_OECMAKE = " \
     -DCMAKE_BUILD_TYPE=Release \
     -DBUILD_BACKEND_DRM_KMS_EGL=ON -DBUILD_COMPOSITOR=ON \
@@ -44,6 +46,7 @@ EXTRA_OECMAKE = " \
     -DBUILD_CRASH_HANDLER=OFF -DENABLE_DLT=OFF \
     -DBUILD_UNIT_TESTS=OFF -DBUILD_FUZZERS=OFF -DBUILD_DOCS=OFF \
     -DDISABLE_PLUGINS=ON \
+    -DDRM_CXX_SESSION=OFF \
 "
 
 # The engine is dlopened, so the shlib scan cannot see it. xkbcommon reads its

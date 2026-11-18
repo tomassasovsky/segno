@@ -38,7 +38,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 | Issue | Thread | Stage | Autonomy | Branch |
 |-------|--------|-------|----------|--------|
-| #1834 | ivi-homescreen moves to upstream v3.0 at `9eeee89`, which carries the pixel-ratio and shutdown fixes (upstream #859, #860); their local patches go, and the MSAA patch is refreshed | in-review | blocked-verify | `claude/ivi-upstream-1834` |
+| #1834 | ivi-homescreen moves to upstream v3.0 at `9eeee89`, which carries the pixel-ratio and shutdown fixes (upstream #859, #860); their local patches go, the MSAA patch is refreshed, and the shell is built without libseat, so seatd leaves the image | in-review | blocked-verify | `claude/ivi-upstream-1834` |
 | #1829 | Segno Transfer: Open in Live downloads a take's Live set with every file it uses, verified, and opens it in Ableton Live (part 1); part 2 bundles and installs `Segno.vst3` | in-review | merge-gate | `claude/transfer-open-live-1829` |
 | #1821 | Devlog and RSS feed on segno.aquiles.dev: Markdown entries in `site/log`, built by `site/build_log.py` | in-review | merge-gate | `claude/devlog-1821` |
 | #1795 | NVMe drive drops off the bus mid-recording: the Pi 5 cmdline turns off APST and PCIe ASPM on every link | in-review | blocked-verify | `claude/nvme-power-1795` |
