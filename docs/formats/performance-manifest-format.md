@@ -108,7 +108,7 @@ What a standalone tool should conclude from each combination:
 | `overs` | int | Samples with a magnitude above 1.0 across every part, sealed and open. Kept as written, never clipped. |
 | `parts` | array | The take's audio parts in playback order — see "Audio parts" below. |
 | `stopped_early` | string? | Why the take stopped before a normal disarm; absent otherwise. `"disk_full"`: a write failed (a full disk, a quota, a read-only remount, an I/O error). `"device_changed"`: the audio device changed. `"reserve_reached"` (#1198): the destination reached its reserve, and every stream ends at the last whole frame it could hold above it. `"slow_storage"` (#1198): a capture ring overflowed because the storage fell behind, and every stream ends at the first frame that could not be kept, with nothing filled in after it. `"idle"` (#1767): nothing happened for the arm's idle period (20 minutes): no logged event a player's action leaves (the facts the engine logs on its own, a loop top's tempo anchor or a retired overdub pass, do not count) and no captured input above -40 dBFS through the sound trigger's 100 Hz high-pass; the take ends that long after the last thing that happened. `"length_limit"` (#1767): the take reached its longest length (3 hours, and never past what a 32-bit WAV of the rendered master holds). For the last four, `capture_frames` is the frame the take ends at, and everything up to it is kept. |
-| `armSnapshot` | object? | See below. `null`/absent only if the app crashed before arm's own crash-survival file (`arm-snapshot.json`, deleted at finalize) could even be written, or if a recovery found that file written before capture destinations existed (it is then kept; see "Crash consistency" below). |
+| `armSnapshot` | object? | See below. `null`/absent only if the app crashed before arm's own crash-survival file (`arm-snapshot.json`, deleted at finalize) could even be written. |
 | `disarmSnapshot` | object? | See below. Absent for a capture recovered from a crash — there is no live engine left for a second pass. |
 | `finalized` | bool | `true` once finalize completed. The salvage *trigger* (D-SALVAGE): `false`/absent is what routes a bundle to crash recovery — but since the silent boot salvage (#679) it is no longer the sole salvage marker; the `.boot-recovery` / `.recovered-at` sibling files carry the move half of the story (see "Salvage sibling files" above). |
 
@@ -317,6 +317,54 @@ incomplete arm must not leave plausible but incorrect recovery metadata. The mas
 | `trackChains` | The **Track** stage: one entry per track channel with bus FX or a non-default chain flag. Omitted when there are none. |
 | `outputEffects` / `outputChainEnabled` | The actual captured destination’s output chain and bypass flag, captured by the engine at arm. The chain is applied once by reconstruction to audio before that stage; the already captured top-level master audio is never processed a second time. Empty effects and an engaged chain use the writer’s default omission rule. |
 
+### Snapshots written before capture destinations (#1853)
+
+Builds before the output-destination change (f9d8de318, 2026-10-01) wrote
+the snapshot without `followOutput`, `captureMask` or any other capture
+field. The console's September 2026 takes have it. A reader accepts exactly
+this shape and no other snapshot without the two required fields:
+
+- `fxStagesVersion` is `1`;
+- every key is one of `masterGain`, `limiterOn`, `limiterCeiling`,
+  `latencyOffsetFrames`, `tempoBpm`, `fxStagesVersion`, `tracks`,
+  `monitors` and `trackChains`. Those builds also wrote `masterEffects` and
+  `masterChainEnabled`, but only for a master chain, which this format does
+  not carry, so a snapshot with either key is refused;
+- the sidecar's `channel_layout.master_channels` is `2`.
+
+```jsonc
+{ "masterGain": 0.44, "limiterOn": false, "limiterCeiling": 0.99,
+  "latencyOffsetFrames": 574, "tempoBpm": 120.0, "fxStagesVersion": 1,
+  "tracks": [ /* as below, lanes without volume, pan, muted or outputMask */ ],
+  "monitors": [] }
+```
+
+It reads as `followOutput` `false`, `captureBus` `0` and `captureMask` `3`.
+The other capture fields take their usual defaults. What those builds did:
+
+- Their master tap (`perf_tap_master_frame`, unchanged from 2026-07-08 to
+  f9d8de318) copied the first two enabled output channels
+  (`le_perf_first_enabled_pair`) after the master chain, master gain and
+  limiter. No destination level or mute existed: the engine had no
+  `LE_CMD_SET_OUTPUT_LEVEL` or `LE_CMD_SET_OUTPUT_MUTE`. Nothing that
+  `followOutput` `true` would apply was ever between the chain and the tap,
+  so `false` is what those takes were.
+- `captureBus` is absent, which this format reads as bus 0. On bus 0 the
+  only mask of two captured channels is `3`, and `master_channels` `2` says
+  two were captured. A mono master (one enabled output) does not say which
+  output it was, so it is refused.
+
+The renderer (`perf_render.c`) and `PerformanceArmSnapshot.fromJson` apply
+the same rule. A finalize that folds such an `arm-snapshot.json` into this
+file writes it in the current shape, with the three values above.
+
+These takes were captured after the master gain and limiter, which neither
+current policy includes, and their lanes do not record an output route
+(`outputMask` reads as `3`). A reconstructed master (`stems/wet/master.wav`)
+of such a take is therefore not the captured master when the master gain was
+not unity or a lane was routed elsewhere. The captured master and the lane
+stems are not affected.
+
 ### FX stages and the presence-keyed version marker
 
 The snapshot records all four FX stages of the v3 model, each with its
@@ -438,14 +486,18 @@ were merged into `performance.json` immediately at arm: `performance_repository`
 writes it to its own crash-survival file, `arm-snapshot.json`, right at arm
 time, and only folds it into `performance.json` (deleting `arm-snapshot.json`)
 once finalize actually runs — normal disarm, or `recoverCapture` reading it
-back after a crash. A recovery that finds an `arm-snapshot.json` written before
-capture destinations existed (it has neither `followOutput` nor `captureMask`,
-which this build requires and will not guess) finalizes the take without
-`armSnapshot`, logs why, and leaves the file in the bundle for a person to
-read; nothing reads it again (#1842). The audio is all there; the stem render,
-which needs the snapshot, is refused. Any other `arm-snapshot.json` that does
-not read keeps the take unfinalized, its reason logged, for a build that can
-read it.
+back after a crash. An `arm-snapshot.json` written before capture
+destinations reads as described under "Snapshots written before capture
+destinations" above (#1853). Any `arm-snapshot.json` that does not read keeps
+the take unfinalized, its reason logged, for a build that can read it.
+
+A build with #1844 (#1842) finalized such a take without `armSnapshot` and
+kept its `arm-snapshot.json`. Each start puts that snapshot back: a finalized
+take, in the exports root or `recovered/`, whose manifest has no
+`armSnapshot` and whose `arm-snapshot.json` has the September shape gets the
+snapshot in its manifest, and the file is removed. A take whose files do not
+read keeps them, its reason logged. The take's stems are rendered when the
+Library first needs them.
 
 ## Checkpoints (`checkpoint-a.json`, `checkpoint-b.json`; #1198 D4, #727)
 
