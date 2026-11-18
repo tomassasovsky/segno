@@ -1045,11 +1045,6 @@ class PerformanceRepository {
       } else if (_salvageFailed(dir)) {
         // A salvage the app did not survive is not run again by itself:
         // the take is counted as not recovered until the player asks again.
-        _warn(
-          dir,
-          'not recovered: the app stopped during its last two salvages; '
-          'it waits for Try again',
-        );
         _unrecovered.add(dir);
         continue;
       }
@@ -1114,6 +1109,13 @@ class PerformanceRepository {
   bool _salvageFailed(String dir) {
     if (File('$dir/$recoveryFailedName').existsSync()) return true;
     if (_attemptsBegun(dir) < 2) return false;
+    // Said once, when it is marked: the mark stays on disk, and the take is
+    // reported at every start until the player tries again.
+    _warn(
+      dir,
+      'not recovered: the app stopped during its last two salvages; it is '
+      'marked failed and waits for Try again',
+    );
     try {
       File('$dir/$recoveryFailedName').writeAsStringSync('');
       File('$dir/$recoveryAttemptName').deleteSync();
@@ -1166,7 +1168,8 @@ class PerformanceRepository {
         // A stranded bundle: its finalize already completed on a previous
         // boot, and re-running it would do real damage, not just waste work
         // — [_finalize] resolves the arm snapshot only from the
-        // crash-survival file (deleted by that first finalize) and reads
+        // crash-survival file (deleted by that first finalize, or kept
+        // unread when it predates capture destinations, #1842) and reads
         // only the native fields back, so a second pass would rewrite the
         // manifest with its armSnapshot (the chains/routing the export
         // depends on) stripped. Only the stem render is re-attempted — a
@@ -1773,23 +1776,25 @@ class PerformanceRepository {
     final armFile = File('$dir/$_armSnapshotFileName');
     var armRead = true;
     if (resolvedArm == null && armFile.existsSync()) {
-      // A read that fails throws: the take waits for the next start.
-      final bytes = await armFile.readAsBytes();
-      try {
-        resolvedArm = PerformanceArmSnapshot.fromJson(
-          jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>,
-        );
-      } on Object catch (error) {
-        // A snapshot this build refuses (#1842: a September take's has no
-        // capture policy or mask). The take is finalized without it, as one
-        // cut before its snapshot was written is: its audio is all there,
-        // and the stem render, which needs the snapshot, is refused. The
-        // file is kept for a person to read; nothing reads it again.
+      // A read or a decode that fails throws: the take waits for the next
+      // start, and for a build that can read it.
+      final json =
+          jsonDecode(await armFile.readAsString()) as Map<String, dynamic>;
+      if (_capturedBeforeDestinations(json)) {
+        // A September take's (#1842): this build refuses a snapshot with no
+        // capture policy or mask, and will not guess them. The take is
+        // finalized without it, as one cut before its snapshot was written
+        // is: its audio is all there, and the stem render, which needs the
+        // snapshot, is refused. The file is kept for a person to read;
+        // nothing reads it again.
         armRead = false;
         _warn(
           dir,
-          'finalized without its arm snapshot, which does not read: $error',
+          'finalized without its arm snapshot, written before capture '
+          'destinations (no followOutput or captureMask)',
         );
+      } else {
+        resolvedArm = PerformanceArmSnapshot.fromJson(json);
       }
     }
 
@@ -1829,6 +1834,13 @@ class PerformanceRepository {
   void _beginRender(String dir) {
     if (_engine.renderBegin(dir).isOk) _renderDir = dir;
   }
+
+  /// Whether [armSnapshot] was written before capture destinations existed:
+  /// neither a capture policy nor a capture mask, which every snapshot
+  /// written since carries.
+  static bool _capturedBeforeDestinations(Map<String, dynamic> armSnapshot) =>
+      !armSnapshot.containsKey('followOutput') &&
+      !armSnapshot.containsKey('captureMask');
 
   /// Logs why the take in [dir] was not finalized or recovered (#1842).
   void _warn(String dir, String why) =>

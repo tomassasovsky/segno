@@ -2587,7 +2587,7 @@ void main() {
             allOf(
               contains('perf-20260910-073238'),
               contains('arm snapshot'),
-              contains('invalid capture mask'),
+              contains('written before capture destinations'),
             ),
           ),
         );
@@ -2596,25 +2596,52 @@ void main() {
         expect(listed.durationFrames, 3);
       });
 
-      test(
-        'an arm snapshot that is not text is left out the same way',
-        () async {
-          final dir = seedConverted('perf-20260910-073238');
-          File('$dir/arm-snapshot.json').writeAsBytesSync([0xff, 0xfe, 0x00]);
+      test('one this build refuses for another reason is kept, and the take '
+          'waits for a build that reads it', () async {
+        final dir = seedConverted('perf-20261201-000000');
+        // A newer build's: it carries the capture fields, and a track state
+        // this build does not know.
+        final newer = jsonEncode({
+          ...jsonDecode(septemberArmSnapshot) as Map<String, dynamic>,
+          'followOutput': false,
+          'captureMask': 3,
+          'tracks': [
+            {
+              'channel': 0,
+              'state': 'levitating',
+              'volume': 1.0,
+              'muted': false,
+              'multiple': 1,
+            },
+          ],
+        });
+        File('$dir/arm-snapshot.json').writeAsStringSync(newer);
+        final lines = <String>[];
+        final local = smallParts(log: lines.add);
+        addTearDown(local.dispose);
 
-          await repo.runBootRecovery();
+        await local.runBootRecovery();
 
-          expect(repo.unrecoveredTakes, isEmpty);
-          final recovered =
-              '${tempDir.path}/exports/recovered/perf-20260910-073238';
-          expect(readSidecar(recovered)['finalized'], isTrue);
-          expect(File('$recovered/arm-snapshot.json').readAsBytesSync(), [
-            0xff,
-            0xfe,
-            0x00,
-          ]);
-        },
-      );
+        expect(local.unrecoveredTakes, [dir]);
+        expect(readSidecar(dir)['finalized'], isFalse);
+        expect(File('$dir/arm-snapshot.json').readAsStringSync(), newer);
+        expect(lines, [
+          startsWith('performance: perf-20261201-000000 not recovered: '),
+        ]);
+      });
+
+      test('one that does not read as text is kept, and the take waits for '
+          'the next start', () async {
+        final dir = seedConverted('perf-20260910-073238');
+        final bytes = [0xff, 0xfe, 0x00];
+        File('$dir/arm-snapshot.json').writeAsBytesSync(bytes);
+
+        await repo.runBootRecovery();
+
+        expect(repo.unrecoveredTakes, [dir]);
+        expect(readSidecar(dir)['finalized'], isFalse);
+        expect(File('$dir/arm-snapshot.json').readAsBytesSync(), bytes);
+      });
 
       test('a take still in raw streams is converted and recovered in one '
           'start', () async {
@@ -3199,10 +3226,10 @@ void main() {
         ]);
       });
 
-      test('a take marked failed', () async {
+      test('a take marked failed, once: when it is marked', () async {
         final dir = seedCrashed('perf-failed');
-        File('$dir/${PerformanceRepository.recoveryFailedName}')
-            .writeAsStringSync('');
+        File('$dir/${PerformanceRepository.recoveryAttemptName}')
+            .writeAsStringSync('2\n');
         final local = logging();
 
         await local.runBootRecovery();
@@ -3211,6 +3238,11 @@ void main() {
         expect(lines, [
           startsWith('performance: perf-failed not recovered: the app stopped'),
         ]);
+
+        lines.clear();
+        await local.runBootRecovery();
+        expect(local.unrecoveredTakes, [dir]);
+        expect(lines, isEmpty);
       });
 
       test('nothing is logged for a take that recovers', () async {
