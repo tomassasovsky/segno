@@ -1690,29 +1690,26 @@ void main() {
       },
     );
 
-    test(
-      'a reconnect to the same network after a drop is checked at once '
-      '(#1860)',
-      () async {
-        final now = DateTime(2026, 11, 18, 15);
-        final client = _FakeWifiClient(status: connected)..internet = false;
-        final cubit = WifiCubit(repository: _repo(client), clock: () => now);
-        addTearDown(cubit.close);
-        await cubit.load();
-        await cubit.checkConnectivity();
-        expect(cubit.state.noInternet, isTrue);
+    test('a reconnect to the same network after a drop is checked at once '
+        '(#1860)', () async {
+      final now = DateTime(2026, 11, 18, 15);
+      final client = _FakeWifiClient(status: connected)..internet = false;
+      final cubit = WifiCubit(repository: _repo(client), clock: () => now);
+      addTearDown(cubit.close);
+      await cubit.load();
+      await cubit.checkConnectivity();
+      expect(cubit.state.noInternet, isTrue);
 
-        await cubit.disconnect();
-        expect(cubit.state.internet, isNull);
+      await cubit.disconnect();
+      expect(cubit.state.internet, isNull);
 
-        client.internet = true;
-        await cubit.connect('The Studio');
-        await cubit.checkConnectivity();
-        expect(client.connectivityChecks, 2);
-        expect(cubit.state.noInternet, isFalse);
-        expect(cubit.state.internet, (ssid: 'The Studio', online: true));
-      },
-    );
+      client.internet = true;
+      await cubit.connect('The Studio');
+      await cubit.checkConnectivity();
+      expect(client.connectivityChecks, 2);
+      expect(cubit.state.noInternet, isFalse);
+      expect(cubit.state.internet, (ssid: 'The Studio', online: true));
+    });
   });
 
   group('saved network controls', () {
