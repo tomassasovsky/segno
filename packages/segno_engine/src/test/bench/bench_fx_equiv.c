@@ -145,6 +145,7 @@ static const char* const k_reordered[] = {
 
 /* The kinds whose sound a commit after the reference changed on purpose. */
 static const char* const k_moved[] = {
+    "lpf", /* #1628: the ladder's level fit to the Looper X */
     NULL,
 };
 
