@@ -17,8 +17,8 @@
 #
 # The journal lines are the shapes `journalctl -o cat -t wpa_supplicant -t
 # NetworkManager` prints, taken from the format strings of the versions the
-# image runs: wpa_supplicant 2.11 (events.c, wpa_supplicant.c; the interface
-# name prefixes each line) and NetworkManager 1.50.0 (nm-device-wifi.c,
+# image runs: wpa_supplicant 2.11 (events.c, sme.c, wpa_supplicant.c; the
+# interface name prefixes each line) and NetworkManager 1.50.0 (nm-device-wifi.c,
 # nm-device.c; each line starts with its level and a timestamp). The
 # on-device check in deploy/rpi/verify-network-on-device.sh captures the real
 # ones.
@@ -492,6 +492,109 @@ LOG
 UP_HOLD=1 run_connect
 check "does not take it down" no "$(called_with 'connection down uuid')"
 check "is a failed connection" no-connection "$(code)"
+teardown
+
+# --- a WPA3-SAE network (#1822) ----------------------------------------------
+#
+# SAE tests the key in the 802.11 authentication, before any 4-way
+# handshake. The lines are wpa_supplicant 2.11's SME (sme.c:
+# sme_send_authentication, sme_sae_auth), which runs SAE on the console's
+# brcmfmac. A hostapd access point answers a confirm it cannot verify with
+# status 15 (ieee802_11.c, handle_auth_sae); wpa_supplicant tries again
+# after a back-off of 0.1 s to 5 s (wpas_connection_failed), and after its
+# fourth failure in a row sets the network aside.
+
+sae_refused() {
+    logged <<'LOG'
+<info>  [1795100000.1000] device (wlan0): supplicant interface state: disconnected -> authenticating
+wlan0: SME: Trying to authenticate with 58:11:22:34:39:1c (SSID='SomeNetwork' freq=2437 MHz)
+wlan0: CTRL-EVENT-AUTH-REJECT 58:11:22:34:39:1c auth_type=3 auth_transaction=2 status_code=15
+<info>  [1795100000.1500] device (wlan0): supplicant interface state: authenticating -> disconnected
+LOG
+}
+
+echo "a WPA3-SAE access point refuses the key"
+setup
+sae_refused
+UP_ERROR='Error: Timeout expired (45 seconds)' run_connect
+check "is a wrong password" wrong-password "$(code)"
+check "names the SAE refusal" yes \
+    "$(has 'auth_type=3 auth_transaction=2 status_code=15' "$work/stderr")"
+check "one read: the refusal is the answer" 1 "$(wc -l < "$work/journalctl-args" | tr -d ' ')"
+teardown
+
+echo "the join ends at the first SAE refusal"
+setup
+sae_refused
+UP_HOLD=1 run_connect
+check "fails" 1 "$rc"
+check "takes the activation down" yes "$(called_with 'connection down uuid')"
+check "is a wrong password" wrong-password "$(code)"
+teardown
+
+echo "an SAE refusal stored a moment late is still found"
+setup
+logged <<'LOG'
+wlan0: SME: Trying to authenticate with 58:11:22:34:39:1c (SSID='SomeNetwork' freq=2437 MHz)
+LOG
+sae_refused
+mv "$work/journal" "$work/journal-late"
+logged <<'LOG'
+wlan0: SME: Trying to authenticate with 58:11:22:34:39:1c (SSID='SomeNetwork' freq=2437 MHz)
+LOG
+WAIT=3 run_connect
+check "read again" 2 "$(wc -l < "$work/journalctl-args" | tr -d ' ')"
+check "is a wrong password" wrong-password "$(code)"
+teardown
+
+echo "an SAE access point that refuses the commit has not tested the key"
+setup
+# Status 77: the access point does not support the station's group. The
+# commit exchange never finished, so no key was compared.
+logged <<'LOG'
+wlan0: SME: Trying to authenticate with 58:11:22:34:39:1c (SSID='SomeNetwork' freq=2437 MHz)
+wlan0: CTRL-EVENT-AUTH-REJECT 58:11:22:34:39:1c auth_type=3 auth_transaction=1 status_code=77
+LOG
+UP_ERROR='Error: Timeout expired (45 seconds)' run_connect
+check "is a failed connection" no-connection "$(code)"
+teardown
+
+echo "an SAE access point that answers nothing"
+setup
+# Out of range, or an access point that drops a bad confirm silently: the
+# SME's timeout logs nothing at syslog level, and wpa_supplicant sets the
+# network aside after four failures.
+logged <<'LOG'
+wlan0: SME: Trying to authenticate with 58:11:22:34:39:1c (SSID='SomeNetwork' freq=2437 MHz)
+wlan0: SME: Trying to authenticate with 58:11:22:34:39:1c (SSID='SomeNetwork' freq=2437 MHz)
+wlan0: SME: Trying to authenticate with 58:11:22:34:39:1c (SSID='SomeNetwork' freq=2437 MHz)
+wlan0: SME: Trying to authenticate with 58:11:22:34:39:1c (SSID='SomeNetwork' freq=2437 MHz)
+wlan0: CTRL-EVENT-SSID-TEMP-DISABLED id=0 ssid="SomeNetwork" auth_failures=1 duration=10 reason=CONN_FAILED
+LOG
+UP_ERROR='Error: Timeout expired (45 seconds)' run_connect
+check "is a failed connection" no-connection "$(code)"
+teardown
+
+echo "an SAE join that connected after a refusal is not taken down"
+setup
+logged <<'LOG'
+wlan0: CTRL-EVENT-AUTH-REJECT 58:11:22:34:39:1c auth_type=3 auth_transaction=2 status_code=15
+wlan0: SME: Trying to authenticate with 58:11:22:34:39:1c (SSID='SomeNetwork' freq=2437 MHz)
+wlan0: Trying to associate with 58:11:22:34:39:1c (SSID='SomeNetwork' freq=2437 MHz)
+wlan0: Associated with 58:11:22:34:39:1c
+wlan0: CTRL-EVENT-CONNECTED - Connection to 58:11:22:34:39:1c completed [id=0 id_str=]
+LOG
+UP_HOLD=1 run_connect
+check "is not taken down" no "$(called_with 'connection down uuid')"
+check "is not a wrong password" no-connection "$(code)"
+teardown
+
+echo "a saved SAE network refuses the key it has connected with"
+setup
+sae_refused
+KEY= SAVED_TS=1795051833 SAVED_PSK=hunter2000 UP_HOLD=1 run_connect
+check "is not taken down" no "$(called_with 'connection down uuid')"
+check "is a failed connection, not a password" no-connection "$(code)"
 teardown
 
 # --- a key that has connected before (#1816) --------------------------------
