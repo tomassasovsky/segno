@@ -300,7 +300,7 @@ static int stopped_publish_scenario(void) {
   atomic_store(&g_parked, 0);
   pthread_t audio;
   pthread_create(&audio, NULL, start_audio_main, NULL);
-  int waited = 0;
+  long long waited = 0;
   int32_t rc = LE_OK;
   int trial = 1;
   for (; trial <= START_TRIALS; ++trial) {
@@ -339,7 +339,7 @@ static int stopped_publish_scenario(void) {
     printf("FAIL: a route publish returned %d at trial %d\n", rc, trial);
     return 1;
   }
-  printf("instrument publish after start: %d trials over %d spins, %d "
+  printf("instrument publish after start: %d trials over %d spins, %lld "
          "publishes waited for the first block\n",
          START_TRIALS, g_sweep_spins, waited);
   return 0;
