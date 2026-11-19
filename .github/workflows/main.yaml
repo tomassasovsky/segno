@@ -133,7 +133,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        # Expressions have no arithmetic, so each shard carries its index.
+        include:
+          - shard: 1
+            index: 0
+          - shard: 2
+            index: 1
+          - shard: 3
+            index: 2
     steps:
       - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2
@@ -156,7 +163,7 @@ jobs:
         run: >
           very_good test -j 4 --optimization --coverage --report-on lib
           --test-randomize-ordering-seed random
-          -- --total-shards 3 --shard-index ${{ matrix.shard - 1 }}
+          -- --total-shards 3 --shard-index ${{ matrix.index }}
       - uses: actions/upload-artifact@v7
         with:
           name: app-coverage-${{ matrix.shard }}
