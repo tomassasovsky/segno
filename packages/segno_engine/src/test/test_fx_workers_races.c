@@ -32,9 +32,12 @@
  * most the batches LAG + 2 periods can post, each op at most two commands:
  * (LAG + 2) * OPS * 2 = 64 of its 255 slots, so a refused mute or Cut is the
  * engine's fault. Both counters are relaxed, so the pacing adds no
- * happens-before edge for ThreadSanitizer to hide a race behind; the
- * interleaving inside a period is still the scheduler's. The op sequence and
- * its count are fixed by the seed, and so are the mutes and Cuts it makes.
+ * happens-before edge for ThreadSanitizer to hide a race behind. That also
+ * means the C memory model lets a thread see a counter move before it sees
+ * the other thread's ring stores; hardware makes them visible within far
+ * less than a period, and the bound leaves 191 slots for it. The interleaving
+ * inside a period is still the scheduler's. The op sequence and its count
+ * are fixed by the seed, and so are the mutes and Cuts it makes.
  */
 #include <pthread.h>
 #include <sched.h>

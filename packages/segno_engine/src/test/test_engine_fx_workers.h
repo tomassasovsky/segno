@@ -241,14 +241,13 @@ static void test_fx_workers_request(void) {
   le_engine_destroy(e);
 }
 
-/* A full command ring refuses a mute, a Cut and a monitor chain's edit
- * alike, and none of them leaves a trace: the monitor stays unmuted, the
- * chain keeps its revision, the edit is not left in flight, and once a
- * period has drained the ring the next edit and mute are taken (#1629).
- * test_fx_workers_races paces its control thread so the ring never fills;
- * this is the path it no longer reaches. The refused edit retypes a slot to
- * Whammy, whose buffers the control thread prepares before the push. */
-static void test_fx_workers_full_ring_refuses_cleanly(void) {
+/* Monitor 0 runs an Octaver and a Delay on fxw_input, then the command ring
+ * fills. With [refuse], a mute, a Cut and a retype of the Delay's slot to
+ * Whammy are posted into the full ring, and all three must be refused; the
+ * Whammy's buffers are prepared into the live chain before its push. Then
+ * FXW_FULL_FRAMES more frames go into [out], and the engine is returned. */
+#define FXW_FULL_FRAMES 9600
+static le_engine* fxw_full_ring(int refuse, float* out) {
   le_engine* e = le_engine_create();
   CHECK(le_engine_configure(e, FXW_SR, 1, 2, FXW_SR) == LE_OK);
   CHECK(le_engine_set_monitor_input(e, 0, 1) == LE_OK);
@@ -266,23 +265,64 @@ static void test_fx_workers_full_ring_refuses_cleanly(void) {
   }
   CHECK(le_engine_set_fx_recipe(e, LE_FX_OWNER_MONITOR, 0, 0, 2, &r) ==
         LE_OK);
-  drain(e);
+  float in[64];
+  float sink[64 * 2];
+  int32_t at = 0;
+  for (; at < FXW_SR / 10; at += 64) { /* the Delay's ring holds audio */
+    for (int i = 0; i < 64; ++i) in[i] = fxw_input(0, at + i);
+    le_engine_process(e, sink, in, 64);
+  }
   CHECK(le_engine_fx_recipe_revision(e, LE_FX_OWNER_MONITOR, 0, 0) == 2);
 
   for (int n = 0; n < LE_RING_CAPACITY - 1; ++n) {
     CHECK(le_push(e, 0, 0, 0) == LE_OK);
   }
-  r.type[1] = LE_FX_WHAMMY;
-  le_fx_defaults(LE_FX_WHAMMY, r.params[1]);
-  r.instance[1] = 3;
-  CHECK(le_engine_set_monitor_input_mute(e, 0, 1) != LE_OK);
-  CHECK(le_engine_cut_sound(e) != LE_OK);
-  CHECK(le_engine_set_fx_recipe(e, LE_FX_OWNER_MONITOR, 0, 0, 3, &r) !=
-        LE_OK);
-  drain(e);
+  if (refuse) {
+    r.type[1] = LE_FX_WHAMMY;
+    le_fx_defaults(LE_FX_WHAMMY, r.params[1]);
+    r.instance[1] = 3;
+    CHECK(le_engine_set_monitor_input_mute(e, 0, 1) != LE_OK);
+    CHECK(le_engine_cut_sound(e) != LE_OK);
+    CHECK(le_engine_set_fx_recipe(e, LE_FX_OWNER_MONITOR, 0, 0, 3, &r) !=
+          LE_OK);
+  }
+  for (int32_t k = 0; k < FXW_FULL_FRAMES; k += 64, at += 64) {
+    for (int i = 0; i < 64; ++i) in[i] = fxw_input(0, at + i);
+    le_engine_process(e, out + (size_t)k * 2, in, 64);
+  }
+  return e;
+}
+
+/* A full command ring refuses a mute, a Cut and a monitor chain's edit
+ * alike, and none of them leaves a trace (#1629): the engine sounds sample
+ * for sample as one that was never sent them, the monitor stays unmuted,
+ * the chain keeps its revision and the edit is not left in flight, so once
+ * a period has drained the ring the next edit and mute are taken.
+ * test_fx_workers_races paces its control thread so the ring never fills;
+ * this is the path it no longer reaches. */
+static void test_fx_workers_full_ring_refuses_cleanly(void) {
+  static float ref[FXW_FULL_FRAMES * 2];
+  static float got[FXW_FULL_FRAMES * 2];
+  le_engine_destroy(fxw_full_ring(0, ref));
+  le_engine* e = fxw_full_ring(1, got);
+  float peak = 0.0f;
+  for (size_t i = 0; i < FXW_FULL_FRAMES * 2; ++i) {
+    peak = fmaxf(peak, fabsf(ref[i]));
+  }
+  CHECK(peak > 0.01f); /* the monitor sounds: the comparison is not empty */
+  CHECK(memcmp(ref, got, sizeof(ref)) == 0);
   CHECK(le_engine_fx_recipe_revision(e, LE_FX_OWNER_MONITOR, 0, 0) == 2);
   CHECK(load_i32(&e->monitors[0].a_muted) == 0);
 
+  le_fx_recipe r;
+  memset(&r, 0, sizeof(r));
+  r.enabled = 1;
+  r.count = 1;
+  r.type[0] = LE_FX_WHAMMY;
+  r.slot_enabled[0] = 1;
+  r.level[0] = 1.0f;
+  le_fx_defaults(LE_FX_WHAMMY, r.params[0]);
+  r.instance[0] = 4;
   CHECK(le_engine_set_fx_recipe(e, LE_FX_OWNER_MONITOR, 0, 0, 4, &r) ==
         LE_OK);
   CHECK(le_engine_set_monitor_input_mute(e, 0, 1) == LE_OK);
