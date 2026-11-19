@@ -38,11 +38,15 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       # Renders the plugins' pedal faces from the console's drawing code.
+      # No Actions cache (#1771): a pull request's run would save the macOS
+      # SDK (2 GB) under its own ref, where no other run can read it, and
+      # three of them with the trunk's set filled the repository's 10 GB, after
+      # which no workflow could save a cache. Downloading it took 82 s on
+      # 2026-11-19.
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: "3.50.x"
           channel: stable
-          cache: true
       - name: Install appliance fixture tools
         run: |
           brew install jq coreutils

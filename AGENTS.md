@@ -126,9 +126,9 @@ Run these before calling a change done:
   `flutter test --tags screenshots --update-goldens test/screenshots` (same
   absolute `flutter` path), and compare the new PNGs against the Penpot
   file. CI renders them too and uploads the `screenshots` artifact.
-- `bloc lint lib test packages` must be clean. CI runs it as the `Bloc Lint`
-  step, and it enforces rules `dart analyze` does not (a cubit method
-  returning anything but void fails here and passes there).
+- `bloc lint lib test packages` must be clean. CI runs it as the analyze
+  job's `Bloc lint` step, and it enforces rules `dart analyze` does not (a
+  cubit method returning anything but void fails here and passes there).
 - `dart run tool/check_no_widget_methods.dart` must pass: no method,
   function or getter returns a widget (Engineering principles).
 - Formatting is automatic: a PostToolUse hook runs `dart format` on every

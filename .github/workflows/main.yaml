@@ -77,42 +77,100 @@ jobs:
   semantic-pull-request:
     uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/semantic_pull_request.yml@v2
 
-  build:
-    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v2
-    with:
-      flutter_version: "3.50.x"
-      run_bloc_lint: true
-      # segno_engine's build hook compiles the engine for `flutter test`; its
-      # Linux MIDI backend needs the ALSA headers (#1783).
-      setup: sudo apt-get update && sudo apt-get install -y libasound2-dev
-      # format_directories/analyze_directories default to "lib test", which
-      # only covers the root app. Glob in every package's lib/ + test/ too, so
-      # `dart format --set-exit-if-changed` and `flutter analyze` actually gate
-      # the 13 packages/* (daw_export, segno_engine, etc.) instead of silently
-      # skipping them. The glob is spliced into a plain bash step by the
-      # reusable workflow, so it self-expands as packages are added/removed —
-      # no need to edit this list when packages/* changes.
-      format_directories: "lib test packages/*/lib packages/*/test packages/*/hook"
-      analyze_directories: "lib test packages/*/lib packages/*/test packages/*/hook"
-      # Keep the 90% gate for real logic, but exclude platform / entrypoint glue
-      # that can't be meaningfully unit-tested: the Track display's app and its
-      # link service, and the app bootstrap/entrypoint. Coverage on the
-      # remainder stays ~91%.
-      min_coverage: 90
-      coverage_excludes: "**/waveform_window*.dart **/run_segno.dart **/bootstrap.dart **/session_directory.dart **/system_appliance_env.dart"
-
-  # The packages' own suites (#1771): the root `build` job tests only the
-  # root app, so each package's tests and coverage floor run here, one job
-  # for all of them where they were a Very Good workflow job each. The root
-  # job already formats and analyzes every package. The floors, and which
-  # packages run, are in tool/run_package_tests.sh. The two whole-app scans
-  # also run in this job, since they need the same resolved dependencies:
+  # The checks the Very Good flutter_package workflow ran on the app, split
+  # so the checks and the tests run side by side (#1771): format, analyze
+  # and bloc lint here with the two whole-app scans, and the root app's
+  # suite in app-tests below. The directory lists glob every package's lib/, test/ and
+  # hook/ too, so `dart format --set-exit-if-changed`, `flutter analyze` and
+  # `bloc lint` gate the packages as well as the root app, and they follow
+  # packages/* as packages are added or removed. The scans:
   #   - no app code, and no package the app runs, may start a program through
   #     dart:io (#1367): Process.run and Process.start fork the app, which
   #     stalls the audio thread, and a dart:io child running beside
   #     spawn_process takes the exit status of its children;
   #   - no method, function or getter in lib/ or packages/*/lib may return a
   #     widget (#1697): UI is built from widget classes.
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.50.x"
+          channel: stable
+          cache: true
+      # `dart run` (the widget-method scan) runs the build hooks, and
+      # segno_engine's compiles the engine; its Linux MIDI backend needs the
+      # ALSA headers (#1783).
+      - name: Install the ALSA headers
+        uses: awalsh128/cache-apt-pkgs-action@v1
+        with:
+          packages: libasound2-dev
+          version: "1"
+      - name: Resolve the app's and every package's dependencies
+        run: |
+          dart pub global activate very_good_cli 1.5.0
+          very_good packages get --recursive
+      - name: Check formatting
+        run: dart format --set-exit-if-changed lib test packages/*/lib packages/*/test packages/*/hook
+      - name: Analyze
+        if: ${{ !cancelled() }}
+        run: flutter analyze lib test packages/*/lib packages/*/test packages/*/hook
+      - name: Bloc lint
+        if: ${{ !cancelled() }}
+        run: |
+          flutter pub global activate bloc_tools
+          bloc lint .
+      - name: Check the app and its runtime dependencies for dart:io process starts
+        if: ${{ !cancelled() }}
+        run: bash tool/check_no_dart_process.sh
+      - name: No widget-returning methods
+        if: ${{ !cancelled() }}
+        run: dart run tool/check_no_widget_methods.dart
+
+  # The root app's suite, as the Very Good flutter_package workflow ran it:
+  # every test file in one isolate (`--optimization`), randomized order, and
+  # the 90 % floor, with the platform and entrypoint glue that cannot be
+  # meaningfully unit-tested left out (the Track display's app and its link
+  # service, the app bootstrap and entrypoint); the remainder read 94.85 %
+  # on 2026-11-19. It stays one job: package:test's --total-shards cuts the
+  # bundle by position, and very_good's optimizer lists the test files in
+  # the runner's directory order (listSync, unsorted), so shards on two
+  # runners cut different orders and some tests ran in none (#1771).
+  app-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.50.x"
+          channel: stable
+          cache: true
+      # segno_engine's build hook compiles the engine for every flutter test
+      # run; its Linux MIDI backend needs the ALSA headers (#1783).
+      - name: Install the ALSA headers
+        uses: awalsh128/cache-apt-pkgs-action@v1
+        with:
+          packages: libasound2-dev
+          version: "1"
+      - name: Resolve the app's dependencies
+        run: |
+          dart pub global activate very_good_cli 1.5.0
+          flutter pub get
+      - name: Run the app's tests against the coverage floor
+        run: >
+          very_good test -j 4 --optimization --coverage --min-coverage 90
+          --exclude-coverage "**/waveform_window*.dart **/run_segno.dart **/bootstrap.dart **/session_directory.dart **/system_appliance_env.dart"
+          --report-on lib --show-uncovered
+          --test-randomize-ordering-seed random
+
+  # The packages' own suites (#1771): app-tests runs only the root app's,
+  # so each package's tests and coverage floor run here, one job for all of
+  # them where they were a Very Good workflow job each. The analyze job
+  # formats and analyzes every package. The floors, and which packages run,
+  # are in tool/run_package_tests.sh.
   packages:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -136,12 +194,6 @@ jobs:
           very_good packages get --recursive
       - name: Run the package suites against their coverage floors
         run: bash tool/run_package_tests.sh
-      - name: Check the app and its runtime dependencies for dart:io process starts
-        if: ${{ !cancelled() }}
-        run: bash tool/check_no_dart_process.sh
-      - name: No widget-returning methods
-        if: ${{ !cancelled() }}
-        run: dart run tool/check_no_widget_methods.dart
   # The design side of a UI change. The design is the Penpot file segno-ui
   # (#1503); its snapshots, the frozen segno-ui.pen and the design studies
   # live in tomassasovsky/segno-design (#1496), cloned next to this checkout
@@ -235,14 +287,27 @@ jobs:
   # uploaded as an artifact so the owner can copy it to the appliance and run
   # it with `--budget-us 667 --assert` there. upload-artifact does not keep
   # file modes: `chmod +x` the binary on the appliance before running it.
-  # The #1179 pitch/time CPU proxy, the same way, in a job of its own: the
-  # plan times each scenario over 60 s of audio (the harness's default), which
-  # takes several minutes and would otherwise hold up the benches below.
+  # The #1179 pitch/time CPU proxy, the same way, in jobs of its own: the
+  # plan times each scenario over 60 s of audio (the harness's default),
+  # which took seven minutes in one job and would otherwise hold up the
+  # benches below. Its scenarios run in two parts, each on a runner of its
+  # own (#1771): every scenario is timed as in a whole run, with the same
+  # samples, and each part judges the thresholds its scenarios measure
+  # (--part in bench_pitch_time.c).
   native-bench-pitch-arm64:
+    name: native-bench-pitch-arm64 (part ${{ matrix.part }} of 2)
     needs: changes
     if: needs.changes.outputs.native == 'true'
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - part: 1
+            artifact: bench-pitch-time-arm64
+          - part: 2
+            artifact: bench-pitch-time-arm64-part-2
     steps:
       - uses: actions/checkout@v7
       - name: Install ccache
@@ -252,23 +317,23 @@ jobs:
           restore: false
           save: false
           max-size: 100M
-      - name: Build + run the pitch/time bench (arm64 proxy thresholds)
+      - name: Build + run part ${{ matrix.part }} of the pitch/time bench (arm64 proxy thresholds)
         # `shell: bash` runs the step as `bash -eo pipefail`. The default shell
         # has no pipefail, so the pipeline would exit with tee's status and a
         # failed threshold (or a failed build) would leave the job green.
         shell: bash
         run: >
           bash packages/segno_engine/src/test/bench/bench_pitch_time.sh
-          --budget-us 667 --assert --proxy
-          | tee bench-pitch-time-arm64.md
+          --budget-us 667 --assert --proxy --part ${{ matrix.part }}
+          | tee bench-pitch-time-arm64-part-${{ matrix.part }}.md
       - name: Upload the harness and its report for the appliance
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: bench-pitch-time-arm64
+          name: ${{ matrix.artifact }}
           path: |
             packages/segno_engine/build/bench/bench_pitch_time
-            bench-pitch-time-arm64.md
+            bench-pitch-time-arm64-part-${{ matrix.part }}.md
           if-no-files-found: error
 
   native-bench-arm64:
@@ -714,11 +779,11 @@ jobs:
           EXTRA_CFLAGS="-fsanitize=thread -g"
           bash packages/segno_engine/src/test/run_native_tests.sh
 
-  # segno_engine's own Dart suite. The root `build` job tests only the app,
-  # and tool/run_package_tests.sh does not list this package, so it runs
-  # here. Since #1783 every native-backed suite runs wherever its package is
+  # segno_engine's own Dart suite. app-tests runs only the app's, and
+  # tool/run_package_tests.sh does not list this package, so it runs here.
+  # Since #1783 every native-backed suite runs wherever its package is
   # tested: the build hook compiles the engine for each `flutter test` run,
-  # so the control-sequence fuzzer (test/fuzz/) runs in `build`, and the
+  # so the control-sequence fuzzer (test/fuzz/) runs in app-tests, and the
   # repositories' native suites in `packages`.
   segno-engine-tests:
     runs-on: ubuntu-latest

@@ -47,6 +47,12 @@
  * makes that a pre-existing finding for its own issue. --smoke: one second,
  * two-second loops, 48 kHz / 128 frames, no assertions.
  *
+ * --part 1 or 2 runs half of the scenarios, so CI times the two halves on
+ * two runners at once (#1771); each scenario is timed as in a whole run, and
+ * each part judges the thresholds its scenarios measure. Part 1: baseline at
+ * 1x and at the Speed factors, the pitch bridge, head and inline. Part 2:
+ * baseline with Pre chains (plain and transposed), render and memory.
+ *
  * --wav DIR writes listening files before the timing (32-bit float WAV, one
  * channel): the source; the source read through the head at 1/2x, 2x, 2.5x,
  * 4x and 8x forward and at 4x reversed, so the decimation can be heard; and
@@ -98,13 +104,14 @@ typedef struct {
   int proxy;
   int smoke;
   const char* wav_dir; /* NULL: no listening files */
+  int part;            /* 0: every scenario; 1 or 2: that half (--part) */
 } bench_opts;
 
 static void usage(void) {
   fprintf(stderr,
           "bench_pitch_time [--smoke] [--seconds N] [--loop-seconds N] "
           "[--rate HZ] [--period FRAMES] [--budget-us N] [--assert] [--proxy] "
-          "[--wav DIR]\n");
+          "[--wav DIR] [--part 1|2]\n");
 }
 
 /* ---------------- timing ---------------- */
@@ -957,7 +964,7 @@ static void judge(const char* what, double value, double limit, int at_most) {
 }
 
 int main(int argc, char** argv) {
-  bench_opts o = {60.0, 30.0, 96000, 64, 0.0, 0, 0, 0, NULL};
+  bench_opts o = {60.0, 30.0, 96000, 64, 0.0, 0, 0, 0, NULL, 0};
   for (int i = 1; i < argc; ++i) {
     if (!strcmp(argv[i], "--smoke")) o.smoke = 1;
     else if (!strcmp(argv[i], "--assert")) o.do_assert = 1;
@@ -968,7 +975,12 @@ int main(int argc, char** argv) {
     else if (!strcmp(argv[i], "--period") && i + 1 < argc) o.period = atoi(argv[++i]);
     else if (!strcmp(argv[i], "--budget-us") && i + 1 < argc) o.budget_us = atof(argv[++i]);
     else if (!strcmp(argv[i], "--wav") && i + 1 < argc) o.wav_dir = argv[++i];
+    else if (!strcmp(argv[i], "--part") && i + 1 < argc) o.part = atoi(argv[++i]);
     else { usage(); return 2; }
+  }
+  if (o.part < 0 || o.part > 2) {
+    usage();
+    return 2;
   }
   if (o.smoke) {
     o.seconds = 1.0;
@@ -996,9 +1008,17 @@ int main(int argc, char** argv) {
          "for the loop\n",
          g_cpu_name, g_timed_sched);
   printf("- rate %d Hz, period %d frames, budget %.1f us, %.0f s per scenario, "
-         "%.0f s loops%s\n\n",
+         "%.0f s loops%s\n",
          o.rate, o.period, o.budget_us, o.seconds, o.loop_seconds,
          o.smoke ? " (smoke)" : "");
+  if (o.part != 0) {
+    printf("- part %d of 2: %s\n", o.part,
+           o.part == 1 ? "baseline at the Speed factors, bridge, head, inline"
+                       : "baseline with Pre chains, render, memory");
+  }
+  printf("\n");
+  /* Which half runs (--part). */
+  const int part1 = o.part != 2, part2 = o.part != 1;
 
   const int32_t frames = (int32_t)(o.loop_seconds * o.rate);
   float* src = make_source(frames, o.rate);
@@ -1017,212 +1037,243 @@ int main(int argc, char** argv) {
   /* baseline */
   printf("## baseline (le_engine_process, 8 tracks PLAYING)\n\n");
   print_header();
-  const stats base1 = scenario_baseline(&o, 1, src, frames, 1, 1);
-  print_row("8 tracks x 1 lane", base1);
-  const stats base8 = scenario_baseline(&o, 8, src, frames, 1, 1);
-  print_row("8 tracks x 8 lanes", base8);
-  /* The same mixer at 1/2x, 4x and 8x (the Part 2a gate on the real mixer
-   * path): every read through the head, decimated at 4x and 8x. */
-  const int factors[3][2] = {{1, 2}, {4, 1}, {8, 1}};
-  stats speed_worst = base1, speed_worst8 = base8;
-  for (int f = 0; f < 3; ++f) {
-    for (int lanes = 1; lanes <= 8; lanes += 7) {
-      const stats s = scenario_baseline(&o, lanes, src, frames, factors[f][0],
-                                        factors[f][1]);
-      char label[64];
-      snprintf(label, sizeof(label), "8 tracks x %d lane%s at %d/%d", lanes,
-               lanes > 1 ? "s" : "", factors[f][0], factors[f][1]);
-      print_row(label, s);
-      stats* worst = lanes == 1 ? &speed_worst : &speed_worst8;
-      if (o.proxy ? s.p50 > worst->p50 : s.p99 > worst->p99) *worst = s;
+  stats base1 = {0}, base8 = {0}, speed_worst = {0}, speed_worst8 = {0};
+  stats chained = {0}, transposed = {0};
+  if (part1) {
+    base1 = scenario_baseline(&o, 1, src, frames, 1, 1);
+    print_row("8 tracks x 1 lane", base1);
+    base8 = scenario_baseline(&o, 8, src, frames, 1, 1);
+    print_row("8 tracks x 8 lanes", base8);
+    /* The same mixer at 1/2x, 4x and 8x (the Part 2a gate on the real mixer
+     * path): every read through the head, decimated at 4x and 8x. */
+    const int factors[3][2] = {{1, 2}, {4, 1}, {8, 1}};
+    speed_worst = base1;
+    speed_worst8 = base8;
+    for (int f = 0; f < 3; ++f) {
+      for (int lanes = 1; lanes <= 8; lanes += 7) {
+        const stats s = scenario_baseline(&o, lanes, src, frames, factors[f][0],
+                                          factors[f][1]);
+        char label[64];
+        snprintf(label, sizeof(label), "8 tracks x %d lane%s at %d/%d", lanes,
+                 lanes > 1 ? "s" : "", factors[f][0], factors[f][1]);
+        print_row(label, s);
+        stats* worst = lanes == 1 ? &speed_worst : &speed_worst8;
+        if (o.proxy ? s.p50 > worst->p50 : s.p99 > worst->p99) *worst = s;
+      }
     }
   }
-  /* The appliance rig: 8 x 8 with a Pre chain on every lane at 8x, so no
-   * print engages and every chain runs live. */
-  const stats chained =
-      scenario_baseline_chains(&o, 8, src, frames, 8, 1, 1, 0);
-  print_row("8 x 8 with Pre chains at 8/1", chained);
-  /* ...and every track transposed (#1179 Part 3a review, M3): the reads
-   * come from the renders, prints stay off, every chain runs live. */
-  const stats transposed =
-      scenario_baseline_chains(&o, 8, src, frames, 8, 1, 1, 7);
-  print_row("8 x 8, Pre chains, 8/1, all +7 st", transposed);
-  /* The pitch bridge (#1675, informational): the mixer with every lane
-   * keeping its pitch through a retime while its stretch is pending. */
-  print_row("8 tracks x 1 lane bridged 120->100",
-            scenario_bridge(&o, 1, src, frames));
-  print_row("8 tracks x 8 lanes bridged 120->100",
-            scenario_bridge(&o, 8, src, frames));
-  printf("\n- transposed rig: %d of 8 tracks sounding +7 st when timed; "
-         "renders took %.1f s; peak RSS after them %.0f MiB\n",
-         g_transposed_engaged, g_transposed_render_s,
-         g_transposed_rss / 1048576.0);
+  if (part2) {
+    /* The appliance rig: 8 x 8 with a Pre chain on every lane at 8x, so no
+     * print engages and every chain runs live. */
+    chained = scenario_baseline_chains(&o, 8, src, frames, 8, 1, 1, 0);
+    print_row("8 x 8 with Pre chains at 8/1", chained);
+    /* ...and every track transposed (#1179 Part 3a review, M3): the reads
+     * come from the renders, prints stay off, every chain runs live. */
+    transposed = scenario_baseline_chains(&o, 8, src, frames, 8, 1, 1, 7);
+    print_row("8 x 8, Pre chains, 8/1, all +7 st", transposed);
+  }
+  if (part1) {
+    /* The pitch bridge (#1675, informational): the mixer with every lane
+     * keeping its pitch through a retime while its stretch is pending. */
+    print_row("8 tracks x 1 lane bridged 120->100",
+              scenario_bridge(&o, 1, src, frames));
+    print_row("8 tracks x 8 lanes bridged 120->100",
+              scenario_bridge(&o, 8, src, frames));
+  }
+  if (part2) {
+    printf("\n- transposed rig: %d of 8 tracks sounding +7 st when timed; "
+           "renders took %.1f s; peak RSS after them %.0f MiB\n",
+           g_transposed_engaged, g_transposed_render_s,
+           g_transposed_rss / 1048576.0);
+  }
   printf("\n");
 
-  /* head */
-  printf("## head (engine_read_head.h kernel; 'added' = minus the mixer's "
-         "integer read)\n\n");
-  print_header();
-  const double rates[] = {0.5, 2.0, 4.0, 8.0, 0.75, 4.0 / 3.0};
-  const char* rate_names[] = {"1/2x", "2x", "4x", "8x", "ratio 0.75", "ratio 4/3"};
-  const int lane_counts[] = {8, 64};
   double worst_added_p50[2] = {0, 0}, worst_added_p99[2] = {0, 0};
-  for (int lc = 0; lc < 2; ++lc) {
-    const int lanes = lane_counts[lc];
-    float** bufs = (float**)calloc((size_t)lanes, sizeof(float*));
-    for (int l = 0; l < lanes; ++l) {
-      bufs[l] = (float*)malloc(sizeof(float) * (size_t)frames);
-      memcpy(bufs[l], src, sizeof(float) * (size_t)frames);
+  int allocated = 0;
+  if (part1) {
+    /* head */
+    printf("## head (engine_read_head.h kernel; 'added' = minus the mixer's "
+           "integer read)\n\n");
+    print_header();
+    const double rates[] = {0.5, 2.0, 4.0, 8.0, 0.75, 4.0 / 3.0};
+    const char* rate_names[] = {"1/2x", "2x", "4x", "8x", "ratio 0.75", "ratio 4/3"};
+    const int lane_counts[] = {8, 64};
+    for (int lc = 0; lc < 2; ++lc) {
+      const int lanes = lane_counts[lc];
+      float** bufs = (float**)calloc((size_t)lanes, sizeof(float*));
+      for (int l = 0; l < lanes; ++l) {
+        bufs[l] = (float*)malloc(sizeof(float) * (size_t)frames);
+        memcpy(bufs[l], src, sizeof(float) * (size_t)frames);
+      }
+      const stats ctl = scenario_int(&o, lanes, bufs, frames);
+      char label[64];
+      snprintf(label, sizeof(label), "%d lanes integer read (control)", lanes);
+      print_row(label, ctl);
+      const stats id = scenario_head(&o, lanes, 1.0, bufs, frames);
+      snprintf(label, sizeof(label), "%d lanes identity head", lanes);
+      print_row(label, id);
+      for (int r = 0; r < 6; ++r) {
+        const stats s = scenario_head(&o, lanes, rates[r], bufs, frames);
+        snprintf(label, sizeof(label), "%d lanes %s", lanes, rate_names[r]);
+        print_row(label, s);
+        const double ap50 = s.p50 - ctl.p50 > 0 ? s.p50 - ctl.p50 : 0;
+        const double ap99 = s.p99 - ctl.p99 > 0 ? s.p99 - ctl.p99 : 0;
+        if (ap50 > worst_added_p50[lc]) worst_added_p50[lc] = ap50;
+        if (ap99 > worst_added_p99[lc]) worst_added_p99[lc] = ap99;
+      }
+      printf("| %-34s | %8.1f | %8.1f |          |          | %6.1f%% | %6.1f%% |\n",
+             lc == 0 ? "8 lanes worst ADDED" : "64 lanes worst ADDED",
+             worst_added_p50[lc], worst_added_p99[lc], 100.0 * worst_added_p50[lc] / g_budget_us,
+             100.0 * worst_added_p99[lc] / g_budget_us);
+      for (int l = 0; l < lanes; ++l) free(bufs[l]);
+      free(bufs);
     }
-    const stats ctl = scenario_int(&o, lanes, bufs, frames);
-    char label[64];
-    snprintf(label, sizeof(label), "%d lanes integer read (control)", lanes);
-    print_row(label, ctl);
-    const stats id = scenario_head(&o, lanes, 1.0, bufs, frames);
-    snprintf(label, sizeof(label), "%d lanes identity head", lanes);
-    print_row(label, id);
-    for (int r = 0; r < 6; ++r) {
-      const stats s = scenario_head(&o, lanes, rates[r], bufs, frames);
-      snprintf(label, sizeof(label), "%d lanes %s", lanes, rate_names[r]);
-      print_row(label, s);
-      const double ap50 = s.p50 - ctl.p50 > 0 ? s.p50 - ctl.p50 : 0;
-      const double ap99 = s.p99 - ctl.p99 > 0 ? s.p99 - ctl.p99 : 0;
-      if (ap50 > worst_added_p50[lc]) worst_added_p50[lc] = ap50;
-      if (ap99 > worst_added_p99[lc]) worst_added_p99[lc] = ap99;
+    printf("\n");
+
+    /* inline (informational) */
+    const int stream_counts[] = {1, 8, 64};
+    stats inl[3][2];
+    for (int sc = 0; sc < 3; ++sc) {
+      for (int stg = 0; stg < 2; ++stg) {
+        inl[sc][stg] = scenario_inline(&o, stream_counts[sc], stg, src, frames);
+      }
     }
-    printf("| %-34s | %8.1f | %8.1f |          |          | %6.1f%% | %6.1f%% |\n",
-           lc == 0 ? "8 lanes worst ADDED" : "64 lanes worst ADDED",
-           worst_added_p50[lc], worst_added_p99[lc], 100.0 * worst_added_p50[lc] / g_budget_us,
-           100.0 * worst_added_p99[lc] / g_budget_us);
-    for (int l = 0; l < lanes; ++l) free(bufs[l]);
-    free(bufs);
-  }
-  printf("\n");
-
-  /* inline (informational) */
-  const int stream_counts[] = {1, 8, 64};
-  stats inl[3][2];
-  for (int sc = 0; sc < 3; ++sc) {
-    for (int stg = 0; stg < 2; ++stg) {
-      inl[sc][stg] = scenario_inline(&o, stream_counts[sc], stg, src, frames);
+    const double seek_us = scenario_seek_us(&o, src);
+    printf("## inline (streaming le_stretch_process, %d frames per call; informational)\n\n", o.period);
+    print_header();
+    for (int sc = 0; sc < 3; ++sc) {
+      char label[64];
+      snprintf(label, sizeof(label), "%d streams aligned", stream_counts[sc]);
+      print_row(label, inl[sc][0]);
+      snprintf(label, sizeof(label), "%d streams staggered", stream_counts[sc]);
+      print_row(label, inl[sc][1]);
     }
+    printf("\nseek re-prime (block + interval frames): %.1f us (%.1f%% of the period)\n",
+           seek_us, 100.0 * seek_us / g_budget_us);
+    allocated = g_allocs_process != 0 || g_allocs_seek != 0 || g_allocs_flush != 0;
+    printf("operator new calls in process / seek / flush: %lld / %lld / %lld%s\n\n",
+           g_allocs_process, g_allocs_seek, g_allocs_flush,
+           allocated ? " (FAIL: these are the real-time calls)" : "");
   }
-  const double seek_us = scenario_seek_us(&o, src);
-  printf("## inline (streaming le_stretch_process, %d frames per call; informational)\n\n", o.period);
-  print_header();
-  for (int sc = 0; sc < 3; ++sc) {
-    char label[64];
-    snprintf(label, sizeof(label), "%d streams aligned", stream_counts[sc]);
-    print_row(label, inl[sc][0]);
-    snprintf(label, sizeof(label), "%d streams staggered", stream_counts[sc]);
-    print_row(label, inl[sc][1]);
+
+  double per_cheaper = 0, loaded_cheaper_min = 1e9, scratch_max = 0;
+  if (part2) {
+    /* memory per instance */
+    per_cheaper = scenario_memory_per_instance(&o, 1);
+    const double per_default = scenario_memory_per_instance(&o, 0);
+
+    /* render: last, because outside Linux nice +10 is process-wide */
+    double idle[kCfgs], loaded[kCfgs], idle_heap[kCfgs], loaded_heap[kCfgs];
+    render_job idle_job = {cfgs, kCfgs, src, frames, o.rate, idle, idle_heap, ""};
+    run_render_job(&idle_job);
+
+    load_thread_args la;
+    memset(&la, 0, sizeof(la));
+    la.o = &o;
+    la.src = src;
+    la.frames = frames;
+    pthread_t lt;
+    pthread_create(&lt, NULL, load_thread_main, &la);
+    while (la.running == 0) usleep(1000);
+    render_job loaded_job = {cfgs, kCfgs, src, frames, o.rate, loaded, loaded_heap, ""};
+    if (la.running > 0) {
+      run_render_job(&loaded_job);
+    } else {
+      for (int c = 0; c < kCfgs; ++c) loaded[c] = loaded_heap[c] = 0;
+    }
+    la.stop = 1;
+    pthread_join(lt, NULL);
+
+    printf("## render (le_stretch_render_offline, %.0f s mono, x real time)\n\n", o.loop_seconds);
+    printf("| configuration              |   idle |   loaded | peak heap KiB | scratch KiB |\n");
+    printf("|----------------------------|--------|----------|---------------|-------------|\n");
+    for (int c = 0; c < kCfgs; ++c) {
+      if (cfgs[c].cheaper && loaded[c] < loaded_cheaper_min) loaded_cheaper_min = loaded[c];
+      const double peak = idle_heap[c] > loaded_heap[c] ? idle_heap[c] : loaded_heap[c];
+      const double scratch = peak - (cfgs[c].cheaper ? per_cheaper : per_default);
+      if (scratch > scratch_max) scratch_max = scratch;
+      printf("| %-26s | %6.1fx | %7.1fx | %13.0f | %11.0f |\n", cfg_names[c], idle[c],
+             loaded[c], peak / 1024.0, scratch / 1024.0);
+    }
+    printf("\nrenderer thread (read back): %s; load thread (read back): %s\n\n",
+           idle_job.sched, la.running > 0 ? la.sched : "FAILED");
+
+    printf("## memory\n\n");
+    printf("- stretcher live heap per mono instance: cheaper %.0f KiB, default %.0f KiB\n",
+           per_cheaper / 1024.0, per_default / 1024.0);
+    printf("- render worker scratch (peak C++ heap during a render minus one "
+           "stretcher), worst recipe: %.0f KiB\n",
+           scratch_max / 1024.0);
+    printf("- rendered entry: %d frames x 4 = %.1f MiB per mono lane (the "
+           "caller's buffer, outside the scratch)\n",
+           frames, (double)frames * 4.0 / 1048576.0);
+    printf("- peak RSS: %.0f MiB\n\n", peak_rss_bytes() / 1048576.0);
   }
-  printf("\nseek re-prime (block + interval frames): %.1f us (%.1f%% of the period)\n",
-         seek_us, 100.0 * seek_us / g_budget_us);
-  const int allocated = g_allocs_process != 0 || g_allocs_seek != 0 || g_allocs_flush != 0;
-  printf("operator new calls in process / seek / flush: %lld / %lld / %lld%s\n\n",
-         g_allocs_process, g_allocs_seek, g_allocs_flush,
-         allocated ? " (FAIL: these are the real-time calls)" : "");
 
-  /* memory per instance */
-  const double per_cheaper = scenario_memory_per_instance(&o, 1);
-  const double per_default = scenario_memory_per_instance(&o, 0);
-
-  /* render: last, because outside Linux nice +10 is process-wide */
-  double idle[kCfgs], loaded[kCfgs], idle_heap[kCfgs], loaded_heap[kCfgs];
-  render_job idle_job = {cfgs, kCfgs, src, frames, o.rate, idle, idle_heap, ""};
-  run_render_job(&idle_job);
-
-  load_thread_args la;
-  memset(&la, 0, sizeof(la));
-  la.o = &o;
-  la.src = src;
-  la.frames = frames;
-  pthread_t lt;
-  pthread_create(&lt, NULL, load_thread_main, &la);
-  while (la.running == 0) usleep(1000);
-  render_job loaded_job = {cfgs, kCfgs, src, frames, o.rate, loaded, loaded_heap, ""};
-  if (la.running > 0) {
-    run_render_job(&loaded_job);
-  } else {
-    for (int c = 0; c < kCfgs; ++c) loaded[c] = loaded_heap[c] = 0;
-  }
-  la.stop = 1;
-  pthread_join(lt, NULL);
-
-  printf("## render (le_stretch_render_offline, %.0f s mono, x real time)\n\n", o.loop_seconds);
-  printf("| configuration              |   idle |   loaded | peak heap KiB | scratch KiB |\n");
-  printf("|----------------------------|--------|----------|---------------|-------------|\n");
-  double loaded_cheaper_min = 1e9, scratch_max = 0;
-  for (int c = 0; c < kCfgs; ++c) {
-    if (cfgs[c].cheaper && loaded[c] < loaded_cheaper_min) loaded_cheaper_min = loaded[c];
-    const double peak = idle_heap[c] > loaded_heap[c] ? idle_heap[c] : loaded_heap[c];
-    const double scratch = peak - (cfgs[c].cheaper ? per_cheaper : per_default);
-    if (scratch > scratch_max) scratch_max = scratch;
-    printf("| %-26s | %6.1fx | %7.1fx | %13.0f | %11.0f |\n", cfg_names[c], idle[c],
-           loaded[c], peak / 1024.0, scratch / 1024.0);
-  }
-  printf("\nrenderer thread (read back): %s; load thread (read back): %s\n\n",
-         idle_job.sched, la.running > 0 ? la.sched : "FAILED");
-
-  printf("## memory\n\n");
-  printf("- stretcher live heap per mono instance: cheaper %.0f KiB, default %.0f KiB\n",
-         per_cheaper / 1024.0, per_default / 1024.0);
-  printf("- render worker scratch (peak C++ heap during a render minus one "
-         "stretcher), worst recipe: %.0f KiB\n",
-         scratch_max / 1024.0);
-  printf("- rendered entry: %d frames x 4 = %.1f MiB per mono lane (the "
-         "caller's buffer, outside the scratch)\n",
-         frames, (double)frames * 4.0 / 1048576.0);
-  printf("- peak RSS: %.0f MiB\n\n", peak_rss_bytes() / 1048576.0);
-
-  /* verdicts */
+  /* verdicts, each in the part that measures it */
   int baseline_over = 0;
   if (o.do_assert) {
     if (o.proxy) {
-      judge("head added p50 at 8 lanes <= 5% of period", 100.0 * worst_added_p50[0] / g_budget_us, 5.0, 1);
-      judge("head added p50 at 64 lanes <= 17% of period", 100.0 * worst_added_p50[1] / g_budget_us, 17.0, 1);
-      judge("render cheaper under load >= 40x real time", loaded_cheaper_min, 40.0, 0);
-      judge("mixer at 1/2x, 4x, 8x p50 (8 lanes) <= 25% of period",
-            100.0 * speed_worst.p50 / g_budget_us, 25.0, 1);
-      /* 27, not half the Pi's 50 (#1192): on the CI runner this row is the
-       * mixer's own cost, not a margin under it. Seventeen 20 s runs read
-       * 24.24 to 24.80 (sd 0.25), and the plan's 60 s reads about 0.9
-       * higher (25.36, 25.40), so 25 failed on a shared machine's noise.
-       * 27 sits 1.6 points over the worst reading and still fails a
-       * regression of the size this gate is for: a head path that loses its
-       * decimation or the integer path costs tens of percent. */
-      judge("mixer at 1/2x, 4x, 8x p50 (64 lanes) <= 27% of period",
-            100.0 * speed_worst8.p50 / g_budget_us, 27.0, 1);
+      if (part1) {
+        judge("head added p50 at 8 lanes <= 5% of period", 100.0 * worst_added_p50[0] / g_budget_us, 5.0, 1);
+        judge("head added p50 at 64 lanes <= 17% of period", 100.0 * worst_added_p50[1] / g_budget_us, 17.0, 1);
+      }
+      if (part2) {
+        judge("render cheaper under load >= 40x real time", loaded_cheaper_min, 40.0, 0);
+      }
+      if (part1) {
+        judge("mixer at 1/2x, 4x, 8x p50 (8 lanes) <= 25% of period",
+              100.0 * speed_worst.p50 / g_budget_us, 25.0, 1);
+        /* 27, not half the Pi's 50 (#1192): on the CI runner this row is the
+         * mixer's own cost, not a margin under it. Seventeen 20 s runs read
+         * 24.24 to 24.80 (sd 0.25), and the plan's 60 s reads about 0.9
+         * higher (25.36, 25.40), so 25 failed on a shared machine's noise.
+         * 27 sits 1.6 points over the worst reading and still fails a
+         * regression of the size this gate is for: a head path that loses its
+         * decimation or the integer path costs tens of percent. */
+        judge("mixer at 1/2x, 4x, 8x p50 (64 lanes) <= 27% of period",
+              100.0 * speed_worst8.p50 / g_budget_us, 27.0, 1);
+      }
       /* The live-chain row is the appliance's question (plan decision 27):
        * it prints here and is judged on the Pi only. */
     } else {
-      judge("head added p99 at 8 lanes <= 10% of period", 100.0 * worst_added_p99[0] / g_budget_us, 10.0, 1);
-      judge("head added p99 at 64 lanes <= 35% of period", 100.0 * worst_added_p99[1] / g_budget_us, 35.0, 1);
-      /* The plan's carve-out: a baseline that is already over half the
-       * period is the engine's own finding, reported here for an issue of
-       * its own, not a failure of the head. */
-      if (100.0 * base1.p99 / g_budget_us <= 50.0) {
-        judge("baseline p99 + head added p99 (8 lanes) <= 50% of period",
-              100.0 * (base1.p99 + worst_added_p99[0]) / g_budget_us, 50.0, 1);
-      } else {
-        baseline_over = 1;
+      if (part1) {
+        judge("head added p99 at 8 lanes <= 10% of period", 100.0 * worst_added_p99[0] / g_budget_us, 10.0, 1);
+        judge("head added p99 at 64 lanes <= 35% of period", 100.0 * worst_added_p99[1] / g_budget_us, 35.0, 1);
+        /* The plan's carve-out: a baseline that is already over half the
+         * period is the engine's own finding, reported here for an issue of
+         * its own, not a failure of the head. */
+        if (100.0 * base1.p99 / g_budget_us <= 50.0) {
+          judge("baseline p99 + head added p99 (8 lanes) <= 50% of period",
+                100.0 * (base1.p99 + worst_added_p99[0]) / g_budget_us, 50.0, 1);
+        } else {
+          baseline_over = 1;
+        }
       }
-      judge("render cheaper under load >= 20x real time", loaded_cheaper_min, 20.0, 0);
-      judge("mixer at 1/2x, 4x, 8x p99 (8 lanes) <= 50% of period",
-            100.0 * speed_worst.p99 / g_budget_us, 50.0, 1);
-      judge("mixer at 1/2x, 4x, 8x p99 (64 lanes) <= 50% of period",
-            100.0 * speed_worst8.p99 / g_budget_us, 50.0, 1);
-      judge("8 x 8 with live Pre chains at 8x p99 <= 50% of period",
-            100.0 * chained.p99 / g_budget_us, 50.0, 1);
-      judge("8 x 8, chains, 8x, all transposed p99 <= 50% of period",
-            100.0 * transposed.p99 / g_budget_us, 50.0, 1);
-      judge("transposed rig: every track sounding its pitch",
-            (double)g_transposed_engaged, (double)LE_MAX_TRACKS, 0);
+      if (part2) {
+        judge("render cheaper under load >= 20x real time", loaded_cheaper_min, 20.0, 0);
+      }
+      if (part1) {
+        judge("mixer at 1/2x, 4x, 8x p99 (8 lanes) <= 50% of period",
+              100.0 * speed_worst.p99 / g_budget_us, 50.0, 1);
+        judge("mixer at 1/2x, 4x, 8x p99 (64 lanes) <= 50% of period",
+              100.0 * speed_worst8.p99 / g_budget_us, 50.0, 1);
+      }
+      if (part2) {
+        judge("8 x 8 with live Pre chains at 8x p99 <= 50% of period",
+              100.0 * chained.p99 / g_budget_us, 50.0, 1);
+        judge("8 x 8, chains, 8x, all transposed p99 <= 50% of period",
+              100.0 * transposed.p99 / g_budget_us, 50.0, 1);
+        judge("transposed rig: every track sounding its pitch",
+              (double)g_transposed_engaged, (double)LE_MAX_TRACKS, 0);
+      }
     }
-    judge("render worker scratch under 1 MiB", scratch_max / 1048576.0, 1.0, 1);
-    judge("stretcher heap per instance (cheaper) <= 4 MiB", per_cheaper / 1048576.0, 4.0, 1);
-    printf("## verdict (%s thresholds)\n\n", o.proxy ? "arm64 proxy" : "Pi 5");
+    if (part2) {
+      judge("render worker scratch under 1 MiB", scratch_max / 1048576.0, 1.0, 1);
+      judge("stretcher heap per instance (cheaper) <= 4 MiB", per_cheaper / 1048576.0, 4.0, 1);
+    }
+    printf("## verdict (%s thresholds%s)\n\n", o.proxy ? "arm64 proxy" : "Pi 5",
+           o.part == 1 ? ", part 1 of 2" : o.part == 2 ? ", part 2 of 2" : "");
     if (baseline_over) {
       printf("- NOTE: baseline p99 alone is %.1f%% of the period, over 50%%: a "
              "pre-existing finding for its own issue; the baseline + head gate "
