@@ -7,9 +7,9 @@ import 'package:segno/theme/theme.dart';
 /// from its edge, with a 32 px title, a 24 px body, the page's own content,
 /// and its actions at the right.
 ///
-/// The page is drawn at the pen's scale, so its dialogs are too: the
-/// console's 744-wide shell, drawn for the tray, would sit on this page at
-/// two thirds of the size of everything around it.
+/// The page is drawn at the pen's scale, so its dialogs are too.
+/// `ConsoleDialogShell` has the same geometry since #1631; this one keeps the
+/// settings frame's colours.
 class DeviceDialog extends StatelessWidget {
   /// Creates a [DeviceDialog].
   const new({

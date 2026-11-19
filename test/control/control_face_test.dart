@@ -261,6 +261,9 @@ void main() {
       ).canonicalString();
       expect(find.byKey(Key('pedal_target_$slot')), findsNothing);
 
+      // The footer sits under the list, below the fold at full size.
+      await tester.ensureVisible(find.byKey(const Key('pedal_show_effects')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('pedal_show_effects')));
       await tester.pumpAndSettle();
 

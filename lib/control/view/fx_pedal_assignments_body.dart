@@ -15,7 +15,7 @@ import 'package:segno/notices/notices.dart';
 import 'package:segno/theme/theme.dart';
 
 /// The vertical rhythm of this tab, as drawn: one gap between everything.
-const double _gap = 14;
+const double _gap = 16;
 
 /// The FX page's pedal assignments: which footswitch you are editing, and what
 /// it acts on in FX mode.
@@ -59,14 +59,15 @@ class _FxPedalAssignmentsBodyState extends State<FxPedalAssignmentsBody> {
   /// Whether the assign list is also offering the individual effect slots.
   bool _showEffects = false;
 
-  /// Height of one transport card.
-  static const double _cardHeight = 101;
+  /// Height of one transport card: 24 inside, an 18 px legend and a 24 px
+  /// label, at full size (#1631).
+  static const double _cardHeight = 112;
 
   /// Gap between the transport cards.
-  static const double _cardGap = 10;
+  static const double _cardGap = 12;
 
   /// Height of the caption row the bank selector sits in.
-  static const double _headerHeight = 33;
+  static const double _headerHeight = ConsoleMiniToggle.height;
 
   int _bankOf(ControlState state) => _bank ?? state.activeBank;
 
@@ -504,7 +505,7 @@ class _SwitchCard extends StatelessWidget {
         child: AnimatedContainer(
           duration: consoleMotion(context),
           curve: Curves.easeOut,
-          padding: const EdgeInsets.all(18),
+          padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
             // The same accent tint the selected track row carries: one mark
             // for "this is the switch you are editing", wherever it is drawn.
@@ -522,13 +523,13 @@ class _SwitchCard extends StatelessWidget {
                 style: TextStyle(
                   color: surface.textMuted,
                   fontFamily: SurfaceTheme.monoFont,
-                  fontSize: 12,
+                  fontSize: 18,
                   height: 1.17,
                   letterSpacing: 0.96,
                   leadingDistribution: TextLeadingDistribution.even,
                 ),
               ),
-              const SizedBox(height: 5),
+              const SizedBox(height: 8),
               AppText(
                 label,
                 maxLines: 1,
@@ -539,7 +540,7 @@ class _SwitchCard extends StatelessWidget {
                     (_, false) => surface.warning,
                     _ => surface.textPrimary,
                   },
-                  fontSize: 16,
+                  fontSize: kConsoleRowTextSize,
                   height: 1.25,
                   leadingDistribution: TextLeadingDistribution.even,
                   fontWeight: FontWeight.w600,

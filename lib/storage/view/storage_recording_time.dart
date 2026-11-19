@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:segno/common/console_surface.dart';
 import 'package:segno/theme/theme.dart';
 
 /// How much recording Internal still holds (pen 31 `storage-recording-time`):
@@ -34,7 +35,9 @@ class StorageRecordingTime extends StatelessWidget {
         border: Border.all(color: surface.borderStrong),
       ),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
+        // At the rows' scale beside the volume cards (#1631): a 24 px
+        // headline over 20 px details.
+        padding: const EdgeInsets.fromLTRB(24, 16, 24, 16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
@@ -50,18 +53,18 @@ class StorageRecordingTime extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: surface.textPrimary,
-                      fontSize: 17,
+                      fontSize: kConsoleRowTextSize,
                       height: 1.2,
                     ),
                   ),
                 ),
                 if (format case final words?) ...[
-                  const SizedBox(width: 18),
+                  const SizedBox(width: kConsoleRowGap),
                   AppText(
                     words,
                     style: TextStyle(
                       color: surface.textSecondary,
-                      fontSize: 14,
+                      fontSize: kConsoleRowDetailSize,
                       height: 1.2,
                     ),
                   ),
@@ -75,7 +78,7 @@ class StorageRecordingTime extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: surface.textMuted,
-                fontSize: 13,
+                fontSize: kConsoleRowDetailSize,
                 height: 1.2,
               ),
             ),
@@ -102,7 +105,7 @@ class StorageNotice extends StatelessWidget {
       message,
       style: TextStyle(
         color: context.surface.warning,
-        fontSize: 15,
+        fontSize: kConsoleRowDetailSize,
         height: 1.2,
       ),
     );

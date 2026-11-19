@@ -83,6 +83,15 @@ class _ConsoleRenameSheet extends StatefulWidget {
 }
 
 class _ConsoleRenameSheetState extends State<_ConsoleRenameSheet> {
+  /// The title's size: a full-size page's heading.
+  static const double _titleSize = 28;
+
+  /// The subtitle's and an error's size: a full-size page's notes.
+  static const double _noteSize = 24;
+
+  /// The typed name's size, the Wi-Fi password sheet's.
+  static const double _fieldSize = 26;
+
   /// The sheet holds its own text — there is no [TextField] to hold it.
   late String _name = widget.current;
   bool _saving = false;
@@ -162,7 +171,12 @@ class _ConsoleRenameSheetState extends State<_ConsoleRenameSheet> {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final surface = context.surface;
+    final spacing = context.spacing;
 
+    // Full size, as the pages it rises over (#1631): the page's 32 inset, a
+    // 28 px title over 24 px notes, a 64 high Cancel and the Wi-Fi password
+    // sheet's 26 px entry. The keys keep the console keyboard's own size, as
+    // on that sheet.
     return Focus(
       autofocus: true,
       onKeyEvent: _onKey,
@@ -172,7 +186,7 @@ class _ConsoleRenameSheetState extends State<_ConsoleRenameSheet> {
           color: surface.card,
           border: Border.all(color: surface.borderStrong),
         ),
-        padding: const EdgeInsets.fromLTRB(19, 20, 19, 19),
+        padding: EdgeInsets.all(spacing.xxl),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -183,24 +197,25 @@ class _ConsoleRenameSheetState extends State<_ConsoleRenameSheet> {
                   widget.title,
                   style: TextStyle(
                     color: surface.textPrimary,
-                    fontSize: 18,
+                    fontSize: _titleSize,
                     height: 1.17,
                     leadingDistribution: TextLeadingDistribution.even,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                const SizedBox(width: 12),
+                SizedBox(width: spacing.xl),
                 Expanded(
                   child: AppText(
                     widget.subtitle,
                     style: TextStyle(
                       color: surface.textMuted,
-                      fontSize: 14,
+                      fontSize: _noteSize,
                       height: 1.21,
                       leadingDistribution: TextLeadingDistribution.even,
                     ),
                   ),
                 ),
+                SizedBox(width: spacing.xl),
                 ConsoleDialogButton(
                   key: const Key('console_rename_cancel'),
                   label: l10n.cancel,
@@ -208,19 +223,28 @@ class _ConsoleRenameSheetState extends State<_ConsoleRenameSheet> {
                 ),
               ],
             ),
-            const SizedBox(height: 12),
+            SizedBox(height: spacing.lg),
             ConsoleEntryField(
               text: _name,
               label: widget.fieldLabel,
               textKey: const Key('console_rename_field'),
+              fontSize: _fieldSize,
             ),
             if (_saveError case final error?) ...[
-              const SizedBox(height: 8),
-              AppText(error, key: const Key('console_rename_error')),
+              SizedBox(height: spacing.sm),
+              AppText(
+                error,
+                key: const Key('console_rename_error'),
+                style: TextStyle(
+                  color: surface.warning,
+                  fontSize: _noteSize,
+                  height: 1.2,
+                ),
+              ),
             ],
-            // The keys sit on the keyboard's edges (#1672): 16 under the
-            // field, and 19 from the sheet's sides and bottom like the field.
-            const SizedBox(height: 16),
+            // The keys sit on the keyboard's edges (#1672), on the sheet's
+            // inset like the field.
+            SizedBox(height: spacing.lg),
             OnScreenKeyboard(
               layout: OnScreenKeyboardLayout.text,
               showNumberRow: true,

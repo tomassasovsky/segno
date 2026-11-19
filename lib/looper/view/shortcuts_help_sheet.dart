@@ -54,7 +54,7 @@ class _ShortcutsHelpDialog extends StatelessWidget {
     return Semantics(
       // Names the route so assistive tech announces the legend as it opens.
       label: l10n.a11yShortcutsHelp,
-      // Centred, so the panel is the shell's 744 and as tall as its rows
+      // Centred, so the panel is the shell's width and as tall as its rows
       // rather than the whole screen (#1590 DLG-2).
       child: Center(
         child: ConsoleDialogShell(
@@ -67,7 +67,7 @@ class _ShortcutsHelpDialog extends StatelessWidget {
                 l10n.a11yShortcutsHelp,
                 style: TextStyle(
                   color: context.surface.textPrimary,
-                  fontSize: 20,
+                  fontSize: ConsoleDialogShell.titleSize,
                   height: 1.15,
                   fontWeight: FontWeight.w600,
                   leadingDistribution: TextLeadingDistribution.even,
@@ -135,7 +135,7 @@ class _ShortcutsHelpDialog extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(height: 20),
+              SizedBox(height: context.spacing.xl),
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
@@ -157,6 +157,10 @@ class _ShortcutsHelpDialog extends StatelessWidget {
 
 /// The legend's groups, with every description in one column: the key caps
 /// all take the widest cap's width (#1590 DLG-1).
+///
+/// At the full-size dialogs' scale (#1631): 20 px headings and descriptions,
+/// the row details' size, and 18 px caps, so the sixteen rows fit the screen
+/// without scrolling.
 class _ShortcutTable extends StatelessWidget {
   const new({required this.groups});
 
@@ -167,11 +171,11 @@ class _ShortcutTable extends StatelessWidget {
   static const double _capPadding = 8;
 
   /// The narrowest cap.
-  static const double _capMinWidth = 46;
+  static const double _capMinWidth = 56;
 
   /// The cap text's style.
-  static TextStyle? capStyle(ThemeData theme) =>
-      theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700);
+  static TextStyle? capStyle(ThemeData theme) => theme.textTheme.labelLarge
+      ?.copyWith(fontSize: 18, fontWeight: FontWeight.w700);
 
   @override
   Widget build(BuildContext context) {
@@ -204,11 +208,12 @@ class _ShortcutTable extends StatelessWidget {
       children: [
         for (final (title, rows) in groups) ...[
           Padding(
-            padding: const EdgeInsets.only(top: 14, bottom: 2),
+            padding: const EdgeInsets.only(top: 24, bottom: 4),
             child: AppText(
               title,
               style: theme.textTheme.titleSmall?.copyWith(
                 color: theme.colorScheme.primary,
+                fontSize: kConsoleRowDetailSize,
                 fontWeight: FontWeight.w700,
               ),
             ),
@@ -264,13 +269,14 @@ class _ShortcutRow extends StatelessWidget {
                   style: _ShortcutTable.capStyle(theme),
                 ),
               ),
-              const SizedBox(width: 14),
+              const SizedBox(width: 16),
               Expanded(
                 child: Padding(
-                  padding: const EdgeInsets.only(top: 3),
+                  padding: const EdgeInsets.only(top: 2),
                   child: AppText(
                     row.description,
                     key: Key('shortcutDescription_${row.id}'),
+                    style: const TextStyle(fontSize: kConsoleRowDetailSize),
                   ),
                 ),
               ),

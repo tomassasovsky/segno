@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
@@ -22,6 +24,23 @@ class MaxLoopLengthCard extends StatefulWidget {
 class _MaxLoopLengthCardState extends State<MaxLoopLengthCard> {
   bool _open = false;
 
+  /// Scrolls the opened grid into view once it has grown: at full size its
+  /// second row of chips would otherwise sit under the page's Apply row.
+  Future<void> _reveal() async {
+    final motion = consoleMotion(context);
+    await Future<void>.delayed(motion);
+    // The frame that lays the drawer out at its full height.
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted || !_open) return;
+    await Scrollable.ensureVisible(
+      context,
+      // The card's end on the viewport's end: the page only ever scrolls
+      // as far as it has to, and a card already in view stays put.
+      alignment: 1,
+      duration: motion,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
@@ -38,7 +57,10 @@ class _MaxLoopLengthCardState extends State<MaxLoopLengthCard> {
           expanded: _open,
           fill: _open ? surface.control : null,
           showDivider: false,
-          onTap: () => setState(() => _open = !_open),
+          onTap: () {
+            setState(() => _open = !_open);
+            if (_open) unawaited(_reveal());
+          },
         ),
         ConsoleChooser.grid(
           key: const Key('audio_max_loop_chooser'),

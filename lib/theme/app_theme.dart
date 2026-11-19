@@ -242,6 +242,11 @@ abstract final class AppTheme {
     // of height against the pen and against the tests, which run as a phone
     // (#1590 FT-1).
     visualDensity: VisualDensity.standard,
+    // The same for tap targets: Material pads them to 48 on phones and
+    // shrink-wraps them on desktop, so the console laid out tighter than the
+    // tests and the screenshots it is checked against (#1631). Padded, the
+    // touch size, on every platform.
+    materialTapTargetSize: MaterialTapTargetSize.padded,
     fontFamily: SurfaceTheme.displayFont,
     fontFamilyFallback: SurfaceTheme.fontFallback,
     appBarTheme: AppBarTheme(backgroundColor: scheme.surfaceContainerHighest),
