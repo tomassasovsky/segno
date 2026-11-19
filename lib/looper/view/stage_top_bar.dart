@@ -507,7 +507,7 @@ const int kCpuLoadDanger = 75;
 /// share of the whole machine with every core counted as 100%, and under it
 /// a bar filled to the same share (#1774).
 ///
-/// Absent on a build that cannot measure it (no `/proc/stat`, the macOS
+/// Absent on a build that cannot measure it (no `/proc`, the macOS
 /// desktop). Owns its [CpuLoadCubit], so the load is sampled only while the
 /// bar is on screen, and only a change in the shown figure rebuilds the
 /// figure. A fixed slot sized for `CPU 100%`, so no reading moves anything.

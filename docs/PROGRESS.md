@@ -96,6 +96,21 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 ---
 
+## November 2026 The stage's CPU figure reads the real load (#1868)
+
+- An idle console read 0-2% on the stage with jumps to 10-16% every 4.4 s;
+  its real idle load is a steady 9-10% (audio callback 15% of core 3, the
+  USB interrupt thread 10% of core 0, each effects worker 4%, the UI 3%).
+- Cause: `CpuLoadRepository` took busy over total from `/proc/stat`. The
+  kernel (6.12 PREEMPT_RT, NO_HZ idle) samples the busy fields at the tick,
+  which misses the audio callback and credits the USB interrupt thread's
+  time to core 0 in one lump every 4.43 s.
+- Now: load = 1 - (idle + iowait) / (elapsed x online cores), with idle and
+  iowait from `/proc/stat` (measured as each core enters and leaves idle)
+  and elapsed time from `/proc/uptime`. Checked side by side on the console
+  in shell before the change; the built app is not yet checked on the
+  console.
+
 ## November 2026 The network stack is Raspberry Pi OS's (#1843)
 
 - NetworkManager drives the radio through wpa_supplicant, as on Raspberry Pi

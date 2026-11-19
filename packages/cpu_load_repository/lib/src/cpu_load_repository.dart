@@ -1,40 +1,57 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:cpu_load_repository/src/proc_stat.dart';
+import 'package:cpu_load_repository/src/cpu_sample.dart';
 
-/// Reads the text of `/proc/stat`.
-typedef ProcStatReader = Future<String> Function();
+/// Reads the text of a file under `/proc`, by its name there (`stat`,
+/// `uptime`).
+typedef ProcReader = Future<String> Function(String name);
 
 /// The console's CPU load as a share of the whole machine: every core
 /// together is 100% (#1307).
 ///
-/// Sampled from the aggregate `cpu` line of `/proc/stat`, the change in busy
-/// over the change in total jiffies between two reads [interval] apart. A
-/// build without `/proc/stat` (macOS desktop) is [isSupported] false and
-/// reports nothing.
+/// Each sample reads the idle time of every core from `/proc/stat` and the
+/// clock from `/proc/uptime`; the load is the share of the elapsed time,
+/// over [cores] cores, that was not idle between two reads [interval] apart
+/// (#1868, see [CpuSample]). A build without `/proc` (macOS desktop) is
+/// [isSupported] false and reports nothing.
 class CpuLoadRepository {
-  /// Creates a [CpuLoadRepository] reading through [_readStat].
+  /// Creates a [CpuLoadRepository] reading through [_read] on a machine
+  /// with [cores] cores.
   const new({
-    required ProcStatReader this._readStat,
+    required ProcReader this._read,
+    required this.cores,
     this.interval = const Duration(seconds: 1),
   }) : isSupported = true;
 
   /// A repository for a build that cannot measure the load.
   const new unsupported()
-    : _readStat = null,
+    : _read = null,
+      cores = 0,
       interval = const Duration(seconds: 1),
       isSupported = false;
 
-  /// The repository for this machine: `/proc/stat` where the kernel has it,
-  /// [CpuLoadRepository.unsupported] where it does not.
-  factory system({String path = '/proc/stat'}) {
-    final file = File(path);
-    if (!file.existsSync()) return const CpuLoadRepository.unsupported();
-    return CpuLoadRepository(readStat: file.readAsString);
+  /// The repository for this machine: `/proc/stat` and `/proc/uptime` under
+  /// [proc] where the kernel has them, [CpuLoadRepository.unsupported] where
+  /// it does not.
+  ///
+  /// [cores] is the cores online, which are the ones whose idle time the
+  /// kernel advances.
+  factory system({String proc = '/proc'}) {
+    if (!File('$proc/stat').existsSync() ||
+        !File('$proc/uptime').existsSync()) {
+      return const CpuLoadRepository.unsupported();
+    }
+    return CpuLoadRepository(
+      read: (name) => File('$proc/$name').readAsString(),
+      cores: Platform.numberOfProcessors,
+    );
   }
 
-  final ProcStatReader? _readStat;
+  final ProcReader? _read;
+
+  /// How many cores the load is shared over.
+  final int cores;
 
   /// How far apart the samples are.
   final Duration interval;
@@ -49,26 +66,32 @@ class CpuLoadRepository {
   /// listener only hears about a change it would show. Sampling stops when
   /// the subscription is cancelled. Empty when not [isSupported].
   Stream<int> watch() {
-    final read = _readStat;
+    final read = _read;
     if (read == null) return const Stream<int>.empty();
     late final StreamController<int> controller;
     Timer? timer;
     var cancelled = false;
-    CpuTimes? previous;
+    CpuSample? previous;
     int? last;
 
     Future<void> sample() async {
-      CpuTimes? times;
+      CpuSample? now;
       try {
-        times = parseProcStat(await read());
+        // Both at once, so the idle time and the clock are read as close
+        // together as they can be.
+        final [stat, uptime] = await Future.wait([
+          read('stat'),
+          read('uptime'),
+        ]);
+        now = parseCpuSample(stat: stat, uptime: uptime);
       } on Exception {
-        times = null;
+        now = null;
       }
-      if (times == null || cancelled) return;
+      if (now == null || cancelled) return;
       final earlier = previous;
-      previous = times;
+      previous = now;
       if (earlier == null) return;
-      final load = loadPercent(earlier, times);
+      final load = loadPercent(earlier, now, cores: cores);
       if (load == null || load == last) return;
       last = load;
       controller.add(load);
