@@ -18,6 +18,6 @@ tags:
   vst3-faces:
   # A suite that registers fonts (test/vst3_faces/vst3_faces_test.dart) or
   # other process-wide state later tests would inherit: `very_good test
-  # --optimization` (CI's app-tests jobs) runs it in an isolate of its own
+  # --optimization` (CI's app-tests job) runs it in an isolate of its own
   # instead of the shared bundle.
   skip_very_good_optimization:
