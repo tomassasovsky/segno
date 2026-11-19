@@ -220,3 +220,61 @@ static void test_perf_arm_skips_loopback_inputs(void) {
   CHECK(le_perf_disarm(e) == LE_OK);
   le_engine_destroy(e);
 }
+
+/* #1645: the captured output is what the player hears. With an effect on a
+ * monitored input and nothing else playing, the master stream holds the
+ * input through its monitor chain, sample for sample the device's output
+ * (unity output level and master gain, no limiter), and so does its
+ * as-heard stream; the raw stream keeps the clean input. */
+static void test_perf_master_holds_the_monitor_chain(void) {
+  printf("test_perf_master_holds_the_monitor_chain\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 2, 2, 1000);
+  CHECK(le_engine_set_monitor_input(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_input_output(e, 0, 0x3) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx(e, 0, 0, LE_FX_OVERDRIVE) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx_count(e, 0, 1) == LE_OK);
+  drain(e);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
+  drain(e);
+  float scratch[2 * 4096];
+  while (le_engine_perf_master_pop_for_test(e, scratch, 4096) > 0) {
+  }
+  while (le_engine_perf_monitor_pop_for_test(e, 0, scratch, 4096) > 0) {
+  }
+  while (le_engine_perf_raw_pop_for_test(e, 0, scratch, 4096) > 0) {
+  }
+
+  enum { N = 512 };
+  float in[2 * N], out[2 * N];
+  for (int i = 0; i < N; ++i) {
+    in[2 * i] = 0.2f * sinf(2.0f * 3.14159265f * 220.0f * (float)i / 48000.0f);
+    in[2 * i + 1] = 0.0f;
+  }
+  le_engine_process(e, out, in, N);
+
+  float master[2 * N], heard[2 * N], raw[N];
+  CHECK(le_engine_perf_master_pop_for_test(e, master, N) == N);
+  CHECK(le_engine_perf_monitor_pop_for_test(e, 0, heard, N) == N);
+  CHECK(le_engine_perf_raw_pop_for_test(e, 0, raw, N) == N);
+  int master_is_output = 1, heard_is_output = 1, raw_is_input = 1;
+  double wet_sq = 0.0, diff_sq = 0.0;
+  for (int i = 0; i < N; ++i) {
+    for (int c = 0; c < 2; ++c) {
+      master_is_output &= master[2 * i + c] == out[2 * i + c];
+      heard_is_output &= heard[2 * i + c] == out[2 * i + c];
+    }
+    raw_is_input &= raw[i] == in[2 * i];
+    const double d = (double)master[2 * i] - (double)in[2 * i];
+    diff_sq += d * d;
+    wet_sq += (double)master[2 * i] * (double)master[2 * i];
+  }
+  CHECK(master_is_output);
+  CHECK(heard_is_output);
+  CHECK(raw_is_input);
+  /* The overdrive changed the signal: the master is not the clean input. */
+  CHECK(wet_sq > 0.0);
+  CHECK(diff_sq > 0.01 * wet_sq);
+  CHECK(le_perf_disarm(e) == LE_OK);
+  le_engine_destroy(e);
+}
