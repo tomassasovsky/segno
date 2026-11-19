@@ -1229,9 +1229,12 @@ a take's chains, where it used to hold each effect as it stood at arm.
 - Locks follow `LooperState.tempoFollow`: a tempo change that stretches
   the recorded loops is allowed and said first; the signature changes only
   before the first take; length and start lock while a take records.
-- Device checks owed: tap-tempo latency from the readout against the main
-  screen (within 0.5 BPM at 120), and reach at the panel's edges after touch
-  calibration.
+- The design is in Penpot, page 25 (Main views and selected-track display),
+  section "25  Readout controls": the strip, the panel in its states and the
+  keypad at 640x375 logical (tomassasovsky/segno-design#21).
+- Device checks owed (#1906): tap-tempo latency from the readout against the
+  main screen (within 0.5 BPM at 120), and reach at the panel's edges after
+  touch calibration.
 
 ## November 2026 Loop settings as four tabs (#1659)
 
