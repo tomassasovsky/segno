@@ -135,8 +135,12 @@ fixture, beside the console's 4i4:
 | Audient iD4 | `alsactl` state in alsa-ucm-conf issue #170 | none |
 | HD-Audio Generic (ALC1220, a desktop codec) | the same #190 upload | none: its `SPDIF Phantom Jack` is a jack sense control, not phantom power |
 
-**Routing later.** #1046's routing rules (`le_own_scarlett2_routing`) should
-move into the same adapter structure; that is #1648, not this issue.
+**Routing.** #1046's routing rules are the adapters' routing tables
+(#1648): `scarlett2` owns its routing and sets it at every device open,
+Scarlett 1st Gen's is read for the pass-through check, and the generic
+adapter has none. `le_own_interface_routing` and
+`le_interface_loopback_mask` choose the table the same way the switches
+choose their adapter.
 
 ### Adding an interface
 
@@ -148,8 +152,13 @@ move into the same adapter structure; that is #1648, not this issue.
    so. If its driver names its controls in a family pattern, add the
    patterns to that family's table, or a new table with the vendor (and the
    product, when a vendor's models differ) that claims it.
-4. Add a native test asserting the capabilities the fixture yields, including
-   "none".
+4. If the interface keeps a routing matrix of its own, give the adapter a
+   routing table (`le_routing_table` in `engine_interface.c`): the controls
+   for its outputs, capture sources and direct monitoring, and whether
+   Segno sets it or only reads it.
+5. Add native tests asserting the capabilities the fixture yields, including
+   "none" (`test_engine_interface_inputs.h`), and what its routing becomes
+   (`test_engine_interface_routing.h`).
 
 ## 3. Engine API (sketch; the build settles the exact shape)
 

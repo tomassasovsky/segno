@@ -1125,10 +1125,12 @@ static void le_prepare_thread_stack(pthread_t thread, size_t bytes) {
  * `scarlett2` mixer names the source of every capture channel and every
  * hardware output: control "PCM NN Capture Enum" (NN = the 1-based channel)
  * reads "Analogue 1", "Mix A", ... or "PCM <n>", the host's own playback
- * stream n. The rules that read and set them are portable and tested
- * (le_own_scarlett2_routing, le_scarlett2_loopback_mask in engine_devices.c);
- * this file gives them one card's controls. A card without these controls
- * (anything but scarlett2) is left alone and excludes nothing.
+ * stream n. The rules that read and set them are the adapters' routing
+ * tables, portable and tested (le_own_interface_routing,
+ * le_interface_loopback_mask in engine_interface.c); this file gives them one
+ * card's controls. A card no routing table describes (anything but scarlett2
+ * and Scarlett 1st Gen, whose routing is only read) is left alone and
+ * excludes nothing.
  *
  * Through libasound's control API, dlopen'd like the channel probe above: the
  * engine's link line, and the native tests', do not carry libasound. */
@@ -1429,7 +1431,7 @@ static void le_own_card_routing(const char* card, int roles) {
   le_mixer m;
   if (!le_alsa_mixer_open(card, &c, &m)) return;
   le_routing_report r;
-  le_own_scarlett2_routing(&m, roles, &r);
+  le_own_interface_routing(&m, roles, &r);
   le_alsa_mixer_close(&c);
   if (r.failed > 0) {
     fprintf(stderr,
@@ -1470,14 +1472,14 @@ uint32_t le_platform_excluded_input_mask(const char* uid, int channel_count) {
       !le_alsa_mixer_open(card, &c, &m)) {
     return 0;
   }
-  const uint32_t mask = le_scarlett2_loopback_mask(&m, channel_count);
+  const uint32_t mask = le_interface_loopback_mask(&m, channel_count);
   le_alsa_mixer_close(&c);
   return mask;
 }
 
 /* ---- the interface's input switches (#1646) ----
  *
- * The adapters are portable and tested (engine_interface_inputs.c); this
+ * The adapters are portable and tested (engine_interface.c); this
  * gives them the card behind the capture id, opened for the one call. */
 
 void le_platform_interface_inputs_read(const char* uid,

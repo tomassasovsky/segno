@@ -1311,7 +1311,8 @@ a take's chains, where it used to hold each effect as it stood at arm.
   itself; the row locks with a recording on the input or its 48 V group;
   input cards carry `Inst` and `48 V` tags; a refused change is a passing
   notice. Plan: `docs/plan/2026-11-04-feat-interface-input-controls-plan.md`.
-- Engine (`src/core/engine_interface_inputs.c`): a capability model
+- Engine (`src/core/engine_interface.c`, `engine_interface_inputs.c` until
+  #1648 moved the routing tables in): a capability model
   (`le_interface_inputs`) filled by per-family adapters chosen by the card's
   USB vendor and control names: `scarlett2` (with the setup-mode and
   pass-through checks), `scarlett` (1st Gen, with its own routing check) and
@@ -1481,7 +1482,10 @@ a take's chains, where it used to hold each effect as it stood at arm.
 - The rules are per kernel driver, matched on control names. Only
   `scarlett2` has rules (Scarlett Gen 2 and 3, Gen 4 Solo, 2i2 and 4i4,
   Clarett USB/+, Vocaster; the big Gen 4 units use the FCP driver and are
-  left alone): `le_own_scarlett2_routing` in `engine_devices.c`. Hardware outputs
+  left alone): since #1648 the `scarlett2` adapter's routing table in
+  `engine_interface.c`, applied by `le_own_interface_routing`, which picks
+  the table as the input switches pick their adapter (USB vendor, then
+  control names). Hardware outputs
   (`Analogue Output NN`, then `S/PDIF Output N`, then `ADAT Output N`
   `Playback Enum`) play `PCM 1`, `PCM 2`, ... in order. `PCM NN Capture
   Enum` records the hardware inputs in order, and the slots past them
