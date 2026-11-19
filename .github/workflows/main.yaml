@@ -100,6 +100,14 @@ jobs:
           flutter-version: "3.50.x"
           channel: stable
           cache: true
+      # `dart run` (the widget-method scan) runs the build hooks, and
+      # segno_engine's compiles the engine; its Linux MIDI backend needs the
+      # ALSA headers (#1783).
+      - name: Install the ALSA headers
+        uses: awalsh128/cache-apt-pkgs-action@v1
+        with:
+          packages: libasound2-dev
+          version: "1"
       - name: Resolve the app's and every package's dependencies
         run: |
           dart pub global activate very_good_cli 1.5.0
