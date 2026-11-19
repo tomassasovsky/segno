@@ -48,6 +48,63 @@ static double lofi_amp(const float* y, int from, int len, double hz, int sr) {
   return hz == 0.0 ? re / len : 2.0 * sqrt(re * re + im * im) / len;
 }
 
+/* The response of [type] at [p] at each of [hz] (count [m]) to white
+ * Gaussian noise at -24 dBFS RMS, the Method's stimulus, in dB into [db]:
+ * the cross-spectrum over the input's (Hann windows of 8192, half
+ * overlapped, over 4 s after the first). Where the kind saturates at that
+ * level, this is what the Looper X's noise responses read. */
+static void lofi_noise_db(int32_t type, const float* p, int sr,
+                          const double* hz, int m, double* db) {
+  const int n = 5 * sr;
+  const int w = 8192;
+  float* in = (float*)malloc(sizeof(float) * (size_t)n);
+  float* out = (float*)malloc(sizeof(float) * (size_t)n);
+  const double rms = pow(10.0, -24.0 / 20.0);
+  uint32_t s = 0x2545F491u;
+  for (int i = 0; i < n; i += 2) {
+    /* Box-Muller on two xorshift32 draws in (0, 1]. */
+    double u[2];
+    for (int j = 0; j < 2; ++j) {
+      s ^= s << 13;
+      s ^= s >> 17;
+      s ^= s << 5;
+      u[j] = ((double)s + 1.0) / 4294967296.0;
+    }
+    const double r = rms * sqrt(-2.0 * log(u[0]));
+    in[i] = (float)(r * cos(2.0 * M_PI * u[1]));
+    if (i + 1 < n) in[i + 1] = (float)(r * sin(2.0 * M_PI * u[1]));
+  }
+  le_fx_state* fx = dyn_state(type, sr);
+  uint32_t clock = 0;
+  dyn_run(fx, type, p, sr, in, out, NULL, n, &clock);
+  dyn_free(fx);
+  for (int k = 0; k < m; ++k) {
+    double xy_re = 0.0;
+    double xy_im = 0.0;
+    double xx = 0.0;
+    for (int a = sr; a + w <= n; a += w / 2) {
+      double xr = 0.0, xi = 0.0, yr = 0.0, yi = 0.0;
+      for (int i = 0; i < w; ++i) {
+        const double win = 0.5 - 0.5 * cos(2.0 * M_PI * i / w);
+        const double ph = 2.0 * M_PI * hz[k] * i / sr;
+        const double c = cos(ph) * win;
+        const double sn = sin(ph) * win;
+        xr += in[a + i] * c;
+        xi -= in[a + i] * sn;
+        yr += out[a + i] * c;
+        yi -= out[a + i] * sn;
+      }
+      /* conj(X) Y */
+      xy_re += xr * yr + xi * yi;
+      xy_im += xr * yi - xi * yr;
+      xx += xr * xr + xi * xi;
+    }
+    db[k] = 20.0 * log10(sqrt(xy_re * xy_re + xy_im * xy_im) / xx);
+  }
+  free(in);
+  free(out);
+}
+
 /* ---- Vinyl ---- */
 
 /* The vinyl's ladder (#1445): a 1 kHz tone at -30 and -12 dBFS, against the
@@ -514,22 +571,23 @@ static void test_lpf_halved(void) {
 }
 
 
-/* The ladder's small-signal response against the Looper X's noise
- * responses (#1445) at cutoffs of 112, 632 and 3557 Hz, resonance 0 and
- * 50 %, with the 25 Hz high-pass in front. */
+/* The ladder against the Looper X's noise responses (#1445) at the
+ * cutoffs gC's screens show (#1888): 117, 647 and 3586 Hz at resonance 0 %
+ * from a small impulse (at 0 % the ladder barely saturates), and 647 Hz at
+ * 50.2 % from noise at -24 dBFS RMS, as the capture was (there the
+ * feedback's tanh already takes 0.5 to 1.6 dB off the small signal around
+ * and above the corner). With the 25 Hz high-pass in front. */
 static void test_lpf_response(void) {
   printf("test_lpf_response\n");
   const int sr = 48000;
   /* cutoff, resonance, Hz, capture dB, tolerance */
   const double cases[][5] = {
-      {632, 0.0, 20, -3.9, 0.4},     {632, 0.0, 50, -1.1, 0.4},
-      {632, 0.0, 500, -5.6, 0.4},    {632, 0.0, 1000, -19.1, 0.4},
-      {632, 0.0, 2000, -38.8, 0.6},  {632, 0.5, 500, 7.9, 0.6},
-      {632, 0.5, 632, 5.3, 1.8},     {632, 0.5, 1000, -10.3, 0.6},
-      {632, 0.5, 2000, -31.0, 0.6},  {112, 0.0, 100, -7.7, 0.6},
-      {112, 0.0, 200, -21.9, 0.6},   {112, 0.0, 500, -49.3, 1.0},
-      {3557, 0.0, 2000, -2.0, 0.6},  {3557, 0.0, 3000, -5.6, 1.2},
-      {3557, 0.0, 4000, -10.1, 1.8}, {3557, 0.0, 5000, -15.0, 2.0},
+      {647, 0.0, 20, -3.9, 0.4},     {647, 0.0, 50, -1.1, 0.4},
+      {647, 0.0, 500, -5.6, 0.4},    {647, 0.0, 1000, -19.1, 0.4},
+      {647, 0.0, 2000, -38.8, 0.4},  {117, 0.0, 100, -7.7, 0.5},
+      {117, 0.0, 200, -21.9, 0.5},   {117, 0.0, 500, -49.3, 0.5},
+      {3586, 0.0, 2000, -2.0, 0.6},  {3586, 0.0, 3000, -5.6, 1.2},
+      {3586, 0.0, 4000, -10.1, 1.8}, {3586, 0.0, 5000, -15.0, 2.0},
   };
   for (size_t c = 0; c < sizeof(cases) / sizeof(cases[0]); ++c) {
     float p[LE_FX_PARAMS] = {0};
@@ -540,17 +598,33 @@ static void test_lpf_response(void) {
            cases[c][0], 100 * cases[c][1], cases[c][2], got, cases[c][3]);
     CHECK(fabs(got - cases[c][3]) < cases[c][4]);
   }
+  /* 647 Hz, 50.2 %: Hz, capture dB, tolerance */
+  const double res[4][3] = {
+      {500, 7.9, 1.0}, {632, 5.3, 0.8}, {1000, -10.3, 0.4}, {2000, -31.0, 0.4}};
+  float p[LE_FX_PARAMS] = {0};
+  p[0] = dyn_setting(LE_FX_LPF, 0, 647.0);
+  p[1] = 0.502f;
+  double hz[4];
+  double got[4];
+  for (int k = 0; k < 4; ++k) hz[k] = res[k][0];
+  lofi_noise_db(LE_FX_LPF, p, sr, hz, 4, got);
+  for (int k = 0; k < 4; ++k) {
+    printf("   647 Hz, reso 50 %%, at %4.0f Hz: %6.1f dB (capture %6.1f), noise\n",
+           res[k][0], got[k], res[k][1]);
+    CHECK(fabs(got[k] - res[k][1]) < res[k][2]);
+  }
 }
 
 /* At 100 % resonance the ladder oscillates on its own: excited, it keeps
- * a sine near the cutoff in silence at about the Looper X's level (0.25
- * peak at 632 Hz shown, 0.28 at 3557; at 644.5 and 3575.5 Hz). A loud
+ * a sine in silence at the Looper X's pitch (644.5 Hz at 647 Hz shown and
+ * 3575.5 Hz at 3586, gC's screens; #1888) and about its level (0.25 and
+ * 0.28 peak). A loud
  * tone above the corner loses the resonance's lift at the Looper X's
  * levels (#1628). At the top of the range it is off: the identity. */
 static void test_lpf_oscillates(void) {
   printf("test_lpf_oscillates\n");
   const int sr = 48000;
-  const double want[2][3] = {{632, 644.5, 0.251}, {3557, 3575.5, 0.279}};
+  const double want[2][3] = {{647, 644.5, 0.251}, {3586, 3575.5, 0.279}};
   for (int k = 0; k < 2; ++k) {
     const int n = sr;
     float* in = (float*)calloc((size_t)n, sizeof(float));
@@ -563,17 +637,23 @@ static void test_lpf_oscillates(void) {
     uint32_t clock = 0;
     dyn_run(fx, LE_FX_LPF, p, sr, in, out, NULL, n, &clock);
     dyn_free(fx);
+    /* The pitch from the first and last rising zero crossings of the
+     * second half, each placed between its samples. */
     float peak = 0.0f;
     int ups = 0;
-    const int from = n / 2;
-    for (int i = from; i < n; ++i) {
+    double first = 0.0;
+    double last = 0.0;
+    for (int i = n / 2; i < n; ++i) {
       if (fabsf(out[i]) > peak) peak = fabsf(out[i]);
-      if (out[i - 1] < 0.0f && out[i] >= 0.0f) ++ups;
+      if (out[i - 1] < 0.0f && out[i] >= 0.0f) {
+        last = i - 1 + out[i - 1] / (double)(out[i - 1] - out[i]);
+        if (ups++ == 0) first = last;
+      }
     }
-    const double hz = ups / ((double)(n - from) / sr);
+    const double hz = (ups - 1) / ((last - first) / sr);
     printf("  %4.0f Hz shown: %.1f Hz (capture %.1f), peak %.3f (capture %.3f)\n",
            want[k][0], hz, want[k][1], peak, want[k][2]);
-    CHECK(fabs(hz / want[k][1] - 1.0) < 0.012);
+    CHECK(fabs(hz / want[k][1] - 1.0) < 0.002);
     CHECK(peak > 0.22f && peak < 0.32f);
     CHECK(le_fx_entry_free_running(LE_FX_LPF, p, sr));
     free(in);
@@ -585,7 +665,7 @@ static void test_lpf_oscillates(void) {
     float* in = (float*)calloc((size_t)n, sizeof(float));
     float* out = (float*)calloc((size_t)n, sizeof(float));
     float p[LE_FX_PARAMS] = {0};
-    p[0] = dyn_setting(LE_FX_LPF, 0, 632.0);
+    p[0] = dyn_setting(LE_FX_LPF, 0, 647.0);
     p[1] = 1.0f;
     le_fx_state* fx = dyn_state(LE_FX_LPF, sr);
     uint32_t clock = 0;
@@ -612,7 +692,7 @@ static void test_lpf_oscillates(void) {
     fx->clocked = 1;
     static float params[LE_FX_MAX][LE_FX_PARAMS];
     const int32_t types[1] = {LE_FX_LPF};
-    params[0][0] = dyn_setting(LE_FX_LPF, 0, 632.0);
+    params[0][0] = dyn_setting(LE_FX_LPF, 0, 647.0);
     float peak = 0.0f;
     for (int i = 0; i < n; ++i) {
       params[0][1] = i < sr ? 0.0f : 1.0f;

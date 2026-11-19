@@ -8472,29 +8472,32 @@ static void fx_degrade_kprocess(void* ks, float* l, float* r) {
  * - f(v) = tanh(5 v) / 5 bounds the feedback, so a loud tone above the
  *   corner loses resonance as the Looper X's does (#1628). At 647 Hz shown
  *   and 50.2 % (the setting of every LPF capture, gC, gD and s17rhy), a
- *   1 kHz tone comes out at -9.40, -11.91 and -16.82 dB from -48, -12 and
+ *   1 kHz tone comes out at -9.47, -11.97 and -16.88 dB from -48, -12 and
  *   0 dBFS: the Looper X's -9.7, -11.96 and -17.1. The s17rhy noise at
- *   -24 dBFS RMS fits within 0.27 dB rms from 80 Hz to 3 kHz;
+ *   -24 dBFS RMS fits within 0.28 dB rms from 80 Hz to 3 kHz;
  * - k = 0.2 + 4.3 reso^1.15 + reso^8: 0.20 at 0 % and 2.14 at 50 %, fit
  *   with f to that noise response and the tones. The reso^8 term is the
  *   loop gain at the top, where only the oscillation was measured: k
  *   passes 4 at 84.5 % and reaches 5.5 at 100 %, where the oscillation
  *   settles at about 0.26 peak (the Looper X's 0.25 and 0.28). Below 50 %
  *   it adds under 0.004 to k;
- * - the corner is 1.04 x the cutoff at 0 % resonance, 1.015 x at 100 %,
- *   fit by #1445 as if gC ran at 632 Hz shown (its screens show 647 Hz, so
- *   the oscillation sits at 656 Hz against the Looper X's 644.5; #1888);
- *   the responses fit within 0.4 dB at
- *   632 Hz (0 and 50 %) and 0.7 dB at 112 Hz, down to -50 dB; at 3557 Hz
- *   the ladder at the
- *   engine's rate falls faster than the Looper X's above 8 kHz (-31 dB
- *   against -27 at 8 kHz, -48 against -40 at 12 kHz);
+ * - the corner over the cutoff is 1.02 at 0 % resonance, 1.025 at 50 %
+ *   and 0.997 at 100 %, a parabola in reso through the three (#1888, at
+ *   the cutoffs gC's screens show: 117, 647 and 3586 Hz). At 0 % the
+ *   noise responses fit within 0.35 dB at 117 and 647 Hz, down to -50 dB;
+ *   at 50.2 % s17rhy's noise fits as above; at 100 % the filter
+ *   oscillates at 644.7 Hz for 647 shown and 3574 Hz for 3586 (the
+ *   Looper X's 644.5 and 3575.5). A straight line in reso cannot hold the
+ *   corner above the cutoff at 50 % and the oscillation below it at 100 %.
+ *   At 3586 Hz and 0 % the ladder at the engine's rate falls faster than
+ *   the Looper X's: 1.7 dB under it at 4 kHz, 2.0 at 5 kHz, and -31 dB
+ *   against -27 at 8 kHz, -48 against -40 at 12 kHz;
  * - a one-pole high-pass at 25.3 Hz in front (-4.2 dB at 20 Hz and -1.0 dB
  *   at 50 Hz; the Looper X's -3.9 and -1.1).
  * An oscillating filter starts on its own: its first stage starts from a
  * 1e-9 offset rather than 0, and gets it again whenever the stages have
- * died away in silence, so it rises out of digital silence in about 0.2 s
- * (632 Hz), as the Looper X's sounds in silence.
+ * died away in silence, so it rises out of digital silence in about
+ * 0.06 s (647 Hz), as the Looper X's sounds in silence.
  * The Looper X's filter also adds a second harmonic (-23 dBc for a
  * -12 dBFS tone above the corner); this one adds none. At the top of the
  * cutoff's range the filter is off (the Looper X's default; its filter
@@ -8519,8 +8522,9 @@ static const le_fx_param_desc LE_FX_LPF_PARAMS[] = {
 #define LE_LPF_K1 4.3
 #define LE_LPF_K_POW 1.15
 #define LE_LPF_K_TOP 1.0 /* the loop gain added at the top, Reso^8 */
-#define LE_LPF_FC_LO 1.04  /* the corner over the cutoff at 0 % */
-#define LE_LPF_FC_HI 1.015 /* at 100 % */
+#define LE_LPF_FC_LO 1.02   /* the corner over the cutoff at 0 % */
+#define LE_LPF_FC_MID 1.025 /* at 50 % */
+#define LE_LPF_FC_HI 0.997  /* at 100 % */
 #define LE_LPF_SAT 5.0f
 #define LE_LPF_HP_HZ 25.3
 #define LE_LPF_SEED 1e-9f /* the first stage's start, so it can oscillate */
@@ -8634,7 +8638,10 @@ static void fx_lpf_update(void* ks, le_fx_dyn_head* h, const float* p, int sr,
   if (settle) q->s[0][0] = q->s[1][0] = LE_LPF_SEED;
   if (f & LE_FX_DYN_CHANGED) {
     const double v = p[1] < 0.0f ? 0.0 : p[1] > 1.0f ? 1.0 : p[1];
-    const double ratio = LE_LPF_FC_LO + (LE_LPF_FC_HI - LE_LPF_FC_LO) * v;
+    /* The parabola through the corner's ratio at 0, 50 and 100 %. */
+    const double ratio = LE_LPF_FC_LO * (1.0 - v) * (1.0 - 2.0 * v) +
+                         LE_LPF_FC_MID * 4.0 * v * (1.0 - v) +
+                         LE_LPF_FC_HI * v * (2.0 * v - 1.0);
     q->tgt = (float)log2(ratio * le_fx_desc_value(&LE_FX_LPF_PARAMS[0], p[0]));
     q->ktgt = (float)le_lpf_k(v);
   }
