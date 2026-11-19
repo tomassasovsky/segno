@@ -7,29 +7,32 @@ HOMEPAGE = "https://github.com/toyota-connected/ivi-homescreen"
 LICENSE = "Apache-2.0"
 LIC_FILES_CHKSUM = "file://LICENSE;md5=39ae29158ce710399736340c60147314"
 
-# Pinned like every other source in this image (see kas-segno-common.yml). The
-# v3.0 branch head the #1318 spike was validated against; bump deliberately.
+# Pinned like every other source in this image (see kas-segno-common.yml);
+# bump deliberately. The v3.0 merge of toyota-connected/ivi-homescreen#860,
+# which with #859 carries the pixel-ratio and shutdown fixes Segno used to
+# patch in (#1834). The MSAA patch is still ours (#1674).
 # gitsm: the build needs every submodule (drm-cxx and its own, fmt,
 # tomlplusplus, cxxopts, asio, rapidjson, Vulkan-Headers, sanitizers-cmake),
 # and fetches nothing at configure or build time once they are present.
-SRCREV = "80f9ea426825ada81825e6e06c4361bb2dee441c"
+SRCREV = "9eeee8925ef34838418156da21bcec7872db6c9b"
 SRC_URI = "gitsm://github.com/toyota-connected/ivi-homescreen.git;protocol=https;branch=v3.0 \
-           file://0001-drm-apply-the-configured-pixel-ratio-to-window-metrics.patch \
-           file://0002-engine-keep-the-AOT-snapshot-mapped-after-engine-shutdown.patch \
-           file://0003-drm-render-Flutter-into-a-multisampled-framebuffer-and-resolve-it.patch"
+           file://0001-drm-render-Flutter-into-a-multisampled-framebuffer-and-resolve-it.patch"
 PV = "3.0+git${SRCPV}"
 S = "${WORKDIR}/git"
 
 inherit cmake pkgconfig
 
-# libseat is required at build time even though the Segno config bypasses the
-# seat at runtime (no_seat): drm-cxx's session support is forced on.
+# No libseat: both views set no_seat, so the shell opens the DRM master and
+# the input devices itself and never starts a seat session (see
+# DRM_CXX_SESSION below).
 # libdisplay-info must be >= 0.2.0 (walnascar's poky carries 0.2.0).
 DEPENDS = "libdrm virtual/libgbm virtual/egl virtual/libgles2 libinput udev \
-           libxkbcommon libdisplay-info seatd"
+           libxkbcommon libdisplay-info"
 
 # The minimal binary: drm-kms-egl plus the compositor it is meant to run with,
 # and nothing else. Plain GCC/libstdc++ (C++17) builds it; clang is not needed.
+# DRM_CXX_SESSION=OFF compiles drm-cxx's stub seat, whose open() fails, so
+# libseat.so.1 is not linked; upstream supports it since 9f954858.
 EXTRA_OECMAKE = " \
     -DCMAKE_BUILD_TYPE=Release \
     -DBUILD_BACKEND_DRM_KMS_EGL=ON -DBUILD_COMPOSITOR=ON \
@@ -43,6 +46,7 @@ EXTRA_OECMAKE = " \
     -DBUILD_CRASH_HANDLER=OFF -DENABLE_DLT=OFF \
     -DBUILD_UNIT_TESTS=OFF -DBUILD_FUZZERS=OFF -DBUILD_DOCS=OFF \
     -DDISABLE_PLUGINS=ON \
+    -DDRM_CXX_SESSION=OFF \
 "
 
 # The engine is dlopened, so the shlib scan cannot see it. xkbcommon reads its

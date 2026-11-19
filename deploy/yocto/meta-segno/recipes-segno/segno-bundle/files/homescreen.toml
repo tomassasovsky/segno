@@ -69,8 +69,8 @@ fullscreen = true
 # driven natively, so the same ratio gives the same size (640x375 logical)
 # without the panel's scaler or the interlaced link, the first suspects for
 # the softness and flicker it had.
-# A float: an integer is ignored. Needs the pixel-ratio patch
-# ivi-homescreen_git.bb carries; upstream ignores it on DRM.
+# A float: an integer is ignored. ivi-homescreen applies it on DRM since
+# toyota-connected/ivi-homescreen#859.
 pixel_ratio = 1.6
 
   [view.args]

@@ -37,10 +37,9 @@ meta-segno/
   recipes-core/images/segno-kiosk-image.bb           core-image + our bundle + Mesa/ALSA, no compositor
   recipes-core/images/segno-update-bundle.bb         the signed .raucb
   recipes-core/rauc/                                 slot table (templated) + keyring
-  recipes-core/seatd/                                seatd comes with ivi-homescreen's libseat; installed, not enabled
   recipes-bsp/rauc-rpi-backend/                      tryboot bootloader backend
   recipes-segno/segno-bundle/                        installs the PREBUILT bundle + launcher + units + homescreen.toml (which screen goes where)
-  recipes-graphics/ivi-homescreen/                   the DRM/KMS embedder (pinned, three patches), installed as /usr/bin/segno
+  recipes-graphics/ivi-homescreen/                   the DRM/KMS embedder (pinned, one patch: MSAA), installed as /usr/bin/segno
   recipes-graphics/flutter-engine/                   meta-flutter's prebuilt engine + its pin
 ```
 
