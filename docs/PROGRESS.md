@@ -38,14 +38,10 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 | Issue | Thread | Stage | Autonomy | Branch |
 |-------|--------|-------|----------|--------|
-| #1857 | No syslog daemon: journald owns `/dev/log`, so wpa_supplicant's lines reach the journal `segno-wifi-ctl` reads | in-review | blocked-verify | `claude/journal-syslog-1857` |
-| #1859 | A wrong Wi-Fi password is recognized from two refusals of the key, whatever the reason code, and ends the join at once | in-review | blocked-verify | `claude/wifi-wrong-key-1859` |
 | #1872 | A key typed for a saved network is the key its join uses: tested on an in-memory copy of the profile, stored only once it connects | in-review | blocked-verify | `claude/wifi-saved-key-1872` |
 | #1850 | Land the trunk on master and retire `claude/segno-integration` | build | merge-gate | `claude/land-trunk-1850` |
-| #1860 | "No internet" from a check made during a join sticks to the network the join brings back | in-review | auto | `claude/wifi-internet-check-1860` |
 | #1821 | Devlog and RSS feed on segno.aquiles.dev: Markdown entries in `site/log`, built by `site/build_log.py` | in-review | merge-gate | `claude/devlog-1821` |
 | #1795 | NVMe drive drops off the bus mid-recording: the Pi 5 cmdline turns off APST and PCIe ASPM on every link | in-review | blocked-verify | `claude/nvme-power-1795` |
-| #1740 | Penpot: the Effects page frames for the compact single-effect card and the built-in pedal faces (#1754, PR #1756 merged) and the cards' assignment lines (#1757, #1760), the Source-note clean-up and a segno-design snapshot; waits for a connected Penpot MCP tab | build | merge-gate | (none yet) |
 | #1797 | A finished export to a FAT stick is on the device: copies and the export end with a volume sync | in-review | blocked-verify | `claude/usb-export-durable-1797` |
 | #1760 | A rack card names the controls bound to the rack itself; a switch's press and hold on one target read as one control | in-review | auto | `claude/rack-card-assignment-1760` |
 | #1674 | Anti-aliasing under Impeller: ivi-homescreen renders into a 4x MSAA framebuffer and resolves it before each flip | in-review | auto | `claude/ivi-msaa-1674` |
@@ -97,6 +93,30 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1816 | Console WiFi against an ASUS RT-AX89X with 802.11ax on: firmware already matches Pi OS; brcmfmac options aligned with Pi OS and a troubleshooting note; failure not reproduced, issue stays open until it recurs | in-review | auto | `claude/wifi-firmware-1816` |
 
 ---
+
+## November 2026 Lane chains sleep on empty tracks (#1870)
+
+- A lane chain on an EMPTY track stops running once its output has stayed
+  under `LE_FX_DRAIN_FLOOR` for its whole tail (`le_lane_chain_sleeps` in
+  `engine_process.c`, `le_fx_chain_quiet_frames` in `engine_fx.c`): 50 ms
+  plus the drain horizon of every entry that holds a tail, summed. The track
+  then takes the idle skip and needs no job. Counted only while the track is
+  EMPTY, so a Clear's Post tail drains first. A chain with a hosted plugin
+  never sleeps.
+- It runs again, from its own state, when the track leaves EMPTY or the
+  chain is edited (`a_fx_gen`). A take recorded after a sleep plays exactly
+  as one through a chain kept awake (`test_engine_lane_chain_sleep.h`).
+  `le_fx_state.out_loud`, set by `le_fx_note_output` where a lane's chain
+  runs (the mixer, the track job, the lane flush) on a frame at or over the
+  floor, is what the snapshot reads; the horizon is computed once per chain
+  edit.
+- Monitor chains are untouched, so the first note played is never clipped.
+- Why the engine and not the app: the app keeps an inherited chain on a
+  track undone back to empty for Redo, and a Clear's Post tail drains
+  through the chain.
+- Console (Pi 5, 48 kHz / 32, idle stage, four empty tracks, the rig's
+  three inherited lane chains): `segno-audio` 99.3 → 75.5 µs a period, each
+  fx worker 26 → 10.5 µs and woken every other period; total 150.8 → 96.6.
 
 ## November 2026 The network stack is Raspberry Pi OS's (#1843)
 
