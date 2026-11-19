@@ -26,7 +26,16 @@ import 'package:daw_export/daw_export.dart';
 /// stems of their own) would get a set with no stems, so when the bundle
 /// already holds a project this throws [StemsNotRendered] and leaves that
 /// project as it is: the caller renders the stems first.
-Future<List<DawTrack>> writeDawProject(String dir) async {
+///
+/// Both files go through [write], the repository's durable replacement
+/// (`PerformanceRepository.writeTakeFile`): a write cut short leaves the
+/// previous file or none, and a take on a USB stick keeps the whole file,
+/// and the info folder made before it, when the stick is pulled once this
+/// returns (#1801).
+Future<List<DawTrack>> writeDawProject(
+  String dir, {
+  required TakeFileWriter write,
+}) async {
   if (!File('$dir/stems/stems.json').existsSync() &&
       File('$dir/project.als').existsSync()) {
     throw StemsNotRendered(dir);
@@ -38,7 +47,7 @@ Future<List<DawTrack>> writeDawProject(String dir) async {
   if (project != null && project.tracks.isNotEmpty) {
     // The folder first: a create that fails leaves the project as it was.
     await info.create();
-    await _replace('$dir/project.als', buildAls(project));
+    await write(dir, 'project.als', buildAls(project));
   } else if (project != null) {
     final stale = File('$dir/project.als');
     if (stale.existsSync()) await stale.delete();
@@ -46,24 +55,17 @@ Future<List<DawTrack>> writeDawProject(String dir) async {
   }
   final chains = FxChainsWriter.render(dir);
   if (chains != null) {
-    await _replace('$dir/fx-chains.txt', utf8.encode(chains));
+    await write(dir, 'fx-chains.txt', utf8.encode(chains));
   }
   return project?.tracks ?? const [];
 }
 
-/// Writes [bytes] to [path] through a flushed temp file and a rename, so a
-/// write cut short (a full disk) leaves the previous file or none, never a
-/// truncated one that would read as a finished project.
-Future<void> _replace(String path, List<int> bytes) async {
-  final temp = File('$path.tmp');
-  try {
-    await temp.writeAsBytes(bytes, flush: true);
-    await temp.rename(path);
-  } on Object {
-    if (temp.existsSync()) temp.deleteSync();
-    rethrow;
-  }
-}
+/// Writes [bytes] as the file [name] of the take at [dir], durably.
+typedef TakeFileWriter = Future<void> Function(
+  String dir,
+  String name,
+  List<int> bytes,
+);
 
 /// The take in [dir] has no rendered stems, so [writeDawProject] did not
 /// replace its project with one that has none.

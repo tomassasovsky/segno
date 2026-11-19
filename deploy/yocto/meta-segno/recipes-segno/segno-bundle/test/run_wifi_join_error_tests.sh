@@ -40,13 +40,17 @@ setup() {
     # nmcli that creates the profile and then fails activation with $UP_ERROR,
     # NM's wording for this case. `device wifi list` answers $LIST. With
     # SAVED_TS set, SomeNetwork is already saved: its connection.timestamp is
-    # SAVED_TS (0 until it has connected) and its stored key SAVED_PSK.
+    # SAVED_TS (0 until it has connected) and its stored key SAVED_PSK. With
+    # STORED_RIGHT set that stored key is right: an activation that still
+    # holds it (no ClearSecrets through busctl) goes up on it, as
+    # NetworkManager's does without asking an agent for the typed key.
     cat > "$work/bin/nmcli" <<STUB
 #!/bin/sh
 echo "\$@" >> "$work/nmcli-args"
 saved=\${SAVED_TS:+5a7ed000-0000-4000-8000-000000001859}
 case "\$*" in
     *"-t -f UUID,TYPE connection show") [ -n "\$saved" ] && echo "\$saved:802-11-wireless" ;;
+    *"UUID,FILENAME connection show") [ -n "\$saved" ] && echo "\$saved:/data/NetworkManager/system-connections/SomeNetwork.nmconnection" ;;
     *"-g connection.id connection show uuid "*|*"-g 802-11-wireless.ssid connection show uuid "*)
         echo SomeNetwork ;;
     *"-g connection.timestamp connection show uuid "*) echo "\$SAVED_TS" ;;
@@ -54,6 +58,9 @@ case "\$*" in
     *"-g connection.autoconnect connection show uuid "*) echo yes ;;
     *"device wifi list"*) [ -n "\${LIST:-}" ] && printf '%s\n' "\$LIST" ;;
     *"connection up"*)
+        if [ -n "\${STORED_RIGHT:-}" ] && [ ! -f "$work/cleared" ]; then
+            exit 0
+        fi
         # UP_HOLD: the activation runs until it is taken down, as
         # NetworkManager's does while wpa_supplicant retries a refused key,
         # and fails as NM reports a deactivated one. Bounded, so a helper
@@ -75,6 +82,12 @@ esac
 exit 0
 STUB
     chmod +x "$work/bin/nmcli"
+    cat > "$work/bin/busctl" <<STUB
+#!/bin/sh
+case "\$*" in *" ClearSecrets") : > "$work/cleared" ;; esac
+exit 0
+STUB
+    chmod +x "$work/bin/busctl"
     : > "$work/journal"
     # The journal answers $work/journal, or $work/journal-late from read
     # number $LATE_FROM on (2 unless set) when that exists: journald storing
@@ -123,7 +136,7 @@ run_connect() {
     SEGNO_JOIN_EVIDENCE_WAIT="${WAIT-0}" LATE_FROM="${LATE_FROM:-2}" \
     SEGNO_JOIN_WATCH_INTERVAL=0.5 \
     LIST="${LIST:-}" UP_ERROR="${UP_ERROR:-}" UP_HOLD="${UP_HOLD:-}" \
-    SAVED_TS="${SAVED_TS:-}" SAVED_PSK="${SAVED_PSK:-}" \
+    SAVED_TS="${SAVED_TS:-}" SAVED_PSK="${SAVED_PSK:-}" STORED_RIGHT="${STORED_RIGHT:-}" \
     PATH="$work/bin:$PATH" \
         sh "$CTL" connect "SomeNetwork" 2>"$work/stderr" >"$work/stdout"
     rc=$?
@@ -510,6 +523,20 @@ refused_twice
 SAVED_TS=1795051833 SAVED_PSK=the-old-key UP_HOLD=1 run_connect
 check "takes the activation down" yes "$(called_with 'connection down uuid')"
 check "is a wrong password" wrong-password "$(code)"
+teardown
+
+# On 2026-11-19 a wrong key typed for the console's own network, whose stored
+# key was right, joined on the stored key in 7.5 s and was then stored over it
+# (#1872): the typed key was never tried.
+echo "a wrong key typed for a saved network whose stored key is right"
+setup
+refused_twice
+SAVED_TS=1795051833 SAVED_PSK=right-key STORED_RIGHT=1 UP_HOLD=1 run_connect
+check "fails" 1 "$rc"
+check "is a wrong password" wrong-password "$(code)"
+check "takes the activation down" yes "$(called_with 'connection down uuid')"
+check "stores no key" no "$(called_with 'connection edit')"
+check "saves nothing to the stored profile" no "$(called_with 'connection modify uuid')"
 teardown
 
 echo "a saved network that never connected refuses its stored key"

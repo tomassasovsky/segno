@@ -1,7 +1,7 @@
 name: cpu_load_repository
 description: >-
   The console's CPU load as a share of the whole machine (all cores = 100%),
-  sampled from the Linux kernel's /proc/stat. Pure Dart.
+  from the Linux kernel's idle time against the clock. Pure Dart.
 version: 0.1.0
 publish_to: none
 

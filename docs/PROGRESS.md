@@ -38,7 +38,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 | Issue | Thread | Stage | Autonomy | Branch |
 |-------|--------|-------|----------|--------|
-| #1834 | ivi-homescreen moves to upstream v3.0 at `9eeee89`, which carries the pixel-ratio and shutdown fixes (upstream #859, #860); their local patches go, the MSAA patch is refreshed, and the shell is built without libseat, so seatd leaves the image | in-review | blocked-verify | `claude/ivi-upstream-1834` |
+| #1872 | A key typed for a saved network is the key its join uses: tested on an in-memory copy of the profile, stored only once it connects | in-review | blocked-verify | `claude/wifi-saved-key-1872` |
 | #1850 | Land the trunk on master and retire `claude/segno-integration` | build | merge-gate | `claude/land-trunk-1850` |
 | #1821 | Devlog and RSS feed on segno.aquiles.dev: Markdown entries in `site/log`, built by `site/build_log.py` | in-review | merge-gate | `claude/devlog-1821` |
 | #1795 | NVMe drive drops off the bus mid-recording: the Pi 5 cmdline turns off APST and PCIe ASPM on every link | in-review | blocked-verify | `claude/nvme-power-1795` |
@@ -46,6 +46,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1760 | A rack card names the controls bound to the rack itself; a switch's press and hold on one target read as one control | in-review | auto | `claude/rack-card-assignment-1760` |
 | #1674 | Anti-aliasing under Impeller: ivi-homescreen renders into a 4x MSAA framebuffer and resolves it before each flip | in-review | auto | `claude/ivi-msaa-1674` |
 | #1496 | Split design and hardware into their own repos, slim this one | in-review | merge-gate | `claude/repo-split-1496` |
+| #1801 | A take on a FAT stick keeps its renamed files: each publish syncs the renamed file, then its directory | in-review | blocked-verify | `claude/usb-rename-durable-1801` |
 | #1367 | Start helper programs with posix_spawn, never fork the app | in-review | merge-gate | `claude/no-fork-1367` |
 | #887 | Looper X factory racks: all parts merged, Harmonizer parked; Pi benches and by-ear sign-off owed (#1459) | in-review | blocked-verify | `master` |
 | #900, #906 | The audio thread never faults or copies on write (replaces #907, #914) | in-review | blocked-verify | `claude/zero-stall-memory-907-914` |
@@ -93,6 +94,21 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1816 | Console WiFi against an ASUS RT-AX89X with 802.11ax on: firmware already matches Pi OS; brcmfmac options aligned with Pi OS and a troubleshooting note; failure not reproduced, issue stays open until it recurs | in-review | auto | `claude/wifi-firmware-1816` |
 
 ---
+
+## November 2026 The stage's CPU figure reads the real load (#1868)
+
+- An idle console read 0-2% on the stage with jumps to 10-16% every 4.4 s;
+  its real idle load is a steady 9-10% (audio callback 15% of core 3, the
+  USB interrupt thread 10% of core 0, each effects worker 4%, the UI 3%).
+- Cause: `CpuLoadRepository` took busy over total from `/proc/stat`. The
+  kernel (6.12 PREEMPT_RT, NO_HZ idle) samples the busy fields at the tick,
+  which misses the audio callback and credits the USB interrupt thread's
+  time to core 0 in one lump every 4.43 s.
+- Now: load = 1 - (idle + iowait) / (elapsed x online cores), with idle and
+  iowait from `/proc/stat` (measured as each core enters and leaves idle)
+  and elapsed time from `/proc/uptime`. Checked side by side on the console
+  in shell before the change; the built app is not yet checked on the
+  console.
 
 ## November 2026 Lane chains sleep on empty tracks (#1870)
 
@@ -524,6 +540,40 @@ a take's chains, where it used to hold each effect as it stood at arm.
   second tap before the monitor chain.
 - The DAW package now copies `loops/`: without it the Session clips were
   missing media on the drive.
+## November 2026 A take on a FAT stick keeps its renamed files (#1801)
+
+- On vfat a rename writes the new directory entry with size 0 and first
+  cluster 0 (`vfat_rename`, then `vfat_build_slots`); when it replaces a
+  file, the entry it reuses still holds the old file's. Only the renamed
+  file's inode, written back about 30 s later, fills it in, and a sync of
+  the directory does not write it. A take recorded to a stick (#1198) and
+  pulled within that window kept 0-byte stems, `performance.json` and
+  `project.als`; a renamed take's folder read as empty.
+- A sync of the file itself writes that inode at the entry's new place
+  (`fat_file_fsync`), so every publish by rename into a take now syncs the
+  file under its new name, then its directory: `le_wav_publish` (stems, the
+  master reconstruction, a file render) through the new
+  `le_fs_sync_file_errno`, and in Dart `StorageIo.syncFile` for
+  `performance.json`, the arm snapshot and the DAW project
+  (`PerformanceRepository.writeTakeFile`, which `writeDawProject` now writes
+  through). A renamed or salvaged take's folder is synced under its new name
+  and in its parent, and the render syncs `stems/` and the take folder once
+  it creates the stem folders. No volume sync (#1797's export runs one at
+  its end): nothing here needs a volume-wide flush, and none of it runs on
+  the audio thread.
+- Not renames, the same window: the lane WAVs written into `loops/` at arm
+  and disarm are now flushed (their own sync writes their size), and
+  `loops/` and the take folder are synced after them; arm syncs the parent
+  of each folder it creates, the take's own first, so a short take pulled
+  right after "Completed" keeps its folder.
+- Not changed: the checkpoint slots are written in place and fsynced, which
+  already writes their entries; the drain's live `performance.json` is
+  rewritten four times a second while capturing and finalize replaces it,
+  so it stays unsynced.
+- Tests: an engine seam records what `le_fs_sync_dir` and
+  `le_fs_sync_file_errno` synced, in order (`le_fs_trace_syncs_for_test`);
+  the repository's `FakeStorageIo` records file and directory syncs in
+  order.
 
 ## November 2026 Exported Live sets open in Live (#1791)
 

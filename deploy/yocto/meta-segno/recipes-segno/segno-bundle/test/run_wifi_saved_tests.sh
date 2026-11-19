@@ -42,6 +42,9 @@ case "\$*" in
     *"-t -f UUID,TYPE connection show"*)
         for n in \${SAVED:-}; do printf 'uuid-%s:802-11-wireless\n' "\$n"; done
         ;;
+    *"UUID,FILENAME connection show"*)
+        for n in \${SAVED:-}; do printf 'uuid-%s:/data/NetworkManager/system-connections/%s.nmconnection\n' "\$n" "\$n"; done
+        ;;
     *"connection show"*)
         for n in \${SAVED:-}; do printf '%s:802-11-wireless\n' "\$n"; done
         ;;
@@ -56,6 +59,11 @@ esac
 exit 0
 STUB
     chmod +x "$work/bin/nmcli"
+    cat > "$work/bin/busctl" <<'STUB'
+#!/bin/sh
+exit 0
+STUB
+    chmod +x "$work/bin/busctl"
     cat > "$work/bin/journalctl" <<'STUB'
 #!/bin/sh
 exit 0
@@ -166,7 +174,7 @@ check "activates the existing uuid" yes \
 check "activates with passwd-file" yes \
     "$(grep -q 'passwd-file' "$work/nmcli-args" && echo yes || echo no)"
 check "does not autoconnect before the psk" yes \
-    "$(grep 'connection modify uuid uuid-Cafe connection.autoconnect no' "$work/nmcli-args" | grep -q . && echo yes || echo no)"
+    "$(grep 'connection modify --temporary uuid uuid-Cafe connection.autoconnect no' "$work/nmcli-args" | grep -q . && echo yes || echo no)"
 check "persists the psk after a successful up" yes \
     "$(grep -q 'connection edit uuid uuid-Cafe' "$work/nmcli-args" && echo yes || echo no)"
 check "enables autoconnect only after the psk" yes \

@@ -1280,7 +1280,7 @@ void main() {
       File('$dir/stems/stems.json')
         ..createSync(recursive: true)
         ..writeAsStringSync('{"lanes":[]}');
-      await writeDawProject(dir);
+      await writeDawProject(dir, write: performance.writeTakeFile);
 
       expect(tempoOf(dir), 96);
     });

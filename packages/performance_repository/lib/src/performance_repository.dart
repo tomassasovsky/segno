@@ -495,7 +495,7 @@ class PerformanceRepository {
       dir = '$under/$slug';
       suffix++;
     }
-    await Directory(dir).create(recursive: true);
+    await _createDurably(dir);
 
     final snapshot = _engine.snapshot();
     final tracks = _captureSettledLanes(
@@ -650,23 +650,25 @@ class PerformanceRepository {
       // a crash or failed write leaves no misleading salvage snapshot. Keep
       // live ownership and the in-memory snapshot if publication fails, so a
       // later disarm can still stop and finalize this take.
-      final pending = File('$dir/$_armSnapshotFileName.pending');
+      // The pending file is ignored by salvage, and [_replaceFile] removes
+      // it when the write fails.
       try {
-        await pending.writeAsString(jsonEncode(finalArm.toJson()), flush: true);
-        await pending.rename('$dir/$_armSnapshotFileName');
+        await _replaceFile(
+          '$dir/$_armSnapshotFileName',
+          '.pending',
+          (pending) =>
+              pending.writeAsString(jsonEncode(finalArm.toJson()), flush: true),
+        );
       } on Object {
-        try {
-          if (pending.existsSync()) pending.deleteSync();
-        } on FileSystemException {
-          // The volume may still be unavailable; the pending file is ignored
-          // by salvage, and the live capture remains owned above.
-        }
         // The capture remains live and owned even though publication failed;
         // expose it now, with no gesture guard on the stop retry.
         _armedAt = null;
         _setStatus(PerformanceCaptureStatus.armed);
         rethrow;
       }
+      // In place either way: a failed sync leaves a snapshot that a pulled
+      // drive may not keep, and the finalized manifest carries it anyway.
+      _syncRenamed(dir, '$dir/$_armSnapshotFileName');
       _armedAt = _now();
       _setStatus(PerformanceCaptureStatus.armed);
       return EngineResult.ok;
@@ -1331,6 +1333,8 @@ class PerformanceRepository {
       suffix++;
     }
     Directory(dir).renameSync(target);
+    _syncRenamedDirectory(target);
+    _syncRenamedDirectory(recoveredRoot);
     final marker = File('$target/$recoveryMarkerName');
     if (marker.existsSync()) marker.deleteSync();
   }
@@ -1401,6 +1405,7 @@ class PerformanceRepository {
       throw PerformanceNameCollision(slug: slug);
     }
     Directory(directory).renameSync(target);
+    _syncRenamedDirectory(target);
     return target;
   }
 
@@ -1914,6 +1919,7 @@ class PerformanceRepository {
   }) {
     final snapshot = _engine.snapshot();
     final tracks = <PerformanceTrackSnapshot>[];
+    var touchedLoops = false;
     for (var channel = 0; channel < snapshot.tracks.length; channel++) {
       final track = snapshot.tracks[channel];
       final capturing =
@@ -1948,12 +1954,16 @@ class PerformanceRepository {
         final filename = 'loops/track$channel-lane$laneIndex.wav';
         final wavFile = File('$dir/$filename');
         wavFile.parent.createSync(recursive: true);
+        touchedLoops = true;
+        // Flushed: the sync of the file is what writes its size into its
+        // entry on vfat (#1801).
         wavFile.writeAsBytesSync(
           WavCodec.encodeFloat32(
             samples: pcm,
             sampleRate: snapshot.sampleRate,
             channels: 1,
           ),
+          flush: true,
         );
         // What the player heard (#1713): the wet stem plays it where the lane
         // played it. Exported in the same settled window as the clean take,
@@ -1972,6 +1982,7 @@ class PerformanceRepository {
               sampleRate: snapshot.sampleRate,
               channels: 2,
             ),
+            flush: true,
           );
         } else if (heardWav.existsSync()) {
           heardWav.deleteSync();
@@ -2013,6 +2024,18 @@ class PerformanceRepository {
           name: _givenName(names[channel]),
         ),
       );
+    }
+    // The files' entries in `loops/`, and `loops/` itself in the take, are
+    // written back about 30 s later otherwise: a stick pulled before that
+    // loses them (#1801).
+    if (touchedLoops) {
+      try {
+        _io
+          ..syncDirectory('$dir/loops')
+          ..syncDirectory(dir);
+      } on Object {
+        // The loops are in place; a pulled drive may not keep them.
+      }
     }
     return tracks;
   }
@@ -2344,21 +2367,59 @@ class PerformanceRepository {
     },
   );
 
-  /// Writes [json] as [dir]'s `performance.json`: a temporary file, flushed,
-  /// renamed over the sidecar, then the directory synced. A reader sees the
-  /// old sidecar or the new one. Throws, leaving the old sidecar and no
+  /// Writes [json] as [dir]'s `performance.json` through [_replaceFile],
+  /// then syncs it and the directory ([_syncRenamed]). A reader sees the old
+  /// sidecar or the new one. Throws, leaving the old sidecar and no
   /// temporary file, when the write or the rename fails. Returns whether the
-  /// directory sync also succeeded, which is what makes the new sidecar
-  /// survive a power cut; when it did not, the new sidecar is already in
-  /// place.
+  /// syncs also succeeded, which is what makes the new sidecar survive a
+  /// power cut or a pulled drive; when they did not, the new sidecar is
+  /// already in place.
   Future<bool> _publishManifest(String dir, Map<String, dynamic> json) async {
-    final pending = File('$dir/$manifestName.publishing');
-    try {
-      await pending.writeAsString(
+    final path = '$dir/$manifestName';
+    await _replaceFile(
+      path,
+      '.publishing',
+      (pending) => pending.writeAsString(
         const JsonEncoder.withIndent('  ').convert(json),
         flush: true,
-      );
-      await pending.rename('$dir/$manifestName');
+      ),
+    );
+    return _syncRenamed(dir, path);
+  }
+
+  /// Writes [bytes] as the file [name] in the take at [dir] (#1178 Part 7:
+  /// the DAW project), as one durable replacement: a temporary file, flushed
+  /// and renamed over [name] ([_replaceFile]), then the file and [dir]
+  /// synced, so a drive pulled once this returns keeps the whole file
+  /// (#1801). A write cut short (a full disk) leaves the previous file or
+  /// none, never a truncated one. Throws what the write, the rename or a
+  /// sync throws; after a failed sync the new file is in place but may not
+  /// survive a pulled drive.
+  Future<void> writeTakeFile(String dir, String name, List<int> bytes) async {
+    final path = '$dir/$name';
+    await _replaceFile(
+      path,
+      '.tmp',
+      (pending) => pending.writeAsBytes(bytes, flush: true),
+    );
+    _io
+      ..syncFile(path)
+      ..syncDirectory(dir);
+  }
+
+  /// Writes [path] through a temporary file, [path] with [suffix], that
+  /// [write] fills and flushes, then renames over [path]. Throws, leaving
+  /// whatever was at [path] and no temporary file, when the write or the
+  /// rename fails.
+  static Future<void> _replaceFile(
+    String path,
+    String suffix,
+    Future<File> Function(File pending) write,
+  ) async {
+    final pending = File('$path$suffix');
+    try {
+      await write(pending);
+      await pending.rename(path);
     } on Object {
       try {
         if (pending.existsSync()) pending.deleteSync();
@@ -2367,12 +2428,61 @@ class PerformanceRepository {
       }
       rethrow;
     }
+  }
+
+  /// Makes the file at [path], just renamed into [dir], durable: the file
+  /// first, then [dir]. On vfat a rename writes the new entry with size 0
+  /// and first cluster 0 (when it replaces a file, the old file's), and only
+  /// the renamed file's own inode fills them in: a directory sync does not
+  /// write it, a sync of the file does. A stick pulled after a directory sync
+  /// alone kept the file at 0 bytes (#1801). Returns whether both syncs
+  /// succeeded.
+  bool _syncRenamed(String dir, String path) {
     try {
-      _io.syncDirectory(dir);
+      _io
+        ..syncFile(path)
+        ..syncDirectory(dir);
       return true;
     } on Object {
-      // Whatever failed, the new sidecar is already in place.
+      // Whatever failed, the file is already in place.
       return false;
+    }
+  }
+
+  /// Creates the directory at [path] and the parents it is missing, then
+  /// syncs the parent of each directory it created, bottom up: a new
+  /// directory's entry is in its parent, and on vfat the parent's entries
+  /// are written back about 30 s later otherwise, so a short take on a stick
+  /// pulled once it finished could lose its whole folder (#1801). The syncs
+  /// are best effort, as for a renamed directory.
+  Future<void> _createDurably(String path) async {
+    final missing = <String>[];
+    for (var p = path; !Directory(p).existsSync(); p = _dirname(p)) {
+      missing.add(p);
+      if (_dirname(p) == p) break;
+    }
+    await Directory(path).create(recursive: true);
+    try {
+      for (final made in missing) {
+        _io.syncDirectory(_dirname(made));
+      }
+    } on Object {
+      return; // in place; a pulled drive may not keep the new folder
+    }
+  }
+
+  /// Makes the directory at [path], just renamed, durable under its new
+  /// name: the directory itself, whose sync writes its new entry (on vfat
+  /// the rename leaves it at first cluster 0, so the folder would read as
+  /// empty), then its parent (#1801). Best effort: the rename stands either
+  /// way.
+  void _syncRenamedDirectory(String path) {
+    try {
+      _io
+        ..syncDirectory(path)
+        ..syncDirectory(_dirname(path));
+    } on Object {
+      return; // in place; a pulled drive may not keep the new name
     }
   }
 

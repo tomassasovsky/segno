@@ -133,7 +133,7 @@ class App extends StatefulWidget {
 
   /// The console's CPU load for the stage top bar (#1307). Defaults to the
   /// unsupported repository, which hides the readout; the entrypoint injects
-  /// the `/proc/stat` one.
+  /// the `/proc` one.
   final CpuLoadRepository cpuLoad;
 
   /// Where a write may go: Internal and the USB volumes. Null (the default)
