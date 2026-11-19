@@ -157,13 +157,6 @@ static const void* le_rate_tables_get(le_rate_tables* set, int32_t sr,
   return found;
 }
 
-/* Soft-clipping overdrive: tanh saturation with a pre-gain, then output trim. */
-static float fx_drive(float x, const float* p) {
-  const float drive = 1.0f + p[0] * 29.0f; /* 1x .. 30x pre-gain */
-  const float level = p[1];                /* 0..1 output trim */
-  return tanhf(x * drive) * level;
-}
-
 /* One tick of a TPT state-variable filter (Cytomic/Zavalishin form) with
  * coefficients a1 = 1 / (1 + g (g + k)), a2 = g a1, a3 = g a2: advances the
  * state (ic1, ic2) and gives the band-pass v1 and the low-pass v2 (the
@@ -2538,15 +2531,6 @@ void le_fx_state_free_buffers(le_fx_state* fx) {
  * preserving the exact left-then-right call order. Effects that ignore sr or cap
  * cast them to void to keep the signature uniform. */
 
-static void fx_drive_process(le_fx_state* fx, int slot, int sr, int cap,
-                             float* l, float* r, const float* p) {
-  (void)fx;
-  (void)slot;
-  (void)sr;
-  (void)cap;
-  *l = fx_drive(*l, p);
-  *r = fx_drive(*r, p);
-}
 static void fx_filter_process(le_fx_state* fx, int slot, int sr, int cap,
                               float* l, float* r, const float* p) {
   (void)cap;
@@ -6770,6 +6754,7 @@ static int le_os_stages(int32_t type, int sr) {
     case LE_FX_VINYL:
       return low ? 2 : 1; /* 4x, 2x */
     case LE_FX_DISTORTION:
+    case LE_FX_DRIVE:
       return low ? 1 : 0; /* 2x, 1x */
     default:
       return 0;
@@ -6788,10 +6773,53 @@ static int fx_os_latency_vt(const le_fx_state* fx, int slot, int32_t type,
   (void)fx;
   (void)slot;
   int lat = le_os_latency(sr, le_os_stages(type, sr));
+  if (type == LE_FX_DRIVE) return lat; /* its curve is all it runs */
   if (type != LE_FX_VINYL) lat += le_hb_latency(sr);
   if (type == LE_FX_AMP_CAB) lat += le_hb_latency(sr); /* its first curve's */
   if (type == LE_FX_AMP_CAB) lat += le_cab_pre(sr);
   return lat;
+}
+
+/* ---- Drive (LE_FX_DRIVE) ----
+ *
+ * The built-in soft clipper: tanh with a pre-gain of 1 to 30 times, then an
+ * output trim. At 44.1 and 48 kHz the tanh runs 2x oversampled
+ * (le_os_stages; #1540: at 100 % its aliasing on E6 read -47 dB at 48 kHz
+ * and -112 dB at 96 kHz), and at 96 kHz it runs at the rate, as it always
+ * did: there the output is the input's tanhf, sample for sample. The two
+ * settings glide (le_fx_glide), as every heap-state kind's do, where they
+ * used to step on the sample they changed. */
+typedef struct le_fx_drive {
+  le_fx_glide gain;  /* the pre-gain, 1 + 29 drive */
+  le_fx_glide level; /* the output trim */
+  le_os4 os;         /* the curve's oversampling, both channels in lanes */
+} le_fx_drive;
+
+static void fx_drive_update(void* ks, le_fx_dyn_head* h, const float* p,
+                            int sr, int f) {
+  le_fx_drive* d = (le_fx_drive*)ks;
+  if (!f) return;
+  if (f & LE_FX_DYN_NEW_RATE) {
+    le_os4_design(&d->os, sr, le_os_stages(LE_FX_DRIVE, sr));
+  }
+  const float k = (f & LE_FX_DYN_SETTLE) ? 1.0f : h->k;
+  int moving = le_fx_glide_step(&d->gain, 1.0f + p[0] * 29.0f, k);
+  moving |= le_fx_glide_step(&d->level, p[1], k);
+  h->moving = moving;
+}
+
+static void fx_drive_kprocess(void* ks, float* l, float* r) {
+  le_fx_drive* d = (le_fx_drive*)ks;
+  const float g = le_fx_glide_next(&d->gain);
+  const float level = le_fx_glide_next(&d->level);
+  le_f4 p[1 << (LE_OS_MAX_STAGES - 1)];
+  const int m = le_os4_up(&d->os, fx_sanitize(*l), fx_sanitize(*r), p);
+  /* With no stages the pair is {l, 0, r, 0}: only lanes 0 and 2 hold one. */
+  const int lane_step = d->os.stages > 0 ? 1 : 2;
+  for (int i = 0; i < m; ++i) {
+    for (int j = 0; j < 4; j += lane_step) p[i][j] = tanhf(p[i][j] * g) * level;
+  }
+  le_os4_down(&d->os, p, l, r);
 }
 
 /* ---- Overdrive (LE_FX_OVERDRIVE, #887 part 7) ----
@@ -10697,7 +10725,8 @@ typedef struct le_fx_vtable {
  * regression guard). */
 static const le_fx_vtable LE_FX[] = {
     [LE_FX_NONE] = {NULL, NULL, NULL, NULL},
-    [LE_FX_DRIVE] = {fx_drive_process, NULL, NULL, LE_FX_DRIVE_PARAMS},
+    [LE_FX_DRIVE] = {NULL, fx_os_latency_vt, NULL, LE_FX_DRIVE_PARAMS, 0,
+                     sizeof(le_fx_drive), fx_drive_update, fx_drive_kprocess},
     [LE_FX_FILTER] = {fx_filter_process, NULL, NULL, LE_FX_FILTER_PARAMS},
     [LE_FX_DELAY] =
         {fx_delay_process, NULL, fx_stereo_ring_prepare, LE_FX_DELAY_PARAMS, LE_FX_F_DRAINS},
