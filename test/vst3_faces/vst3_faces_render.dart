@@ -41,6 +41,19 @@ void vst3FacesRenderSuite({required int shard}) {
     (tester) async {
       final out = Directory(_out)..createSync(recursive: true);
       if (shard == 0) {
+        // One suite per shard, or the faces of a missing one never render.
+        expect(
+          Directory('${repoRoot.path}/test/vst3_faces')
+              .listSync()
+              .where(
+                (f) =>
+                    RegExp(r'vst3_faces_render_\d+_test\.dart$')
+                        .hasMatch(f.path),
+              )
+              .length,
+          kVst3RenderShards,
+          reason: 'one vst3_faces_render_<k>_test.dart per shard',
+        );
         final manifest = encodeVst3Manifest(await vst3FacesManifest(tester));
         expect(
           File('${repoRoot.path}/$kVst3FacesManifest').readAsStringSync(),

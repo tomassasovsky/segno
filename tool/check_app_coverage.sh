@@ -36,6 +36,10 @@ merged=$(awk -F'[:,]' '
   }' "$@" | sort)
 
 total_found=0 total_hit=0 uncovered=""
+# The globs are patterns, not paths: no pathname expansion when the list is
+# split (from the repo root, `**/bootstrap.dart` would become
+# lib/bootstrap.dart and stop matching deeper files).
+set -f
 while IFS=$'\t' read -r file found hit lines; do
   [ -n "$file" ] || continue
   skip=0
@@ -51,6 +55,7 @@ while IFS=$'\t' read -r file found hit lines; do
     uncovered+="$file: $sorted"$'\n'
   fi
 done <<< "$merged"
+set +f
 
 if [ "$total_found" = 0 ]; then
   echo "no coverage lines found in $*" >&2

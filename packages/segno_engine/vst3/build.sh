@@ -25,9 +25,7 @@ rm -rf "$faces"
 # CI's three-CPU macOS runner.
 (cd "$root" && "$flutter" gen-l10n && "$flutter" test --tags vst3-faces -j 3 \
   --dart-define=SEGNO_VST3_FACES_OUT="$faces" \
-  test/vst3_faces/vst3_faces_render_0_test.dart \
-  test/vst3_faces/vst3_faces_render_1_test.dart \
-  test/vst3_faces/vst3_faces_render_2_test.dart) >&2
+  test/vst3_faces/vst3_faces_render_*_test.dart) >&2
 cmake -S "$here" -B "$build" -DCMAKE_BUILD_TYPE=Release \
   -DSEGNO_VST3_FACES="$faces" >/dev/null
 cmake --build "$build" --parallel >&2

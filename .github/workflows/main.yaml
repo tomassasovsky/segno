@@ -193,7 +193,7 @@ jobs:
   # The app's coverage floor over the three shards: 90 %, with the platform
   # and entrypoint glue that cannot be meaningfully unit-tested left out (the
   # Track display's app and its link service, the app bootstrap and
-  # entrypoint). Coverage on the remainder stays about 91 %.
+  # entrypoint). Coverage on the remainder was 94.85 % on 2026-11-19.
   app-coverage:
     needs: app-tests
     runs-on: ubuntu-latest
