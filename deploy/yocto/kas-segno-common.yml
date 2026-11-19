@@ -94,6 +94,16 @@ local_conf_header:
     # systemd: the app and its helpers are ordered and supervised as units.
     INIT_MANAGER = "systemd"
 
+  logging: |
+    # No syslog daemon: journald is the only log, as on Raspberry Pi OS, which
+    # installs none (#1857). packagegroup-core-boot recommends
+    # VIRTUAL-RUNTIME_base-utils-syslog, which poky defaults to busybox-syslog.
+    # BusyBox syslogd follows /dev/log to /run/systemd/journal/dev-log at boot
+    # and binds its own socket there, so every daemon that logs through
+    # syslog() after that, wpa_supplicant among them, wrote to
+    # /var/log/messages and never reached the journal segno-wifi-ctl reads.
+    VIRTUAL-RUNTIME_base-utils-syslog = ""
+
   kiosk-console: |
     # Keep the kernel console OFF the HDMI framebuffer so it never paints over
     # the app (on-device, audit + console spam covered it). fbcon=map:9 moves
