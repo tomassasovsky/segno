@@ -40,6 +40,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 |-------|--------|-------|----------|--------|
 | #1857 | No syslog daemon: journald owns `/dev/log`, so wpa_supplicant's lines reach the journal `segno-wifi-ctl` reads | in-review | blocked-verify | `claude/journal-syslog-1857` |
 | #1859 | A wrong Wi-Fi password is recognized from two refusals of the key, whatever the reason code, and ends the join at once | in-review | blocked-verify | `claude/wifi-wrong-key-1859` |
+| #1872 | A key typed for a saved network is the key its join uses: tested on an in-memory copy of the profile, stored only once it connects | in-review | blocked-verify | `claude/wifi-saved-key-1872` |
 | #1850 | Land the trunk on master and retire `claude/segno-integration` | build | merge-gate | `claude/land-trunk-1850` |
 | #1860 | "No internet" from a check made during a join sticks to the network the join brings back | in-review | auto | `claude/wifi-internet-check-1860` |
 | #1821 | Devlog and RSS feed on segno.aquiles.dev: Markdown entries in `site/log`, built by `site/build_log.py` | in-review | merge-gate | `claude/devlog-1821` |

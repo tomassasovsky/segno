@@ -33,13 +33,16 @@
 set -eu
 
 # A passwd-file holds a key in the clear, so it must not outlive the helper,
-# even when it is stopped mid-join; and the device autoconnect up_with_key
-# paused for an activation comes back. An untrapped TERM skips the
-# EXIT trap in dash, so the signals exit through it.
+# even when it is stopped mid-join; a saved profile hold_profile set aside
+# for a new key goes back to what is stored; and the device autoconnect
+# up_with_key paused for an activation comes back. An untrapped TERM skips
+# the EXIT trap in dash, so the signals exit through it.
 passf=
 up_keyf=
 paused_iface=
-trap 'rm -f "$passf" "$up_keyf"; resume_autoconnect' EXIT
+held_uuid=
+held_file=
+trap 'rm -f "$passf" "$up_keyf"; release_profile; resume_autoconnect' EXIT
 trap 'exit 1' HUP INT TERM
 
 IFACE="${SEGNO_WIFI_IFACE:-wlan0}"
@@ -57,6 +60,8 @@ CONNECTIVITY_URL="${SEGNO_UPDATE_BASE:-https://segno.aquiles.dev/updates/applian
 CONNECTIVITY_TIMEOUT_SECS="${SEGNO_WIFI_CONNECTIVITY_TIMEOUT:-3}"
 # How long a failed join waits to bring the previous network back.
 RESTORE_WAIT_SECS="${SEGNO_WIFI_RESTORE_TIMEOUT:-30}"
+# Where NetworkManager keeps the profiles it holds in memory only.
+NM_RUN_DIR="${SEGNO_NM_RUN_DIR:-/run/NetworkManager}"
 
 log() { echo "segno-wifi-ctl: $*" >&2; }
 
@@ -646,6 +651,63 @@ resume_autoconnect() {
     paused_iface=
 }
 
+# The file NetworkManager keeps profile <uuid> in, or empty. UUIDs carry no
+# colons, so the rest of the line, read unescaped, is the whole path.
+profile_file() {
+    nmcli -e no -t -f UUID,FILENAME connection show 2>/dev/null \
+        | awk -v u="$1:" 'index($0, u) == 1 { print substr($0, length(u) + 1); exit }'
+}
+
+# Sets saved profile <uuid> aside for a join with a key typed for it, with
+# autoconnect off and autoconnect-priority <priority>: the changes go to a
+# copy NetworkManager keeps in memory (in /run, shadowing the stored file,
+# which stays as it was), and the copy holds no key. The activation then has
+# to ask an agent for one, and nmcli answers from the passwd-file with the
+# typed key. With a key stored (psk-flags 0), NetworkManager asks no agent:
+# it activated on the stored key, and the join stored the typed key over it
+# whether that key was right or not (#1872). NetworkManager saves the key an
+# agent hands it into the profile at once, before the join has tested it
+# (nm-settings-connection.c, get_secrets_done_cb), which is also how nmcli
+# `device wifi connect` and the desktop applets store a new key; here that
+# lands in the copy. persist_psk_and_enable writes the copy to disk once the
+# key has connected, and release_profile drops it when it has not.
+#
+# The key is cleared with ClearSecrets on D-Bus: an update that carries no
+# secrets keeps the stored ones (update_auth_cb), so no nmcli modify or edit
+# can empty it. A profile NetworkManager already keeps in memory only has no
+# stored copy to go back to; the console has none, as every profile the
+# helper makes is saved to disk.
+hold_profile() {
+    held_file=$(profile_file "$1")
+    nmcli connection modify --temporary uuid "$1" \
+        connection.autoconnect no \
+        connection.autoconnect-priority "$2" || return
+    held_uuid=$1
+    hp_path=$(nmcli -t -f UUID,DBUS-PATH connection show 2>/dev/null \
+        | awk -F: -v u="$1" '$1 == u { print $2; exit }')
+    busctl call org.freedesktop.NetworkManager "$hp_path" \
+        org.freedesktop.NetworkManager.Settings.Connection ClearSecrets
+}
+
+# Puts back the profile hold_profile set aside, as stored: removes the copy
+# in /run and has NetworkManager load the path again, so the file on disk is
+# the profile once more, its key, autoconnect and priority as they were. The
+# D-Bus API keeps such a copy under /run (NM_SETTINGS_UPDATE2_FLAG_IN_MEMORY)
+# and has no call that drops it; `nmcli connection load` is how NetworkManager
+# is told about a keyfile changed by hand.
+release_profile() {
+    [ -n "$held_uuid" ] || return 0
+    rp_file=$(profile_file "$held_uuid")
+    held_uuid=
+    case "$rp_file" in
+        "$held_file") return 0 ;;
+        "$NM_RUN_DIR"/*) ;;
+        *) return 0 ;;
+    esac
+    rm -f "$rp_file"
+    nmcli connection load "$rp_file" >/dev/null 2>&1 || true
+}
+
 # Stores the key on a saved profile through nmcli's editor, fed on stdin: an
 # argument would be readable by every process on the console through
 # /proc/<pid>/cmdline. The editor strips spaces at either end of a value, so a
@@ -666,7 +728,9 @@ store_psk() {
 # reuse-with-password so the two cannot drift on when autoconnect turns on
 # (#963). NetworkManager saves a system-owned key an agent (nmcli, reading the
 # passwd-file) hands it, byte for byte; it is written again only when the
-# stored one is not the key that just worked. Never in any argv.
+# stored one is not the key that just worked. Never in any argv. The modify
+# saves to disk, so a profile hold_profile set aside is stored from its copy
+# in memory, key and priority included, and the copy is gone.
 persist_psk_and_enable() {
     uuid=$1
     psk_val=$2
@@ -676,7 +740,8 @@ persist_psk_and_enable() {
     nmcli connection modify uuid "$uuid" \
         wifi-sec.psk-flags 0 \
         connection.autoconnect yes \
-        >/dev/null 2>&1 || true
+        >/dev/null 2>&1 || log "could not save the network"
+    [ "$uuid" != "$held_uuid" ] || held_uuid=
 }
 
 # UUID of the wifi connection active on $IFACE right now, or empty. UUIDs carry
@@ -734,12 +799,6 @@ do_connect_nm() {
     # that same network: its old key stays stored until the new one works.
     previous=$(active_wifi_uuid)
     existing=$(profile_uuid_for_ssid "$ssid")
-    prior_autoconnect=yes
-    if [ -n "$existing" ]; then
-        case "$(nmcli -g connection.autoconnect connection show uuid "$existing" 2>/dev/null)" in
-            no) prior_autoconnect=no ;;
-        esac
-    fi
     # Whether a refusal in this join may be read as a wrong key, and the
     # join's start for the watch in up_with_key: neither for a key the
     # profile has already connected with (key_proven).
@@ -759,31 +818,30 @@ do_connect_nm() {
     if [ -n "$existing" ]; then
         # Reuse the saved profile. Deleting it to "reconnect" is how Join on a
         # saved network threw the PSK away and then failed (#963).
-        # A password update (or a leftover secret-less husk) must not flip
-        # autoconnect on before the PSK is stored: NM's own activation would
-        # race this one, as for a new join. A promptless Join already holds
-        # secrets; autoconnect stays on.
         if [ -n "$psk" ]; then
-            ac=no
-        else
-            ac=yes
-        fi
-        nmcli connection modify uuid "$existing" \
-            connection.autoconnect "$ac" \
-            connection.autoconnect-priority "$join_priority" \
-            >"$errf" 2>&1
-        rc=$?
-        if [ "$rc" -eq 0 ] && [ -n "$psk" ]; then
-            passf=$(mktemp)
-            chmod 600 "$passf"
-            write_passwd_file "$passf" "$psk"
-            up_with_key "$existing" "$NM_CONNECT_WAIT_SECS" "$passf" "$watch_mark" "$watch_since" >"$errf" 2>&1
+            # A typed key is tested on a copy of the profile in memory
+            # (hold_profile), so the activation uses it and the stored key
+            # stays until it connects. Autoconnect is off on the copy: NM's
+            # own activation would race this one, as for a new join.
+            hold_profile "$existing" "$join_priority" >"$errf" 2>&1
             rc=$?
+            if [ "$rc" -eq 0 ]; then
+                passf=$(mktemp)
+                chmod 600 "$passf"
+                write_passwd_file "$passf" "$psk"
+                up_with_key "$existing" "$NM_CONNECT_WAIT_SECS" "$passf" "$watch_mark" "$watch_since" >"$errf" 2>&1
+                rc=$?
+            fi
             if [ "$rc" -eq 0 ]; then
                 persist_psk_and_enable "$existing" "$psk"
             fi
-        elif [ "$rc" -eq 0 ]; then
-            up_saved "$existing" "$NM_CONNECT_WAIT_SECS" "$watch_mark" "$watch_since" >"$errf" 2>&1
+        else
+            # A promptless Join already holds secrets; autoconnect stays on.
+            nmcli connection modify uuid "$existing" \
+                connection.autoconnect yes \
+                connection.autoconnect-priority "$join_priority" \
+                >"$errf" 2>&1 \
+                && up_saved "$existing" "$NM_CONNECT_WAIT_SECS" "$watch_mark" "$watch_since" >"$errf" 2>&1
             rc=$?
         fi
     elif [ -n "$psk" ]; then
@@ -832,14 +890,13 @@ do_connect_nm() {
         # A failed attempt leaves nothing behind and takes nothing away. A
         # profile made for it is removed, so the list never shows a network
         # saved with a key that did not work. A saved one is never deleted,
-        # whatever the failure: only Forget does that. It keeps its key and
-        # its own autoconnect.
+        # whatever the failure: only Forget does that. It goes back to what is
+        # stored, its key and its own autoconnect, before the previous network
+        # comes back on that key.
         if [ -n "$created" ]; then
             nmcli connection delete uuid "$created" >/dev/null 2>&1 || true
-        elif [ -n "$existing" ] && [ -n "$psk" ]; then
-            nmcli connection modify uuid "$existing" \
-                connection.autoconnect "$prior_autoconnect" >/dev/null 2>&1 || true
         fi
+        release_profile
         restore_previous "$previous"
         return 1
     fi
