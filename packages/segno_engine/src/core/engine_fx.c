@@ -11373,6 +11373,38 @@ static inline void fx_section_merge(le_fx_state* fx, const fx_section* sec,
   *xr = out[1];
 }
 
+/* The frames slot [s] of [ty] has to stay quiet before its tail is gone. A
+ * quiet gap shorter than the whole delay memory says nothing about a pending
+ * sparse echo, so this is a complete ring horizon (at least
+ * LE_FX_DRAIN_QUIET_MS), with no arbitrary lifetime cutoff for audible
+ * feedback tails; the Mode delay remembers its own line's length. */
+static int32_t le_fx_slot_quiet_frames(const le_fx_state* fx, int s,
+                                       int32_t ty, int sr, int cap) {
+  const int32_t minimum = sr > 0 ? (sr * LE_FX_DRAIN_QUIET_MS) / 1000 : 1;
+  int32_t quiet_n = cap > minimum ? cap : minimum;
+  const struct le_fx_line* line =
+      ty == LE_FX_MODE_DELAY
+          ? atomic_load_explicit(&fx->line[s], memory_order_acquire)
+          : NULL;
+  if (line != NULL && le_mdly_frames(line) > quiet_n) {
+    quiet_n = le_mdly_frames(line);
+  }
+  return quiet_n;
+}
+
+int32_t le_fx_chain_quiet_frames(const le_fx_state* fx, int count,
+                                 const int32_t* types, int sr, int cap) {
+  if (count > LE_FX_MAX) count = LE_FX_MAX;
+  int64_t n = sr > 0 ? ((int64_t)sr * LE_FX_DRAIN_QUIET_MS) / 1000 : 1;
+  for (int s = 0; s < count; ++s) {
+    if (types[s] == LE_FX_PLUGIN) return -1;
+    if (le_fx_holds_tail(fx, s, types[s])) {
+      n += le_fx_slot_quiet_frames(fx, s, types[s], sr, cap);
+    }
+  }
+  return n > INT32_MAX ? INT32_MAX : (int32_t)n;
+}
+
 LE_AUDIO_HOT_AT(4) void fx_apply_chain_with_gain(le_fx_state* fx, int sr, int cap, float* l, float* r,
                     int count, const int32_t* types,
                     const float params[LE_FX_MAX][LE_FX_PARAMS],
@@ -11550,20 +11582,8 @@ LE_AUDIO_HOT_AT(4) void fx_apply_chain_with_gain(le_fx_state* fx, int sr, int ca
           } else {
             fx->enable_quiet[s] = 0;
           }
-          /* A quiet gap shorter than the whole delay memory says nothing
-           * about a pending sparse echo. Observe a complete ring horizon,
-           * with no arbitrary lifetime cutoff for audible feedback tails. */
-          const int32_t minimum = sr > 0 ? (sr * LE_FX_DRAIN_QUIET_MS) / 1000 : 1;
-          int32_t quiet_n = cap > minimum ? cap : minimum;
-          /* The Mode delay remembers its own line's length. */
-          const struct le_fx_line* line =
-              ty == LE_FX_MODE_DELAY
-                  ? atomic_load_explicit(&fx->line[s], memory_order_acquire)
-                  : NULL;
-          if (line != NULL && le_mdly_frames(line) > quiet_n) {
-            quiet_n = le_mdly_frames(line);
-          }
-          if (fx->enable_quiet[s] >= quiet_n) {
+          if (fx->enable_quiet[s] >= le_fx_slot_quiet_frames(fx, s, ty, sr,
+                                                             cap)) {
             LE_FX_DRAIN_STORE(fx, s, 0);
           }
         }
