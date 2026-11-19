@@ -38,7 +38,6 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 | Issue | Thread | Stage | Autonomy | Branch |
 |-------|--------|-------|----------|--------|
-| #1872 | A key typed for a saved network is the key its join uses: tested on an in-memory copy of the profile, stored only once it connects | in-review | blocked-verify | `claude/wifi-saved-key-1872` |
 | #1850 | Land the trunk on master and retire `claude/segno-integration` | build | merge-gate | `claude/land-trunk-1850` |
 | #1821 | Devlog and RSS feed on segno.aquiles.dev: Markdown entries in `site/log`, built by `site/build_log.py` | in-review | merge-gate | `claude/devlog-1821` |
 | #1795 | NVMe drive drops off the bus mid-recording: the Pi 5 cmdline turns off APST and PCIe ASPM on every link | in-review | blocked-verify | `claude/nvme-power-1795` |
@@ -46,7 +45,6 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1760 | A rack card names the controls bound to the rack itself; a switch's press and hold on one target read as one control | in-review | auto | `claude/rack-card-assignment-1760` |
 | #1674 | Anti-aliasing under Impeller: ivi-homescreen renders into a 4x MSAA framebuffer and resolves it before each flip | in-review | auto | `claude/ivi-msaa-1674` |
 | #1496 | Split design and hardware into their own repos, slim this one | in-review | merge-gate | `claude/repo-split-1496` |
-| #1801 | A take on a FAT stick keeps its renamed files: each publish syncs the renamed file, then its directory | in-review | blocked-verify | `claude/usb-rename-durable-1801` |
 | #1367 | Start helper programs with posix_spawn, never fork the app | in-review | merge-gate | `claude/no-fork-1367` |
 | #887 | Looper X factory racks: all parts merged, Harmonizer parked; Pi benches and by-ear sign-off owed (#1459) | in-review | blocked-verify | `master` |
 | #900, #906 | The audio thread never faults or copies on write (replaces #907, #914) | in-review | blocked-verify | `claude/zero-stall-memory-907-914` |
