@@ -925,12 +925,16 @@ static void test_render_keeps_published_prints(void) {
 
 /* A configure during a recipe's lane print returns without waiting for the
  * print (review M2): the print's abort check reads the cache's shutdown flag.
- * The undisturbed render's time is dominated by one 30 s Pre reverb print,
- * so a configure that waited for it would take most of that time. */
+ * The undisturbed render's time is dominated by one 5 s Pre reverb print,
+ * so a configure that waited for it would take most of that time. The
+ * print is short enough to finish inside rr_wait's 10 s under ASan on CI
+ * (a 30 s one took longer there), and long enough that the configure's
+ * own cost (7 ms against 270 ms for the whole render under ASan on an M4)
+ * stays far under half of it. */
 static void test_render_configure_mid_print(void) {
   printf("test_render_configure_mid_print\n");
   le_engine* e = rr_engine();
-  const int32_t len = 30 * RR_SR;
+  const int32_t len = 5 * RR_SR;
   float* pcm = (float*)calloc((size_t)len, sizeof(float));
   CHECK(pcm != NULL);
   if (pcm == NULL) return;
