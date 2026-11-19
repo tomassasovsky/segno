@@ -318,6 +318,7 @@ void main() {
       {'pedal'},
     );
   });
+
   check('a Click lifetime change resets only the device mapping Click', (r) {
     r
       ..bind('pedal', number: 21, target: const ClickVolumeTarget())
@@ -331,18 +332,24 @@ void main() {
 
     // Reopening the engine starts a new Click lifetime in the same session.
     final session = r.looper.sessionRevision;
-    final generation = r.looper.mixGeneration;
+    final lifetime = r.tempo.clickVolumeOwner.lifetime;
     expect(
       r.looper.applyAudioConfig(const EngineConfig()).status,
       AudioApplyStatus.applied,
     );
     r.pump();
     expect(r.looper.sessionRevision, session);
-    expect(r.looper.mixGeneration, isNot(generation));
+    expect(r.tempo.clickVolumeOwner.lifetime, isNot(lifetime));
 
     expect(
       r.cubit.state.midiLevels.keys.map((source) => source.device).toSet(),
       {'keys'},
     );
+    // The keyboard's decoder was kept, so its mapping still fires on the
+    // next press.
+    r
+      ..send('keys', 22, 0)
+      ..send('keys', 22, 127);
+    expect(r.decay(1), 75);
   });
 }
