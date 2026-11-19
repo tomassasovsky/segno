@@ -545,9 +545,8 @@ static void test_lpf_response(void) {
 /* At 100 % resonance the ladder oscillates on its own: excited, it keeps
  * a sine near the cutoff in silence at about the Looper X's level (0.25
  * peak at 632 Hz shown, 0.28 at 3557; at 644.5 and 3575.5 Hz). A loud
- * tone above the corner loses some of the resonance's lift, as the Looper
- * X's does (1 kHz at 632 Hz, 50 %: -9.7 dB at -48 dBFS, -17.1 at 0). At
- * the top of the range it is off: the identity. */
+ * tone above the corner loses the resonance's lift at the Looper X's
+ * levels (#1628). At the top of the range it is off: the identity. */
 static void test_lpf_oscillates(void) {
   printf("test_lpf_oscillates\n");
   const int sr = 48000;
@@ -627,17 +626,21 @@ static void test_lpf_oscillates(void) {
     printf("  after 1 s of silence at 0 %%: peak %.3f a second after 100 %%\n", peak);
     CHECK(peak > 0.2f);
   }
-  /* Level: a loud tone above the corner. */
-  const double lvl[2][2] = {{-48, -9.7}, {0, -17.1}};
-  for (int k = 0; k < 2; ++k) {
+  /* Level: a 1 kHz tone above the corner loses resonance with level as the
+   * Looper X's does (#1628), at 647 Hz shown and 50.2 %, where gC (#1445)
+   * and s17rhy (#1447) captured it. Before #1628 the kernel was 1.6 dB loud
+   * at -12 dBFS and 2.7 dB loud at 0 dBFS. */
+  const double lvl[3][2] = {{-48, -9.7}, {-12, -11.96}, {0, -17.1}};
+  for (int k = 0; k < 3; ++k) {
     float p[LE_FX_PARAMS] = {0};
-    p[0] = dyn_setting(LE_FX_LPF, 0, 632.0);
-    p[1] = 0.5f;
+    p[0] = dyn_setting(LE_FX_LPF, 0, 647.0);
+    p[1] = 0.502f;
     const double a = pow(10.0, lvl[k][0] / 20.0);
     float* y = lofi_tone(LE_FX_LPF, p, sr, 1000.0, a, sr / 2);
     const double got = 20.0 * log10(lofi_amp(y, sr / 5, sr / 4, 1000.0, sr) / a);
-    printf("  1 kHz at %.0f dBFS: %.1f dB (capture %.1f)\n", lvl[k][0], got, lvl[k][1]);
-    CHECK(fabs(got - lvl[k][1]) < 3.0);
+    printf("  1 kHz at %.0f dBFS: %.2f dB (capture %.2f)\n", lvl[k][0], got,
+           lvl[k][1]);
+    CHECK(fabs(got - lvl[k][1]) < 0.35);
     free(y);
   }
   /* Off at the top, as a fresh filter is: the identity, and its descriptor
@@ -656,9 +659,9 @@ static void test_lpf_oscillates(void) {
   dyn_free(fx);
   for (int i = 0; i < n; ++i) CHECK(out[i] == in[i]);
   p[0] = 0.5f;
-  p[1] = 0.9f;
+  p[1] = 0.84f; /* k passes 4 at 84.5 % */
   CHECK(!le_fx_entry_free_running(LE_FX_LPF, p, sr));
-  p[1] = 0.93f;
+  p[1] = 0.85f;
   CHECK(le_fx_entry_free_running(LE_FX_LPF, p, sr));
 }
 

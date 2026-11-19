@@ -430,6 +430,53 @@ s4 Pumper passes (s4/25-27) agree among themselves the same way.
 - The kernel's ladder compresses less than the Looper X's at this level. At
   0 dBFS, #1445 read -17.1 dB, and the kernel gives -14.4.
 
+**LPF level, refit (#1628).**
+
+- **Every LPF capture ran at 647 Hz shown, Reso 50.2 %.** That includes gC's
+  passes and gD's LFO passes, which their labels and the readings above
+  give as 632 Hz and 50 %. Their screenshots (`gC/shots/r5.png`,
+  `gD/shots/r5.png`) show the same readout as s17rhy's: the drag to 0.5
+  stored 0.5019. So the 1 kHz ladder (-9.7 dB from -48 dBFS, -17.1 dB
+  from 0 dBFS), the LFO tables and s17rhy's -11.96 dB at -12 dBFS are all
+  one setting.
+- **At that setting the old kernel's small signal was right.** It read
+  -9.56 dB against -9.7. Only the compression was off: +1.58 dB at
+  -12 dBFS and +2.72 at 0 dBFS. On s17rhy's noise (-24 dBFS RMS) it was
+  0.4 dB loud at 1 kHz.
+- **The refit:**
+  - f(v) = tanh(5 v) / 5 (was 2.4);
+  - k = 0.2 + 4.3 Reso^1.15 + Reso^8: 2.14 at 50 % (was 2.06), fit together
+    with f to the tones, the noise response, the LFO tables and the
+    oscillation. The Reso^8 term adds loop gain at the top, so the
+    oscillation stays at 0.26 peak with the stronger f. It adds under
+    0.004 below 50 %. k passes 4 at 84.5 % (was 92 %); no factory preset
+    sets Reso above 70.8 %.
+
+| at 647 Hz shown, 50.2 % | capture | before | after |
+|---|---|---|---|
+| 1 kHz from -48 dBFS (gC) | -9.7 | -9.56 | -9.40 |
+| 1 kHz from -12 dBFS (s17rhy) | -11.96 | -10.38 | -11.91 |
+| 1 kHz from 0 dBFS (gC) | -17.1 | -14.38 | -16.82 |
+| noise, 80 Hz-3 kHz, rms / worst (s17rhy) | | 0.35 / 0.86 | 0.27 / 1.07 |
+| LFO Depth 50 %, rms / worst (gD) | | 1.21 / 2.41 | 1.31 / 2.39 |
+| LFO Depth 100 %, worst above -50 dB (gD) | | 1.84 | 1.63 |
+| self-oscillation peak (Reso 100 %) | 0.251 | 0.268 | 0.261 |
+
+- **Forms that did not fit.**
+  - A stronger tanh at the old k: it fits the tones but halves the
+    oscillation.
+  - Saturating the input-compensation term too, u = x + k (f(x) - f(y)):
+    it overshoots in the gD tables.
+  - A tanh in each stage: it fits about as well (0.10 / 0.22 dB on the
+    tones, LFO worst 2.18) but costs four more tanh calls a sample on each
+    side.
+- **The #1445 small-signal fit and oscillation frequency were read as
+  632 Hz shown.** At 647 shown the kernel oscillates at 656 Hz, against
+  the Looper X's 644.5. The noise response at 647 Hz still fits.
+- **A level ladder at other cutoffs and resonances was not captured.**
+  The rig did not take taps while the host was loaded (session s21lpf,
+  `prog/s21lpf.sh` on the rig).
+
 ## The Guitar Rack on an idle input, and the OvDrive below its knee (#1644, #1663, session s18idle)
 
 Captured on 2026-11-04 to answer whether segno's drive presets lift an idle

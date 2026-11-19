@@ -8469,16 +8469,22 @@ static void fx_degrade_kprocess(void* ks, float* l, float* r) {
  *   with feedback k around them and the passband held at unity, small-signal
  *   H = (1 + k) P^4 / (1 + k P^4): the feedback takes the output minus the
  *   input, u = x - k f(y - x), so the passband stays at unity at any level;
- * - k = 0.2 + 4.2 reso^1.15 (fits 0.20 at 0 % and 2.06 at 50 %), past 4 at
- *   92 % and up, where the filter oscillates;
- * - f(v) = tanh(2.4 v) / 2.4 bounds the feedback: the oscillation settles
- *   at about 0.27 peak (the Looper X's 0.25 and 0.28), and a loud tone
- *   above the corner loses some resonance (1 kHz at a 632 Hz corner,
- *   50 %: -10.3 dB at -48 dBFS to -15.0 dB at 0 dBFS, the Looper X's -9.7
- *   to -17.1);
- * - the corner is 1.04 x the cutoff at 0 % resonance, 1.015 x at 100 %, so
- *   the oscillation lands within 1 % of where the Looper X's does (644.5 Hz
- *   for 632 Hz shown, 3575.5 for 3557); the responses fit within 0.4 dB at
+ * - f(v) = tanh(5 v) / 5 bounds the feedback, so a loud tone above the
+ *   corner loses resonance as the Looper X's does (#1628). At 647 Hz shown
+ *   and 50.2 % (the setting of every LPF capture, gC, gD and s17rhy), a
+ *   1 kHz tone comes out at -9.40, -11.91 and -16.82 dB from -48, -12 and
+ *   0 dBFS: the Looper X's -9.7, -11.96 and -17.1. The s17rhy noise at
+ *   -24 dBFS RMS fits within 0.27 dB rms from 80 Hz to 3 kHz;
+ * - k = 0.2 + 4.3 reso^1.15 + reso^8: 0.20 at 0 % and 2.14 at 50 %, fit
+ *   with f to that noise response and the tones. The reso^8 term is the
+ *   loop gain at the top, where only the oscillation was measured: k
+ *   passes 4 at 84.5 % and reaches 5.5 at 100 %, where the oscillation
+ *   settles at about 0.26 peak (the Looper X's 0.25 and 0.28). Below 50 %
+ *   it adds under 0.004 to k;
+ * - the corner is 1.04 x the cutoff at 0 % resonance, 1.015 x at 100 %,
+ *   fit by #1445 as if gC ran at 632 Hz shown (its screens show 647 Hz, so
+ *   the oscillation sits at 656 Hz against the Looper X's 644.5; #1888);
+ *   the responses fit within 0.4 dB at
  *   632 Hz (0 and 50 %) and 0.7 dB at 112 Hz, down to -50 dB; at 3557 Hz
  *   the ladder at the
  *   engine's rate falls faster than the Looper X's above 8 kHz (-31 dB
@@ -8510,18 +8516,19 @@ static const le_fx_param_desc LE_FX_LPF_PARAMS[] = {
      0},
 };
 #define LE_LPF_K0 0.2
-#define LE_LPF_K1 4.2
+#define LE_LPF_K1 4.3
 #define LE_LPF_K_POW 1.15
+#define LE_LPF_K_TOP 1.0 /* the loop gain added at the top, Reso^8 */
 #define LE_LPF_FC_LO 1.04  /* the corner over the cutoff at 0 % */
 #define LE_LPF_FC_HI 1.015 /* at 100 % */
-#define LE_LPF_SAT 2.4f
+#define LE_LPF_SAT 5.0f
 #define LE_LPF_HP_HZ 25.3
 #define LE_LPF_SEED 1e-9f /* the first stage's start, so it can oscillate */
 #define LE_LPF_DEAD 1e-30f /* under this the stages have died away */
 
-/* The resonance from which the ladder oscillates (k > 4). */
-static double le_lpf_osc_reso(void) {
-  return pow((4.0 - LE_LPF_K0) / LE_LPF_K1, 1.0 / LE_LPF_K_POW);
+/* The ladder's feedback at resonance [v] (0..1); past 4 it oscillates. */
+static double le_lpf_k(double v) {
+  return LE_LPF_K0 + LE_LPF_K1 * pow(v, LE_LPF_K_POW) + LE_LPF_K_TOP * pow(v, 8.0);
 }
 
 /* The LFO's period at each rate position, in quarter notes: 8/4, 6/4, 5/4,
@@ -8629,7 +8636,7 @@ static void fx_lpf_update(void* ks, le_fx_dyn_head* h, const float* p, int sr,
     const double v = p[1] < 0.0f ? 0.0 : p[1] > 1.0f ? 1.0 : p[1];
     const double ratio = LE_LPF_FC_LO + (LE_LPF_FC_HI - LE_LPF_FC_LO) * v;
     q->tgt = (float)log2(ratio * le_fx_desc_value(&LE_FX_LPF_PARAMS[0], p[0]));
-    q->ktgt = (float)(LE_LPF_K0 + LE_LPF_K1 * pow(v, LE_LPF_K_POW));
+    q->ktgt = (float)le_lpf_k(v);
   }
   /* The rate the kernel runs at. */
   const int kr = le_lpf_halved(sr) ? sr / 2 : sr;
@@ -11077,7 +11084,8 @@ int le_fx_entry_free_running(int32_t type, const float* p, int sr) {
       return 1; /* even at 0 % mix its copy wanders within 1 ms */
     case LE_FX_LPF: /* on, and oscillating or swept by the beat */
       return p[0] < 1.0f &&
-             ((double)p[1] > le_lpf_osc_reso() || p[2] > 0.0f);
+             (le_lpf_k(p[1] < 0.0f ? 0.0 : p[1] > 1.0f ? 1.0 : (double)p[1]) > 4.0 ||
+              p[2] > 0.0f);
     case LE_FX_PUMPER: /* ducking at all */
       return p[1] > 0.0f;
     case LE_FX_MODE_DELAY: /* heard (its time is the live tempo's) */
