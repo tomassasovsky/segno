@@ -468,7 +468,7 @@ s4 Pumper passes (s4/25-27) agree among themselves the same way.
   - Saturating the input-compensation term too, u = x + k (f(x) - f(y)):
     it overshoots in the gD tables.
   - A tanh in each stage: it fits about as well (0.10 / 0.22 dB on the
-    tones, LFO worst 2.18) but costs four more tanhf a sample on each
+    tones, LFO worst 2.18) but costs four more tanh calls a sample on each
     side.
 - **The #1445 small-signal fit and oscillation frequency were read as
   632 Hz shown.** At 647 shown the kernel oscillates at 656 Hz, against
