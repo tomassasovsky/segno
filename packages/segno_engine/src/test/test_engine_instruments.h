@@ -1301,8 +1301,9 @@ static void test_instrument_chord_on(void) {
 }
 
 /* Route tables switch at a block: a second publish before the callback has
- * acknowledged the first is refused while running; stopped, they switch at
- * once. */
+ * acknowledged the first is refused while running. Stopped, every publish
+ * lands, but only the callback acknowledges, so the first publish after the
+ * start waits for its first block (#1814). */
 static void test_midi_routing_publish(void) {
   printf("test_midi_routing_publish\n");
   le_engine* e = ins_engine(INS_SR);
@@ -1321,6 +1322,17 @@ static void test_midi_routing_publish(void) {
   CHECK(le_engine_set_instrument_routes(e, &r) == LE_OK);
   CHECK(le_engine_set_instrument_routes(e, &r) == LE_ERR_NOT_READY);
   ins_run(e, 64, 64, 0, NULL); /* the callback acknowledges */
+  CHECK(le_engine_set_instrument_routes(e, &r) == LE_OK);
+  ins_run(e, 64, 64, 0, NULL);
+  store_i32(&e->a_running, 0);
+  /* Stopped, after the callback acknowledged: the publish flips the table
+   * the callback holds no longer, and the callback still holds the other. */
+  CHECK(le_engine_set_instrument_routes(e, &r) == LE_OK);
+  CHECK(e->inst_routes_active !=
+        &e->inst_routes[load_i32(&e->a_inst_routes_live)]);
+  store_i32(&e->a_running, 1); /* started */
+  CHECK(le_engine_set_instrument_routes(e, &r) == LE_ERR_NOT_READY);
+  ins_run(e, 64, 64, 0, NULL); /* its first block moves to the new table */
   CHECK(le_engine_set_instrument_routes(e, &r) == LE_OK);
   store_i32(&e->a_running, 0);
   le_engine_destroy(e);

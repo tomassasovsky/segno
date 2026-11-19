@@ -15,6 +15,11 @@
  * Off or by a loss, so no MIDI voice may stay held, and TSAN checks the
  * route-table handover.
  *
+ * The third (#1814) starts and stops the callback over and over, each start
+ * after a publish made while stopped, and publishes again as the first block
+ * runs: TSAN checks that publish waits for the block to leave the table it
+ * held.
+ *
  * Built by run_native_tests.sh in every configuration, including the
  * ThreadSanitizer job (fewer iterations there). */
 #include <pthread.h>
@@ -22,6 +27,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "engine_instruments.h"
 #include "engine_private.h"
@@ -215,8 +221,135 @@ static int routing_scenario(void) {
   return 0;
 }
 
+/* ---- the first running publish after one made while stopped (#1814) ----
+ *
+ * A publish while stopped flips the live table, but the callback still holds
+ * the other one until its first block, which reads it as `prev` to retire
+ * moved routes. A publish right after the start must wait for that block's
+ * acknowledgement: before #1814 the stopped publish claimed it, so the next
+ * one took the held table and overwrote it while the first block read it.
+ *
+ * Each trial is a stop and start: the audio thread is parked (a real stop
+ * joins the callback), the control thread publishes, marks the engine
+ * running, releases the audio thread and publishes again at once. Only a
+ * trial whose first block starts during that second publish shows the race,
+ * so the audio thread runs the block start itself (the step that switches
+ * tables) and starts it a little later each trial, sweeping three times the
+ * measured length of a publish. Without the fix it reports the race on every
+ * run with GCC's TSan on Linux (CI's job). Apple clang's TSan does not:
+ * there a memcpy into a table never conflicts with a plain read of it. */
+
+#ifdef RACE_TSAN
+#define START_TRIALS 4000
+#else
+#define START_TRIALS 20000
+#endif
+
+static atomic_int g_go;     /* trial number the audio thread may run */
+static atomic_int g_parked; /* last trial the audio thread finished */
+static atomic_int g_halt;   /* the current trial's blocks may stop */
+static int g_sweep_spins;   /* set before the audio thread starts */
+
+static void spin(int n) {
+  for (volatile int i = n; i > 0; --i) {
+  }
+}
+
+static void* start_audio_main(void* arg) {
+  (void)arg;
+  for (int trial = 1; trial <= START_TRIALS; ++trial) {
+    while (atomic_load(&g_go) < trial) {
+    }
+    /* Spinning orders nothing between the threads. */
+    spin((int)((int64_t)g_sweep_spins * ((trial * 7919) % START_TRIALS) /
+               START_TRIALS));
+    while (!atomic_load(&g_halt)) le_instruments_midi_begin(g_engine);
+    atomic_store(&g_parked, trial);
+  }
+  return NULL;
+}
+
+static uint64_t now_ns(void) {
+  struct timespec t;
+  clock_gettime(CLOCK_MONOTONIC, &t);
+  return (uint64_t)t.tv_sec * 1000000000u + (uint64_t)t.tv_nsec;
+}
+
+static int stopped_publish_scenario(void) {
+  g_engine = le_engine_create();
+  if (g_engine == NULL ||
+      le_engine_configure(g_engine, 48000, 2, 2, 48000) != LE_OK ||
+      le_engine_set_instrument(g_engine, 0, le_synth_patch_find("pad"), NULL) != LE_OK) {
+    printf("FAIL: stopped publish setup\n");
+    return 1;
+  }
+  le_inst_routes r;
+  memset(&r, 0, sizeof(r));
+  r.inst[0].midi_enabled = 1;
+  r.inst[0].high = 127;
+  /* Size the sweep here, sanitizer included: a publish (stopped, so it
+   * always lands) against the audio thread's spin. */
+  uint64_t t0 = now_ns();
+  for (int i = 0; i < 1000; ++i) le_engine_set_instrument_routes(g_engine, &r);
+  const uint64_t publish_ns = (now_ns() - t0) / 1000u;
+  t0 = now_ns();
+  spin(1000000);
+  const uint64_t million_spins_ns = now_ns() - t0 + 1u;
+  g_sweep_spins = (int)(3u * publish_ns * 1000000u / million_spins_ns) + 1;
+  atomic_store(&g_go, 0);
+  atomic_store(&g_parked, 0);
+  pthread_t audio;
+  pthread_create(&audio, NULL, start_audio_main, NULL);
+  long long waited = 0;
+  int32_t rc = LE_OK;
+  int trial = 1;
+  for (; trial <= START_TRIALS; ++trial) {
+    /* Stopped: the callback holds the live table. Moving instrument 0's
+     * port makes the first block retire it, reading the held table. */
+    atomic_store(&g_engine->a_running, 0);
+    r.inst[0].port = trial % 2;
+    rc = le_engine_set_instrument_routes(g_engine, &r);
+    if (rc != LE_OK) break;
+    atomic_store(&g_engine->a_running, 1);
+    atomic_store(&g_halt, 0);
+    atomic_store(&g_go, trial);
+    r.inst[0].channel = trial % 3;
+    while ((rc = le_engine_set_instrument_routes(g_engine, &r)) ==
+           LE_ERR_NOT_READY) {
+      ++waited;
+    }
+    if (rc != LE_OK) break;
+    /* Stop once the callback holds the table just published, so the next
+     * trial's stopped publish again leaves it on the other one. */
+    while (atomic_load(&g_engine->a_inst_routes_seen) !=
+           atomic_load(&g_engine->a_inst_routes_live)) {
+    }
+    atomic_store(&g_halt, 1);
+    while (atomic_load(&g_parked) < trial) {
+    }
+  }
+  if (rc != LE_OK) { /* release the audio thread through every trial */
+    atomic_store(&g_halt, 1);
+    atomic_store(&g_go, START_TRIALS);
+  }
+  pthread_join(audio, NULL);
+  atomic_store(&g_engine->a_running, 0);
+  le_engine_destroy(g_engine);
+  if (rc != LE_OK) {
+    printf("FAIL: a route publish returned %d at trial %d\n", rc, trial);
+    return 1;
+  }
+  printf("instrument publish after start: %d trials over %d spins, %lld "
+         "publishes waited for the first block\n",
+         START_TRIALS, g_sweep_spins, waited);
+  return 0;
+}
+
 int main(void) {
-  if (rings_scenario() != 0 || routing_scenario() != 0) return 1;
+  if (rings_scenario() != 0 || routing_scenario() != 0 ||
+      stopped_publish_scenario() != 0) {
+    return 1;
+  }
   printf("ALL PASSED\n");
   return 0;
 }
