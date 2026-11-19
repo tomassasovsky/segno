@@ -14,19 +14,23 @@ String uptime(int hundredths) =>
     '${(hundredths / 100).toStringAsFixed(2)} 0.00\n';
 
 /// A [ProcReader] over [samples], one `(uptime, idle)` pair per sample, that
-/// moves to the next sample once it has served the uptime. [reads] counts
-/// the samples served.
+/// moves to the next sample once it has served both files, in either order.
+/// [reads] counts the samples served.
 class FakeProc {
   new(this.samples);
 
   final List<(int, int)> samples;
   int reads = 0;
+  final _served = <String>{};
 
   Future<String> read(String name) async {
     final (time, idle) = samples[reads];
-    if (name == 'stat') return stat(idle);
-    reads++;
-    return uptime(time);
+    _served.add(name);
+    if (_served.containsAll(const ['stat', 'uptime'])) {
+      _served.clear();
+      reads++;
+    }
+    return name == 'stat' ? stat(idle) : uptime(time);
   }
 }
 
@@ -56,6 +60,20 @@ void main() {
         final subscription = repository.watch().listen(loads.add);
         async.elapse(const Duration(seconds: 5));
         expect(loads, [10]);
+        unawaited(subscription.cancel());
+      });
+    });
+
+    test('shows nothing for a sample that spans a suspend', () {
+      fakeAsync((async) {
+        // A minute of uptime between two one-second samples, with no idle
+        // time: the machine was suspended.
+        final proc = FakeProc([(0, 0), (6000, 0), (6100, 300)]);
+        final repository = CpuLoadRepository(read: proc.read, cores: 4);
+        final loads = <int>[];
+        final subscription = repository.watch().listen(loads.add);
+        async.elapse(const Duration(seconds: 2));
+        expect(loads, [25]);
         unawaited(subscription.cancel());
       });
     });

@@ -91,6 +91,10 @@ class CpuLoadRepository {
       final earlier = previous;
       previous = now;
       if (earlier == null) return;
+      // A gap of more than ten intervals is a suspend: /proc/uptime runs
+      // through it and idle time does not, so it would read as full load.
+      // A few failed reads in a row leave a shorter gap, which still counts.
+      if (now.uptime - earlier.uptime > interval.inMilliseconds) return;
       final load = loadPercent(earlier, now, cores: cores);
       if (load == null || load == last) return;
       last = load;
