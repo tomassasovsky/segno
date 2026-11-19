@@ -5,10 +5,10 @@
  * One thread stands in for the device callback and runs 10,000 periods of
  * le_engine_process with two effects workers, four monitored inputs and a
  * chain on each, so every period is a round the workers share. The control
- * thread meanwhile posts what a player does to those chains as fast as it
- * can: parameter edits, stomps, retypes, a chain switched off and on, a
- * monitor muted and unmuted, Cut all sound; and it polls the snapshot and
- * the workers' telemetry the way the UI and a bench do.
+ * thread meanwhile posts what a player does to those chains, OPS of them
+ * each period: parameter edits, stomps, retypes, a chain switched off and
+ * on, a monitor muted and unmuted, Cut all sound; and it polls the snapshot
+ * and the workers' telemetry the way the UI and a bench do.
  *
  * What it proves, under ThreadSanitizer (the native-tests-tsan job runs it
  * through NATIVE_TESTS_ONLY=races): no data race between a worker running a
@@ -18,10 +18,26 @@
  * buffers the control thread prepares into the live chain state while a
  * slot still runs another kind (#1522), and the whole run repeats at
  * 44.1 kHz, where a running octaver reads its resampler table every sample.
- * And, in the plain suite, that every period finishes and the workers really
- * shared the rounds.
+ * And, in the plain suite, that every period finishes, the workers really
+ * shared the rounds, and the engine accepts every mute and every Cut.
  *
- * Deterministic op sequence (fixed seed); the interleaving is not.
+ * The two threads pace each other (#1629). Unpaced, the control thread filled
+ * the command ring whenever the scheduler took the audio thread off its core
+ * for a few milliseconds (the longest periods of a loaded run took hundreds of
+ * milliseconds of wall time and under 2 ms of CPU): the mutes have nothing else
+ * holding them back, and a full ring refuses them, as it should. Now the
+ * control thread runs batch w (OPS ops) only once the callback has finished
+ * period w - 1, and the callback runs period p only once the control thread has
+ * finished batch p - LAG - 1. Between two drains the ring therefore holds at
+ * most the batches LAG + 2 periods can post, each op at most two commands:
+ * (LAG + 2) * OPS * 2 = 64 of its 255 slots, so a refused mute or Cut is the
+ * engine's fault. Both counters are relaxed, so the pacing adds no
+ * happens-before edge for ThreadSanitizer to hide a race behind. That also
+ * means the C memory model lets a thread see a counter move before it sees
+ * the other thread's ring stores; hardware makes them visible within far
+ * less than a period, and the bound leaves 191 slots for it. The interleaving
+ * inside a period is still the scheduler's. The op sequence and its count
+ * are fixed by the seed, and so are the mutes and Cuts it makes.
  */
 #include <pthread.h>
 #include <sched.h>
@@ -36,9 +52,13 @@
 #define PERIOD 64
 #define PERIODS 10000
 #define INPUTS 4
+/* The control thread's ops a period, and how many periods the callback may
+ * run ahead of its batches. */
+#define OPS 8
+#define LAG 2
 
-static atomic_int g_done;
-static atomic_long g_blocks;
+static atomic_long g_blocks;  /* periods the callback has finished */
+static atomic_long g_batches; /* batches the control thread has finished */
 static int g_failures;
 
 #define CHECK(cond)                                        \
@@ -61,6 +81,9 @@ static void* audio_thread(void* arg) {
   static float out[PERIOD * 2];
   uint32_t n = 1u;
   for (long p = 0; p < PERIODS; ++p) {
+    while (atomic_load_explicit(&g_batches, memory_order_relaxed) < p - LAG) {
+      sched_yield();
+    }
     for (int i = 0; i < PERIOD * INPUTS; ++i) {
       n = n * 1103515245u + 12345u;
       in[i] = (float)((n >> 9) & 0xFFFF) / 65536.0f - 0.5f;
@@ -68,7 +91,6 @@ static void* audio_thread(void* arg) {
     le_engine_process(e, out, in, PERIOD);
     atomic_fetch_add_explicit(&g_blocks, 1, memory_order_relaxed);
   }
-  atomic_store_explicit(&g_done, 1, memory_order_release);
   return NULL;
 }
 
@@ -96,8 +118,8 @@ static void base_recipe(le_fx_recipe* r, int c) {
 static void run_at(int sr) {
   printf("test_fx_workers_races at %d Hz\n", sr);
   g_seed = 0x1515u; /* the same seed at every rate */
-  atomic_store(&g_done, 0);
   atomic_store(&g_blocks, 0);
+  atomic_store(&g_batches, 0);
   le_engine* e = le_engine_create();
   CHECK(le_engine_configure(e, sr, INPUTS, 2, sr) == LE_OK);
   CHECK(le_engine_set_fx_workers(e, 2, NULL) == LE_OK);
@@ -121,86 +143,94 @@ static void run_at(int sr) {
       LE_FX_PUMPER,  LE_FX_REVERB,  LE_FX_OCTAVER,      LE_FX_WHAMMY,
       LE_FX_DUAL_OCTAVER, LE_FX_SMART_TUNE};
   const int retype_count = (int)(sizeof(retypes) / sizeof(retypes[0]));
-  int posted = 0, refused = 0, polls = 0, mutes = 0, cuts = 0;
+  int posted = 0, in_flight = 0, polls = 0, mutes = 0, cuts = 0;
+  int refused_mutes = 0, refused_cuts = 0;
   long last_cut = -50;
   uint64_t next_instance = 1000;
   le_snapshot snap;
   le_fx_workers_telemetry tm;
-  while (!atomic_load_explicit(&g_done, memory_order_acquire)) {
-    const int c = (int)(next_rand() % INPUTS);
-    const int s = (int)(next_rand() % 4);
-    switch (next_rand() % 7) {
-      case 0: /* a parameter edit */
-        r[c].params[s][0] = (float)(next_rand() % 1000) / 1000.0f;
-        break;
-      case 1: /* a stomp */
-        r[c].slot_enabled[s] = !r[c].slot_enabled[s];
-        break;
-      case 2: { /* a retype: a new entry, so its state resets */
-        const int32_t k = retypes[next_rand() % (uint32_t)retype_count];
-        r[c].type[s] = k;
-        le_fx_defaults(k, r[c].params[s]);
-        r[c].instance[s] = ++next_instance;
-        break;
-      }
-      case 3: /* the chain off or on */
-        r[c].enabled = !r[c].enabled;
-        break;
-      case 4: /* the monitor muted or unmuted: a round with fewer jobs */
-        /* The edits fill the command ring faster than a slow callback (the
-         * resampled pitch kinds under a sanitizer) drains it, and a full
-         * ring refuses the mute as it refuses an edit. */
-        if (le_engine_set_monitor_input_mute(e, c,
-                                             (int32_t)(next_rand() & 1u)) ==
-            LE_OK) {
-          ++mutes;
-        } else {
-          ++refused;
-        }
-        break;
-      case 5: { /* Cut all sound: every chain's tails, as their kinds stand */
-        /* At most one every 50 periods: a Cut clears every ring at once, and
-         * a stream of them would stall the callback. */
-        const long now = atomic_load_explicit(&g_blocks, memory_order_relaxed);
-        if (now - last_cut < 50) continue;
-        if (le_engine_cut_sound(e) == LE_OK) {
-          ++cuts;
-          last_cut = now;
-        } else {
-          ++refused;
-        }
-        break;
-      }
-      default: /* the UI's poll and a bench's read */
-        le_engine_get_snapshot(e, &snap);
-        le_engine_get_fx_workers_telemetry(e, &tm);
-        ++polls;
-        continue;
+  for (long w = 0; w < PERIODS; ++w) {
+    /* Batch w once the callback has finished period w - 1 (see the top). */
+    while (atomic_load_explicit(&g_blocks, memory_order_relaxed) < w) {
+      sched_yield();
     }
-    if (le_engine_set_fx_recipe(e, LE_FX_OWNER_MONITOR, c, 0, ++rev, &r[c]) ==
-        LE_OK) {
-      ++posted;
-    } else {
-      ++refused; /* a full ring or a structural edit still in flight */
+    for (int op = 0; op < OPS; ++op) {
+      const int c = (int)(next_rand() % INPUTS);
+      const int s = (int)(next_rand() % 4);
+      switch (next_rand() % 7) {
+        case 0: /* a parameter edit */
+          r[c].params[s][0] = (float)(next_rand() % 1000) / 1000.0f;
+          break;
+        case 1: /* a stomp */
+          r[c].slot_enabled[s] = !r[c].slot_enabled[s];
+          break;
+        case 2: { /* a retype: a new entry, so its state resets */
+          const int32_t k = retypes[next_rand() % (uint32_t)retype_count];
+          r[c].type[s] = k;
+          le_fx_defaults(k, r[c].params[s]);
+          r[c].instance[s] = ++next_instance;
+          break;
+        }
+        case 3: /* the chain off or on */
+          r[c].enabled = !r[c].enabled;
+          break;
+        case 4: /* the monitor muted or unmuted: a round with fewer jobs */
+          if (le_engine_set_monitor_input_mute(
+                  e, c, (int32_t)(next_rand() & 1u)) == LE_OK) {
+            ++mutes;
+          } else {
+            ++refused_mutes;
+          }
+          break;
+        case 5: /* Cut all sound: every chain's tails, as their kinds stand */
+          /* At most one every 50 batches: a Cut clears every ring at once,
+           * and a stream of them would stall the callback. */
+          if (w - last_cut < 50) continue;
+          if (le_engine_cut_sound(e) == LE_OK) {
+            ++cuts;
+            last_cut = w;
+          } else {
+            ++refused_cuts;
+          }
+          break;
+        default: /* the UI's poll and a bench's read */
+          le_engine_get_snapshot(e, &snap);
+          le_engine_get_fx_workers_telemetry(e, &tm);
+          ++polls;
+          continue;
+      }
+      /* The ring has room, so a refusal is the chain's last edit still in
+       * flight. */
+      if (le_engine_set_fx_recipe(e, LE_FX_OWNER_MONITOR, c, 0, ++rev,
+                                  &r[c]) == LE_OK) {
+        ++posted;
+      } else {
+        ++in_flight;
+      }
     }
-    sched_yield();
+    atomic_store_explicit(&g_batches, w + 1, memory_order_relaxed);
   }
   CHECK(pthread_join(audio, NULL) == 0);
   le_engine_get_fx_workers_telemetry(e, &tm);
-  printf("  %ld periods, %d edits posted, %d mutes, %d cuts, %d refused, "
-         "%d polls, %llu rounds, "
+  printf("  %ld periods, %d edits posted, %d in flight, %d mutes, %d cuts, "
+         "%d mutes and %d cuts refused, %d polls, %llu rounds, "
          "%llu jobs on the callback, %llu and %llu on the workers\n",
-         (long)atomic_load(&g_blocks), posted, mutes, cuts, refused, polls,
+         (long)atomic_load(&g_blocks), posted, in_flight, mutes, cuts,
+         refused_mutes, refused_cuts, polls,
          (unsigned long long)tm.rounds, (unsigned long long)tm.callback_jobs,
          (unsigned long long)tm.worker[0].jobs,
          (unsigned long long)tm.worker[1].jobs);
   CHECK(atomic_load(&g_blocks) == PERIODS);
   CHECK(tm.running == 2);
+  /* The ring never fills (see the top), so the engine takes every one. */
+  CHECK(refused_mutes == 0);
+  CHECK(refused_cuts == 0);
+  /* The seed fixes these two; the floors guard a change to the op mix. */
+  CHECK(mutes >= 10);
+  CHECK(cuts >= 10);
   /* The interleaving is the scheduler's; these only prove the race was
    * exercised, with margins no machine should miss. */
   CHECK(posted >= 100);
-  CHECK(mutes >= 10);
-  CHECK(cuts >= 10);
   CHECK(tm.rounds >= 1000);
   le_engine_destroy(e);
 }
