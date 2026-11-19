@@ -2987,8 +2987,9 @@ travel and diffuser bridge anchoring still require validation; #1074 stays
   Kaiser-windowed sinc resamplers (`fx_octaver_run`). The Transient
   reads its level's true peak between samples and smooths its gain over
   0.1 ms, which keeps its folds under -69 dB. What fails today is the
-  `k_known` list in `bench_fx_matrix.c` (only the Dual Octaver's
-  Octave 2 envelope at 96 kHz, #1616), each entry with a ceiling: a new failure, or a
+  `k_known` list in `bench_fx_matrix.c` (the Dual Octaver's envelope and
+  12.8 kHz response at 96 kHz with Octave 2 up, #1884; the Overdrive's
+  alias at 44.1 kHz), each entry with a ceiling: a new failure, or a
   listed one past its ceiling, fails the run, and in the full run so does a
   listed one that now passes. The settings come from
   `src/test/bench/fx_factory_settings.inc`, generated from the catalogue;

@@ -280,7 +280,65 @@ static void test_trk_jobs_prints_and_stops_are_bit_identical(void) {
   }
 }
 
+/* How many 32-frame blocks of 0.1 s ran their track chains as jobs, with
+ * [workers] workers, a chain of sixteen kinds (fxw_recipe's) on the own
+ * chains of the first [tracks] tracks, and [monitors] monitored inputs
+ * with one. */
+static uint64_t tj_job_blocks(int32_t workers, int32_t tracks,
+                              int32_t monitors) {
+  le_engine* e = le_engine_create();
+  CHECK(e != NULL);
+  CHECK(le_engine_configure(e, FXW_SR, FXW_IN, FXW_OUT, FXW_SR * 4) == LE_OK);
+  CHECK(le_engine_set_fx_workers(e, workers, NULL) == LE_OK);
+  uint32_t rev = 1;
+  for (int32_t m = 0; m < monitors; ++m) {
+    le_fx_recipe r;
+    fxw_recipe(&r, m);
+    CHECK(le_engine_set_monitor_input(e, m, 1) == LE_OK);
+    fxw_post(e, LE_FX_OWNER_MONITOR, m, &rev, &r);
+  }
+  for (int32_t t = 0; t < tracks; ++t) {
+    le_fx_recipe r;
+    fxw_recipe(&r, t % 2);
+    for (int32_t s = 0; s < r.count; ++s) r.instance[s] += 1000u * (t + 1);
+    fxw_post(e, LE_FX_OWNER_TRACK, t, &rev, &r);
+  }
+  static float in[256 * FXW_IN];
+  static float out[256 * FXW_OUT];
+  for (int32_t i = 0; i < 256 * FXW_IN; ++i) in[i] = fxw_input(i % FXW_IN, i);
+  le_test_trk_jobs_blocks = 0;
+  for (int32_t b = 0; b < FXW_SR / 10 / 32; ++b) {
+    le_engine_process(e, out, in, 32);
+  }
+  const uint64_t blocks = le_test_trk_jobs_blocks;
+  le_engine_destroy(e);
+  return blocks;
+}
+
+/* The effects budget (fxLoadNs, packages/looper_repository, #1746) charges
+ * the track chains on the callback, summed with everything else, exactly
+ * when the engine runs them there: with no workers, or with fewer than two
+ * jobs counting the monitors'. It charges them as jobs (the critical path
+ * plus a handoff and a charge a track) otherwise. This pins the engine's
+ * side of that contract. */
+static void test_trk_jobs_run_on_the_callback_when_the_budget_says(void) {
+  printf("test_trk_jobs_run_on_the_callback_when_the_budget_says\n");
+  if (le_test_trk_jobs_force) return; /* the local tool forces them all */
+  /* No workers: every track chain on the callback, however many. */
+  CHECK(tj_job_blocks(0, 3, 0) == 0u);
+  CHECK(tj_job_blocks(0, 5, 2) == 0u);
+  /* Workers, but one job alone: the callback would wait for it. */
+  CHECK(tj_job_blocks(2, 1, 0) == 0u);
+  /* Two jobs or more, of tracks or a track and a monitor: the workers. */
+  CHECK(tj_job_blocks(2, 2, 0) > 0u);
+  CHECK(tj_job_blocks(2, 1, 1) > 0u);
+  CHECK(tj_job_blocks(1, 3, 0) > 0u);
+  /* No chain on any track: no track job, whatever the monitors run. */
+  CHECK(tj_job_blocks(2, 0, 2) == 0u);
+}
+
 static void run_trk_jobs_tests(void) {
   test_trk_jobs_output_is_bit_identical();
   test_trk_jobs_prints_and_stops_are_bit_identical();
+  test_trk_jobs_run_on_the_callback_when_the_budget_says();
 }
