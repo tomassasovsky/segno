@@ -32,8 +32,8 @@
  *
  * The cost columns time the same renders: ns per frame for one instance
  * (net of the chain with no effect), and, for a kind that does not
- * oversample yet, what 2x oversampling at 48 kHz would cost: the kind's own work at 96 kHz per 48 kHz frame (twice its
- * 96 kHz per-frame cost) plus a streaming 63-tap polyphase half-band up and
+ * oversample yet, what 2x oversampling at 48 kHz would cost: the kind's
+ * own work at 96 kHz per 48 kHz frame (twice its 96 kHz per-frame cost) plus a streaming 63-tap polyphase half-band up and
  * down on each channel the kernel runs (one for the Amp+Cab, which is mono
  * inside; two for the rest), timed here. An upper bound: the slot's own
  * per-sample work is doubled with the kernel, and the Amp+Cab's cabinet
