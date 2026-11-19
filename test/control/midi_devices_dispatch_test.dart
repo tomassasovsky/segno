@@ -17,6 +17,7 @@ import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/app/settings_mix_persistence.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/looper/application/playback_settings.dart';
+import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/pedal/console_ctrl_source.dart';
 import 'package:segno_engine/segno_engine.dart'
@@ -25,7 +26,6 @@ import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/fake_audio_engine.dart';
 import '../helpers/fake_click_mode_control.dart';
-import '../helpers/fake_click_volume_control.dart';
 import '../helpers/fake_key_value_store.dart';
 import '../helpers/fake_record_length_control.dart';
 import '../helpers/fake_record_start_control.dart';
@@ -37,12 +37,14 @@ const _keys = MidiDevice(id: 'keys', name: 'Keyboard');
 
 /// Every connected MIDI device feeds the mappings learned from it, and only
 /// those (#1040): a real `MidiDeviceRepository` over fake captures drives a
-/// real `ControlCubit`, with Decay as the mapped value.
+/// real `ControlCubit`, with Decay and Click volume as the mapped values.
 class _Rig {
   new(this.clock, this.engine, this.looper) {
     settings = SettingsRepository(store: store);
     owner = PlaybackSettings(repository: looper, settings: settings);
     unawaited(owner.load());
+    tempo = TempoSettings(repository: looper, settings: settings);
+    unawaited(tempo.load());
     pump();
     midi = MidiDeviceRepository(
       captures: () {
@@ -79,7 +81,7 @@ class _Rig {
       fadeSettings: ownedFade,
       ownedValues: OwnedValuePort(
         looper: looper,
-        clickVolume: FakeClickVolumeControl(),
+        clickVolume: tempo.clickVolumeControl,
         clickMode: FakeClickModeControl(),
         recordStart: FakeRecordStartControl(),
         decay: owner.decayControl,
@@ -103,6 +105,7 @@ class _Rig {
   List<MidiDevice> plugged = const [_pedal, _keys];
   late final SettingsRepository settings;
   late final PlaybackSettings owner;
+  late final TempoSettings tempo;
   late final MidiDeviceRepository midi;
   late final MixSettingsCoordinator mix;
   late final PedalRepository pedal;
@@ -124,8 +127,13 @@ class _Rig {
   }
 
   /// Saves a momentary mapping of [device]'s CC [number] to track
-  /// [channel]'s Decay, 0 released and 75 held.
-  void bind(String device, {required int number, required int channel}) {
+  /// [channel]'s Decay, 0 released and 75 held, or to [target] instead.
+  void bind(
+    String device, {
+    required int number,
+    int? channel,
+    ControlValueTarget? target,
+  }) {
     final owner = Object();
     cubit.beginMidiEdit(device: device, owner: owner);
     unawaited(
@@ -141,7 +149,7 @@ class _Rig {
               behavior: MidiBehavior.momentary,
               controls: [
                 MidiParameterControl(
-                  key: TrackDecayTarget(channel).canonicalString(),
+                  key: (target ?? TrackDecayTarget(channel!)).canonicalString(),
                   low: 0,
                   high: .75,
                 ),
@@ -182,6 +190,7 @@ class _Rig {
     unawaited(cubit.close());
     pump();
     unawaited(owner.close());
+    unawaited(tempo.close());
     pump();
     unawaited(controller.dispose());
     unawaited(midi.dispose());
@@ -307,6 +316,33 @@ void main() {
     expect(
       r.cubit.state.midiLevels.keys.map((source) => source.device).toSet(),
       {'pedal'},
+    );
+  });
+  check('a Click lifetime change resets only the device mapping Click', (r) {
+    r
+      ..bind('pedal', number: 21, target: const ClickVolumeTarget())
+      ..bind('keys', number: 22, channel: 1)
+      ..send('pedal', 21, 100)
+      ..send('keys', 22, 90);
+    expect(
+      r.cubit.state.midiLevels.keys.map((source) => source.device).toSet(),
+      {'pedal', 'keys'},
+    );
+
+    // Reopening the engine starts a new Click lifetime in the same session.
+    final session = r.looper.sessionRevision;
+    final generation = r.looper.mixGeneration;
+    expect(
+      r.looper.applyAudioConfig(const EngineConfig()).status,
+      AudioApplyStatus.applied,
+    );
+    r.pump();
+    expect(r.looper.sessionRevision, session);
+    expect(r.looper.mixGeneration, isNot(generation));
+
+    expect(
+      r.cubit.state.midiLevels.keys.map((source) => source.device).toSet(),
+      {'keys'},
     );
   });
 }
