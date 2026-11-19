@@ -11,7 +11,11 @@
 #
 # Usage: ./bench_pitch_time.sh [--smoke] [--seconds N] [--loop-seconds N]
 #          [--rate HZ] [--period FRAMES] [--budget-us N] [--assert] [--proxy]
-#   --smoke   one second per scenario, two-second loops, no assertions (CI)
+#          [--wav DIR]
+#   --smoke   one second per scenario, two-second loops, 48 kHz / 128 frames,
+#             no assertions (CI)
+#   --wav     writes listening files into DIR (which must exist) before the
+#             timing: the source, the head at each Speed, each render
 #   --assert  Pi 5 thresholds (refused without --proxy on anything but a
 #             Cortex-A76); --proxy relaxes to the arm64 CI proxy thresholds
 # The binary lands in packages/segno_engine/build/bench/ (git-ignored) so a

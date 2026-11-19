@@ -26,6 +26,10 @@
  *   inline    streaming le_stretch_process at --period output frames per call
  *             for 1 / 8 / 64 streams, hop-aligned and hop-staggered, plus one
  *             seek re-prime; informational (the plan's D2 does not stream it).
+ *             Every operator new during the process calls, the seeks and a
+ *             flush of each stream is counted (bench_alloc.cpp): any one
+ *             fails the run, in every mode, since those three are the calls
+ *             le_stretch.h names real-time safe.
  *   memory    live C++ heap per stretcher instance and the peak C++ heap
  *             during each render (bench_alloc.cpp counts operator new), from
  *             which the render's worker scratch = peak - one stretcher; bytes
@@ -38,8 +42,15 @@
  *
  * Thresholds (--assert): the Pi 5 set, refused on anything but a Cortex-A76
  * unless --proxy, which swaps in the arm64 CI proxy set (p50 and throughput
- * only, at twice the margin). --smoke: one second, two-second loops, no
- * assertions.
+ * only, at twice the margin). Under the Pi set, a baseline p99 over half the
+ * period is reported on its own instead of failing the head gate: the plan
+ * makes that a pre-existing finding for its own issue. --smoke: one second,
+ * two-second loops, 48 kHz / 128 frames, no assertions.
+ *
+ * --wav DIR writes listening files before the timing (32-bit float WAV, one
+ * channel): the source; the source read through the head at 1/2x, 2x, 2.5x,
+ * 4x and 8x forward and at 4x reversed, so the decimation can be heard; and
+ * each render configuration's output.
  */
 #define _GNU_SOURCE
 #include <errno.h>
@@ -68,6 +79,7 @@
 long long bench_cxx_heap_live(void);
 void bench_cxx_heap_reset_peak(void);
 long long bench_cxx_heap_peak(void);
+long long bench_cxx_heap_allocs(void);
 
 /* Below the app's audio thread (SCHED_FIFO 80, segno.service), so the bench
  * run beside the app on the appliance can be preempted by its callback rather
@@ -85,12 +97,14 @@ typedef struct {
   int do_assert;
   int proxy;
   int smoke;
+  const char* wav_dir; /* NULL: no listening files */
 } bench_opts;
 
 static void usage(void) {
   fprintf(stderr,
           "bench_pitch_time [--smoke] [--seconds N] [--loop-seconds N] "
-          "[--rate HZ] [--period FRAMES] [--budget-us N] [--assert] [--proxy]\n");
+          "[--rate HZ] [--period FRAMES] [--budget-us N] [--assert] [--proxy] "
+          "[--wav DIR]\n");
 }
 
 /* ---------------- timing ---------------- */
@@ -734,6 +748,10 @@ static void* load_thread_main(void* p) {
   return NULL;
 }
 
+/* operator new calls the inline scenario saw inside le_stretch_process,
+ * le_stretch_seek and le_stretch_flush: each must stay 0. */
+static long long g_allocs_process, g_allocs_seek, g_allocs_flush;
+
 static stats scenario_inline(const bench_opts* o, int streams, int staggered,
                              const float* src, int32_t frames) {
   le_stretch** st = (le_stretch**)calloc((size_t)streams, sizeof(le_stretch*));
@@ -758,6 +776,7 @@ static stats scenario_inline(const bench_opts* o, int streams, int staggered,
   }
   const size_t periods = (size_t)(o->seconds * o->rate / o->period);
   double* tm = (double*)malloc(sizeof(double) * periods);
+  const long long allocs_before = bench_cxx_heap_allocs();
   rt_enter();
   for (size_t k = 0; k < periods; ++k) {
     const double a = now_us();
@@ -770,6 +789,16 @@ static stats scenario_inline(const bench_opts* o, int streams, int staggered,
     g_sink = out[0];
   }
   rt_leave();
+  g_allocs_process += bench_cxx_heap_allocs() - allocs_before;
+  /* what is left after the last input, a period at a time */
+  const long long flush_before = bench_cxx_heap_allocs();
+  for (int i = 0; i < streams; ++i) {
+    for (int32_t left = le_stretch_output_latency(st[i]); left > 0;
+         left -= o->period) {
+      le_stretch_flush(st[i], outs, left < o->period ? left : o->period);
+    }
+  }
+  g_allocs_flush += bench_cxx_heap_allocs() - flush_before;
   for (int i = 0; i < streams; ++i) le_stretch_destroy(st[i]);
   free(st);
   free(pos);
@@ -787,9 +816,11 @@ static double scenario_seek_us(const bench_opts* o, const float* src) {
   double total = 0;
   for (int k = 0; k < 8; ++k) {
     le_stretch_reset(s);
+    const long long allocs_before = bench_cxx_heap_allocs();
     const double a = now_us();
     le_stretch_seek(s, ins, n, 1.0);
     total += now_us() - a;
+    g_allocs_seek += bench_cxx_heap_allocs() - allocs_before;
   }
   le_stretch_destroy(s);
   return total / 8.0;
@@ -806,6 +837,104 @@ static double scenario_memory_per_instance(const bench_opts* o, int cheaper) {
   const long long after = bench_cxx_heap_live();
   for (int i = 0; i < 16; ++i) le_stretch_destroy(st[i]);
   return (double)(after - before) / 16.0;
+}
+
+/* ---------------- listening files (--wav) ---------------- */
+
+static void put_u32(FILE* f, uint32_t v) {
+  const unsigned char b[4] = {(unsigned char)v, (unsigned char)(v >> 8),
+                              (unsigned char)(v >> 16), (unsigned char)(v >> 24)};
+  fwrite(b, 1, 4, f);
+}
+
+static void put_u16(FILE* f, uint16_t v) {
+  const unsigned char b[2] = {(unsigned char)v, (unsigned char)(v >> 8)};
+  fwrite(b, 1, 2, f);
+}
+
+/* `x` as DIR/name.wav: one channel of 32-bit float (WAVE_FORMAT_IEEE_FLOAT,
+ * with the fact chunk that format asks for). Exits on an I/O failure. */
+static void write_wav(const char* dir, const char* name, const float* x,
+                      int32_t frames, int32_t rate) {
+  char path[1024];
+  snprintf(path, sizeof(path), "%s/%s.wav", dir, name);
+  FILE* f = fopen(path, "wb");
+  if (f == NULL) {
+    fprintf(stderr, "--wav: cannot write %s: %s\n", path, strerror(errno));
+    exit(3);
+  }
+  const uint32_t data = (uint32_t)frames * 4u;
+  fwrite("RIFF", 1, 4, f);
+  put_u32(f, 4u + (8u + 18u) + (8u + 4u) + (8u + data));
+  fwrite("WAVE", 1, 4, f);
+  fwrite("fmt ", 1, 4, f);
+  put_u32(f, 18u);
+  put_u16(f, 3u); /* IEEE float */
+  put_u16(f, 1u);
+  put_u32(f, (uint32_t)rate);
+  put_u32(f, (uint32_t)rate * 4u);
+  put_u16(f, 4u);
+  put_u16(f, 32u);
+  put_u16(f, 0u); /* no extension */
+  fwrite("fact", 1, 4, f);
+  put_u32(f, 4u);
+  put_u32(f, (uint32_t)frames);
+  fwrite("data", 1, 4, f);
+  put_u32(f, data);
+  for (int32_t i = 0; i < frames; ++i) {
+    uint32_t bits;
+    memcpy(&bits, &x[i], 4);
+    put_u32(f, bits);
+  }
+  if (fclose(f) != 0) {
+    fprintf(stderr, "--wav: cannot write %s: %s\n", path, strerror(errno));
+    exit(3);
+  }
+  printf("- %s (%d frames)\n", path, frames);
+}
+
+typedef struct {
+  const char* name;
+  double rate;
+  int32_t reversed;
+} wav_head;
+
+/* The listening files (see the header): the source, the source read through
+ * the head (one lap at each rate, so a faster head is a shorter file), and
+ * each render configuration. */
+static void dump_wavs(const bench_opts* o, const float* src, int32_t frames,
+                      const render_cfg* cfgs, const char* const* cfg_files,
+                      int n_cfgs) {
+  printf("## listening files (--wav)\n\n");
+  write_wav(o->wav_dir, "source", src, frames, o->rate);
+  const wav_head heads[] = {{"head-1_2x", 0.5, 0},   {"head-2x", 2.0, 0},
+                            {"head-2.5x", 2.5, 0},   {"head-4x", 4.0, 0},
+                            {"head-8x", 8.0, 0},     {"head-4x-reversed", 4.0, 1}};
+  for (size_t k = 0; k < sizeof(heads) / sizeof(heads[0]); ++k) {
+    const le_read_head h = {heads[k].reversed, 0.0, heads[k].rate};
+    const int32_t n = (int32_t)((double)frames / heads[k].rate);
+    float* y = (float*)malloc(sizeof(float) * (size_t)n);
+    for (int32_t pos = 0; pos < n; ++pos) {
+      y[pos] = le_head_read(src, frames, &h, le_head_index(&h, pos, frames));
+    }
+    write_wav(o->wav_dir, heads[k].name, y, n, o->rate);
+    free(y);
+  }
+  for (int c = 0; c < n_cfgs; ++c) {
+    const int32_t n = (int32_t)llround((double)frames * cfgs[c].ratio);
+    float* y = (float*)calloc((size_t)n, sizeof(float));
+    const float* in[1] = {src};
+    float* out[1] = {y};
+    if (le_stretch_render_offline(in, frames, 1, o->rate, cfgs[c].ratio,
+                                  cfgs[c].semitones, 8000.0f / (float)o->rate,
+                                  cfgs[c].cheaper, 7u, 1, out, n) != LE_STRETCH_OK) {
+      fprintf(stderr, "--wav: render %s failed\n", cfg_files[c]);
+      exit(3);
+    }
+    write_wav(o->wav_dir, cfg_files[c], y, n, o->rate);
+    free(y);
+  }
+  printf("\n");
 }
 
 /* ---------------- main ---------------- */
@@ -828,7 +957,7 @@ static void judge(const char* what, double value, double limit, int at_most) {
 }
 
 int main(int argc, char** argv) {
-  bench_opts o = {60.0, 30.0, 96000, 64, 0.0, 0, 0, 0};
+  bench_opts o = {60.0, 30.0, 96000, 64, 0.0, 0, 0, 0, NULL};
   for (int i = 1; i < argc; ++i) {
     if (!strcmp(argv[i], "--smoke")) o.smoke = 1;
     else if (!strcmp(argv[i], "--assert")) o.do_assert = 1;
@@ -838,11 +967,14 @@ int main(int argc, char** argv) {
     else if (!strcmp(argv[i], "--rate") && i + 1 < argc) o.rate = atoi(argv[++i]);
     else if (!strcmp(argv[i], "--period") && i + 1 < argc) o.period = atoi(argv[++i]);
     else if (!strcmp(argv[i], "--budget-us") && i + 1 < argc) o.budget_us = atof(argv[++i]);
+    else if (!strcmp(argv[i], "--wav") && i + 1 < argc) o.wav_dir = argv[++i];
     else { usage(); return 2; }
   }
   if (o.smoke) {
     o.seconds = 1.0;
     o.loop_seconds = 2.0;
+    o.rate = 48000;
+    o.period = 128;
     o.do_assert = 0;
   }
   if (o.budget_us <= 0) o.budget_us = 1e6 * o.period / o.rate;
@@ -870,6 +1002,17 @@ int main(int argc, char** argv) {
 
   const int32_t frames = (int32_t)(o.loop_seconds * o.rate);
   float* src = make_source(frames, o.rate);
+
+  enum { kCfgs = 6 };
+  const render_cfg cfgs[kCfgs] = {{1, 12.0f, 1.0}, {1, -12.0f, 1.0}, {1, 0.0f, 0.75},
+                                  {1, 0.0f, 4.0 / 3.0}, {0, 12.0f, 1.0}, {0, 0.0f, 0.75}};
+  const char* cfg_names[kCfgs] = {"cheaper +12 st ratio 1", "cheaper -12 st ratio 1",
+                                  "cheaper stretch 0.75", "cheaper stretch 4/3",
+                                  "default +12 st ratio 1", "default stretch 0.75"};
+  const char* cfg_files[kCfgs] = {"render-cheaper-up12", "render-cheaper-down12",
+                                  "render-cheaper-stretch-0.75", "render-cheaper-stretch-4_3",
+                                  "render-default-up12", "render-default-stretch-0.75"};
+  if (o.wav_dir != NULL) dump_wavs(&o, src, frames, cfgs, cfg_files, kCfgs);
 
   /* baseline */
   printf("## baseline (le_engine_process, 8 tracks PLAYING)\n\n");
@@ -974,20 +1117,18 @@ int main(int argc, char** argv) {
     snprintf(label, sizeof(label), "%d streams staggered", stream_counts[sc]);
     print_row(label, inl[sc][1]);
   }
-  printf("\nseek re-prime (block + interval frames): %.1f us (%.1f%% of the period)\n\n",
+  printf("\nseek re-prime (block + interval frames): %.1f us (%.1f%% of the period)\n",
          seek_us, 100.0 * seek_us / g_budget_us);
+  const int allocated = g_allocs_process != 0 || g_allocs_seek != 0 || g_allocs_flush != 0;
+  printf("operator new calls in process / seek / flush: %lld / %lld / %lld%s\n\n",
+         g_allocs_process, g_allocs_seek, g_allocs_flush,
+         allocated ? " (FAIL: these are the real-time calls)" : "");
 
   /* memory per instance */
   const double per_cheaper = scenario_memory_per_instance(&o, 1);
   const double per_default = scenario_memory_per_instance(&o, 0);
 
   /* render: last, because outside Linux nice +10 is process-wide */
-  enum { kCfgs = 6 };
-  const render_cfg cfgs[kCfgs] = {{1, 12.0f, 1.0}, {1, -12.0f, 1.0}, {1, 0.0f, 0.75},
-                                  {1, 0.0f, 4.0 / 3.0}, {0, 12.0f, 1.0}, {0, 0.0f, 0.75}};
-  const char* cfg_names[kCfgs] = {"cheaper +12 st ratio 1", "cheaper -12 st ratio 1",
-                                  "cheaper stretch 0.75", "cheaper stretch 4/3",
-                                  "default +12 st ratio 1", "default stretch 0.75"};
   double idle[kCfgs], loaded[kCfgs], idle_heap[kCfgs], loaded_heap[kCfgs];
   render_job idle_job = {cfgs, kCfgs, src, frames, o.rate, idle, idle_heap, ""};
   run_render_job(&idle_job);
@@ -1036,6 +1177,7 @@ int main(int argc, char** argv) {
   printf("- peak RSS: %.0f MiB\n\n", peak_rss_bytes() / 1048576.0);
 
   /* verdicts */
+  int baseline_over = 0;
   if (o.do_assert) {
     if (o.proxy) {
       judge("head added p50 at 8 lanes <= 5% of period", 100.0 * worst_added_p50[0] / g_budget_us, 5.0, 1);
@@ -1050,8 +1192,15 @@ int main(int argc, char** argv) {
     } else {
       judge("head added p99 at 8 lanes <= 10% of period", 100.0 * worst_added_p99[0] / g_budget_us, 10.0, 1);
       judge("head added p99 at 64 lanes <= 35% of period", 100.0 * worst_added_p99[1] / g_budget_us, 35.0, 1);
-      judge("baseline p99 + head added p99 (8 lanes) <= 50% of period",
-            100.0 * (base1.p99 + worst_added_p99[0]) / g_budget_us, 50.0, 1);
+      /* The plan's carve-out: a baseline that is already over half the
+       * period is the engine's own finding, reported here for an issue of
+       * its own, not a failure of the head. */
+      if (100.0 * base1.p99 / g_budget_us <= 50.0) {
+        judge("baseline p99 + head added p99 (8 lanes) <= 50% of period",
+              100.0 * (base1.p99 + worst_added_p99[0]) / g_budget_us, 50.0, 1);
+      } else {
+        baseline_over = 1;
+      }
       judge("render cheaper under load >= 20x real time", loaded_cheaper_min, 20.0, 0);
       judge("mixer at 1/2x, 4x, 8x p99 (8 lanes) <= 50% of period",
             100.0 * speed_worst.p99 / g_budget_us, 50.0, 1);
@@ -1067,7 +1216,13 @@ int main(int argc, char** argv) {
     judge("render worker scratch under 1 MiB", scratch_max / 1048576.0, 1.0, 1);
     judge("stretcher heap per instance (cheaper) <= 4 MiB", per_cheaper / 1048576.0, 4.0, 1);
     printf("## verdict (%s thresholds)\n\n", o.proxy ? "arm64 proxy" : "Pi 5");
-    int failed = 0;
+    if (baseline_over) {
+      printf("- NOTE: baseline p99 alone is %.1f%% of the period, over 50%%: a "
+             "pre-existing finding for its own issue; the baseline + head gate "
+             "is not judged\n",
+             100.0 * base1.p99 / g_budget_us);
+    }
+    int failed = allocated;
     for (int i = 0; i < g_nverdicts; ++i) {
       printf("- %s: %s (%.2f vs %.2f)\n", g_verdicts[i].pass ? "PASS" : "FAIL",
              g_verdicts[i].what, g_verdicts[i].value, g_verdicts[i].limit);
@@ -1079,5 +1234,5 @@ int main(int argc, char** argv) {
   }
   free(src);
   printf("(no assertions requested)\n");
-  return 0;
+  return allocated ? 1 : 0;
 }

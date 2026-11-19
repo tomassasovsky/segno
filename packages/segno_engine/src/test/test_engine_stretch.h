@@ -209,6 +209,29 @@ static void test_stretch_offline_deterministic_and_guards(void) {
   CHECK(le_stretch_render_offline(in, n, 1, INT32_MAX, 1.0, 0.0f, 0.0f, 1, 1u, 1, oa, n) == LE_STRETCH_ERR_INVALID);
   /* an output far longer than the ratio allows is refused, not truncated */
   CHECK(le_stretch_render_offline(in, n, 1, sr, 1.0, 0.0f, 0.0f, 1, 1u, 1, oa, 3 * n) == LE_STRETCH_ERR_INVALID);
+  /* an output sharing memory with an input is refused and left as it was:
+   * the cyclic run-out reads the lap's head after out[] has overwritten it
+   * (#1192). In place, a tail overlap, and one channel's output over the
+   * other channel's input. */
+  {
+    float* buf = (float*)malloc(sizeof(float) * (size_t)(2 * n));
+    memcpy(buf, src, sizeof(float) * (size_t)n);
+    memcpy(buf + n, src, sizeof(float) * (size_t)n);
+    const float* in_place[1] = {buf};
+    float* out_place[1] = {buf};
+    CHECK(le_stretch_render_offline(in_place, n, 1, sr, 1.0, 5.0f, 0.0f, 1, 99u, 1, out_place, n) == LE_STRETCH_ERR_INVALID);
+    CHECK(memcmp(buf, src, sizeof(float) * (size_t)n) == 0);
+    float* out_tail[1] = {buf + n - 1}; /* shares in[n - 1] only */
+    CHECK(le_stretch_render_offline(in_place, n, 1, sr, 1.0, 5.0f, 0.0f, 1, 99u, 1, out_tail, n) == LE_STRETCH_ERR_INVALID);
+    const float* in_two[2] = {src, buf};
+    float* out_two[2] = {buf, a}; /* out[0] over in[1] */
+    CHECK(le_stretch_render_offline(in_two, n, 2, sr, 1.0, 5.0f, 0.0f, 1, 99u, 1, out_two, n) == LE_STRETCH_ERR_INVALID);
+    /* adjacent is not overlapping: out right after in renders */
+    float* out_next[1] = {buf + n};
+    CHECK(le_stretch_render_offline(in_place, n, 1, sr, 1.0, 5.0f, 0.0f, 1, 99u, 1, out_next, n) == LE_STRETCH_OK);
+    CHECK(memcmp(buf + n, b, sizeof(float) * (size_t)n) == 0);
+    free(buf);
+  }
   free(a);
   free(b);
   free(c);

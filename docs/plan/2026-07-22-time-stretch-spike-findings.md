@@ -6,6 +6,15 @@ issue: 263
 index: 2026-07-22-feat-tempo-aware-looper-modes-plan.md
 ---
 
+> **Superseded** by
+> [the pitch/time spike findings](2026-10-06-pitch-time-spike-findings.md)
+> (#1179 Part 1). The harness this document names (`bench_stretch.cpp`,
+> `bench.sh`) is deleted, and the library moved from under the bench to
+> `packages/segno_engine/third_party/signalsmith-stretch/`. Today's harness is
+> `src/test/bench/bench_pitch_time.sh`; its `--wav DIR` writes the listening
+> files this harness's `--wav` did. Kept for history: the numbers below are
+> the July dev machine's and nothing gates on them.
+
 ## Spike D0 — can segno time-stretch 8 tracks × 8 lanes in real time?
 
 **Short answer: yes — GO for 0.5×–2×, inline on the audio thread, no worker
