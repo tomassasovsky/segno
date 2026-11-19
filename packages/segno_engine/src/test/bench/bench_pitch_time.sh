@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Build + run the pitch/time CPU bench (#1179 Part 1). NOT part of the test
 # gate; CI builds and smoke-runs it (native-tests) and runs the arm64 proxy
-# assertions (native-bench-arm64). See docs/plan/2026-10-06-feat-pitch-time-core-plan.md
-# Part 1 and docs/plan/2026-10-06-pitch-time-spike-findings.md.
+# assertions (native-bench-pitch-arm64). See
+# docs/plan/2026-10-06-feat-pitch-time-core-plan.md Part 1 and docs/plan/2026-10-06-pitch-time-spike-findings.md.
 #
 # Links the real engine sources (so `baseline` measures le_engine_process as
 # shipped) plus the Signalsmith Stretch C shim. The source list is ENGINE_SRC
@@ -11,7 +11,11 @@
 #
 # Usage: ./bench_pitch_time.sh [--smoke] [--seconds N] [--loop-seconds N]
 #          [--rate HZ] [--period FRAMES] [--budget-us N] [--assert] [--proxy]
-#   --smoke   one second per scenario, two-second loops, no assertions (CI)
+#          [--wav DIR]
+#   --smoke   one second per scenario, two-second loops, 48 kHz / 128 frames,
+#             no assertions (CI)
+#   --wav     writes listening files into DIR (which must exist) before the
+#             timing: the source, the head at each Speed, each render
 #   --assert  Pi 5 thresholds (refused without --proxy on anything but a
 #             Cortex-A76); --proxy relaxes to the arm64 CI proxy thresholds
 # The binary lands in packages/segno_engine/build/bench/ (git-ignored) so a

@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <memory>
 #include <new>
 #include <vector>
@@ -35,6 +36,16 @@ namespace {
 /* Frames fed to the stretcher per process() call by the offline render; the
  * output side of a call is at most this many frames plus two (rounding). */
 constexpr int32_t kRenderChunk = 512;
+
+/* Whether [a, a + na) and [b, b + nb) share a float. Compared as addresses,
+ * since relational operators on pointers into different arrays are
+ * unspecified. */
+bool spans_overlap(const float* a, int32_t na, const float* b, int32_t nb) {
+  const auto x = reinterpret_cast<std::uintptr_t>(a);
+  const auto y = reinterpret_cast<std::uintptr_t>(b);
+  return x < y + (std::uintptr_t)nb * sizeof(float) &&
+         y < x + (std::uintptr_t)na * sizeof(float);
+}
 
 le_stretch* create_or_throw(int32_t channels, int32_t sample_rate,
                             int32_t cheaper, uint32_t seed) {
@@ -266,6 +277,18 @@ int32_t le_stretch_render_offline(const float* const* in, int32_t in_frames,
   }
   for (int32_t c = 0; c < channels; ++c) {
     if (in[c] == nullptr || out[c] == nullptr) return LE_STRETCH_ERR_INVALID;
+  }
+  /* The render reads in[] while it writes out[] (the cyclic run-out reads
+   * the lap's head after out[] has been written), so an output that shares
+   * memory with any input would read its own result; two outputs that share
+   * memory would write over each other. */
+  for (int32_t c = 0; c < channels; ++c) {
+    for (int32_t d = 0; d < channels; ++d) {
+      if (spans_overlap(out[c], out_frames, in[d], in_frames) ||
+          (d > c && spans_overlap(out[c], out_frames, out[d], out_frames))) {
+        return LE_STRETCH_ERR_INVALID;
+      }
+    }
   }
   try {
     return render_offline(in, in_frames, channels, sample_rate, ratio,

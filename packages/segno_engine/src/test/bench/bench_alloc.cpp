@@ -10,7 +10,9 @@
  * aligned forms keep their default implementations.
  *
  * Each block carries its size in a max_align_t-sized header so delete can
- * account it without relying on sized deallocation.
+ * account it without relying on sized deallocation. Every call is counted
+ * too, so the bench can show that a stretcher's process, seek and flush
+ * allocate nothing (#1192).
  */
 #include <atomic>
 #include <cstddef>
@@ -22,11 +24,13 @@ namespace {
 constexpr std::size_t kHeader = alignof(std::max_align_t);
 std::atomic<long long> g_live{0};
 std::atomic<long long> g_peak{0};
+std::atomic<long long> g_count{0};
 
 void* counted_alloc(std::size_t n) noexcept {
   void* p = std::malloc(n + kHeader);
   if (p == nullptr) return nullptr;
   *static_cast<std::size_t*>(p) = n;
+  g_count.fetch_add(1);
   const long long live = g_live.fetch_add((long long)n) + (long long)n;
   long long peak = g_peak.load();
   while (live > peak && !g_peak.compare_exchange_weak(peak, live)) {
@@ -78,5 +82,8 @@ void bench_cxx_heap_reset_peak(void) { g_peak.store(g_live.load()); }
 
 /* Highest live figure since the last reset. */
 long long bench_cxx_heap_peak(void) { return g_peak.load(); }
+
+/* Allocations made through operator new since the process started. */
+long long bench_cxx_heap_allocs(void) { return g_count.load(); }
 
 }  // extern "C"

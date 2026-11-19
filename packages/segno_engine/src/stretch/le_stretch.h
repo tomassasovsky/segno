@@ -9,8 +9,8 @@
  *
  * Nothing here is real-time safe except le_stretch_process / _seek / _flush on
  * an already created instance (the library allocates in configure only;
- * measured by the July spike's allocation counter, which bench_pitch_time does
- * not yet repeat). Create and destroy on a control or worker thread.
+ * bench_pitch_time counts every operator new around them and fails on one).
+ * Create and destroy on a control or worker thread.
  *
  * Buffers are planar: in[channel][frame], out[channel][frame].
  *
@@ -54,7 +54,13 @@ typedef struct le_stretch le_stretch;
 /* `cheaper` selects presetCheaper (block 0.1 s, interval 0.04 s) over
  * presetDefault (0.12 s / 0.03 s). `seed` fixes the phase-randomization RNG:
  * two instances with the same seed, preset, rate and input render identical
- * output. NULL on bad arguments (channels outside 1..LE_STRETCH_MAX_CHANNELS,
+ * output. That holds within one build: the library draws its phase
+ * randomisation from std::default_random_engine through
+ * std::uniform_real_distribution, both defined by the standard library, and
+ * its maths call the platform's libm, so a build on another standard library
+ * (libc++ on macOS, libstdc++ on the appliance) may render other samples
+ * from the same seed. The cache worker and the offline renderer, which must
+ * agree sample for sample, always run in one build. NULL on bad arguments (channels outside 1..LE_STRETCH_MAX_CHANNELS,
  * sample_rate outside 1..LE_STRETCH_MAX_SAMPLE_RATE) or allocation failure. */
 le_stretch* le_stretch_create(int32_t channels, int32_t sample_rate,
                               int32_t cheaper,
@@ -94,9 +100,11 @@ void le_stretch_flush(le_stretch* s, float* const* out,
  * one-shot file). Control thread; allocates the stretcher (about 1.1 MiB for
  * mono at 96 kHz) plus block + interval frames of scratch per channel,
  * streaming from in[] and into out[] (no copy of the lap); deterministic for a
- * given seed, preset, sample rate and input. LE_STRETCH_ERR_INVALID on bad
- * arguments or an out_frames the ratio cannot fill, LE_STRETCH_ERR_ALLOC on
- * allocation failure. */
+ * given seed, preset, sample rate and input. No out[] channel may share
+ * memory with any in[] channel or another out[] channel: the render reads
+ * in[] while it writes out[], so an in-place call is refused. LE_STRETCH_ERR_INVALID on bad arguments,
+ * overlapping buffers or an out_frames the ratio cannot fill,
+ * LE_STRETCH_ERR_ALLOC on allocation failure. */
 int32_t le_stretch_render_offline(const float* const* in, int32_t in_frames,
                                   int32_t channels, int32_t sample_rate,
                                   double ratio, float semitones,

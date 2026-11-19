@@ -8,6 +8,14 @@ index: 2026-07-22-feat-tempo-aware-looper-modes-plan.md
 
 # The tempo epic's remainder — what is actually left of #263 (and what is not)
 
+> **Superseded** by
+> [the pitch/time core plan](2026-10-06-feat-pitch-time-core-plan.md) (#1179)
+> and its [spike findings](2026-10-06-pitch-time-spike-findings.md). The D0
+> harness this document points at (`bench_stretch.cpp` and the library under
+> `src/test/bench/third_party/`) is deleted; the library is now
+> `packages/segno_engine/third_party/signalsmith-stretch/` and the harness is
+> `src/test/bench/bench_pitch_time.sh`. Kept for history.
+
 The epic's part files (parts 1–5) still read as if 26 PRs lie ahead. They do
 not. This document is the verified shipped/remaining split, the decisions the
 owner must make before the rest can build, and the deltas that the last month

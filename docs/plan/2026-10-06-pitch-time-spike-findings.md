@@ -1,13 +1,13 @@
 # Pitch/time core, Part 1: the measured CPU spike
 
-<!-- cspell:ignore varispeed Neoverse signalsmith fmod SCHED rnnoise noexcept lbuf -->
+<!-- cspell:ignore varispeed Neoverse signalsmith fmod SCHED rnnoise noexcept lbuf rtirq -->
 
 Tracking: #1179, Part 1 of
 [the plan](2026-10-06-feat-pitch-time-core-plan.md). Status: the harness, the
 vendored library and its C shim, and the read-head header are built; the
 dev-machine run is recorded below as information; the arm64 proxy run is the
-CI job `native-bench-arm64` on the PR head; the Pi 5 table is appended when the
-owner has run the uploaded artifact on the appliance.
+CI job `native-bench-pitch-arm64` on the PR head; the Pi 5 table is appended
+when the owner has run the uploaded artifact on the appliance.
 
 ## What was built
 
@@ -57,7 +57,15 @@ owner has run the uploaded artifact on the appliance.
   - +12 st doubles a 220 Hz sine's spectral peak to 440 Hz at the exact length
     and level, −12 st halves it, stretches at 0.75 and 4/3 keep the pitch and
     fill the requested length, stereo and the default preset, same-seed
-    determinism byte-for-byte;
+    determinism byte-for-byte (within one build: the library's phase
+    randomisation uses `std::default_random_engine` and
+    `std::uniform_real_distribution`, both defined by the standard library,
+    and its maths the platform's libm, so libc++ and libstdc++ builds may
+    differ; `le_stretch.h` says so at `le_stretch_create`);
+  - an output that shares memory with an input is refused
+    (`LE_STRETCH_ERR_INVALID`, #1192): the render reads `in[]` while it writes
+    `out[]`, and an in-place cyclic render differed from the out-of-place one
+    by 3.5 % RMS;
   - **alignment**: over the plan's 30 s input, clicks at 1 s, 15 s and 29 s
     come out within 2 ms of `frame × ratio` at ratios 1, 0.75 and 4/3, cyclic
     and padded (measured: exact at 1 and 0.75, 2 to 14 frames early at 4/3);
@@ -75,17 +83,20 @@ owner has run the uploaded artifact on the appliance.
   a largest neighbour step of about 0.02). All of it runs in
   `run_native_tests.sh` in the plain, ASAN and telemetry-off configurations.
 - `src/test/bench/bench_pitch_time.{c,sh}` and `bench_alloc.cpp` (a counting
-  global `operator new`, linked into the bench only): the harness (scenarios
-  below), `--smoke` in the `native-tests` CI job, `--assert --proxy` in the
-  `native-bench-arm64` job on `ubuntu-24.04-arm`, which uploads the binary and
-  its report as the artifact `bench-pitch-time-arm64`. That step runs with
+  global `operator new`, linked into the bench only, which also counts every
+  call): the harness (scenarios below), `--smoke` (48 kHz / 128 frames, the
+  plan's smoke) in the `native-tests` CI job, `--assert --proxy` at the
+  plan's 60 s per scenario in the `native-bench-pitch-arm64` job on
+  `ubuntu-24.04-arm`, which uploads the binary and its report as the artifact
+  `bench-pitch-time-arm64`. That step runs with
   `shell: bash` (`bash -eo pipefail`): under the default `bash -e` the
   `| tee` made the step's status tee's, so a failed threshold or a failed build
   left the job green. Proof, the step's own pipe run locally with a
   deliberately failing `--budget-us 1`: exit 0 under `set -e`, exit 1 under
   `set -eo pipefail`.
-- `tool/test/run_macos_rnnoise_wiring_tests.sh` also checks the stretch
-  forwarders and that the shim compiles with no search path.
+- `tool/test/run_macos_rnnoise_wiring_tests.sh` also checked the stretch
+  forwarders and that the shim compiles with no search path. It went with
+  RNNoise in `c33ad47cd`, and the build hook (#1783) replaced the forwarders.
 - Licenses: the app's open source notices (System > About, read from
   `LicenseRegistry`) listed no vendored native code at all; Flutter only
   collects Dart packages' `LICENSE` files. `segno_engine` now ships each
@@ -108,11 +119,11 @@ budget is the appliance's 667 µs period; loops of `--loop-seconds`, default
 | scenario | what is timed | reported |
 |---|---|---|
 | `baseline` | `le_engine_process` per 64-frame period, 8 tracks × 1 and × 8 lanes of 30 s content PLAYING, snapshot polled every 64 periods | p50 / p99 / max / mean µs and % of budget |
-| `baseline` at a Speed (Part 2a) | the same mixer with every track read through its head after `le_engine_set_speed` at 1/2, 4/1 and 8/1, past the turn window — the real mixer path the Part 2a gate names; asserted at 8 tracks × 1 lane and × 8 lanes: p50 ≤ 25 % (proxy), p99 ≤ 50 % (Pi 5) | the same |
+| `baseline` at a Speed (Part 2a) | the same mixer with every track read through its head after `le_engine_set_speed` at 1/2, 4/1 and 8/1, past the turn window — the real mixer path the Part 2a gate names; asserted at 8 tracks × 1 lane and × 8 lanes: p50 ≤ 25 % and ≤ 27 % (proxy; the × 8 lanes row sits at its own cost on the runner, see below), p99 ≤ 50 % (Pi 5) | the same |
 | `baseline` with Pre chains (Part 2a review) | 8 tracks × 8 lanes, a two-entry Pre chain (filter, drive) on every lane, at 8/1: off 1x no print engages, so every chain runs live on the callback, the appliance's worst case for this part | the same; judged on the Pi only, p99 ≤ 50 % |
 | `head` | the `engine_read_head.h` kernel over 8 and 64 lanes in a loop shaped like the mixer's lane loop, at ½×, 2×, 4×, 8× and the tempo ratios 0.75 and 4/3; ≥ 2× uses the box decimation. The control is the mixer's integer read (`position % len` per track, one `lbuf[seg_base + trk_pos]` load per lane), which Part 2a keeps for identity heads; the identity head is timed as a row of its own | the same, plus the worst ADDED cost (rate minus the integer control) |
 | `render` | `le_stretch_render_offline` on one 30 s mono lane, both presets, ±12 st at ratio 1 and stretches at 0.75 and 4/3; idle, then under load (a second engine paced at the period on a real-time thread). The renders run on their own SCHED_OTHER thread at nice +10, the cache worker's priority | × real time, the peak C++ heap during the render, and the render's scratch (that peak minus one stretcher) |
-| `inline` | streaming `le_stretch_process` at 64 output frames per call for 1 / 8 / 64 streams, hop-aligned and hop-staggered, plus one `seek` re-prime | per-period stats (informational) |
+| `inline` | streaming `le_stretch_process` at 64 output frames per call for 1 / 8 / 64 streams, hop-aligned and hop-staggered, plus one `seek` re-prime and a flush of every stream | per-period stats (informational), and the `operator new` calls inside process, seek and flush, which must be 0 in every mode (#1192; they are the calls `le_stretch.h` names real-time safe) |
 | `memory` | live C++ heap per mono stretcher instance and the worst render scratch, both counted exactly by `bench_alloc.cpp`; bytes per rendered entry; peak RSS | KiB / MiB |
 
 Scheduling: the timed loops of `baseline`, `head` and `inline` raise the
@@ -127,17 +138,32 @@ thread (policy, priority, nice) rather than inferred from a call's return.
 Nice is per thread on Linux; elsewhere it is process-wide, which is why the
 renders run last.
 
+At FIFO 70 the timed loops also outrank the kernel's threaded interrupt
+handlers, which run at FIFO 50 by default, so on the appliance a long loop
+can hold off an IRQ thread until RT throttling steps in. The audio
+interface's interrupts are not among them: `segno-rtirq` raises those above
+the app's audio thread. A run beside the app therefore delays only the other
+devices' interrupts, for as long as one timed loop.
+
+`--wav DIR` writes listening files before the timing, as 32-bit float WAV:
+the source; the source read through the head (one lap) at 1/2x, 2x, 2.5x, 4x
+and 8x forward and at 4x reversed, which is how the box decimation and its
+fraction are heard; and each render configuration's output.
+
 `--assert` carries the Pi 5 thresholds and is refused on anything but a
 Cortex-A76 unless `--proxy`, which asserts the arm64 CI proxy set (p50 and
 throughput only, at half the Pi figures). Thresholds are the plan's Part 1
 table; both sets also assert the plan's memory criterion, render scratch under
-1 MiB.
+1 MiB. Under the Pi set, a `baseline` p99 already over half the period is
+printed as a note and the baseline + head row is not judged: the plan makes
+that a pre-existing finding for its own issue, not this gate's failure.
 
 ## Dev machine (informational)
 
 Apple M4 Pro (macOS, Apple clang 21), `bench_pitch_time.sh --budget-us 667
 --assert --proxy --seconds 20`: 96 kHz, 64-frame period (667 µs budget), 20 s
-per scenario (the CI setting), 30 s loops, no real-time scheduling available.
+per scenario (CI's setting until #1192, which moved the proxy to its own job
+at the plan's 60 s), 30 s loops, no real-time scheduling available.
 The proxy verdicts are printed because the harness asserts them anywhere with
 `--proxy`; this machine is neither the Pi nor the proxy, so they gate nothing.
 
@@ -220,7 +246,16 @@ The same harness linked against the first version of the shim (the whole lap
 copied and the whole output buffered) measures 19,855 to 26,448 KiB of render
 scratch and fails that criterion (25.83 MiB against 1 MiB).
 
-## arm64 proxy (CI, `native-bench-arm64`)
+## arm64 proxy (CI, `native-bench-pitch-arm64`)
+
+The 8 tracks × 8 lanes row at a Speed is judged at p50 ≤ 27 % of the period,
+not the 25 % that half the Pi figure gives (#1192). On the runner that row is
+the mixer's own cost: seventeen 20 s runs read 24.24 to 24.80 % (sd 0.25), and
+the plan's 60 s per scenario reads about 0.9 points higher (25.36 and
+25.40 %), so a 25 % limit failed on the shared machine's noise. 27 % is 1.6
+points above the worst reading; the regressions this gate exists for (a head
+that loses the decimation or the integer path) cost tens of percent. The Pi
+threshold is unchanged.
 
 Filled from the first green run of the job on the PR head; the report is the
 job's `bench-pitch-time-arm64.md` artifact. Until then: pending.
@@ -256,7 +291,9 @@ What the owner measures on the appliance before Part 3a (Transpose) merges
    `le_engine_get_callback_telemetry` read before and after the eight renders
    land shows `late_periods` unchanged (the worker runs at nice +10 on Linux
    and must not disturb the callback).
-3. A listening check at +12 and -12 st on a sustained and a percussive take,
+3. A listening check at +12 and -12 st on a sustained and a percussive take
+   (`--wav DIR` writes the bench's renders and the head at each Speed, for a
+   first listen before the takes),
    with the 8 kHz tonality limit (as shipped) and without it, and at the
    loop point (the 20 ms fold) on a sustained chord, recorded here with the
    verdict. The fold's level now follows the two signals' local

@@ -24,17 +24,35 @@ const List<(String, String)> _vendoredLicenses = [
 /// app's open source notices list them beside the Dart packages'.
 ///
 /// Call once at startup, after the binding is initialised. The texts are read
-/// lazily, when the registry is first walked.
-void registerVendoredLicenses() {
-  LicenseRegistry.addLicense(_vendoredLicenseEntries);
+/// lazily, when the registry is first walked. A file that fails to load is
+/// reported through [FlutterError.reportError] and left out, so the other
+/// entries, and every other package's, still list. The files are read from
+/// [bundle], the app's [rootBundle] unless given.
+void registerVendoredLicenses({AssetBundle? bundle}) {
+  LicenseRegistry.addLicense(
+    () => _vendoredLicenseEntries(bundle ?? rootBundle),
+  );
 }
 
-Stream<LicenseEntry> _vendoredLicenseEntries() async* {
+Stream<LicenseEntry> _vendoredLicenseEntries(AssetBundle bundle) async* {
   for (final (package, path) in _vendoredLicenses) {
-    final text = await rootBundle.loadString(
-      'packages/segno_engine/$path',
-      cache: false,
-    );
+    final String text;
+    try {
+      text = await bundle.loadString(
+        'packages/segno_engine/$path',
+        cache: false,
+      );
+    } on Object catch (error, stack) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stack,
+          library: 'segno_engine',
+          context: ErrorDescription("loading $package's license"),
+        ),
+      );
+      continue;
+    }
     yield LicenseEntryWithLineBreaks([package], text);
   }
 }

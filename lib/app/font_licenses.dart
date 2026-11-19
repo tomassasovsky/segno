@@ -33,14 +33,30 @@ const List<(String, String)> bundledFontLicenses = [
 /// vendored native code.
 ///
 /// Call once at startup, after the binding is initialised. The texts are read
-/// lazily, when the registry is first walked.
-void registerFontLicenses() {
-  LicenseRegistry.addLicense(_fontLicenseEntries);
+/// lazily, when the registry is first walked. A file that fails to load is
+/// reported through [FlutterError.reportError] and left out, so the other
+/// fonts, and every package's licence, still list. The files are read from
+/// [bundle], the app's [rootBundle] unless given.
+void registerFontLicenses({AssetBundle? bundle}) {
+  LicenseRegistry.addLicense(() => _fontLicenseEntries(bundle ?? rootBundle));
 }
 
-Stream<LicenseEntry> _fontLicenseEntries() async* {
+Stream<LicenseEntry> _fontLicenseEntries(AssetBundle bundle) async* {
   for (final (font, path) in bundledFontLicenses) {
-    final text = await rootBundle.loadString(path, cache: false);
+    final String text;
+    try {
+      text = await bundle.loadString(path, cache: false);
+    } on Object catch (error, stack) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stack,
+          library: 'segno',
+          context: ErrorDescription("loading $font's licence"),
+        ),
+      );
+      continue;
+    }
     yield LicenseEntryWithLineBreaks([font], text);
   }
 }

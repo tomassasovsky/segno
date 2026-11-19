@@ -1,9 +1,13 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/app/font_licenses.dart';
+import 'package:segno/app/run_segno.dart';
+import 'package:segno/visualizer/screen_link.dart';
 
 /// The vendored native code's license files, as the engine registers them,
 /// relative to the repository root (where `flutter test` runs).
@@ -20,12 +24,61 @@ List<String> _paragraphs(LicenseEntry entry) => [
   for (final p in entry.paragraphs) p.text,
 ];
 
+/// Every package the registry lists.
+Future<Set<String>> _registeredPackages() async => {
+  await for (final entry in LicenseRegistry.licenses) ...entry.packages,
+};
+
+/// The app's asset bundle, except [missing], which loads as a missing asset
+/// does.
+class _BundleWithout extends CachingAssetBundle {
+  new(this.missing);
+
+  final String missing;
+
+  @override
+  Future<ByteData> load(String key) => key == missing
+      ? Future.error(FlutterError('no $key'))
+      : rootBundle.load(key);
+}
+
+/// Runs [body] with [FlutterError.onError] collecting what is reported.
+Future<List<FlutterErrorDetails>> _reportedDuring(
+  Future<void> Function() body,
+) async {
+  final reported = <FlutterErrorDetails>[];
+  final previous = FlutterError.onError;
+  FlutterError.onError = reported.add;
+  try {
+    await body();
+  } finally {
+    FlutterError.onError = previous;
+  }
+  return reported;
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   // The registry is a global that licenses ADD to.
   setUp(LicenseRegistry.reset);
   tearDown(LicenseRegistry.reset);
+
+  testWidgets('runSegno registers the vendored native code and the bundled '
+      'fonts before it routes a screen', (tester) async {
+    // The readout screen is the branch that returns first: registering after
+    // it would leave that screen, and a reordered main screen, without them.
+    await runSegno(['${segnoScreenArgPrefix}readout']);
+
+    expect(
+      await tester.runAsync(_registeredPackages),
+      containsAll([
+        ..._expected.keys,
+        ...bundledFontLicenses.map((entry) => entry.$1),
+      ]),
+    );
+    await tester.pumpWidget(const SizedBox());
+  });
 
   group('registerVendoredLicenses', () {
     test('lists every vendored native library, each with its license file '
@@ -54,6 +107,23 @@ void main() {
         _paragraphs(byPackage['signalsmith-stretch']!).join('\n'),
         contains('Geraint Luff / Signalsmith Audio Ltd.'),
       );
+    });
+
+    test('a license file that fails to load is reported and left out, and '
+        'the rest still list', () async {
+      registerVendoredLicenses(bundle: _BundleWithout(_expected['vst3sdk']!));
+
+      late Set<String> packages;
+      final reported = await _reportedDuring(() async {
+        packages = await _registeredPackages();
+      });
+
+      expect(
+        packages,
+        unorderedEquals(_expected.keys.toSet()..remove('vst3sdk')),
+      );
+      expect(reported, hasLength(1));
+      expect(reported.single.library, 'segno_engine');
     });
 
     test("miniaudio's LICENSE is the license block of the vendored header", () {
@@ -103,6 +173,27 @@ void main() {
         }
       },
     );
+
+    test('a licence file that fails to load is reported and left out, and '
+        'the other fonts still list', () async {
+      final (missingFont, missingPath) = bundledFontLicenses.first;
+      registerFontLicenses(bundle: _BundleWithout(missingPath));
+
+      late Set<String> fonts;
+      final reported = await _reportedDuring(() async {
+        fonts = await _registeredPackages();
+      });
+
+      expect(
+        fonts,
+        unorderedEquals(
+          bundledFontLicenses.map((entry) => entry.$1).toSet()
+            ..remove(missingFont),
+        ),
+      );
+      expect(reported, hasLength(1));
+      expect(reported.single.library, 'segno');
+    });
 
     test('every font in the pubspec has a licence, carrying its copyright '
         'line and its licence', () {
