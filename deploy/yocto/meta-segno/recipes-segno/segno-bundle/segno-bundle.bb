@@ -105,9 +105,11 @@ PACKAGE_ARCH = "${MACHINE_ARCH}"
 # matrix segno-touch-ctl persists.
 # curl/jq/ca-certificates: the OTA client (segno-ota-check). rauc: the installer.
 # systemd: busctl, which segno-update-ctl uses to ask RAUC whether it is
-# installing before a reboot or halt (#1498). It is the init system anyway,
-# but a missing busctl would make that check refuse every reset while RAUC
-# runs, so it is named.
+# installing before a reboot or halt (#1498), and segno-wifi-ctl uses to
+# clear the key of a saved profile it tests a typed key on (#1872). It is the
+# init system anyway, but a missing busctl would make that check refuse every
+# reset while RAUC runs, and fail every join with a new key for a saved
+# network, so it is named.
 # parted + e2fsprogs-resize2fs: segno-data-grow (expand /data to fill the SD card).
 # coreutils: the app's pedal link configures the pedal UART with stty.
 # iw: as on Raspberry Pi OS, for `iw reg get` and `iw event` on the console.

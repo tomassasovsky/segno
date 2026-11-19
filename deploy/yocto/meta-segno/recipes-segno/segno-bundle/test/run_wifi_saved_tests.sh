@@ -42,6 +42,9 @@ case "\$*" in
     *"-t -f UUID,TYPE connection show"*)
         for n in \${SAVED:-}; do printf 'uuid-%s:802-11-wireless\n' "\$n"; done
         ;;
+    *"UUID,FILENAME connection show"*)
+        for n in \${SAVED:-}; do printf 'uuid-%s:/data/NetworkManager/system-connections/%s.nmconnection\n' "\$n" "\$n"; done
+        ;;
     *"connection show"*)
         for n in \${SAVED:-}; do printf '%s:802-11-wireless\n' "\$n"; done
         ;;

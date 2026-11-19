@@ -96,6 +96,7 @@ case "\$*" in
         done
         ;;
     *"UUID,FILENAME connection show"*)
+        [ -n "\${NO_FILE:-}" ] && exit 0
         for u in \$(all_uuids); do
             if [ -f "$work/mem/\$u" ]; then
                 printf '%s:%s\n' "\$u" "\$(run_file "\$u")"
@@ -213,7 +214,7 @@ run_with_stdin() {
         LISTING="${LISTING:-}" PRIOR_AC="${PRIOR_AC:-yes}" \
         GENERAL_STATE="${GENERAL_STATE:-30 (disconnected)}" \
         HIDDEN="${HIDDEN:-no}" LIST="${LIST:-}" SEGNO_JOIN_EVIDENCE_WAIT=0 \
-        STORED_PSK="${STORED_PSK:-}" DEV_AC="${DEV_AC:-yes}" GOOD_KEY="${GOOD_KEY:-}" BUSCTL_RC="${BUSCTL_RC:-0}" \
+        STORED_PSK="${STORED_PSK:-}" DEV_AC="${DEV_AC:-yes}" GOOD_KEY="${GOOD_KEY:-}" BUSCTL_RC="${BUSCTL_RC:-0}" NO_FILE="${NO_FILE:-}" \
         SEGNO_NM_RUN_DIR="$work/run" \
         HTTP_CODE="${HTTP_CODE:-200}" CURL_RC="${CURL_RC:-0}" \
         "$TEST_SHELL" "$CTL" "$@" >"$work/stdout" 2>"$work/stderr"
@@ -350,6 +351,19 @@ teardown
 # Only Forget deletes a saved network (#1817): the owner forgot two good
 # networks after the page blamed their keys, and a join that deleted one on
 # failure would do the same without asking.
+# The copy is told from the stored profile by the stored file's path, so a
+# join whose profile has no path it can read is not tried.
+echo "a saved profile whose stored file cannot be found is not set aside"
+setup
+SAVED="Studio" STORED_PSK='right-key' GOOD_KEY='right-key' NO_FILE=1 \
+    run_with_stdin 'notthekey' connect Studio
+check "the join fails" 1 "$rc"
+check "the profile is not changed in memory" no "$(has 'modify --temporary' "$work/nmcli-args")"
+check "nothing is activated with the typed key" no "$(has 'passwd-file' "$work/nmcli-args")"
+check "no file is loaded" no "$(has 'connection load' "$work/nmcli-args")"
+check "and says why" yes "$(has 'could not find where the saved network is stored' "$work/stderr")"
+teardown
+
 echo "a failed join never deletes a saved network"
 setup
 SAVED="Rehearsal" FAIL_UP="uuid-Rehearsal" STORED_PSK='s3cret' run connect Rehearsal
@@ -460,6 +474,16 @@ setup
 SAVED="Cafe" run activate uuid-Cafe
 check "succeeds" 0 "$rc"
 check "no passwd-file" no "$(has 'passwd-file' "$work/nmcli-args")"
+teardown
+
+# A join that tests a typed key holds the profile with autoconnect off and no
+# key; segno-wifi-retry may have listed it just before.
+echo "activate leaves a profile that may not auto-join alone"
+setup
+SAVED="Studio" PRIOR_AC=no STORED_PSK='s3cret' run activate uuid-Studio
+check "fails" 1 "$rc"
+check "activates nothing" no "$(has 'connection up' "$work/nmcli-args")"
+check "and says why" yes "$(has 'may not auto-join now' "$work/stderr")"
 teardown
 
 echo "activate reports a failed activation"

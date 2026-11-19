@@ -50,6 +50,7 @@ echo "\$@" >> "$work/nmcli-args"
 saved=\${SAVED_TS:+5a7ed000-0000-4000-8000-000000001859}
 case "\$*" in
     *"-t -f UUID,TYPE connection show") [ -n "\$saved" ] && echo "\$saved:802-11-wireless" ;;
+    *"UUID,FILENAME connection show") [ -n "\$saved" ] && echo "\$saved:/data/NetworkManager/system-connections/SomeNetwork.nmconnection" ;;
     *"-g connection.id connection show uuid "*|*"-g 802-11-wireless.ssid connection show uuid "*)
         echo SomeNetwork ;;
     *"-g connection.timestamp connection show uuid "*) echo "\$SAVED_TS" ;;

@@ -677,12 +677,21 @@ profile_file() {
 # can empty it. A profile NetworkManager already keeps in memory only has no
 # stored copy to go back to; the console has none, as every profile the
 # helper makes is saved to disk.
+#
+# Where the profile is stored is read first: release_profile tells the copy
+# from it by that path, so without one the join does not go ahead. The hold
+# is recorded before the modify, so a helper stopped as the modify returns
+# still drops the copy.
 hold_profile() {
     held_file=$(profile_file "$1")
+    if [ -z "$held_file" ]; then
+        log "could not find where the saved network is stored"
+        return 1
+    fi
+    held_uuid=$1
     nmcli connection modify --temporary uuid "$1" \
         connection.autoconnect no \
         connection.autoconnect-priority "$2" || return
-    held_uuid=$1
     hp_path=$(nmcli -t -f UUID,DBUS-PATH connection show 2>/dev/null \
         | awk -F: -v u="$1" '$1 == u { print $2; exit }')
     busctl call org.freedesktop.NetworkManager "$hp_path" \
@@ -741,7 +750,6 @@ persist_psk_and_enable() {
         wifi-sec.psk-flags 0 \
         connection.autoconnect yes \
         >/dev/null 2>&1 || log "could not save the network"
-    [ "$uuid" != "$held_uuid" ] || held_uuid=
 }
 
 # UUID of the wifi connection active on $IFACE right now, or empty. UUIDs carry
@@ -833,7 +841,9 @@ do_connect_nm() {
                 rc=$?
             fi
             if [ "$rc" -eq 0 ]; then
+                # Saved to disk from the copy: nothing is left to drop.
                 persist_psk_and_enable "$existing" "$psk"
+                held_uuid=
             fi
         else
             # A promptless Join already holds secrets; autoconnect stays on.
@@ -1007,9 +1017,16 @@ do_disconnect() { require_nm && do_disconnect_nm; }
 do_forget() { require_nm && do_forget_nm "$@"; }
 do_autoconnect() { require_nm && do_autoconnect_nm "$@"; }
 do_set_password() { require_nm && do_set_password_nm "$@"; }
-# nmcli's own chatter goes to stderr: stdout is the JSON contract.
+# nmcli's own chatter goes to stderr: stdout is the JSON contract. Only a
+# profile that may auto-join, the ones segno-wifi-retry picks: one a join has
+# set aside for a typed key (hold_profile) has autoconnect off and no key, and
+# going up on it would end as no-secrets.
 do_activate() {
     require_nm || return 1
+    if [ "$(nmcli -g connection.autoconnect connection show uuid "$1" 2>/dev/null)" = no ]; then
+        log "$1 may not auto-join now; not activating it"
+        return 1
+    fi
     if up_saved "$1" "${2:-$NM_CONNECT_WAIT_SECS}" >&2; then
         echo '{}'
     else
