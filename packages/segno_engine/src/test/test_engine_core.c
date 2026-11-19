@@ -31935,42 +31935,6 @@ static void test_one_shot_division_stops_after_its_own_lap(void) {
   le_engine_destroy(e);
 }
 
-/* A Band section stop queued for the primary's top on a Once section stays
- * a stop: the toggle fires before the Once check, so the section is not
- * restarted for an extra lap. */
-static void test_one_shot_section_stop_toggle_at_wrap_stays_stopped(void) {
-  printf("test_one_shot_section_stop_toggle_at_wrap_stays_stopped\n");
-  le_engine* e = make_configured_engine();
-  float out[64];
-  le_snapshot s;
-  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_BAND) == LE_OK);
-  drain(e);
-  sb_make_primary_ex(e, 0, SB_BASE, 0.0f);
-  sb_arm_and_start(e, 1);
-  process_const(e, 2.0f, SB_BASE, out);
-  le_engine_record(e, 1); /* one base loop, finalized at the top */
-  drain(e);
-  le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
-  CHECK(s.master_position_frames == 0);
-  CHECK(le_engine_set_one_shot(e, 1, 1) == LE_OK);
-  drain(e);
-  process_const(e, 0.0f, SB_BASE / 2, out);
-  CHECK(le_engine_toggle_section(e, 1) == LE_OK); /* stop at the top */
-  drain(e);
-  le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[1].pending == 1);
-  process_const(e, 0.0f, SB_BASE - s.master_position_frames, out);
-  le_engine_get_snapshot(e, &s);
-  CHECK(s.master_position_frames == 0);
-  CHECK(s.tracks[1].state == LE_TRACK_STOPPED);
-  process_const(e, 0.0f, SB_BASE, out); /* and it stays stopped */
-  le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[1].state == LE_TRACK_STOPPED);
-  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
-  le_engine_destroy(e);
-}
-
 static void test_sync_division_falls_back_on_indivisible_base(void) {
   printf("test_sync_division_falls_back_on_indivisible_base\n");
   const int32_t base = 17;
@@ -32289,38 +32253,7 @@ test_division_track_undo_to_empty_redo_round_trips_divisor(void) {
   le_engine_destroy(e);
 }
 
-/* ---- B3b: Band section transport ---- */
-
-static void test_band_section_toggle_rejected_outside_band_mode(void) {
-  printf("test_band_section_toggle_rejected_outside_band_mode\n");
-  le_engine* e = make_configured_engine();
-  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_SYNC) == LE_OK);
-  drain(e);
-  CHECK(le_engine_crown_primary(e, 0) == LE_OK);
-  drain(e);
-  CHECK(le_engine_toggle_section(e, 1) == LE_ERR_INVALID);
-  le_engine_destroy(e);
-}
-
-static void test_band_section_toggle_rejected_for_primary(void) {
-  printf("test_band_section_toggle_rejected_for_primary\n");
-  le_engine* e = make_configured_engine();
-  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_BAND) == LE_OK);
-  drain(e);
-  sb_make_primary(e, 1.0f);
-  CHECK(le_engine_toggle_section(e, 0) == LE_ERR_INVALID); /* is the primary */
-  le_engine_destroy(e);
-}
-
-static void test_band_section_toggle_rejected_for_empty_track(void) {
-  printf("test_band_section_toggle_rejected_for_empty_track\n");
-  le_engine* e = make_configured_engine();
-  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_BAND) == LE_OK);
-  drain(e);
-  sb_make_primary(e, 1.0f);
-  CHECK(le_engine_toggle_section(e, 1) == LE_ERR_INVALID); /* still EMPTY */
-  le_engine_destroy(e);
-}
+/* ---- Band sections, one at a time (#1323) ---- */
 
 /* Band keeps the primary plus one section (#1323): a Record or a Play on a
  * second section while one plays waits for that section's lap end and
@@ -32485,66 +32418,6 @@ static void test_band_handoff_keeps_a_stopped_primary_stopped(void) {
   CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
   CHECK(s.tracks[2].state == LE_TRACK_STOPPED);
   CHECK(s.tracks[0].state == LE_TRACK_STOPPED);
-  le_engine_destroy(e);
-}
-
-/* The Band section toggle (le_engine_toggle_section, trigger 2) keeps one
- * section too (#1323): fired on the primary's top while another section
- * sounds, the start waits for that section's end. */
-static void test_band_section_toggle_waits_for_the_sounding_section(void) {
-  printf("test_band_section_toggle_waits_for_the_sounding_section\n");
-  le_engine* e = make_configured_engine();
-  float out[64];
-  le_snapshot s;
-  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_BAND) == LE_OK);
-  drain(e);
-  sb_make_primary(e, 1.0f);
-  sb_arm_and_start(e, 2);
-  process_const(e, 3.0f, SB_BASE, out);
-  le_engine_record(e, 2); /* one base loop */
-  drain(e);
-  CHECK(le_engine_stop_track(e, 2) == LE_OK);
-  drain(e);
-  sb_arm_and_start(e, 1);
-  process_const(e, 2.0f, 2 * SB_BASE, out);
-  le_engine_record(e, 1); /* two base loops */
-  drain(e);
-  CHECK(load_i32(&e->tracks[1].a_state) == LE_TRACK_PLAYING);
-  process_const(e, 0.0f, 3, out);
-  CHECK(le_engine_toggle_section(e, 2) == LE_OK);
-  drain(e);
-  while (e->clock.position != 0) tg_advance(e, 1);
-  tg_advance(e, 1);
-  le_engine_get_snapshot(e, &s);
-  /* Section 1 has a second loop to play: section 2 waits for its end. */
-  if (s.tracks[1].state == LE_TRACK_PLAYING) {
-    CHECK(s.tracks[2].state == LE_TRACK_STOPPED);
-    CHECK(s.song_queued_track == 2);
-  }
-  int frames = 0;
-  while (load_i32(&e->tracks[2].a_state) == LE_TRACK_STOPPED &&
-         frames < 4 * SB_BASE) {
-    CHECK(!(load_i32(&e->tracks[1].a_state) == LE_TRACK_PLAYING &&
-            load_i32(&e->tracks[2].a_state) == LE_TRACK_PLAYING));
-    tg_advance(e, 1);
-    ++frames;
-  }
-  le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[2].state == LE_TRACK_PLAYING);
-  CHECK(s.tracks[1].state == LE_TRACK_STOPPED);
-  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
-  /* A toggle on the waiting section cancels its start. */
-  CHECK(le_engine_play(e, 1) == LE_OK);
-  drain(e);
-  le_engine_get_snapshot(e, &s);
-  CHECK(s.song_queued_track == 1);
-  CHECK(le_engine_toggle_section(e, 1) == LE_OK);
-  drain(e);
-  le_engine_get_snapshot(e, &s);
-  CHECK(s.song_queued_track == -1);
-  tg_advance(e, 4 * SB_BASE);
-  CHECK(load_i32(&e->tracks[1].a_state) == LE_TRACK_STOPPED);
-  CHECK(load_i32(&e->tracks[2].a_state) == LE_TRACK_PLAYING);
   le_engine_destroy(e);
 }
 
@@ -32771,20 +32644,16 @@ static void test_band_handoff_overdub_once_and_hold(void) {
   }
 }
 
-/* THE core Band arming test: a section-transport press at a NON-boundary
- * position must NOT take effect immediately -- it must fire exactly at the
- * next primary-track loop top (song-mode-spec.md §2 Q3 / §3's STOP-pedal
- * table), neither before nor (observably) after. */
-static void test_band_section_start_stop_quantized_to_primary_top(void) {
-  printf("test_band_section_start_stop_quantized_to_primary_top\n");
+/* A quantized punch-in on the one sounding Band section waits for the
+ * primary's top and lands there as an overdub: with no other section
+ * sounding, the one-section rule leaves the grid arm alone. */
+static void test_band_section_quantized_punch_in_fires_at_top(void) {
+  printf("test_band_section_quantized_punch_in_fires_at_top\n");
   le_engine* e = make_configured_engine();
   float out[64];
   CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_BAND) == LE_OK);
   drain(e);
   sb_make_primary(e, 1.0f);
-
-  /* Track 1: a full-multiple section (k = 1), PLAYING immediately after its
-   * own (sync-quantized) defining recording finalizes. */
   sb_arm_and_start(e, 1);
   process_const(e, 2.0f, SB_BASE, out);
   le_engine_record(e, 1);
@@ -32792,257 +32661,23 @@ static void test_band_section_start_stop_quantized_to_primary_top(void) {
   le_snapshot s;
   le_engine_get_snapshot(e, &s);
   CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
-  CHECK(s.master_position_frames == 0); /* exactly one base loop captured */
-
-  /* Move to a clearly non-boundary position before arming the toggle. */
-  tg_advance(e, 5);
-  le_engine_get_snapshot(e, &s);
-  CHECK(s.master_position_frames == 5);
-
-  CHECK(le_engine_toggle_section(e, 1) == LE_OK);
-  drain(e); /* applies the ARM; does not fire it */
-  le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[1].pending == 1);
-  CHECK(s.tracks[1].state == LE_TRACK_PLAYING); /* NOT immediate */
-
-  /* One frame short of the boundary: still armed, still playing. */
-  const int32_t remaining = s.master_length_frames - s.master_position_frames;
-  CHECK(remaining > 1); /* the press landed clearly mid-loop */
-  tg_advance(e, remaining - 1);
-  le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
-  CHECK(s.tracks[1].pending == 1);
-
-  /* The single frame that crosses the primary's loop top fires it. */
-  tg_advance(e, 1);
-  le_engine_get_snapshot(e, &s);
-  CHECK(s.master_position_frames == 0);
-  CHECK(s.tracks[1].state == LE_TRACK_STOPPED);
-  CHECK(s.tracks[1].pending == 0);
-
-  /* A second toggle (STOPPED -> armed -> PLAYING) proves the toggle
-   * direction is read fresh each time from the track's current state, not
-   * latched at arm time. */
-  tg_advance(e, 5);
-  CHECK(le_engine_toggle_section(e, 1) == LE_OK);
-  drain(e);
-  le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[1].state == LE_TRACK_STOPPED); /* still not immediate */
-  tg_advance(e, SB_BASE - 5);
-  le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
-
-  le_engine_destroy(e);
-}
-
-/* ---- code-review fixes (post-b264920): BUG 1-2, GAP 1-2 ---- */
-
-/* B3b BUG 1 (adversarial review): the crowned primary hasn't recorded yet
- * (D16 fallback: whoever records first defines e->clock) -- a non-primary
- * track (channel 1) records and finalizes FIRST, becoming the track that
- * defines the master. le_engine_toggle_section must reject: without an
- * established primary, "the primary's loop top" is meaningless, and
- * arming against e->clock here would actually be arming against channel
- * 1's OWN clock (the very track being toggled), directly contradicting
- * this function's documented guarantee. */
-static void test_band_section_toggle_rejected_when_primary_not_established(
-    void) {
-  printf("test_band_section_toggle_rejected_when_primary_not_established\n");
-  le_engine* e = make_configured_engine();
-  float out[64];
-  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_BAND) == LE_OK);
-  drain(e);
-  CHECK(le_engine_crown_primary(e, 0) == LE_OK); /* crowned... */
-  drain(e);
-  /* ...but NOT recorded. Channel 1 records first instead (D16 fallback:
-   * ordinary immediate defining recording, since le_sync_quantize_active
-   * is false with no established primary). */
-  le_engine_record(e, 1);
-  process_const(e, 1.0f, SB_BASE, out);
-  le_engine_record(e, 1);
-  drain(e);
-  le_snapshot s;
-  le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);   /* the crowned primary */
-  CHECK(s.tracks[1].state == LE_TRACK_PLAYING); /* defines e->clock instead */
-  CHECK(s.primary_track == 0);
-
-  CHECK(le_engine_toggle_section(e, 1) == LE_ERR_INVALID);
-  drain(e);
-  le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[1].pending == 0); /* nothing armed */
-
-  le_engine_destroy(e);
-}
-
-/* B3b BUG 2(a) (adversarial review): a pending toggle-section arm (trigger
- * 2) must not be silently cancelled by a Record press on the SAME channel
- * (le_engine_record's own quantize-arm path, trigger 0) -- the two
- * commands' arms must never be treated as interchangeable. Asserts the
- * Record press is rejected and the ORIGINAL toggle arm survives
- * untouched, then still fires correctly. */
-static void test_band_section_pending_toggle_survives_record_press(void) {
-  printf("test_band_section_pending_toggle_survives_record_press\n");
-  le_engine* e = make_configured_engine();
-  float out[64];
-  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_BAND) == LE_OK);
-  drain(e);
-  sb_make_primary(e, 1.0f);
-
-  /* Track 1's OWN content-establishing recording happens with quantize
-   * still off (its D16 force-arm is unaffected either way, but its
-   * FINALIZE press must not itself get quantize-armed by the global
-   * setting -- that's a different interaction than the one under test
-   * here). Global quantize turns on only afterward, for the punch-in-arm
-   * collision below: a Record press on a content-bearing track then tries
-   * to arm a punch-in overdub (trigger 0) instead of going immediate. */
-  sb_arm_and_start(e, 1);
-  process_const(e, 2.0f, SB_BASE, out);
-  le_engine_record(e, 1);
-  drain(e);
-  le_snapshot s;
-  le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
-
   CHECK(timing_gate(e, 1) == LE_OK);
   drain(e);
-
-  tg_advance(e, 5); /* mid-cycle */
-  CHECK(le_engine_toggle_section(e, 1) == LE_OK); /* arms trigger 2 */
-  drain(e);
-  le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[1].pending == 1);
-
-  /* Channel 1 is already armed with a DIFFERENT trigger -- rejected, not
-   * silently swallowed. */
-  CHECK(le_engine_record(e, 1) == LE_ERR_INVALID);
-  drain(e);
-  le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[1].pending == 1);             /* the toggle arm survives */
-  CHECK(s.tracks[1].state == LE_TRACK_PLAYING); /* untouched */
-
-  /* The original toggle still fires correctly at the primary's loop top. */
-  tg_advance(e, SB_BASE - 5);
-  le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[1].state == LE_TRACK_STOPPED);
-  CHECK(s.tracks[1].pending == 0);
-
-  le_engine_destroy(e);
-}
-
-/* B3b BUG 2(b) (adversarial review): the reverse of (a) -- a pending
- * RECORD quantize-arm (trigger 0) on a section track must not be silently
- * cancelled by a toggle-section press on the SAME channel. */
-static void test_band_section_pending_record_survives_toggle_press(void) {
-  printf("test_band_section_pending_record_survives_toggle_press\n");
-  le_engine* e = make_configured_engine();
-  float out[64];
-  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_BAND) == LE_OK);
-  drain(e);
-  sb_make_primary(e, 1.0f);
-
-  /* See test_band_section_pending_toggle_survives_record_press for why
-   * quantize turns on only AFTER track 1's own content-establishing
-   * finalize, not before. */
-  sb_arm_and_start(e, 1);
-  process_const(e, 2.0f, SB_BASE, out);
-  le_engine_record(e, 1);
-  drain(e);
-  le_snapshot s;
-  le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
-
-  CHECK(timing_gate(e, 1) == LE_OK);
-  drain(e);
-
   tg_advance(e, 5); /* mid-cycle */
   CHECK(le_engine_record(e, 1) == LE_OK); /* arms a punch-in, trigger 0 */
   drain(e);
   le_engine_get_snapshot(e, &s);
   CHECK(s.tracks[1].pending == 1);
-
-  /* A toggle-section press on the SAME channel must be rejected, not
-   * silently disarm the pending record. */
-  CHECK(le_engine_toggle_section(e, 1) == LE_ERR_INVALID);
-  drain(e);
-  le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[1].pending == 1);             /* the record arm survives */
-  CHECK(s.tracks[1].state == LE_TRACK_PLAYING); /* untouched */
-
-  /* The original record arm still fires correctly (punch-in at the
-   * boundary -> OVERDUBBING). */
+  CHECK(s.tracks[1].pending_trigger == 0);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
   tg_advance(e, SB_BASE - 5);
   le_engine_get_snapshot(e, &s);
+  CHECK(s.master_position_frames == 0);
   CHECK(s.tracks[1].state == LE_TRACK_OVERDUBBING);
   CHECK(s.tracks[1].pending == 0);
-
   le_engine_destroy(e);
 }
 
-/* B3b BUG 2(c) (adversarial review): the quantize-OFF case is the worse
- * variant -- le_engine_record's Immediate path pushes LE_CMD_RECORD
- * directly, which unconditionally zeroes pending_record/a_pending on the
- * audio thread with no way to tell whose arm it was clearing. Without the
- * fix this would silently kill the pending toggle with no error to
- * either caller and leave a stale armed[]==1 behind. Global quantize
- * stays OFF (the default) for this test. */
-static void
-test_band_section_pending_toggle_survives_immediate_record_press(void) {
-  printf(
-      "test_band_section_pending_toggle_survives_immediate_record_press\n");
-  le_engine* e = make_configured_engine();
-  float out[64];
-  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_BAND) == LE_OK);
-  drain(e);
-  sb_make_primary(e, 1.0f); /* quantize stays OFF (default) */
-
-  sb_arm_and_start(e, 1);
-  process_const(e, 2.0f, SB_BASE, out);
-  le_engine_record(e, 1);
-  drain(e);
-  le_snapshot s;
-  le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
-
-  tg_advance(e, 5);
-  CHECK(le_engine_toggle_section(e, 1) == LE_OK);
-  drain(e);
-  le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[1].pending == 1);
-
-  /* Quantize is OFF: an ordinary Record press on channel 1 reaches the
-   * Immediate path directly (no arm-vs-arm branch at all) and, before the
-   * fix, silently pushed LE_CMD_RECORD -- killing the pending toggle with
-   * zero error to either caller. */
-  CHECK(le_engine_record(e, 1) == LE_ERR_INVALID);
-  drain(e);
-  le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[1].pending == 1);              /* survives, not stale-cleared */
-  CHECK(s.tracks[1].state == LE_TRACK_PLAYING); /* untouched */
-
-  /* And it still fires correctly. */
-  tg_advance(e, SB_BASE - 5);
-  le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[1].state == LE_TRACK_STOPPED);
-  CHECK(s.tracks[1].pending == 0);
-
-  le_engine_destroy(e);
-}
-
-/* GAP 1 (mutation-survivable, adversarial review): a mutant swapping
- * `if (wrapped)` for `if (boundary)` in advance_transport_frame's Band
- * section-transport fire block would fire trigger 2 at a live musical-
- * quantize SUBDIVISION boundary too, not just the primary's true loop
- * top. `boundary` and `wrapped` only diverge when some OTHER track has a
- * pending trigger-0 arm (has_pending) -- track 2 here exists purely to
- * make that divergence observable: it force-arms (D16 sync-quantize) the
- * instant it's pressed, giving has_pending a true value straight through
- * the subdivision midpoint. Needs a REAL tempo grid: every other B3/B3b
- * test's SB_BASE=16-frame loop is far too short for any tempo in 30-300
- * BPM to derive a whole-bar grid over, so this uses sr=1000, 120 BPM,
- * 4/4, and a 2000-frame (exactly 1-bar) primary -- frames-per-beat 500,
- * so a HALF-note division boundary sits at the exact midpoint, frame
- * 1000. */
 /* A Sync force-armed DEFINING take begins at the primary's loop top, even
  * when a division would offer an earlier boundary.
  *
@@ -33097,130 +32732,6 @@ static void test_sync_force_arm_ignores_a_per_track_division(void) {
   le_engine_get_snapshot(e, &s);
   CHECK(s.tracks[1].state == LE_TRACK_RECORDING);
   CHECK(s.master_position_frames <= 2);
-  le_engine_destroy(e);
-}
-
-static void test_band_section_toggle_ignores_subdivision_boundary(void) {
-  printf("test_band_section_toggle_ignores_subdivision_boundary\n");
-  le_engine* e = tg_make_engine(1000);
-  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_BAND) == LE_OK);
-  drain(e);
-  CHECK(le_engine_set_tempo(e, 120.0f) == LE_OK);
-  drain(e);
-  CHECK(le_engine_crown_primary(e, 0) == LE_OK);
-  drain(e);
-
-  le_engine_record(e, 0);
-  tg_advance(e, 2000);
-  le_engine_record(e, 0); /* queue finalize (defers for the seam crossfade) */
-  tg_advance(e, e->sample_rate / 100);
-
-  le_snapshot s;
-  le_engine_get_snapshot(e, &s);
-  CHECK(s.master_length_frames == 2000);
-  CHECK(s.loop_bars == 1);
-
-  CHECK(timing_remember(e, LE_GRID_DIV_HALF) == LE_OK);
-  drain(e);
-
-  /* Track 1: the section under test. */
-  sb_arm_and_start(e, 1);
-  tg_advance(e, 2000); /* one full base loop of content */
-  le_engine_record(e, 1); /* immediate finalize (non-defining) */
-  drain(e);
-  le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
-  CHECK(s.master_position_frames == 0);
-
-  /* Track 2: EMPTY, force-arms trigger 0 on this press and stays pending
-   * -- its sole purpose is to make has_pending (and therefore `boundary`)
-   * diverge from `wrapped` at the subdivision midpoint below. */
-  CHECK(le_engine_record(e, 2) == LE_OK);
-  drain(e);
-  le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[2].pending == 1);
-
-  /* Arm the toggle on track 1. */
-  CHECK(le_engine_toggle_section(e, 1) == LE_OK);
-  drain(e);
-  le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[1].pending == 1);
-
-  /* Advance to (but not past) the HALF-note subdivision midpoint, frame
-   * 1000 -- `boundary` (not `wrapped`) goes true there. Track 1 must NOT
-   * fire. */
-  tg_advance(e, 1000);
-  le_engine_get_snapshot(e, &s);
-  CHECK(s.master_position_frames == 1000);
-  CHECK(s.tracks[1].state == LE_TRACK_PLAYING); /* unchanged */
-  CHECK(s.tracks[1].pending == 1);              /* still armed */
-
-  /* The remaining 1000 frames cross the TRUE primary loop top -- NOW it
-   * fires. */
-  tg_advance(e, 1000);
-  le_engine_get_snapshot(e, &s);
-  CHECK(s.master_position_frames == 0);
-  CHECK(s.tracks[1].state == LE_TRACK_STOPPED);
-  CHECK(s.tracks[1].pending == 0);
-
-  le_engine_destroy(e);
-}
-
-/* GAP 2 (mutation-survivable, adversarial review): a mutant that caches
- * the fire direction at ARM time (e.g. always PLAYING -> STOPPED) instead
- * of reading the track's state FRESH when the primary wraps would produce
- * identical output for every other test here, since none of them change
- * state between arming and firing. Arms while PLAYING, independently
- * stops the SAME track via a direct LE_CMD_STOP (le_engine_stop_track --
- * a completely separate command from the toggle, and one that never
- * touches pending_record/armed[]) before the primary wraps, and asserts
- * the fire toggles the OTHER way (STOPPED -> PLAYING) -- proof the fire
- * logic reads state fresh at FIRE time, not the stale PLAYING it was
- * armed against. */
-static void
-test_band_section_toggle_reacts_to_state_at_fire_time_not_arm_time(void) {
-  printf(
-      "test_band_section_toggle_reacts_to_state_at_fire_time_not_arm_time\n");
-  le_engine* e = make_configured_engine();
-  float out[64];
-  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_BAND) == LE_OK);
-  drain(e);
-  sb_make_primary(e, 1.0f);
-
-  sb_arm_and_start(e, 1);
-  process_const(e, 2.0f, SB_BASE, out);
-  le_engine_record(e, 1);
-  drain(e);
-  le_snapshot s;
-  le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
-  CHECK(s.master_position_frames == 0);
-
-  tg_advance(e, 5); /* mid-cycle */
-  CHECK(le_engine_toggle_section(e, 1) == LE_OK); /* armed while PLAYING */
-  drain(e);
-  le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[1].pending == 1);
-  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
-
-  /* Independently stop the SAME track via a direct command -- the arm is
-   * still pending; this is not a toggle cancel, it's an unrelated
-   * command. */
-  CHECK(le_engine_stop_track(e, 1) == LE_OK);
-  drain(e);
-  le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[1].state == LE_TRACK_STOPPED);
-  CHECK(s.tracks[1].pending == 1); /* the toggle arm survives */
-
-  /* Cross the primary's loop top -- fire must read the CURRENT (STOPPED)
-   * state, not the PLAYING it was armed against, so it toggles the OTHER
-   * way this time. */
-  tg_advance(e, SB_BASE - 5);
-  le_engine_get_snapshot(e, &s);
-  CHECK(s.master_position_frames == 0);
-  CHECK(s.tracks[1].state == LE_TRACK_PLAYING); /* STOPPED -> PLAYING */
-  CHECK(s.tracks[1].pending == 0);
-
   le_engine_destroy(e);
 }
 
@@ -40698,7 +40209,6 @@ int main(void) {
   SHARD(test_once_relaunch_overdub_keeps_recoverable_layers);
   SHARD(test_primary_once_end_does_not_abort_sibling_capture);
   SHARD(test_one_shot_division_stops_after_its_own_lap);
-  SHARD(test_one_shot_section_stop_toggle_at_wrap_stays_stopped);
   SHARD(test_one_shot_not_stopped_by_a_finalize_at_the_wrap);
   SHARD(test_one_shot_punch_out_arm_at_wrap_stops);
   SHARD(test_one_shot_punch_in_arm_at_wrap_overdubs);
@@ -40774,22 +40284,12 @@ int main(void) {
   SHARD(test_sync_force_arm_from_mid_cycle_fires_at_exact_boundary);
   SHARD(test_primary_cleared_dependent_track_keeps_playing_correctly);
   SHARD(test_division_track_undo_to_empty_redo_round_trips_divisor);
-  SHARD(test_band_section_toggle_rejected_outside_band_mode);
-  SHARD(test_band_section_toggle_rejected_for_primary);
-  SHARD(test_band_section_toggle_rejected_for_empty_track);
-  SHARD(test_band_section_start_stop_quantized_to_primary_top);
   SHARD(test_band_one_section_handoff);
   SHARD(test_band_handoff_overdub_once_and_hold);
   SHARD(test_band_handoff_grid_arms_and_closing_takes);
-  SHARD(test_band_section_toggle_waits_for_the_sounding_section);
   SHARD(test_band_handoff_keeps_a_stopped_primary_stopped);
-  SHARD(test_band_section_toggle_rejected_when_primary_not_established);
-  SHARD(test_band_section_pending_toggle_survives_record_press);
-  SHARD(test_band_section_pending_record_survives_toggle_press);
-  SHARD(test_band_section_pending_toggle_survives_immediate_record_press);
+  SHARD(test_band_section_quantized_punch_in_fires_at_top);
   SHARD(test_sync_force_arm_ignores_a_per_track_division);
-  SHARD(test_band_section_toggle_ignores_subdivision_boundary);
-  SHARD(test_band_section_toggle_reacts_to_state_at_fire_time_not_arm_time);
 
   SHARD(test_clock_send_defaults_and_persistence);
   SHARD(test_clock_send_setter_validates_args);

@@ -1902,8 +1902,8 @@ typedef struct le_track {
   int32_t pending_record; /* audio-thread-local: a deferred record is armed. */
   int32_t pending_trigger; /* what fires the pending record: 0 = next base-loop
                             * top (quantize), 1 = input level threshold
-                            * (sound-activated auto-record), 2 = Band section
-                            * toggle, 3 = the Song/Band handoff (#1323). */
+                            * (sound-activated auto-record), 3 = the Song/Band
+                            * handoff (#1323). */
   int32_t record_pos; /* audio-thread-local shared write head, driving every
                        * active lane. Defining track: linear frame count. New
                        * track over a master: the absolute phase (segment*base +
@@ -3387,7 +3387,8 @@ struct le_engine {
   le_record_timing_readback record_timing_cache;
   int armed[LE_MAX_TRACKS];
   /* What each arm is waiting for: 0 = loop top (quantize), 1 = input level
-   * (auto-record). Lets toggling one feature cancel only its own arms. */
+   * (auto-record), 3 = the Song/Band handoff. Lets toggling one feature
+   * cancel only its own arms. */
   int armed_trigger[LE_MAX_TRACKS];
 
   /* Loop length. The global default (0 auto-rounds up to whole base loops on

@@ -3168,8 +3168,9 @@ external int le_engine_start(
 external int le_engine_stop(ffi.Pointer<le_engine> engine);
 
 /// Cancels track [channel]'s pending record arm, whatever armed it — the
-/// quantized loop-top arm, the signal-triggered (auto-record) arm, or a Band
-/// section toggle. No-op (LE_OK) when the track is not armed.
+/// quantized loop-top arm, the signal-triggered (auto-record) arm, or a Song
+/// or Band Record waiting for the handoff. No-op (LE_OK) when the track is
+/// not armed.
 ///
 /// Returns LE_OK only when the cancel actually reached the audio thread. The
 /// disarm rides the command ring, so it can be refused (a full ring behind
@@ -3273,23 +3274,6 @@ external int le_engine_toggle_reverse(
   ffi.Pointer<le_engine> engine,
   int channel,
   ffi.Pointer<ffi.Uint64> request,
-);
-
-/// Toggles Band section transport (D19 §2 Q3) on [channel]: a play/stop
-/// press on a non-primary, content-bearing track in BAND mode, deferred
-/// (quantized) to the next time the PRIMARY track returns to its loop top —
-/// matching the manual's "quantized to the primary track" section semantics,
-/// genuinely different from Sync (where non-primary tracks are locked to
-/// always play, never independently started/stopped). A second call before
-/// the boundary fires cancels the pending toggle (mirrors le_engine_record's
-/// quantize-arm toggle shape). Returns LE_ERR_INVALID outside BAND mode, for
-/// the primary track itself, or for a still-EMPTY track (nothing to
-/// start/stop — a section reaches this only after its own defining,
-/// sync-quantized recording has finalized).
-@ffi.Native<ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)>()
-external int le_engine_toggle_section(
-  ffi.Pointer<le_engine> engine,
-  int channel,
 );
 
 /// Track [channel]'s current content revision (a_audio_rev [R1]) — exposed so
@@ -4686,13 +4670,9 @@ enum le_command_code {
 
   /// arg_i = track: arm a quantized record (fire at loop
   /// top). arg_f selects the trigger: 0 = grid/loop-top
-  /// (quantize), 1 = input level (auto-record), 2 = Band
-  /// section transport (B3b) -- a play/stop TOGGLE on a
-  /// content-bearing non-primary track, deferred to the
-  /// next primary-track loop top rather than a record
-  /// action; see le_engine_toggle_section. 3 = a Song or
-  /// Band Record waiting for the sounding section's end
-  /// (#1323; le_engine_record).
+  /// (quantize), 1 = input level (auto-record), 3 = a
+  /// Song or Band Record waiting for the sounding
+  /// section's end (#1323; le_engine_record).
   LE_CMD_ARM(16),
 
   /// arg_i = track: cancel a pending quantized record
@@ -7386,9 +7366,9 @@ final class le_track_snapshot extends ffi.Struct {
 
   /// Trailing (accepted design, slice 1): what the arm reported by `pending`
   /// waits for — 0 = the quantize grid (next loop top / subdivision), 1 = a
-  /// signal at the recording input (Sound start), 2 = a Band section toggle
-  /// at the primary's loop top, 3 = a Song or Band Record waiting for the
-  /// sounding section's end (#1323); -1 while nothing is pending. The stage names
+  /// signal at the recording input (Sound start), 3 = a Song or Band Record
+  /// waiting for the sounding section's end (#1323); -1 while nothing is
+  /// pending. The stage names
   /// the boundary from this rather than guessing from the settings.
   @ffi.Int32()
   external int pending_trigger;

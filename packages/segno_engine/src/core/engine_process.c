@@ -4163,7 +4163,7 @@ static void le_apply_one_shot(le_track* t, int enabled) {
 }
 
 /* Coupled recording-start edits cancel signal arms in the same command as
- * the setting; grid/section arms belong to other controls and stay pending. */
+ * the setting; grid and handoff arms belong to other controls and stay pending. */
 static void le_cancel_signal_arms(le_engine* e) {
   for (int32_t c = 0; c < e->track_count; ++c) {
     le_track* t = &e->tracks[c];
@@ -5072,24 +5072,12 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       if (valid_channel(e, cmd->arg_i)) {
         le_track* t = &e->tracks[cmd->arg_i];
         /* arg_f carries the trigger: 0 = grid (quantize), 1 = input level
-         * (sound-activated auto-record), 2 = Band section transport (B3b),
-         * 3 = the Song/Band handoff (#1323) — see LE_CMD_ARM's doc,
-         * segno_engine_api.h. The half-way splits keep 1.0f mapping to 1
-         * exactly, unchanged from before B3b. */
-        const int trig = cmd->arg_f >= 2.5f   ? 3
-                         : cmd->arg_f >= 1.5f ? 2
-                                              : (cmd->arg_f != 0.0f ? 1 : 0);
+         * (sound-activated auto-record), 3 = the Song/Band handoff (#1323)
+         * — see LE_CMD_ARM's doc, segno_engine_api.h. */
+        const int trig = cmd->arg_f >= 2.5f ? 3 : (cmd->arg_f != 0.0f ? 1 : 0);
         if (trig == 3) {
           le_handoff_record_request(e, cmd->arg_i, frame);
           break;
-        }
-        /* A Band section toggle replaces a waiting request, as any newer
-         * request does; on the waiting target itself it cancels its start
-         * (#1323), and arming it would queue the start again at the top. */
-        if (trig == 2 && e->song_target >= 0) {
-          const int self = cmd->arg_i == e->song_target;
-          le_song_cancel(e);
-          if (self) break;
         }
         /* Another arm on the waiting target replaces its request. An arm on
          * the source (a quantized overdub or take finish) keeps it, as an
@@ -7405,10 +7393,9 @@ static inline void advance_track_clock_frame(le_engine* e, int32_t ch,
 
 /* One Shot in the shared-clock modes (accepted design, slice 2b; the
  * Multi/Sync/Band half of le_engine_set_one_shot's doc). Called once per
- * ticking frame AFTER the grid and section arms have fired, so the arms see
- * the states they were queued against (a punch-out lands as a punch-out, a
- * section stop stays a stop, and a held transport is measured before any
- * Once stop could fake one). A one-shot track that is sounding stops when
+ * ticking frame AFTER the grid arms and the Band handoff have fired, so they
+ * see the states they were queued against (a punch-out lands as a punch-out,
+ * and a held transport is measured before any Once stop could fake one). A one-shot track that is sounding stops when
  * its own read coordinate returns to zero. Ordinarily that follows the shared
  * segment/division rules; after an automatic-end relaunch it includes the
  * track's playback origin, leaving the musical capture grid untouched.
@@ -7448,33 +7435,6 @@ static inline void le_shared_clock_one_shots(le_engine* e, int tc,
          (double)tr->sounding_frames * tr->head.rate >= (double)len)) {
       le_one_shot_stop(e, tr, t, frame);
     }
-  }
-}
-
-/* Fires a Band section-transport arm (B3b, trigger 2, LE_CMD_ARM's doc): the
- * arm carries no explicit "which direction" — it's a TOGGLE of whatever a
- * press on this track would currently do, exactly like handle_record's own
- * per-state dispatch. STOPPED starts it (mirrors handle_play); PLAYING,
- * OVERDUBBING, or RECORDING stops/finalizes it (handle_stop already covers
- * all three). EMPTY has nothing to toggle — the arm simply expires with no
- * effect (a section reaches this call only after its own defining recording
- * has finalized in practice, but this stays correct even if that invariant
- * is ever violated). */
-static void le_fire_section_arm(le_engine* e, int32_t ch, uint64_t frame) {
-  const int32_t st = load_i32(&e->tracks[ch].a_state);
-  if (st == LE_TRACK_STOPPED) {
-    /* Band keeps one section (#1323): with another sounding, the start
-     * waits for that section's end like any section request. */
-    if (le_band_section(e, ch) && le_handoff_source(e, ch) >= 0) {
-      /* A request already waiting wins: a newer one on another section,
-       * or a Play on this one, which is what the toggle asks for. */
-      if (e->song_target < 0) handle_section_play(e, ch, frame);
-    } else {
-      handle_play(e, ch, frame);
-    }
-  } else if (st == LE_TRACK_PLAYING || st == LE_TRACK_OVERDUBBING ||
-            st == LE_TRACK_RECORDING) {
-    handle_stop(e, ch, frame);
   }
 }
 
@@ -7571,9 +7531,8 @@ static inline LE_AUDIO_HOT_AT(1) void advance_transport_frame(le_engine* e, int 
          * to the primary's loop top — which only holds if the take began
          * there. A subdivision boundary would start it a quarter (or an
          * eighth) into the primary's cycle and the sub-loop would play
-         * rotated by that much. The same rule the Band section transport
-         * states a dozen lines below; here it is keyed on the ARM's nature,
-         * so it covers a per-track division and a global one alike. */
+         * rotated by that much. Keyed on the ARM's nature, so it covers a
+         * per-track division and a global one alike. */
         const int sync_defining_arm =
             load_i32(&pt->a_state) == LE_TRACK_EMPTY &&
             le_sync_quantize_active(e, qt);
@@ -7608,24 +7567,6 @@ static inline LE_AUDIO_HOT_AT(1) void advance_transport_frame(le_engine* e, int 
             handle_record(e, qt, frame);
           }
           fired[qt] = 1;
-        }
-      }
-      /* Band section transport (B3b, trigger 2): fires ONLY on the true
-       * primary-track loop top (`wrapped`) — deliberately NOT on a
-       * subdivision `boundary` like trigger 0 above. The spec's "quantized
-       * to the primary track" (song-mode-spec.md §2 Q3, §3's STOP-pedal
-       * table) means the primary's CYCLE, not a musical subdivision of it;
-       * with mode/primary established this way, the primary defines
-       * e->clock (le_sync_quantize_active), so a wrap here IS "the primary
-       * track returns to its beginning". */
-      if (wrapped) {
-        for (int qt = 0; qt < tc; ++qt) {
-          if (e->tracks[qt].pending_record &&
-              e->tracks[qt].pending_trigger == 2) {
-            e->tracks[qt].pending_record = 0;
-            store_i32(&e->tracks[qt].a_pending, 0);
-            le_fire_section_arm(e, qt, frame);
-          }
         }
       }
       /* Band's one-section handoff (#1323): on the primary's top after the

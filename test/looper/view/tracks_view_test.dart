@@ -1876,35 +1876,6 @@ void main() {
       expect(find.text('Overdub'), findsOneWidget);
     });
 
-    testWidgets('a section arm plays a stopped track and stops a sounding '
-        'one, at the loop start', (tester) async {
-      seed(
-        const LooperState(
-          transport: TransportState(quantizeDiv: GridDivision.bar),
-          tracks: [
-            Track(
-              state: TrackState.stopped,
-              lengthFrames: 1000,
-              pending: true,
-              pendingTrigger: ArmTrigger.section,
-            ),
-            Track(
-              channel: 1,
-              state: TrackState.playing,
-              lengthFrames: 1000,
-              pending: true,
-              pendingTrigger: ArmTrigger.section,
-            ),
-          ],
-        ),
-      );
-      await pump(tester);
-
-      expect(find.text('Play'), findsOneWidget);
-      expect(find.text('Stop'), findsOneWidget);
-      expect(find.text('Loop start'), findsNWidgets(2));
-    });
-
     testWidgets('absent on a track with no pending arm', (tester) async {
       seed(const LooperState(tracks: [Track()]));
       await pump(tester);

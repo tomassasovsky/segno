@@ -1613,7 +1613,7 @@ class ControlCubit extends Cubit<ControlState> {
   /// the mode toggle is a view change, not a transport action.
   ///
   /// Entering FX cancels every PENDING record arm — quantized, sound-armed,
-  /// or a Band section toggle. An arm is the one thing that could start a take
+  /// or a Song or Band handoff. An arm is the one thing that could start a take
   /// the user never sees: it fires on its own, seconds later, in a mode whose
   /// transport controls are all inert. The cancel is unconditional
   /// (`LooperRepository.cancelArm`), so no engine setting can turn it into a
