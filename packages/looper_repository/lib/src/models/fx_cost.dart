@@ -295,7 +295,14 @@ const int kFxTrackJobNs = 500;
 /// ([trackJobs] of them), [kFxTrackJobNs]. One job's work never splits
 /// across cores, which the second term pays for. With no workers, or fewer
 /// than two jobs (the engine then runs them on the callback), it is every
-/// chain summed: the rule before #1515.
+/// chain summed: the rule before #1515. Track chains then run in the
+/// mixer's frame loop, and need no charge of their own: on the console
+/// (build 274, 48 kHz / 32, no workers) Ed's Racks on 3 and 4 tracks ran
+/// as the same racks on the inputs did, and on 5, at 90 % of the budget,
+/// with 6 to 9 late periods in 120 s and no xrun (#1746). That is a little
+/// heavier than five racks on the inputs and output (none), and inside
+/// #1724's bar only by the share's margin: a share or a rack charge cut
+/// reaches the track racks first.
 int fxLoadNs({
   required int serial,
   required Iterable<int> jobs,
