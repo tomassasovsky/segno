@@ -17,6 +17,7 @@
 #ifndef SEGNO_ENGINE_FX_H
 #define SEGNO_ENGINE_FX_H
 
+#include <math.h> /* fabsf (le_fx_note_output) */
 #include <stdint.h>
 
 #include "engine_private.h" /* le_fx_state, le_octaver_state, LE_FX_MAX/PARAMS */
@@ -306,6 +307,14 @@ static inline le_oct_aux* le_oa(le_octaver_state* o) {
  * tail the engine cannot see. */
 int32_t le_fx_chain_quiet_frames(const le_fx_state* fx, int count,
                                  const int32_t* types, int sr, int cap);
+
+/* Notes a lane chain's output pair (#1870): out_loud once it reaches
+ * LE_FX_DRAIN_FLOOR, a store only on a sounding frame. */
+static inline void le_fx_note_output(le_fx_state* fx, float l, float r) {
+  if (fabsf(l) >= LE_FX_DRAIN_FLOOR || fabsf(r) >= LE_FX_DRAIN_FLOOR) {
+    fx->out_loud = 1;
+  }
+}
 
 /* Applies a lane/monitor chain to one stereo sample in place, in chain order.
  * Stageless: every active entry processes both channels on the lane's own `fx`

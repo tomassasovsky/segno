@@ -109,8 +109,10 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 - It runs again, from its own state, when the track leaves EMPTY or the
   chain is edited (`a_fx_gen`). A take recorded after a sleep plays exactly
   as one through a chain kept awake (`test_engine_lane_chain_sleep.h`).
-  `le_fx_state.out_loud`, set by `fx_apply_chain_with_gain` on a frame at
-  or over the floor, is what the snapshot reads.
+  `le_fx_state.out_loud`, set by `le_fx_note_output` where a lane's chain
+  runs (the mixer, the track job, the lane flush) on a frame at or over the
+  floor, is what the snapshot reads; the horizon is computed once per chain
+  edit.
 - Monitor chains are untouched, so the first note played is never clipped.
 - Why the engine and not the app: the app keeps an inherited chain on a
   track undone back to empty for Redo, and a Clear's Post tail drains

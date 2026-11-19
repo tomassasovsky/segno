@@ -11611,10 +11611,6 @@ LE_AUDIO_HOT_AT(4) void fx_apply_chain_with_gain(le_fx_state* fx, int sr, int ca
     }
   }
   if (gain_at == count) { xl *= gain; xr *= gain; }
-  /* Whether anything came out (#1870): a store only on a sounding frame. */
-  if (fabsf(xl) >= LE_FX_DRAIN_FLOOR || fabsf(xr) >= LE_FX_DRAIN_FLOOR) {
-    fx->out_loud = 1;
-  }
   *l = xl;
   *r = xr;
 }

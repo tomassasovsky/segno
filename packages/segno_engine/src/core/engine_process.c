@@ -7724,13 +7724,17 @@ static inline int le_lane_chain_sleeps(le_lane* ln, int empty, int32_t n,
     if (ln->fx_asleep) return 1;
     const int32_t quiet = (int32_t)(clock - ln->fx_quiet_since);
     if (quiet >= 0) {
-      const int32_t need =
-          le_fx_chain_quiet_frames(&ln->fx, n, types, sr, cap);
+      /* Once per generation: the horizon moves only with an edit. */
+      if (ln->fx_quiet_need == 0) {
+        ln->fx_quiet_need = le_fx_chain_quiet_frames(&ln->fx, n, types, sr, cap);
+      }
+      const int32_t need = ln->fx_quiet_need;
       if (need >= 0 && quiet >= need) ln->fx_asleep = 1;
       return ln->fx_asleep;
     }
   }
   ln->fx.out_loud = 0;
+  if (gen != ln->fx_quiet_gen) ln->fx_quiet_need = 0;
   ln->fx_quiet_gen = gen;
   ln->fx_quiet_since = clock;
   ln->fx_asleep = 0;
@@ -10361,6 +10365,9 @@ LE_AUDIO_HOT_AT(4) void mix_tracks_frame_heard(
         wr = hp.r;
       }
 #endif
+      /* What the chain made (#1870); with the track's chains as jobs, what
+       * the job will feed it, or the heard crossfade's output. */
+      if (has_fx[t][l]) le_fx_note_output(&ln->fx, wl, wr);
 #ifdef LE_MIX_JOBS_TU
       /* The rest of the lane's frame is its track's job's (le_trk_job_run). */
       {
@@ -10653,6 +10660,7 @@ void le_trk_job_run(le_engine* e, int t, uint32_t upto) {
         fx_apply_chain(&tr->lanes[l].fx, p->sr, p->fx_cap, &wl, &wr,
                        sn->lane_count[t][l], sn->lane_type[t][l],
                        sn->lane_params[t][l], sn->lane_enabled[t][l]);
+        le_fx_note_output(&tr->lanes[l].fx, wl, wr);
       }
       wl *= jl->pan_l[i];
       wr *= jl->pan_r[i];
@@ -10718,6 +10726,7 @@ void le_trk_lane_flush(le_engine* e, int t, int l) {
     fx_apply_chain(fx, p->sr, p->fx_cap, &jl->l[i], &jl->r[i],
                    sn->lane_count[t][l], sn->lane_type[t][l],
                    sn->lane_params[t][l], sn->lane_enabled[t][l]);
+    le_fx_note_output(fx, jl->l[i], jl->r[i]);
     jl->flags[i] = (uint8_t)(jl->flags[i] & ~LE_TJ_CHAIN);
   }
   if (upto > jl->chain_done) jl->chain_done = upto;
