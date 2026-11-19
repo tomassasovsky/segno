@@ -173,6 +173,15 @@ const int kFxBenchPeriod = 64;
 /// share s puts the p99.9 at 1.16 s of the block at the limit; 0.9 / 1.16
 /// is 0.773, so 0.77. The engine counts the services past it
 /// (`over_share_periods`, LE_CB_OVER_SHARE_NUM / DEN).
+///
+/// Measured again on build 278 with nothing reading the sound card's status
+/// meanwhile (#1724): with a rack on each of four inputs and on six tracks
+/// and four takes playing, the app's per-period service had a p99.9 of
+/// 579 us, 1.20 times the 482 us this file then charged. The bench's engine
+/// ran the same rig at 452 us; the app's own work adds about the same
+/// microseconds to any rig. On the callback alone, beside the inputs' four,
+/// three racks on the output (91 %) ran clean and four (109 %) did not, so
+/// the share stands.
 const double kFxBudgetShare = 0.77;
 
 /// The rate the charges default to.
@@ -273,18 +282,25 @@ const Map<int, double> kFxHandoffUs = {1: 4.48, 2: 5.184, 3: 6.208};
 /// sums every track onto the outputs, work the monitor jobs' handoff
 /// ([kFxHandoffUs]) does not have.
 ///
-/// Set from the console (build 238, 48 kHz / 32, two workers,
-/// `bench_rt_faults --track-racks K`, #1729): Ed's Racks on 3 and 5 tracks
-/// ran with no late period and no xrun, on 6 and 7 with 66 and 87 late
-/// periods in 120 s, more than the 42 in 200 s of #1724's run at the
-/// limit. The per-job charge that admits 5 and refuses 6 at the 77 % share
-/// lies between 348 and 727 ns; this is near its middle. Four input racks
-/// beside one track rack, which this admits, ran with none; beside three,
-/// which it refuses, 72 late periods and 2 xruns. The engine records and
-/// sums every track of a block whose track chains are jobs, chained or not;
-/// those runs had all eight, so the figure carries that share. It is the
-/// console's setting's figure: a longer block spends less a frame on it.
-const int kFxTrackJobNs = 500;
+/// Set from the console (build 278, 48 kHz / 32, two workers,
+/// `bench_rt_faults` from master 6115156ad, 120 s each, #1724): with Ed's
+/// Rack on the four inputs, racks on 6, 7 and 8 tracks ran with no late
+/// period and no xrun (the callback's worst service 542, 531 and 579 us of
+/// 666), and so did 6 beside a rack on output pair 0 (632 us); 8 beside it
+/// ran 2 late. Every one of those runs that ran clean is lighter on the
+/// callback than three racks on the output with the four on the inputs
+/// (636 us), which the budget admits at 91 %. A charge of up to 223 ns
+/// admits all of them and still refuses 8 beside the output's rack, which
+/// no figure here admits; this keeps most of it as a margin for the app's
+/// own work on each lane. It is the console's setting's figure: a longer
+/// block spends less a frame on it.
+///
+/// The 500 ns it replaces came from #1729's runs on build 238, whose late
+/// periods were the measurement's: the sampling script read the sound
+/// card's status from /proc once a second, which takes the lock the
+/// callback's own ALSA calls need, and resized the trace ring as the
+/// window began. Run without either, the rigs those runs failed ran clean.
+const int kFxTrackJobNs = 200;
 
 /// What the effects charge the audio thread's worst block, in nanoseconds
 /// per frame, at [period]-frame blocks with [workers] effects workers
