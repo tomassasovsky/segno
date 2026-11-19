@@ -11,7 +11,8 @@
  * live engine; Smart Tune's per-tick settings (le_st_tick) are the live
  * ones, since #1755 does not touch them. A change that is meant to change
  * the sound of a pitch kind changes this file with it, in the same PR, and
- * says so.
+ * says so. Changed since: the Dual Octaver's second voice takes the low
+ * band's share by owner (#1616, ref_le_pv_stage_shift2).
  */
 #ifdef LE_NATIVE_TESTS
 
@@ -609,10 +610,11 @@ static void ref_le_pv_stage_shift(le_octaver_state* o) {
 }
 
 /* The second voice's shift (#1464): the same analysis at its own ratio,
- * into its own spectrum and phases. */
+ * into its own spectrum and phases. Since #1616 it takes the low band's
+ * share by owner too (engine_fx.c's le_pv_shift_into has no by_owner). */
 static void ref_le_pv_stage_shift2(le_octaver_state* o) {
   ref_le_pv_shift_into(o, o->frame_ratio2, LE_PV_S_PHASE2(o), LE_PV_S_RE2(o),
-                   LE_PV_S_IM2(o), o->frame_ratio2 < 1.0f, 0);
+                   LE_PV_S_IM2(o), o->frame_ratio2 < 1.0f, 1);
 }
 
 /* Stage 3: inverse transform, synthesis-window, and overlap-add from the

@@ -145,6 +145,8 @@ static const char* const k_reordered[] = {
 
 /* The kinds whose sound a commit after the reference changed on purpose. */
 static const char* const k_moved[] = {
+    /* #1616: the second voice takes the low band's share by owner. */
+    "dualoct",
     NULL,
 };
 
