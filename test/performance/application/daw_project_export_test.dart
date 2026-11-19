@@ -1,14 +1,29 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:daw_export/daw_export.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:segno/performance/application/daw_project_export.dart';
 
 void main() {
   late Directory dir;
+  late List<String> written;
 
-  setUp(() => dir = Directory.systemTemp.createTempSync('segno_daw_project'));
+  setUp(() {
+    dir = Directory.systemTemp.createTempSync('segno_daw_project');
+    written = [];
+  });
   tearDown(() => dir.deleteSync(recursive: true));
+
+  /// Stands in for `PerformanceRepository.writeTakeFile`, which is tested
+  /// there: records each file it is given and writes it in place.
+  Future<void> write(String take, String name, List<int> bytes) async {
+    written.add(name);
+    await File('$take/$name').writeAsBytes(bytes);
+  }
+
+  Future<List<DawTrack>> writeProject() =>
+      writeDawProject(dir.path, write: write);
 
   /// A finalized take's sidecar; [withTrack] gives it one channel whose
   /// lane points at a rendered stem.
@@ -65,7 +80,7 @@ void main() {
     final stem = writeStem([1, 2, 3, 4]);
     final stamp = stem.lastModifiedSync();
 
-    final tracks = await writeDawProject(dir.path);
+    final tracks = await writeProject();
 
     expect(tracks, hasLength(1));
     expect(File('${dir.path}/project.als').existsSync(), isTrue);
@@ -78,11 +93,20 @@ void main() {
     expect(stem.lastModifiedSync(), stamp);
   });
 
+  test("writes both files through the take's durable writer (#1801)", () async {
+    writeManifest(withTrack: true);
+    writeStem([0]);
+
+    await writeProject();
+
+    expect(written, ['project.als', 'fx-chains.txt']);
+  });
+
   test('writes no project.als for a take with no tracks, since Live cannot '
       'open one', () async {
     writeManifest();
 
-    expect(await writeDawProject(dir.path), isEmpty);
+    expect(await writeProject(), isEmpty);
     expect(File('${dir.path}/project.als').existsSync(), isFalse);
     expect(Directory('${dir.path}/Ableton Project Info').existsSync(), isFalse);
     expect(File('${dir.path}/fx-chains.txt').existsSync(), isTrue);
@@ -95,7 +119,7 @@ void main() {
     File('${dir.path}/project.als').writeAsBytesSync([1, 2, 3]);
     Directory('${dir.path}/Ableton Project Info').createSync();
 
-    expect(await writeDawProject(dir.path), isEmpty);
+    expect(await writeProject(), isEmpty);
     expect(File('${dir.path}/project.als').existsSync(), isFalse);
     expect(Directory('${dir.path}/Ableton Project Info').existsSync(), isFalse);
   });
@@ -105,10 +129,7 @@ void main() {
     writeManifest(withTrack: true);
     File('${dir.path}/project.als').writeAsBytesSync([1, 2, 3]);
 
-    await expectLater(
-      writeDawProject(dir.path),
-      throwsA(isA<StemsNotRendered>()),
-    );
+    await expectLater(writeProject(), throwsA(isA<StemsNotRendered>()));
     expect(File('${dir.path}/project.als').readAsBytesSync(), [1, 2, 3]);
     expect(
       const StemsNotRendered('/take').toString(),
@@ -120,20 +141,20 @@ void main() {
       'Project', () async {
     writeManifest(withTrack: true);
     writeStem([0]);
-    await writeDawProject(dir.path);
+    await writeProject();
 
-    expect(await writeDawProject(dir.path), hasLength(1));
+    expect(await writeProject(), hasLength(1));
     expect(Directory('${dir.path}/Ableton Project Info').existsSync(), isTrue);
   });
 
   test('reads the manifest afresh on every call', () async {
     writeManifest();
-    expect(await writeDawProject(dir.path), isEmpty);
+    expect(await writeProject(), isEmpty);
 
     writeStem([0]);
     writeManifest(withTrack: true);
 
-    expect(await writeDawProject(dir.path), hasLength(1));
+    expect(await writeProject(), hasLength(1));
   });
 
   test('throws what the write throws, so the caller can report it', () async {
@@ -142,10 +163,7 @@ void main() {
     // A directory where the Live Set goes: the write fails for real.
     Directory('${dir.path}/project.als').createSync();
 
-    await expectLater(
-      writeDawProject(dir.path),
-      throwsA(isA<FileSystemException>()),
-    );
+    await expectLater(writeProject(), throwsA(isA<FileSystemException>()));
   });
 
   test('a Live Project folder that cannot be made leaves the previous '
@@ -155,25 +173,7 @@ void main() {
     File('${dir.path}/project.als').writeAsBytesSync([1, 2, 3]);
     File('${dir.path}/Ableton Project Info').writeAsBytesSync([0]);
 
-    await expectLater(
-      writeDawProject(dir.path),
-      throwsA(isA<FileSystemException>()),
-    );
-
-    expect(File('${dir.path}/project.als').readAsBytesSync(), [1, 2, 3]);
-  });
-
-  test('a write cut short leaves the previous project whole', () async {
-    writeManifest(withTrack: true);
-    writeStem([0]);
-    File('${dir.path}/project.als').writeAsBytesSync([1, 2, 3]);
-    // The temp file's place is taken: the write fails before the rename.
-    Directory('${dir.path}/project.als.tmp').createSync();
-
-    await expectLater(
-      writeDawProject(dir.path),
-      throwsA(isA<FileSystemException>()),
-    );
+    await expectLater(writeProject(), throwsA(isA<FileSystemException>()));
 
     expect(File('${dir.path}/project.als').readAsBytesSync(), [1, 2, 3]);
   });

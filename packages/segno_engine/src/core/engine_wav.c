@@ -1,7 +1,7 @@
 /* engine_wav.c — see engine_wav.h. */
 #include "engine_wav.h"
 
-#include "segno_engine_api.h" /* le_fs_sync_dir, le_wav_patch_sizes */
+#include "segno_engine_api.h" /* le_fs_sync_*, le_wav_patch_sizes */
 
 #include <stdlib.h>
 #include <string.h>
@@ -162,9 +162,12 @@ int le_wav_publish(const char* part_path, const char* final_path) {
 #else
   if (rename(part_path, final_path) != 0) return 0;
 #endif
-  /* The rename is durable once the directory entry is (#1198 Part 1). A
-   * failed directory sync leaves the file published in place; it is
-   * reported as published (2), not as a failed write (review L3). */
+  /* The rename is durable once the file and the directory entry are (#1198
+   * Part 1): on vfat the new entry reads size 0 until the file's own inode
+   * is written, which only a sync of the file does (#1801). A failed sync
+   * leaves the file published in place; it is reported as published (2),
+   * not as a failed write (review L3). */
+  const int file_synced = le_fs_sync_file_errno(final_path, NULL) == LE_OK;
   const size_t n = strlen(final_path);
   char* dir = (char*)malloc(n + 2);
   if (dir == NULL) return 2; /* renamed: published, directory not synced */
@@ -184,7 +187,7 @@ int le_wav_publish(const char* part_path, const char* final_path) {
   }
   const int synced = le_fs_sync_dir(dir) == LE_OK;
   free(dir);
-  return synced ? 1 : 2;
+  return file_synced && synced ? 1 : 2;
 }
 
 static uint32_t le_wav_get_u32(const unsigned char* p) {

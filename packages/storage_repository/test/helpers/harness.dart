@@ -140,6 +140,9 @@ class FakeStorageIo implements engine.StorageIo {
   }
 
   @override
+  void syncFile(String path) => throw UnimplementedError();
+
+  @override
   void syncVolume(String path) {
     if (failingSyncs.contains(path)) {
       onSyncFailure?.call();
