@@ -195,9 +195,8 @@ logical, drawn from `test/screenshots/readout_controls_screenshots_test.dart`
 (the readout with its strip and the panel while recording, each in English
 and Spanish; the panel, retimes, every signature, the keypad and its range
 refusal; Clear tempo refused in English and Spanish), each with its `c/`
-note. The page's "Selected track · 7-inch"
-tile carries a note that the strip replaced its bottom row. Snapshot in
-tomassasovsky/segno-design#21.
+note. The page's "Selected track · 7-inch" tile carries a note that the strip
+replaced its bottom row. Snapshot in tomassasovsky/segno-design#21.
 
 ## Device checks (later, on the console, #1906)
 
