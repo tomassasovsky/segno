@@ -853,9 +853,10 @@ void main() {
     // 32, bench_rt_faults, 120 s each) Ed's Racks on 3 and 4 tracks ran
     // with no late period and no xrun, and their service matched the same
     // racks on the inputs; on 5 tracks, 6 to 9 late periods and no xrun in
-    // three runs, inside #1724's bar of 42 in 200 s. #1729's 91 late periods and 3 xruns on
-    // 3 tracks were on build 238, where a rack charged 4640 ns and three
-    // filled 95 % of the budget; #1755 made the racks cheaper.
+    // three runs, inside #1724's bar of 42 in 200 s. #1729's 91 late
+    // periods and 3 xruns on 3 tracks were on build 238, where a rack
+    // charged 4640 ns and three filled 95 % of the budget; #1755 made the
+    // racks cheaper.
     test("at 48 kHz / 32 with no workers, five of Ed's Racks on tracks fit "
         'and six do not: summed on the callback, with no job charge '
         '(#1746)', () {
