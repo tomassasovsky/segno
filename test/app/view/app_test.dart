@@ -1788,6 +1788,9 @@ void main() {
         EngineResult.ok,
       );
       expect(repository.record(), EngineResult.ok);
+      // The take lands on the next projection (any write), and says so
+      // then, once it holds its image.
+      repository.setVolume(.5, channel: 5);
       await tester.pumpAndSettle();
       expect(noticeTracks(AppNoticeId.fxTakePrinted), [0]);
       expect(

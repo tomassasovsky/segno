@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:segno_engine/segno_engine.dart';
@@ -323,8 +324,15 @@ class FakeAudioEngine with SimulatedInstruments implements AudioEngine {
       sourceImages[key] = entry.value;
       _composeLane(key);
     }
+    for (final lane in image.heardLanes) {
+      heardLanes.add((channel, lane));
+    }
     imageRevisions[channel] = image.revision;
   }
+
+  /// Lanes whose live take holds a heard image (#1713): a published take's
+  /// [RecordImage.heardLanes]. The snapshot reports them.
+  final Set<(int, int)> heardLanes = {};
 
   @override
   RequestAdmission toggleFade({
@@ -2148,6 +2156,10 @@ class _LengthSnapshot extends EngineSnapshot {
              _LengthTrack(
                source.tracks[channel],
                lengths[channel],
+               heard: {
+                 for (final (t, l) in engine.heardLanes)
+                   if (t == channel) l,
+               },
                imageRevision: engine.imageRevisions[channel],
                solo: engine.trackSolo[channel],
                oneShot: engine.trackOneShot[channel],
@@ -2166,6 +2178,7 @@ class _LengthTrack extends TrackSnapshot {
   new(
     TrackSnapshot source,
     int? bars, {
+    Set<int> heard = const {},
     int? imageRevision,
     bool? solo,
     bool? oneShot,
@@ -2215,6 +2228,35 @@ class _LengthTrack extends TrackSnapshot {
              ? source.quantizeDivOverride
              : timing.division,
          overdubFeedbackOverride: source.overdubFeedbackOverride,
-         lanes: source.lanes,
+         lanes: [
+           for (
+             var l = 0;
+             l < [source.lanes.length, ...heard.map((l) => l + 1)].fold(0, max);
+             l++
+           )
+             _HeardLane(
+               l < source.lanes.length ? source.lanes[l] : null,
+               heard: heard.contains(l),
+             ),
+         ],
        );
+}
+
+/// A lane as the source has it (an empty one past its lanes), reporting a
+/// heard image where a published take recorded one.
+class _HeardLane extends LaneSnapshot {
+  new(LaneSnapshot? source, {required bool heard})
+    : super(
+        inputChannel: source?.inputChannel ?? -1,
+        outputMask: source?.outputMask ?? 0x3,
+        volume: source?.volume ?? 1,
+        pan: source?.pan ?? 0,
+        muted: source?.muted ?? false,
+        lengthFrames: source?.lengthFrames ?? 0,
+        rms: source?.rms ?? 0,
+        peak: source?.peak ?? 0,
+        recoverable: source?.recoverable ?? false,
+        heard: heard || (source?.heard ?? false),
+        source: source?.source ?? LaneSource.heard,
+      );
 }
