@@ -391,7 +391,11 @@ LE_EXPORT int32_t le_engine_set_instrument_routes(le_engine* engine,
   /* The callback may still read the other table until it has acknowledged
    * the current one. The acquire pairs with the callback's release of the
    * acknowledgement, so its last reads of the other table happen before the
-   * copy below overwrites it. */
+   * copy below overwrites it. Stopped, no callback reads either table, so
+   * the check is skipped, but only the callback acknowledges: a table
+   * published while stopped stays unacknowledged until the first block
+   * after the start (#1814), which still reads the table it held as `prev`
+   * to retire moved routes. */
   if (running && atomic_load_explicit(&engine->a_inst_routes_seen,
                                       memory_order_acquire) != live) {
     return LE_ERR_NOT_READY;
@@ -426,8 +430,6 @@ LE_EXPORT int32_t le_engine_set_instrument_routes(le_engine* engine,
   /* Release: the callback that loads `next` sees the whole table. */
   atomic_store_explicit(&engine->a_inst_routes_live, next,
                         memory_order_release);
-  /* Stopped: no callback reads either table, so the switch is immediate. */
-  if (!running) store_i32(&engine->a_inst_routes_seen, next);
   return LE_OK;
 }
 
