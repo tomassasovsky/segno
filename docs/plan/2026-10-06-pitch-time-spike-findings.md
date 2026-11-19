@@ -1,6 +1,6 @@
 # Pitch/time core, Part 1: the measured CPU spike
 
-<!-- cspell:ignore varispeed Neoverse signalsmith fmod SCHED rnnoise noexcept lbuf -->
+<!-- cspell:ignore varispeed Neoverse signalsmith fmod SCHED rnnoise noexcept lbuf rtirq -->
 
 Tracking: #1179, Part 1 of
 [the plan](2026-10-06-feat-pitch-time-core-plan.md). Status: the harness, the
