@@ -1,7 +1,7 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -29,22 +29,17 @@ Future<Set<String>> _registeredPackages() async => {
   await for (final entry in LicenseRegistry.licenses) ...entry.packages,
 };
 
-/// Serves the asset bundle from the checkout (an asset key is its path from
-/// the repository root, the engine's under `packages/segno_engine/`), except
-/// [missing], which loads as a missing asset does.
-void _serveAssetsWithout(String missing) {
-  TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-      .setMockMessageHandler('flutter/assets', (message) async {
-        final key = utf8.decode(
-          message!.buffer.asUint8List(
-            message.offsetInBytes,
-            message.lengthInBytes,
-          ),
-        );
-        if (key == missing) return null;
-        final bytes = File(key).readAsBytesSync();
-        return ByteData.sublistView(bytes);
-      });
+/// The app's asset bundle, except [missing], which loads as a missing asset
+/// does.
+class _BundleWithout extends CachingAssetBundle {
+  new(this.missing);
+
+  final String missing;
+
+  @override
+  Future<ByteData> load(String key) => key == missing
+      ? Future.error(FlutterError('no $key'))
+      : rootBundle.load(key);
 }
 
 /// Runs [body] with [FlutterError.onError] collecting what is reported.
@@ -67,11 +62,7 @@ void main() {
 
   // The registry is a global that licenses ADD to.
   setUp(LicenseRegistry.reset);
-  tearDown(() {
-    LicenseRegistry.reset();
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMessageHandler('flutter/assets', null);
-  });
+  tearDown(LicenseRegistry.reset);
 
   testWidgets('runSegno registers the vendored native code and the bundled '
       'fonts before it routes a screen', (tester) async {
@@ -120,8 +111,7 @@ void main() {
 
     test('a license file that fails to load is reported and left out, and '
         'the rest still list', () async {
-      _serveAssetsWithout(_expected['vst3sdk']!);
-      registerVendoredLicenses();
+      registerVendoredLicenses(bundle: _BundleWithout(_expected['vst3sdk']!));
 
       late Set<String> packages;
       final reported = await _reportedDuring(() async {
@@ -187,8 +177,7 @@ void main() {
     test('a licence file that fails to load is reported and left out, and '
         'the other fonts still list', () async {
       final (missingFont, missingPath) = bundledFontLicenses.first;
-      _serveAssetsWithout(missingPath);
-      registerFontLicenses();
+      registerFontLicenses(bundle: _BundleWithout(missingPath));
 
       late Set<String> fonts;
       final reported = await _reportedDuring(() async {

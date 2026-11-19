@@ -35,16 +35,17 @@ const List<(String, String)> bundledFontLicenses = [
 /// Call once at startup, after the binding is initialised. The texts are read
 /// lazily, when the registry is first walked. A file that fails to load is
 /// reported through [FlutterError.reportError] and left out, so the other
-/// fonts, and every package's licence, still list.
-void registerFontLicenses() {
-  LicenseRegistry.addLicense(_fontLicenseEntries);
+/// fonts, and every package's licence, still list. The files are read from
+/// [bundle], the app's [rootBundle] unless given.
+void registerFontLicenses({AssetBundle? bundle}) {
+  LicenseRegistry.addLicense(() => _fontLicenseEntries(bundle ?? rootBundle));
 }
 
-Stream<LicenseEntry> _fontLicenseEntries() async* {
+Stream<LicenseEntry> _fontLicenseEntries(AssetBundle bundle) async* {
   for (final (font, path) in bundledFontLicenses) {
     final String text;
     try {
-      text = await rootBundle.loadString(path, cache: false);
+      text = await bundle.loadString(path, cache: false);
     } on Object catch (error, stack) {
       FlutterError.reportError(
         FlutterErrorDetails(
