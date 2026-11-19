@@ -58,11 +58,9 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1590, #1672 | Screen audits: every fix is on master; the Penpot writeback listed under each PR's Design writeback is owed (no Penpot tab with the MCP plugin on 2026-11-19) | build | auto | none |
 | #1540 | Drive pedals' aliasing at 48 kHz: four kinds oversampled (#1552); the owner's blind pairs decide whether the built-in Drive is oversampled too | build | plan-gate | `claude/drive-alias-1540` |
 | #1498 | Restart and shut down also wait for RAUC's own install, after an app restart | in-review | blocked-verify | `claude/rauc-power-gate-1498` |
-| #1755 | Every effect cheaper without changing its sound: the pitch family merged (#1764); its state out of the mixer's structs so the arm64 mixer gate is back where it was | in-review | auto | `claude/pitch-gate-1755` |
+| #1755 | Every effect cheaper without changing its sound: pitch (#1764, #1770), drives (#1759) and reverbs/delays/filters (#1762) merged; part 4, the Vinyl's oversampler in lanes, bit-identical | build | auto | `claude/fx-opt-part4-1755` |
 | #1724 | Effects budget from the console's measured headroom: charges at the configured rate and period, share 77 % from the 48 kHz / 32 stress run | in-review | auto | `claude/fx-headroom-1724` |
-| #1755 | Cheaper effects at no loss of quality: the drives and the amp (Overdrive, Distortion, Amp+Cab), bit-identical on the console but for the cabinet's direct taps | in-review | auto | `claude/fx-opt-drives-1755` |
 | #1515 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track and lane chains) is #1729 | build | plan-gate | `claude/fx-multicore-1515-p1b` |
-| #1755 | Cheaper effects, same sound: the reverbs, delays, filters and the rest (pitch and drives are their own threads); bit-identical, guarded by bench_fx_equiv | in-review | auto | `claude/fx-opt-rest-1755` |
 | #1816 | Console WiFi against an ASUS RT-AX89X with 802.11ax on: firmware already matches Pi OS; brcmfmac options aligned with Pi OS and a troubleshooting note; failure not reproduced, issue stays open until it recurs | in-review | auto | `claude/wifi-firmware-1816` |
 
 ---
