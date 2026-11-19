@@ -40,7 +40,6 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 |-------|--------|-------|----------|--------|
 | #1795 | NVMe drive drops off the bus mid-recording: the Pi 5 cmdline turns off APST and PCIe ASPM on every link | in-review | blocked-verify | `claude/nvme-power-1795` |
 | #1797 | A finished export to a FAT stick is on the device: copies and the export end with a volume sync | in-review | blocked-verify | `claude/usb-export-durable-1797` |
-| #1674 | Anti-aliasing under Impeller: ivi-homescreen renders into a 4x MSAA framebuffer and resolves it before each flip | in-review | auto | `claude/ivi-msaa-1674` |
 | #1367 | Start helper programs with posix_spawn, never fork the app | in-review | merge-gate | `claude/no-fork-1367` |
 | #1337 | Retry Wi-Fi after a runtime drop, holding off while performing | in-review | blocked-verify | `claude/wifi-runtime-retry-1337` |
 | #1352 | Console negotiates the charger's full 20 V current, with a power-cycle prompt | in-review | blocked-verify | `claude/pd-provisioning-1352` |
@@ -64,7 +63,6 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1724 | Effects budget from the console's measured headroom: charges at the configured rate and period, share 77 % from the 48 kHz / 32 stress run | in-review | auto | `claude/fx-headroom-1724` |
 | #1755 | Cheaper effects at no loss of quality: the drives and the amp (Overdrive, Distortion, Amp+Cab), bit-identical on the console but for the cabinet's direct taps | in-review | auto | `claude/fx-opt-drives-1755` |
 | #1515 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track and lane chains) is #1729 | build | plan-gate | `claude/fx-multicore-1515-p1b` |
-| #1674 | Screens without anti-aliasing under Impeller, and the 7in readout's colours: the readout palette (decision 3) in review | in-review | auto | `claude/readout-palette-1674` |
 | #1755 | Cheaper effects, same sound: the reverbs, delays, filters and the rest (pitch and drives are their own threads); bit-identical, guarded by bench_fx_equiv | in-review | auto | `claude/fx-opt-rest-1755` |
 | #1816 | Console WiFi against an ASUS RT-AX89X with 802.11ax on: firmware already matches Pi OS; brcmfmac options aligned with Pi OS and a troubleshooting note; failure not reproduced, issue stays open until it recurs | in-review | auto | `claude/wifi-firmware-1816` |
 
