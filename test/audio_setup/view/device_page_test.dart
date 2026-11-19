@@ -500,10 +500,10 @@ void main() {
       await pump(tester);
       await tester.tap(find.byKey(const Key('audio_max_loop_row')));
       await tester.pumpAndSettle();
-      // The open grid's second row runs under the Apply row: the workspace
-      // scrolls to it.
-      await tester.ensureVisible(find.byKey(const Key('audio_max_loop_5')));
-      await tester.pumpAndSettle();
+      // Opening scrolls the whole grid into view: at full size its second
+      // row of chips would end below the screen.
+      final chip = tester.getRect(find.byKey(const Key('audio_max_loop_5')));
+      expect(chip.bottom, lessThanOrEqualTo(1080));
       await tester.tap(find.byKey(const Key('audio_max_loop_5')));
       await tester.pumpAndSettle();
       verifyNever(() => repository.applyAudioConfig(any()));
