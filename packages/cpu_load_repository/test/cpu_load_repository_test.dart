@@ -171,6 +171,23 @@ void main() {
         expect(repository.cores, Platform.numberOfProcessors);
         expect(repository.interval, const Duration(seconds: 1));
       });
+
+      test(
+        'samples both files from the directory as soon as it is watched',
+        () async {
+          File('${proc.path}/stat').writeAsStringSync(stat(0));
+          File('${proc.path}/uptime').writeAsStringSync(uptime(0));
+          final subscription = CpuLoadRepository.system(proc: proc.path)
+              .watch()
+              .listen((_) {});
+          // The first sample reads at once; take both files away so a later
+          // read would throw and be skipped rather than pass by luck.
+          await Future<void>.delayed(const Duration(milliseconds: 100));
+          File('${proc.path}/stat').deleteSync();
+          File('${proc.path}/uptime').deleteSync();
+          await subscription.cancel();
+        },
+      );
     });
   });
 }
