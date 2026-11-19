@@ -111,6 +111,30 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   in shell before the change; the built app is not yet checked on the
   console.
 
+## November 2026 Lane chains sleep on empty tracks (#1870)
+
+- A lane chain on an EMPTY track stops running once its output has stayed
+  under `LE_FX_DRAIN_FLOOR` for its whole tail (`le_lane_chain_sleeps` in
+  `engine_process.c`, `le_fx_chain_quiet_frames` in `engine_fx.c`): 50 ms
+  plus the drain horizon of every entry that holds a tail, summed. The track
+  then takes the idle skip and needs no job. Counted only while the track is
+  EMPTY, so a Clear's Post tail drains first. A chain with a hosted plugin
+  never sleeps.
+- It runs again, from its own state, when the track leaves EMPTY or the
+  chain is edited (`a_fx_gen`). A take recorded after a sleep plays exactly
+  as one through a chain kept awake (`test_engine_lane_chain_sleep.h`).
+  `le_fx_state.out_loud`, set by `le_fx_note_output` where a lane's chain
+  runs (the mixer, the track job, the lane flush) on a frame at or over the
+  floor, is what the snapshot reads; the horizon is computed once per chain
+  edit.
+- Monitor chains are untouched, so the first note played is never clipped.
+- Why the engine and not the app: the app keeps an inherited chain on a
+  track undone back to empty for Redo, and a Clear's Post tail drains
+  through the chain.
+- Console (Pi 5, 48 kHz / 32, idle stage, four empty tracks, the rig's
+  three inherited lane chains): `segno-audio` 99.3 → 75.5 µs a period, each
+  fx worker 26 → 10.5 µs and woken every other period; total 150.8 → 96.6.
+
 ## November 2026 The network stack is Raspberry Pi OS's (#1843)
 
 - NetworkManager drives the radio through wpa_supplicant, as on Raspberry Pi
