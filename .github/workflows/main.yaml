@@ -167,11 +167,15 @@ jobs:
         run: |
           dart pub global activate very_good_cli 1.5.0
           flutter pub get
+      # The shard flags take `=`: very_good reads any argument after `--`
+      # that does not start with `-` as a test file, and then turns its
+      # optimization off (each file compiles on its own: 7 to 8 minutes a
+      # shard).
       - name: Run shard ${{ matrix.shard }} of the app's tests
         run: >
           very_good test -j 4 --optimization --coverage --report-on lib
           --test-randomize-ordering-seed random
-          -- --total-shards 3 --shard-index ${{ matrix.index }}
+          -- --total-shards=3 --shard-index=${{ matrix.index }}
       - uses: actions/upload-artifact@v7
         with:
           name: app-coverage-${{ matrix.shard }}
