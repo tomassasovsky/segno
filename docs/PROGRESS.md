@@ -59,7 +59,6 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1540 | Drive pedals' aliasing at 48 kHz: four kinds oversampled (#1552); the owner's blind pairs decide whether the built-in Drive is oversampled too | build | plan-gate | `claude/drive-alias-1540` |
 | #1498 | Restart and shut down also wait for RAUC's own install, after an app restart | in-review | blocked-verify | `claude/rauc-power-gate-1498` |
 | #1755 | Every effect cheaper without changing its sound: the pitch family merged (#1764); its state out of the mixer's structs so the arm64 mixer gate is back where it was | in-review | auto | `claude/pitch-gate-1755` |
-| #1771 | PR checks in a fraction of the time and job-minutes: native suites built once and run in parallel, ccache, cached packages, path filters, one job for the package suites, ASan in three parts, caches saved on master | in-review | auto | `claude/ci-speed-1771` |
 | #1724 | Effects budget from the console's measured headroom: charges at the configured rate and period, share 77 % from the 48 kHz / 32 stress run | in-review | auto | `claude/fx-headroom-1724` |
 | #1755 | Cheaper effects at no loss of quality: the drives and the amp (Overdrive, Distortion, Amp+Cab), bit-identical on the console but for the cabinet's direct taps | in-review | auto | `claude/fx-opt-drives-1755` |
 | #1515 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track and lane chains) is #1729 | build | plan-gate | `claude/fx-multicore-1515-p1b` |
@@ -248,7 +247,8 @@ a take's chains, where it used to hold each effect as it stood at arm.
   `vst3_faces_test.dart` fails when it no longer matches the drawing code
   (`--update-goldens` rewrites it). `install.sh` renders the pictures (a
   background, the LED lit, and each control at each of its settings, at 1x
-  and 2x) with `vst3_faces_render_test.dart` and the build bundles them in
+  and 2x) with the `vst3_faces_render_<k>_test.dart` suites, a third of the
+  faces each, side by side (#1771), and the build bundles them in
   `Contents/Resources/faces`; the pictures are build output, not tracked.
 - The editor (`editor_mac.mm`) is an IPlugView holding an NSView, macOS
   only: it draws the pictures at the parameters' values, edits through the

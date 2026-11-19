@@ -12,11 +12,12 @@ name: ci-caches
 # any ref, and a job that finds its cache saves nothing.
 #
 # The keys must be the ones the PR jobs compute: subosito/flutter-action's
-# defaults (the packages, design and fuzz jobs), the Very Good workflows' key
-# (flutter_package.yml adds the hash of every pubspec.lock), and the console
-# firmware job's Arduino key, and the two apt package sets: the native jobs'
-# and the ALSA headers alone (the packages, design and segno-engine-tests
-# jobs).
+# defaults (every Flutter job in main.yaml), the console firmware job's
+# Arduino key, and the two apt package sets: the native jobs' and the ALSA
+# headers alone (the app-tests, packages, design and segno-engine-tests
+# jobs). Nothing reads the Very Good workflows' SDK key since main.yaml's
+# app checks run in jobs of its own (#1771), so it is not saved: it carried
+# the hash of every pubspec.lock, and each lock change saved another 1.6 GB.
 #
 # This is the only workflow that saves caches for the PR checks: main.yaml
 # runs with cache-mode read (#1787). It saves only on master: a run on any
@@ -48,19 +49,12 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
-      - name: Flutter, with the packages and design jobs' cache keys
+      - name: Flutter, with main.yaml's cache keys
         uses: subosito/flutter-action@v2
         with:
           flutter-version: "3.50.x"
           channel: stable
           cache: true
-      - name: Flutter, with the Very Good workflows' cache key
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: "3.50.x"
-          channel: stable
-          cache: true
-          cache-key: flutter-:os:-:channel:-:version:-:arch:-:hash:-${{ hashFiles('**/pubspec.lock') }}
       - name: Fill the pub cache
         run: |
           dart pub global activate very_good_cli 1.5.0

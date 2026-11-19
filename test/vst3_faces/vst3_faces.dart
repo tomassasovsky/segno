@@ -1,7 +1,7 @@
 /// The pedal faces Segno.vst3's editors draw (#1815), exported from the
 /// console's own drawing code: the layout every editor reads
 /// ([kVst3FacesManifest]) and the pictures it draws, which
-/// `vst3_faces_render_test.dart` renders when the plugins are installed.
+/// `vst3_faces_render.dart` renders when the plugins are installed.
 ///
 /// An editor is the console's single-effect page reduced to what a plugin
 /// window holds: the effect's pedal ([FxStompPedal]) on the effect page's

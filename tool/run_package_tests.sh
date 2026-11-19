@@ -3,10 +3,9 @@
 # Runs the packages' own test suites, each against its coverage floor, the
 # way the Very Good workflows ran them one job per package (#1771): `very_good
 # test` for the Flutter packages and `very_good dart test` for the pure Dart
-# ones, with test optimization, randomized order and the floor below. The
-# root `build` job already formats and analyzes every package (its
-# format_directories and analyze_directories glob packages/*), so this runs
-# only the tests.
+# ones, with test optimization, randomized order and the floor below. CI's
+# analyze job already formats and analyzes every package (its directory
+# lists glob packages/*), so this runs only the tests.
 #
 # Run it from anywhere after `very_good packages get --recursive` at the
 # root. PACKAGE_TEST_JOBS sets how many packages test at once: half the CPUs
