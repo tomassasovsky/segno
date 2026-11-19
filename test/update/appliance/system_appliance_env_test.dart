@@ -134,6 +134,8 @@ void main() {
 
         final progress = <double>[];
         final sub = env.stage('0.7.0').listen(progress.add);
+        // The helper can get here before startProcess has handed the app its
+        // process, and the cancel must still wait for the exit (#1696).
         while (!File(started).existsSync()) {
           await Future<void>.delayed(const Duration(milliseconds: 20));
         }

@@ -84,19 +84,19 @@ class SystemApplianceEnv implements ApplianceEnv {
   ///
   /// Cancelling the subscription sends the helper SIGTERM and completes once
   /// it has exited, so whatever the helper leaves behind on a kill is in
-  /// place by the time the caller goes on.
+  /// place by the time the caller goes on. That holds for a cancel while the
+  /// helper is still starting too: the helper can be running before
+  /// [startProcess] returns it (#1696).
   Stream<double> _runHelper(List<String> args) {
-    SpawnedProcess? process;
+    late final Future<SpawnedProcess> starting;
     var cancelled = false;
     late final StreamController<double> controller;
 
     Future<void> run() async {
       try {
-        final started = process = await startProcess(helperPath, args);
-        if (cancelled) {
-          started.kill();
-          return;
-        }
+        final started = await (starting = startProcess(helperPath, args));
+        // A cancel stops the helper itself, once it has the process.
+        if (cancelled) return;
         final stderrLines = <String>[];
         final stderrDone = started.stderr
             .transform(utf8.decoder)
@@ -142,8 +142,13 @@ class SystemApplianceEnv implements ApplianceEnv {
       onListen: () => unawaited(run()),
       onCancel: () async {
         cancelled = true;
-        final running = process;
-        if (running == null) return;
+        final SpawnedProcess running;
+        try {
+          running = await starting;
+        } on Object {
+          // The helper never started; run() reports nothing after a cancel.
+          return;
+        }
         running.kill();
         // Waits for the exit, not for its status: a status that could not be
         // collected must not turn a cancel into an error.
