@@ -239,11 +239,19 @@ typedef struct {
 /* What fails today, each with why it is allowed. The full run's table
  * names the worst setting of each. */
 static const mx_known k_known[] = {
-    /* The Dual Octaver's Octave 2 at 96 kHz (Bass Octave Layer, at 60 %):
-     * its vocoder voice, two octaves down, strays at the notes' onsets. Not
-     * the low band: with the band off it strays further (6.2 dB). #1616;
-     * the hand-over's part went with #1580. */
-    {"dualoct", MX_ENVELOPE, 96000, 4.0},
+    /* The Dual Octaver at 96 kHz with Octave 2 up (Bass Octave Layer at
+     * 60 %, Bass Amp Dirty at 15 %; #1884). Envelope: 2.24 dB, from the
+     * notes' onsets (6.1 dB at 105 ms) and from the two vocoder voices'
+     * sum: each voice's level holds under a small change in the input
+     * (#1616 took the second's share by owner, #1580 the first's), but
+     * their phases do not, and the second voice's even harmonics land on
+     * the first's. Response: the 12.8 kHz band, the vocoder's splatter 38
+     * to 44 dB down where the input has nothing to shift, reads 4.4 dB
+     * over 48 kHz's on macOS and 3.6 on Linux. It read 4.6 dB over before
+     * #1616 too, under MX_RESPONSE_FLOOR_DB; judging each bin's contest on
+     * the whole partials lifted both rates' about 3 dB. */
+    {"dualoct", MX_ENVELOPE, 96000, 3.0},
+    {"dualoct", MX_RESPONSE, 96000, 5.0},
     /* The Overdrive at 44.1 kHz (Lead Crunch, Drive 98.7 %): -59.9 dB at
      * 8x. Its clipped part's small-signal gain, fitted to the Looper X in
      * #1663, is 1.6 times the old fit's at that drive, so its square wave's
