@@ -236,8 +236,9 @@ WPA_END_RE='4-Way Handshake failed|CTRL-EVENT-ASSOC-REJECT|CTRL-EVENT-AUTH-REJEC
 #
 #   wrong-password  the access point refused the key (key_wrong): it ended
 #                   the handshake once with a reason that means the key, or
-#                   twice with any reason. Only for a key that has not
-#                   connected on this profile (<judge> is yes, key_proven). wpa_supplicant logs the handshake
+#                   twice with any reason, and only for a key that has
+#                   not connected on this profile (<judge> is yes,
+#                   key_proven). wpa_supplicant logs the handshake
 #                   line for any drop during the handshake (events.c,
 #                   could_be_psk_mismatch), so its own timeout
 #                   (locally_generated=1) and a single drop with another
