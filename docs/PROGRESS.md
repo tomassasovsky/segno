@@ -58,11 +58,9 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1590, #1672 | Screen audits: every fix is on master; the Penpot writeback listed under each PR's Design writeback is owed (no Penpot tab with the MCP plugin on 2026-11-19) | build | auto | none |
 | #1540 | Drive pedals' aliasing at 48 kHz: four kinds oversampled (#1552); the owner's blind pairs decide whether the built-in Drive is oversampled too | build | plan-gate | `claude/drive-alias-1540` |
 | #1498 | Restart and shut down also wait for RAUC's own install, after an app restart | in-review | blocked-verify | `claude/rauc-power-gate-1498` |
-| #1755 | Every effect cheaper without changing its sound: the pitch family merged (#1764); its state out of the mixer's structs so the arm64 mixer gate is back where it was | in-review | auto | `claude/pitch-gate-1755` |
+| #1755 | Every effect cheaper without changing its sound: pitch (#1764, #1770), drives (#1759), reverbs/delays/filters (#1762) and the Vinyl (#1904, part 4) bit-identical; part 5, the Degrade at 96 kHz, is next (scope on the issue) | build | auto | `claude/fx-opt-part5-1755` |
 | #1724 | Effects budget from the console's measured headroom: charges at the configured rate and period, share 77 % from the 48 kHz / 32 stress run | in-review | auto | `claude/fx-headroom-1724` |
-| #1755 | Cheaper effects at no loss of quality: the drives and the amp (Overdrive, Distortion, Amp+Cab), bit-identical on the console but for the cabinet's direct taps | in-review | auto | `claude/fx-opt-drives-1755` |
 | #1515 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track and lane chains) is #1729 | build | plan-gate | `claude/fx-multicore-1515-p1b` |
-| #1755 | Cheaper effects, same sound: the reverbs, delays, filters and the rest (pitch and drives are their own threads); bit-identical, guarded by bench_fx_equiv | in-review | auto | `claude/fx-opt-rest-1755` |
 | #1816 | Console WiFi against an ASUS RT-AX89X with 802.11ax on: firmware already matches Pi OS; brcmfmac options aligned with Pi OS and a troubleshooting note; failure not reproduced, issue stays open until it recurs | in-review | auto | `claude/wifi-firmware-1816` |
 
 ---
@@ -738,6 +736,26 @@ a take's chains, where it used to hold each effect as it stood at arm.
   pedal or MIDI message (`IdleDimCubit.activities`). A stem that failed to
   render is the news instead: the take completes as partial and the dialog
   opens.
+
+## November 2026 Cheaper effects, the same sound: the Vinyl (#1755 part 4)
+
+- The Vinyl was the costliest kind no earlier part had touched (375 ns a
+  frame at 48 kHz / 32). It ran its 4x oversampling (2x at 88.2 kHz and
+  up) one channel at a time, and its dry share went down through a second
+  copy of it. It now runs both channels in lanes (`le_os4`, as the
+  Overdrive and the Distortion do), and the dry share's way down runs beside
+  the copy's on the same design (`le_os4_downs`, two streams), so the two
+  chains overlap. Bit-identical to master: `bench_fx_equiv --kind vinyl`
+  (and the Overdrive and the Distortion, which share the lane code) on
+  macOS clang -O2, GCC 14.2 and clang 18 -O3 on arm64.
+- On the console (`bench_fx_cpu --paced --cpu 3 --table --only vinyl`,
+  twice at each of the eight settings, master's binary and the new one on
+  the same day): 4x settings about 362 -> 283 ns a frame, 2x about 190 ->
+  166. The moving run costs no more than the table. The charges
+  (`kFxSettingCostNs`): 381, 374, 375, 374, 201, 200, 192, 203 -> 297,
+  296, 292, 293, 173, 177, 168, 179 (each the larger of its largest new
+  reading and its old charge times its setting's after-to-before ratio).
+  Raw tables in the console's `/data/bench/fx-opt-vinyl/out`.
 
 ## November 2026 Cheaper effects, the same sound: reverbs, delays, filters (#1755)
 

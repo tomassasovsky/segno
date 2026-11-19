@@ -87,7 +87,12 @@ const Map<TrackEffectType, int> kFxKindCostNs = {
 /// heaviest use at 32 frames is a setting that moves every block (its
 /// update redesigns its filters), not its kernel.
 /// The kinds on the hop changed in #1755 and charge its runs at all eight
-/// (the larger of two where it ran twice).
+/// (the larger of two where it ran twice). So does the Vinyl, made cheaper
+/// in #1755 part 4 (bit-identical): the table, twice at each of the eight
+/// with the trunk's binary and the new one on the same day, each setting
+/// charging the larger of its largest new reading and its old charge scaled
+/// by that setting's after-to-before ratio (0.78 at 4x, 0.86 to 0.88 at
+/// 2x); its moving run cost no more than its table.
 ///
 /// A kind on the hop (the octaver, the Whammy, the Dual Octaver) spreads a
 /// frame over thirteen slots of its 48 kHz hop (#1755), so a 32-frame block
@@ -106,7 +111,7 @@ const Map<TrackEffectType, List<int>> kFxSettingCostNs = {
   TrackEffectType.dualOctaver: [1286, 1286, 702, 759, 872, 738, 681, 632],
   TrackEffectType.overdrive: [488, 449, 476, 443, 326, 291, 379, 336],
   TrackEffectType.distortion: [322, 257, 322, 249, 244, 197, 307, 206],
-  TrackEffectType.vinyl: [381, 374, 375, 374, 201, 200, 192, 203],
+  TrackEffectType.vinyl: [297, 296, 292, 293, 173, 177, 168, 179],
   TrackEffectType.ampCab: [451, 361, 438, 361, 400, 322, 454, 355],
 };
 

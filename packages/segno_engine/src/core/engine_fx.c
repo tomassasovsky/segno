@@ -6466,8 +6466,8 @@ static int le_hb_latency(int sr) {
  * le_os_path_run runs a path's sections one after another, and le_os_up and
  * le_os_down run a channel's two paths one after the other: every section
  * waits for the one before it, and the CPU spends most of the oversampler's
- * time waiting. The Overdrive and the Distortion run their half-bands in
- * lanes instead. One four-float vector holds the left channel's A0 and A1
+ * time waiting. The Overdrive, the Distortion and the Vinyl run their
+ * half-bands in lanes instead. One four-float vector holds the left channel's A0 and A1
  * and the right channel's (lanes 0 to 3), so a section is one vector
  * multiply-add for all four. Each lane does what
  * le_os_path_run does, in the same order and with the same expression (so a
@@ -6514,48 +6514,72 @@ static void le_lanes_design(le_lanes* d, const float* c, int n) {
 /* The [m] samples in [v] through every lane's path, in place: each section
  * y = c (x - y') + x', as le_os_path_run. The states stay in registers over
  * the [m] samples; [full] and [odd] are constants where le_lanes_block
- * calls it, so the sections unroll. */
+ * calls it, so the sections unroll. With [sets] 2, a second stream on the
+ * same design ([v2], its own states [st2]) runs beside the first, a section
+ * of each in turn: the two chains do not wait on each other, so the CPU
+ * overlaps them. Each stream's arithmetic is what it is alone. */
 static inline void le_lanes_run(const le_lanes* d, le_lanes_state* st,
-                                le_f4* v, int m, const int full,
-                                const int odd) {
-  le_f4 x[LE_LANES_MAX], y[LE_LANES_MAX];
-  for (int j = 0; j < full + odd; ++j) {
-    x[j] = st->x[j];
-    y[j] = st->y[j];
+                                le_f4* v, le_lanes_state* st2, le_f4* v2,
+                                int m, const int full, const int odd,
+                                const int sets) {
+  le_lanes_state* sts[2] = {st, st2};
+  le_f4* vs[2] = {v, v2};
+  le_f4 x[2][LE_LANES_MAX], y[2][LE_LANES_MAX];
+  for (int k = 0; k < sets; ++k) {
+    for (int j = 0; j < full + odd; ++j) {
+      x[k][j] = sts[k]->x[j];
+      y[k][j] = sts[k]->y[j];
+    }
   }
   for (int i = 0; i < m; ++i) {
-    le_f4 in = v[i];
+    le_f4 in[2];
+    for (int k = 0; k < sets; ++k) in[k] = vs[k][i];
     for (int j = 0; j < full; ++j) {
-      const le_f4 out = d->c[j] * (in - y[j]) + x[j];
-      x[j] = in;
-      y[j] = out;
-      in = out;
+      for (int k = 0; k < sets; ++k) {
+        const le_f4 out = d->c[j] * (in[k] - y[k][j]) + x[k][j];
+        x[k][j] = in[k];
+        y[k][j] = out;
+        in[k] = out;
+      }
     }
     if (odd) {
-      const le_f4 out = d->c[full] * (in - y[full]) + x[full];
-      x[full] = in;
-      y[full] = out;
-      in = le_f4_sel(d->keep, out, in);
+      for (int k = 0; k < sets; ++k) {
+        const le_f4 out = d->c[full] * (in[k] - y[k][full]) + x[k][full];
+        x[k][full] = in[k];
+        y[k][full] = out;
+        in[k] = le_f4_sel(d->keep, out, in[k]);
+      }
     }
-    v[i] = in;
+    for (int k = 0; k < sets; ++k) vs[k][i] = in[k];
   }
-  for (int j = 0; j < full + odd; ++j) {
-    st->x[j] = x[j];
-    st->y[j] = y[j];
+  for (int k = 0; k < sets; ++k) {
+    for (int j = 0; j < full + odd; ++j) {
+      sts[k]->x[j] = x[k][j];
+      sts[k]->y[j] = y[k][j];
+    }
+  }
+}
+
+/* le_lanes_run on [sets] streams ([st2] and [v2] unused with 1). */
+static inline void le_lanes_blocks(const le_lanes* d, le_lanes_state* st,
+                                   le_f4* v, le_lanes_state* st2, le_f4* v2,
+                                   int m, const int sets) {
+  switch (d->full * 2 + d->odd) {
+    case 3: le_lanes_run(d, st, v, st2, v2, m, 1, 1, sets); break;
+    case 4: le_lanes_run(d, st, v, st2, v2, m, 2, 0, sets); break;
+    case 5: le_lanes_run(d, st, v, st2, v2, m, 2, 1, sets); break;
+    case 6: le_lanes_run(d, st, v, st2, v2, m, 3, 0, sets); break;
+    case 7: le_lanes_run(d, st, v, st2, v2, m, 3, 1, sets); break;
+    case 8: le_lanes_run(d, st, v, st2, v2, m, 4, 0, sets); break;
+    default:
+      le_lanes_run(d, st, v, st2, v2, m, d->full, d->odd, sets);
+      break;
   }
 }
 
 static inline void le_lanes_block(const le_lanes* d, le_lanes_state* st,
                                   le_f4* v, int m) {
-  switch (d->full * 2 + d->odd) {
-    case 3: le_lanes_run(d, st, v, m, 1, 1); break;
-    case 4: le_lanes_run(d, st, v, m, 2, 0); break;
-    case 5: le_lanes_run(d, st, v, m, 2, 1); break;
-    case 6: le_lanes_run(d, st, v, m, 3, 0); break;
-    case 7: le_lanes_run(d, st, v, m, 3, 1); break;
-    case 8: le_lanes_run(d, st, v, m, 4, 0); break;
-    default: le_lanes_run(d, st, v, m, d->full, d->odd); break;
-  }
+  le_lanes_blocks(d, st, v, NULL, NULL, m, 1);
 }
 
 /* le_os for a pair of channels in lanes: the same design and stages. */
@@ -6607,35 +6631,51 @@ static inline int le_os4_up(le_os4* o, float l, float r, le_f4* p) {
 /* As le_os_down for both channels: the pairs in [p] (as le_os4_up gave
  * them; used as scratch) down to one sample each, into [l] and [r]. Each
  * pair goes in newer sample first (A0 takes it), and comes out as
- * 0.5 (A0 + A1) per channel. */
-static inline void le_os4_down(le_os4* o, le_f4* p, float* l, float* r) {
+ * 0.5 (A0 + A1) per channel. With [sets] 2, a second stream's pairs [p2]
+ * go down beside them through the same design on their own states [down2]
+ * (one per stage), into [l2] and [r2] (le_lanes_run). */
+static inline void le_os4_downs(le_os4* o, le_f4* p, float* l, float* r,
+                                le_lanes_state* down2, le_f4* p2, float* l2,
+                                float* r2, const int sets) {
+  le_f4* ps[2] = {p, p2};
+  float* outs[2][2] = {{l, r}, {l2, r2}};
   int m = o->stages > 0 ? 1 << (o->stages - 1) : 1; /* pairs into the stage */
   /* The paths are recursive: a sample that is not finite would stay in
    * them, so it goes in as 0 (with no stages, as le_os_down does too). */
-  for (int i = 0; i < m; ++i) p[i] = le_f4_sanitize(p[i]);
-  if (o->stages == 0) {
-    *l = p[0][0];
-    *r = p[0][2];
-    return;
+  for (int k = 0; k < sets; ++k) {
+    for (int i = 0; i < m; ++i) ps[k][i] = le_f4_sanitize(ps[k][i]);
   }
-  for (int s = o->stages - 1;; --s) {
-    for (int i = 0; i < m; ++i) {
-      p[i] = __builtin_shufflevector(p[i], p[i], 1, 0, 3, 2);
+  for (int s = o->stages - 1; s >= 0; --s) {
+    for (int k = 0; k < sets; ++k) {
+      for (int i = 0; i < m; ++i) {
+        ps[k][i] = __builtin_shufflevector(ps[k][i], ps[k][i], 1, 0, 3, 2);
+      }
     }
-    le_lanes_block(&o->d[s], &o->down[s], p, m);
-    for (int i = 0; i < m; ++i) {
-      p[i] = 0.5f * (p[i] + __builtin_shufflevector(p[i], p[i], 1, 0, 3, 2));
+    le_lanes_blocks(&o->d[s], &o->down[s], p,
+                    sets > 1 ? &down2[s] : NULL, p2, m, sets);
+    for (int k = 0; k < sets; ++k) {
+      for (int i = 0; i < m; ++i) {
+        ps[k][i] = 0.5f * (ps[k][i] + __builtin_shufflevector(
+                                          ps[k][i], ps[k][i], 1, 0, 3, 2));
+      }
     }
-    if (s == 0) {
-      *l = p[0][0];
-      *r = p[0][2];
-      return;
-    }
+    if (s == 0) break;
     m /= 2;
-    for (int i = 0; i < m; ++i) {
-      p[i] = __builtin_shufflevector(p[2 * i], p[2 * i + 1], 0, 4, 2, 6);
+    for (int k = 0; k < sets; ++k) {
+      for (int i = 0; i < m; ++i) {
+        ps[k][i] = __builtin_shufflevector(ps[k][2 * i], ps[k][2 * i + 1], 0,
+                                           4, 2, 6);
+      }
     }
   }
+  for (int k = 0; k < sets; ++k) {
+    *outs[k][0] = ps[k][0][0];
+    *outs[k][1] = ps[k][0][2];
+  }
+}
+
+static inline void le_os4_down(le_os4* o, le_f4* p, float* l, float* r) {
+  le_os4_downs(o, p, l, r, NULL, NULL, NULL, NULL, 1);
 }
 
 /* le_hb for a pair of channels in lanes. */
@@ -8092,8 +8132,11 @@ typedef struct le_fx_vinyl {
   float click;       /* the click under way */
   int32_t click_left; /* its samples still to come */
   int32_t click_len;  /* a click's samples: 1/48000 s at this rate */
-  le_os os; /* the copy's oversampling: its high-pass runs inside it */
-  le_os os_dry; /* the dry share's way down, in step with the copy's */
+  le_os4 os; /* the copy's oversampling, both channels in lanes: its
+               * high-pass runs inside it */
+  /* the dry share's way down, in step with the copy's: os's design, its
+   * own states */
+  le_lanes_state dry_down[LE_OS_MAX_STAGES];
   float dc_b0, dc_a1; /* the DC blocker after the copy */
   float z_dc[2][2];
 } le_fx_vinyl;
@@ -8113,8 +8156,8 @@ static void fx_vinyl_update(void* ks, le_fx_dyn_head* h, const float* p, int sr,
     v->lim = 1.0f;
   }
   if (f & LE_FX_DYN_NEW_RATE) {
-    le_os_design(&v->os, rate, le_os_stages(LE_FX_VINYL, rate));
-    v->os_dry = v->os; /* the same filters, its own (cleared) state */
+    le_os4_design(&v->os, rate, le_os_stages(LE_FX_VINYL, rate));
+    memset(v->dry_down, 0, sizeof(v->dry_down));
     memset(v->z_hp, 0, sizeof(v->z_hp));
     le_amp_hp1(LE_VIN_DC_HZ, rate, &v->dc_b0, &v->dc_a1);
     double c[5];
@@ -8193,23 +8236,32 @@ static void fx_vinyl_kprocess(void* ks, float* l, float* r) {
       --v->click_left;
     }
   }
-  for (int ch = 0; ch < 2; ++ch) {
-    /* The dry share goes up and down too, on its own way down, so it stays
-     * in step with the copy while only the copy is DC-blocked. */
-    float os[1 << LE_OS_MAX_STAGES], dry[1 << LE_OS_MAX_STAGES];
-    const int m = le_os_up(&v->os, ch, io[ch], os);
-    for (int i = 0; i < m; ++i) {
-      const float x = os[i];
-      const float hcopy = le_biquad_tick(v->hp, v->z_hp[ch], x);
-      dry[i] = LE_VIN_DRY * x;
-      os[i] = c * (fabsf(hcopy) + LE_VIN_SQUARE * hcopy * hcopy);
+  /* Both channels go up and down together (le_os4, #1755): lane 2 ch + k
+   * of pair i is channel ch's sample 2 i + k. Per sample the arithmetic is
+   * what le_os gave, so the output is bit-identical. The dry share goes up
+   * and down too, on its own way down, so it stays in step with the copy
+   * while only the copy is DC-blocked. */
+  le_f4 os[1 << (LE_OS_MAX_STAGES - 1)], dry[1 << (LE_OS_MAX_STAGES - 1)];
+  const int m = le_os4_up(&v->os, io[0], io[1], os);
+  for (int i = 0; i < m; ++i) {
+    for (int k = 0; k < 2; ++k) {
+      for (int ch = 0; ch < 2; ++ch) {
+        const float x = os[i][2 * ch + k];
+        const float hcopy = le_biquad_tick(v->hp, v->z_hp[ch], x);
+        dry[i][2 * ch + k] = LE_VIN_DRY * x;
+        os[i][2 * ch + k] = c * (fabsf(hcopy) + LE_VIN_SQUARE * hcopy * hcopy);
+      }
     }
-    const float copy = le_os_down(&v->os, ch, os);
-    const float through = le_os_down(&v->os_dry, ch, dry);
+  }
+  float copy[2], through[2];
+  le_os4_downs(&v->os, os, &copy[0], &copy[1], v->dry_down, dry, &through[0],
+               &through[1], 2);
+  for (int ch = 0; ch < 2; ++ch) {
     /* The limiter reads the copy with its DC, as fitted; what it scales is
      * the copy without it. */
-    float d = through + copy;
-    float y = through + le_amp_hp1_tick(v->dc_b0, v->dc_a1, v->z_dc[ch], copy);
+    float d = through[ch] + copy[ch];
+    float y = through[ch] +
+              le_amp_hp1_tick(v->dc_b0, v->dc_a1, v->z_dc[ch], copy[ch]);
     if (n > 0.0f) {
       float bed = n * (shared + LE_VIN_OWN * v->hiss * le_noise(&v->rng[ch]));
       if (!v->tone_open) bed = le_biquad_tick(v->tone, v->z_tone[ch], bed);
