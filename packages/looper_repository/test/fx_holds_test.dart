@@ -399,6 +399,46 @@ void main() {
         expect(engine.recipes[(le.FxOwner.lane, 1, 0)]!.preCount, 9);
       });
 
+      test('a take waiting for its start counts its Post entries in every '
+          'weighing, and says it printed only once it lands', () async {
+        final printed = <int>[];
+        final sub = repo.fxTakePrinted.listen(printed.add);
+        addTearDown(sub.cancel);
+        final post = [
+          for (final fx in _rack())
+            (fx as BuiltInEffect).copyWith(placement: FxPlacement.post),
+        ];
+        // Both takes wait for their start: the engine has published
+        // neither image, and its commands have not settled.
+        engine.publishRecordImages = false;
+        repo
+          ..setLaneInput(channel: 1, lane: 0, inputChannel: 0)
+          ..setMonitorEffects(input: 0, effects: [reverb, ...post]);
+        engine.commandsAreSettled = false;
+        expect(repo.record(), EngineResult.ok);
+        // Its Post rack fits and runs live once it lands. Until then the
+        // lane still has its old chain, but the room is the take's: a rack
+        // added now does not fit.
+        expect(repo.fxGrowthNs({_input(1): _rack()}), greaterThan(0));
+        expect(repo.fxRoomNs, lessThan(fxChainCostNs(_rack())));
+        await pumpEventQueue();
+        expect(printed, isEmpty);
+        // A second take, waiting too, has no room left: it records its Post
+        // rack in, and says so once its image lands.
+        expect(repo.record(channel: 1), EngineResult.ok);
+        expect(engine.lastRecordImage!.laneFx[0]!.preCount, 10);
+        await pumpEventQueue();
+        expect(printed, isEmpty);
+        engine
+          ..commandsAreSettled = true
+          ..publishImage(1);
+        // The take lands on the next projection: any write.
+        repo.setVolume(.5, channel: 5);
+        expect(repo.laneEffects(1, 0), hasLength(10));
+        await pumpEventQueue();
+        expect(printed, [1]);
+      });
+
       test("R2 never holds a heard take's Post entries", () {
         final post = [
           for (final fx in _rack())

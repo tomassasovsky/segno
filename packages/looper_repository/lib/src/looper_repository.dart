@@ -1370,13 +1370,19 @@ class LooperRepository {
           }
           onLaneChainChanged?.call(ch, lane);
         }
-        // A take the engine could not give an image runs its chain live
-        // (#1713). When that does not fit, its own chains are switched off,
-        // as a chain the rig cannot run is (R2), never another track's. One
-        // playing its image runs only the Post entries the press found room
-        // for, and is never switched off.
-        _holdUnheardTake(ch, pending);
+        // Landed, its lanes are weighed as they now are, not as pending
+        // ([_takeChargesPending]). A take the engine could not give an
+        // image runs its chain live (#1713). When that does not fit, its own
+        // chains are switched off, as a chain the rig cannot run is (R2),
+        // never another track's. One playing its image runs only the Post
+        // entries the press found room for, and is never switched off.
         _pendingImages.remove(ch);
+        _holdUnheardTake(ch, pending);
+        // Said once the take holds its image: a take with none plays its
+        // chain live, and one cancelled never lands.
+        if (pending.printed.any((lane) => _laneHeard.contains((ch, lane)))) {
+          _fxTakePrinted.add(ch);
+        }
         _reproject();
       } else if (commandsSettled &&
           !track.pending &&
@@ -3967,11 +3973,10 @@ class LooperRepository {
     final inheritedHandles = <int, Map<String, PluginSlotHandle>>{};
     final detached = <PluginSlotHandle>[];
     EngineResult? preparationFailure;
-    // The Post entries this press's lanes would run live, beside what the
-    // takes not landed yet will run ([_takeChargesPending]).
-    final pressCharges = _takeChargesPending();
-    var printed = false;
+    final printed = <int>{};
     if (state == TrackState.empty) {
+      // The Post entries this press's lanes would run live, lane by lane.
+      final pressCharges = <FxAddress, List<TrackEffect>>{};
       try {
         for (var lane = 0; lane < laneCount(channel); lane++) {
           final chain = _inheritableChain(channel, lane);
@@ -4005,7 +4010,7 @@ class LooperRepository {
           final print =
               post.isNotEmpty && !_takeChargeFits(pressCharges, at, post);
           pressCharges[at] = print ? const [] : post;
-          printed |= print;
+          if (print) printed.add(lane);
           // A chain with no Pre run is recorded clean, its Post entries live
           // on the lane, unless they are printed.
           if (print || fxPreCount(chain) > 0) heardLanes.add(lane);
@@ -4147,9 +4152,9 @@ class LooperRepository {
         inheritedInputs,
         inheritedHandles,
         clearOnCommit: state == TrackState.empty,
+        printed: printed,
       );
       _reproject();
-      if (printed) _fxTakePrinted.add(channel);
     } else {
       detached.forEach(_engine.discardPreparedPlugin);
       // The engine's own fresh-capture refusal (#1146): the callback may
@@ -4164,7 +4169,10 @@ class LooperRepository {
   }
 
   /// What the takes that have not landed yet will run live once they do, by
-  /// lane: each one's Post entries (#1741), its chain switched on.
+  /// lane: each one's Post entries (#1741), its chain switched on. A take
+  /// waiting for its start (a count-in, the next bar, a sound) keeps the
+  /// lane's old chain until it lands, so every load counts these instead:
+  /// once landed, a take playing its image is never held (#1713).
   Map<FxAddress, List<TrackEffect>> _takeChargesPending() => {
     for (final MapEntry(key: channel, value: pending) in _pendingImages.entries)
       for (final MapEntry(key: lane, value: effects)
@@ -4174,8 +4182,9 @@ class LooperRepository {
   };
 
   /// Whether a take's [post] entries on lane [at] fit the budget beside
-  /// [charges] (the other takes' Post entries, [_takeChargesPending]) and
-  /// the rest of the rig, their chains switched on as a take's come in.
+  /// [charges] (the Post entries of the same press's other lanes) and the
+  /// rest of the rig, the takes not landed yet included ([_fxLoadAt]),
+  /// their chains switched on as a take's come in.
   bool _takeChargeFits(
     Map<FxAddress, List<TrackEffect>> charges,
     FxAddress at,
@@ -9054,8 +9063,10 @@ class LooperRepository {
   }) {
     final off = held ?? _fxHeld;
     final controls = reach ?? _fxReach;
+    final pending = _takeChargesPending();
     final chains = <FxAddress, List<TrackEffect>>{
       ..._fxChains(),
+      ...pending,
       for (final MapEntry(key: at, :value) in replaced.entries)
         if (at.stage == FxStage.loop)
           FxAddress(stage: FxStage.loop, index: at.index, lane: at.lane ?? 0):
@@ -9063,7 +9074,8 @@ class LooperRepository {
         else
           at: value,
     };
-    bool chainOn(FxAddress at) => switches[at] ?? _chainSwitchAt(at);
+    bool chainOn(FxAddress at) =>
+        switches[at] ?? (pending.containsKey(at) || _chainSwitchAt(at));
     bool isOn(FxSwitchKey key) {
       final chain = chains[key.address] ?? const <TrackEffect>[];
       if (key.slotId case final slot?) {
@@ -10823,6 +10835,7 @@ class _PendingImage {
     this.inheritedInputs,
     this.inheritedHandles, {
     required this.clearOnCommit,
+    this.printed = const {},
   });
   final int revision;
   final Map<(int, int), double> images;
@@ -10833,6 +10846,10 @@ class _PendingImage {
   final Map<int, int> inheritedInputs;
   final Map<int, Map<String, PluginSlotHandle>> inheritedHandles;
   final bool clearOnCommit;
+
+  /// The lanes whose Post entries the press recorded into the take, since
+  /// they did not fit live (#1713).
+  final Set<int> printed;
 }
 
 /// One refused fresh-capture press waiting for its retry (#1146).
