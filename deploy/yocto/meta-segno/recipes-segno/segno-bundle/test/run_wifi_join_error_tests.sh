@@ -501,7 +501,8 @@ teardown
 # sme_send_authentication, sme_sae_auth), which runs SAE on the console's
 # brcmfmac. A hostapd access point answers a confirm it cannot verify with
 # status 15 (ieee802_11.c, handle_auth_sae); wpa_supplicant tries again
-# about every 10 s, and after its fourth failure sets the network aside.
+# after a back-off of 0.1 s to 5 s (wpas_connection_failed), and after its
+# fourth failure in a row sets the network aside.
 
 sae_refused() {
     logged <<'LOG'
