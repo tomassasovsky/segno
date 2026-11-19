@@ -93,7 +93,6 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1755 | Cheaper effects, same sound: the reverbs, delays, filters and the rest (pitch and drives are their own threads); bit-identical, guarded by bench_fx_equiv | in-review | auto | `claude/fx-opt-rest-1755` |
 | #1836 | A take's effect switching and setting changes as Live automation: the plugin's Enabled (1100) is the engine's switch, every change a step at its frame (#1806 part 6) | in-review | merge-gate | `claude/fx-automation-1836` |
 | #1816 | Console WiFi against an ASUS RT-AX89X with 802.11ax on: firmware already matches Pi OS; brcmfmac options aligned with Pi OS and a troubleshooting note; failure not reproduced, issue stays open until it recurs | in-review | auto | `claude/wifi-firmware-1816` |
-| #1870 | Lane chains on empty tracks stop running once their tails ring out: idle engine ≈151 → ≈97 µs a period on the console | in-review | merge-gate | `claude/dormant-lane-chains-1870` |
 
 ---
 
