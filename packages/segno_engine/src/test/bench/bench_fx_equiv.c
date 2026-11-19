@@ -147,7 +147,7 @@ static const char* const k_reordered[] = {
 static const char* const k_moved[] = {
     /* #1616: the second voice takes the low band's share by owner. */
     "dualoct",
-    /* #1628: the ladder's level fit to the Looper X. */
+    /* #1628: the ladder's level fit to the Looper X; #1888: its corner. */
     "lpf",
     NULL,
 };

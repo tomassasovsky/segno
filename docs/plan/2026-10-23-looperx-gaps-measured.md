@@ -473,6 +473,51 @@ s4 Pumper passes (s4/25-27) agree among themselves the same way.
 - **The #1445 small-signal fit and oscillation frequency were read as
   632 Hz shown.** At 647 shown the kernel oscillates at 656 Hz, against
   the Looper X's 644.5. The noise response at 647 Hz still fits.
+- **The corner, refit at the cutoffs the screens show (#1888).** gC's
+  screens show more than its labels: `c5.png`, `r5.png` and `r1.png`
+  read 647 Hz at 0, 50.2 and 100 %; `c75.png` and `r0.png` read 3586 Hz
+  at 100 and 0 % (not 3557); `c25.png` reads 117 Hz at 0 % (not 112). The
+  #1445 residuals (in #1448) give the capture's dB at each probe, so they
+  hold as they are at the real cutoffs. gC's audio is gone; s17rhy seg 9
+  is the same setting as gC's r5 (its noise reads 7.63, 5.39, -10.22 and
+  -30.98 dB at 500, 632, 1000 and 2000 Hz, against r5's 7.9, 5.3, -10.3
+  and -31.0) and is the 50 % data here.
+  - At 0 % the corner over the cutoff fits best at 1.015 to 1.02 at both
+    117 and 647 Hz (0.18 to 0.19 dB rms over the six probes). 3586 Hz wants
+    more, as #1445 found: its error grows with frequency at any ratio.
+    1.02 keeps it within the #1445 bounds.
+  - At 50.2 %, s17rhy's noise fits best at 1.027, and the three tones at
+    1.020 to 1.025. 1.025 fits the noise as before and every tone better.
+  - At 100 % the oscillation sits at 0.997 x the cutoff: 644.7 Hz for 647
+    shown and 3574.3 Hz for 3586 (the Looper X's 644.5 and 3575.5). The
+    kernel oscillates at its corner, so the ratio there is the pitch's.
+  - The old ratio was a straight line in Reso, 1.04 to 1.015. No straight
+    line holds both the corner above the cutoff at 50 % and the
+    oscillation below it at 100 %: through 1.02 and 0.997 it puts 50 % at
+    1.008, which reads the noise 0.6 dB rms low and the tones 0.2 to
+    0.5 dB low. The ratio is now the parabola in Reso through 1.02, 1.025
+    and 0.997. Between 50 and 100 % nothing was captured; the s21lpf
+    ladder (#1894) would show its shape.
+  - k(Reso) and f(v) = tanh(5 v) / 5 stay as #1628 fit them.
+
+| | capture | before | after |
+|---|---|---|---|
+| 647 Hz, 0 %, at 500 / 1000 / 2000 Hz (gC c5) | -5.6 / -19.1 / -38.8 | +0.15 / +0.53 / +0.51 | -0.09 / +0.05 / -0.10 |
+| 117 Hz, 0 %, at 100 / 200 / 500 Hz (gC c25) | -7.7 / -21.9 / -49.3 | +0.64 / +0.75 / +0.76 | +0.35 / +0.25 / +0.12 |
+| 3586 Hz, 0 %, at 2 / 3 / 4 / 5 kHz (gC r0) | -2.0 / -5.6 / -10.1 / -15.0 | -0.36 / -0.79 / -1.30 / -1.48 | -0.49 / -1.07 / -1.70 / -1.95 |
+| 647 Hz, 50.2 %, noise at 500 / 632 / 1000 / 2000 Hz (gC r5) | 7.9 / 5.3 / -10.3 / -31.0 | -0.87 / -0.48 / +0.25 / +0.12 | -0.85 / -0.57 / +0.13 / +0.11 |
+| s17rhy noise, 80 Hz-3 kHz, dB rms / worst | | 0.27 / 1.07 | 0.28 / 1.08 |
+| 1 kHz from -48 / -12 / 0 dBFS | -9.7 / -11.96 / -17.1 | -9.40 / -11.91 / -16.82 | -9.47 / -11.97 / -16.88 |
+| gD LFO Depth 50 %, rms / worst | | 1.31 / 2.39 | 1.33 / 2.43 |
+| gD LFO Depth 100 %, worst above -50 dB | | 1.63 | 1.65 |
+| oscillation at 647 Hz shown (gC r1) | 644.5 Hz | 656.3 Hz | 644.7 Hz |
+| oscillation at 3586 Hz shown (gC c75) | 3575.5 Hz | 3638.8 Hz | 3574.3 Hz |
+| oscillation peak at 647 / 3586 Hz shown | 0.251 / 0.279 | 0.261 / 0.260 | 0.261 / 0.260 |
+
+  The 50.2 % rows run the kernel on Gaussian noise at -24 dBFS RMS, as the
+  captures did. Its small-signal response there is 0.5 to 1.6 dB higher
+  around and above the corner, since the feedback's tanh already
+  compresses at that level.
 - **A level ladder at other cutoffs and resonances was not captured.**
   The rig did not take taps while the host was loaded (session s21lpf,
   `prog/s21lpf.sh` on the rig).
