@@ -4,11 +4,14 @@
  *
  * NOT part of the test gate. Build and run it with ./bench_alias.sh.
  *
- * WHY: the console moved from 96 kHz to 48 kHz (#1529). No built-in effect
- * oversamples, so a waveshaper's harmonics above 24 kHz now fold back below
- * it as inharmonic tones. This measures how much, per kind, at the settings
- * the factory presets use and at a high-gain setting, so the measurement can
- * be rerun after any oversampling change.
+ * WHY: the console moved from 96 kHz to 48 kHz (#1529), where a
+ * waveshaper's harmonics above 24 kHz fold back below it as inharmonic
+ * tones. This measures how much, per kind, at the settings the factory
+ * presets use and at a high-gain setting, so the measurement can be rerun
+ * after any oversampling change. Since #1552 the Overdrive, Distortion,
+ * Vinyl and Amp+Cab run their curves oversampled (le_os_stages,
+ * engine_fx.c), so their two rates read alike; the built-in Drive does not
+ * (#1540).
  *
  * Each case runs one effect through fx_apply_chain (the kernel the engine
  * and the offline renders call) on a sine at -12 dBFS peak (--level), at
@@ -28,8 +31,8 @@
  *     peak level of a sine.
  *
  * The cost columns time the same renders: ns per frame for one instance
- * (net of the chain with no effect), and what 2x oversampling at 48 kHz
- * would cost: the kind's own work at 96 kHz per 48 kHz frame (twice its
+ * (net of the chain with no effect), and, for a kind that does not
+ * oversample yet, what 2x oversampling at 48 kHz would cost: the kind's own work at 96 kHz per 48 kHz frame (twice its
  * 96 kHz per-frame cost) plus a streaming 63-tap polyphase half-band up and
  * down on each channel the kernel runs (one for the Amp+Cab, which is mono
  * inside; two for the rest), timed here. An upper bound: the slot's own
