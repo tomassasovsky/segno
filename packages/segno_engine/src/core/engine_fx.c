@@ -803,8 +803,14 @@ static void le_pv_shift_into(le_octaver_state* o, float ratio, float* sum_phase,
    * bin the handed-over partial owns, and keeps the handed-over partial's
    * part of a bin the other owns: on a held 147 Hz bass the first voice's
    * second harmonic reads -8.7 dB against its fundamental (-5.4 dB by
-   * region; a waveform at half speed has -6.0). None from 5 fc up (under
-   * -45 dB) or with no band, which leaves the vocoder as it was. */
+   * region; a waveform at half speed has -6.0). In the second voice, two
+   * octaves down, a note's harmonics land under a bin apart, so single
+   * harmonics read far from a waveform at quarter speed whichever way the
+   * share is taken; their sum, second to tenth, against the fundamental
+   * on a 10-harmonic bass at 110, 147, 196 and 247 Hz reads -9.1, -6.3,
+   * -5.2 and -0.2 dB by owner, -9.6, -5.2, +0.1 and +0.8 by region (-2.6
+   * at quarter speed). None from 5 fc up (under -45 dB) or with no band,
+   * which leaves the vocoder as it was. */
   const float low_w = o->frame_low_w;
   const float low_g = o->frame_low_g;
   const float kc = o->frame_low_kc;
@@ -858,8 +864,9 @@ static void le_pv_shift_into(le_octaver_state* o, float ratio, float* sum_phase,
      * phase; the bin then summed with the band's voice at a phase that moved
      * with it. In the first voice the Dual Octaver's level at 44.1 and
      * 96 kHz strayed up to 3.9 dB from 48 kHz's; in the second, two octaves
-     * down, four regions land on each bin and -120 dB of noise moved it
-     * 1.6 to 3.4 dB at every rate. Judging the contest on the whole partials
+     * down, four regions land on each bin and -120 to -80 dB of noise
+     * moved it 1.6 to 3.4 dB at every rate on the effects matrix's plucked
+     * phrase (Octave 2 alone at 60 %). Judging the contest on the whole partials
      * but still taking the share region by region was steady, but left a
      * neighbour's lobe turning at the handed-over partial's phase: 1.3 dB
      * too much down voice on a 110 Hz bass. */
