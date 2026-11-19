@@ -4694,10 +4694,10 @@ class _PushObserver extends NavigatorObserver {
 
 /// A supported CPU load that never reports a figure.
 class _SilentCpuLoad extends CpuLoadRepository {
-  const new() : super(readStat: _neverRead);
+  const new() : super(read: _neverRead, cores: 1);
 
   @override
   Stream<int> watch() => const Stream<int>.empty();
 }
 
-Future<String> _neverRead() => throw UnimplementedError();
+Future<String> _neverRead(String _) => throw UnimplementedError();

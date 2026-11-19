@@ -4,7 +4,7 @@ import 'package:cpu_load_repository/cpu_load_repository.dart';
 /// readout with a known figure and no sampling timer.
 class FixedCpuLoadRepository extends CpuLoadRepository {
   /// Creates a [FixedCpuLoadRepository] reporting [load].
-  const new(this.load) : super(readStat: _unread);
+  const new(this.load) : super(read: _unread, cores: 1);
 
   /// The load reported.
   final int load;
@@ -13,4 +13,4 @@ class FixedCpuLoadRepository extends CpuLoadRepository {
   Stream<int> watch() => Stream.value(load);
 }
 
-Future<String> _unread() => throw UnimplementedError('never sampled');
+Future<String> _unread(String _) => throw UnimplementedError('never sampled');
