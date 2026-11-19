@@ -507,9 +507,9 @@ static void do_render_notes(const float* p, int noisy, float* y, int n) {
   free(fx);
 }
 
-static void test_dual_octaver_hand_over_is_steady(void) {
-  printf("test_dual_octaver_hand_over_is_steady\n");
-  const float p[LE_FX_PARAMS] = {0.0f, 1.0f, 1.0f, 0.0f};
+/* How far the noise moves [p]'s level at do_sr: the 98th percentile of
+ * the windows' change, in dB, and the most in [most]. */
+static float do_noise_moves(const float* p, float* most) {
   const int n = 2 * do_sr;
   const int win = do_sr / 50;
   const int hop = do_sr / 200;
@@ -541,19 +541,51 @@ static void test_dual_octaver_hand_over_is_steady(void) {
   }
   qsort(d, (size_t)m, sizeof(float), cmp_float);
   const float p98 = d[(int)ceil(0.98 * m) - 1];
-  printf("  the noise moves the level %.2f dB (98th percentile), at most "
-         "%.2f\n",
-         p98, d[m - 1]);
-  CHECK(p98 < 0.3f);
+  *most = d[m - 1];
   free(a);
   free(b);
   free(la);
   free(lb);
   free(d);
+  return p98;
+}
+
+static void test_dual_octaver_hand_over_is_steady(void) {
+  printf("test_dual_octaver_hand_over_is_steady\n");
+  const float p[LE_FX_PARAMS] = {0.0f, 1.0f, 1.0f, 0.0f};
+  float most = 0.0f;
+  const float p98 = do_noise_moves(p, &most);
+  printf("  the noise moves the level %.2f dB (98th percentile), at most "
+         "%.2f\n",
+         p98, most);
+  CHECK(p98 < 0.3f);
+}
+
+/* Octave 2's voice is as steady, at each of the app's rates (#1616): the
+ * same notes and noise through Octave 2 alone at 60 % (Octave 1 at 0, the
+ * band still taking both down voices over) move the level under 0.3 dB.
+ * While the second voice took the band's share region by region, four
+ * regions landing on each bin two octaves down, the noise moved it 3.8 dB
+ * at 44.1 kHz, 0.8 at 48 and 0.8 at 96. */
+static void test_dual_octaver_second_voice_is_steady(void) {
+  printf("test_dual_octaver_second_voice_is_steady\n");
+  const float p[LE_FX_PARAMS] = {0.0f, 0.0f, 1.0f, 0.6f};
+  static const int rates[3] = {44100, 48000, 96000};
+  for (int i = 0; i < 3; ++i) {
+    do_sr = rates[i];
+    float most = 0.0f;
+    const float p98 = do_noise_moves(p, &most);
+    printf("  %d Hz: the noise moves the level %.2f dB (98th percentile), "
+           "at most %.2f\n",
+           do_sr, p98, most);
+    CHECK(p98 < 0.3f);
+  }
+  do_sr = DO_SR;
 }
 
 static void run_dual_octaver_tests(void) {
   test_dual_octaver_hand_over_is_steady();
+  test_dual_octaver_second_voice_is_steady();
   test_dual_octaver_low_band_matches_the_capture();
   test_dual_octaver_low_band_hands_back();
   test_dual_octaver_low_band_keeps_the_latency();
