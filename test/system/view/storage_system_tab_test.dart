@@ -96,10 +96,7 @@ void main() {
   /// 1920x1080, deliberately: the face is drawn for that surface, and the
   /// default 800x600 view pushes the lower rows below the fold where a tap
   /// lands on nothing.
-  Future<void> pump(
-    WidgetTester tester, {
-    ConsoleFactsClient? client,
-  }) async {
+  Future<void> pump(WidgetTester tester, {ConsoleFactsClient? client}) async {
     tester.view
       ..physicalSize = const Size(1920, 1080)
       ..devicePixelRatio = 1;
@@ -207,10 +204,7 @@ void main() {
 
     testWidgets('a housekeeping write that throws says so WHERE THE ACTION '
         'IS, and does not take the disk figures down with it', (tester) async {
-      await pump(
-        tester,
-        client: _FailingDeleteFactsClient(),
-      );
+      await pump(tester, client: _FailingDeleteFactsClient());
       final l10n = l10nOf(tester);
 
       await tester.scrollUntilVisible(
@@ -280,10 +274,7 @@ void main() {
 
     testWidgets('a build that cannot read the disk says so and draws no '
         'rows — zeroes as facts would be worse', (tester) async {
-      await pump(
-        tester,
-        client: _FailingFactsClient(),
-      );
+      await pump(tester, client: _FailingFactsClient());
       final l10n = l10nOf(tester);
 
       expect(find.text(l10n.storageUnknown), findsOneWidget);
