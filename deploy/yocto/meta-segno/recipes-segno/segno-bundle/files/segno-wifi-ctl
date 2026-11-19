@@ -185,10 +185,32 @@ key_refusals() {
         }'
 }
 
+# A WPA3-SAE access point's refusal of the key, as an ERE (#1822). SAE tests
+# the key during the 802.11 authentication, before any 4-way handshake, so a
+# wrong SAE key never logs "4-Way Handshake failed". The station and the
+# access point exchange commits, the station sends its confirm, and an access
+# point whose key differs cannot verify that confirm: hostapd answers it with
+# status 15, "challenge failure" (ieee802_11.c, handle_auth_sae:
+# sae_check_confirm failing sets WLAN_STATUS_CHALLENGE_FAIL in the reply to
+# transaction 2). The console's brcmfmac runs SAE in wpa_supplicant's SME
+# (`iw phy`: "Device supports SAE with AUTHENTICATE command"), which logs
+# that reply once (sme.c, sme_sae_auth, wpa_supplicant 2.11):
+#
+#   CTRL-EVENT-AUTH-REJECT <bssid> auth_type=3 auth_transaction=2 status_code=15
+#
+# auth_type 3 is SAE and transaction 2 the confirm, so the commit exchange
+# had already succeeded: the access point was in range and spoke SAE, and the
+# one thing left to differ was the key. A refused commit (transaction 1, an
+# unsupported group or an anti-clogging token) says nothing about the key.
+# An access point that drops a bad confirm without an answer logs nothing at
+# wpa_supplicant's syslog level; that join reads as no-connection.
+SAE_REFUSED_RE='CTRL-EVENT-AUTH-REJECT [0-9a-f:]+ auth_type=3 auth_transaction=2 status_code=15( |$)'
+
 # Whether <evidence> proves the key wrong, printing the refusal that does.
-# One refusal is enough when its reason names the key: 15 (4-way handshake
-# timeout, what most access points send when the station's message 2 fails
-# its check), 14 (MIC failure) or 23 (802.1X authentication failed). Other
+# One SAE refusal (SAE_REFUSED_RE) is enough. One handshake refusal is
+# enough when its reason names the key: 15 (4-way handshake timeout, what
+# most access points send when the station's message 2 fails its check),
+# 14 (MIC failure) or 23 (802.1X authentication failed). Other
 # access points send another reason: an ASUS RT-AX89X sends 2, "previous
 # authentication no longer valid" (#1859). Two refusals in one join are
 # enough whatever the reason, while one is not: a router that restarts
@@ -203,6 +225,11 @@ key_refusals() {
 key_wrong() {
     if printf '%s\n' "$1" | grep -qa 'CTRL-EVENT-CONNECTED'; then
         return 1
+    fi
+    kw_line=$(printf '%s\n' "$1" | grep -aE "$SAE_REFUSED_RE" | head -n1)
+    if [ -n "$kw_line" ]; then
+        printf '%s\n' "$kw_line"
+        return 0
     fi
     kw_refusals=$(key_refusals "$1")
     [ -n "$kw_refusals" ] || return 1
@@ -228,6 +255,8 @@ key_wrong() {
 #       or let it time out (status 16, #1816).
 #   CTRL-EVENT-AUTH-REJECT ... status_code=<n>
 #       the same refusal, from wpa_supplicant's own authentication (SME).
+#       For SAE's confirm with status 15 it is the key's refusal
+#       (SAE_REFUSED_RE).
 #   Authentication with <bssid> timed out.
 #       wpa_supplicant.c, wpa_supplicant_timeout: associated, but the 4-way
 #       handshake never started, because the access point never sent
@@ -248,6 +277,8 @@ WPA_END_RE='4-Way Handshake failed|CTRL-EVENT-ASSOC-REJECT|CTRL-EVENT-AUTH-REJEC
 #                   could_be_psk_mismatch), so its own timeout
 #                   (locally_generated=1) and a single drop with another
 #                   reason, a router restarting mid-join, do not count.
+#                   On a WPA3-SAE network, one refused SAE confirm
+#                   (SAE_REFUSED_RE) under the same <judge>.
 #   not-found       the network is not in range: NetworkManager's
 #                   `ssid-not-found` ("The Wi-Fi network could not be
 #                   found").
@@ -275,7 +306,7 @@ join_failure() {
     err=$1
     lower=$(printf '%s' "$err" | tr '[:upper:]' '[:lower:]')
     evidence=$(join_evidence "$2" "$3")
-    # Read until the handshake failure is there, or until a line that ended
+    # Read until the key's refusal is there, or until a line that ended
     # an attempt was there on the read before as well. One join can hold
     # several attempts (an access point that rejects one association and
     # accepts the next, then refuses the key), and journald may store the
@@ -284,7 +315,7 @@ join_failure() {
     # no-connection. Read once a second, for at most the wait.
     waited=0
     ended=no
-    while ! printf '%s' "$evidence" | grep -qa '4-Way Handshake failed' \
+    while ! printf '%s' "$evidence" | grep -qaE "4-Way Handshake failed|$SAE_REFUSED_RE" \
         && [ "$waited" -lt "$JOIN_EVIDENCE_WAIT_SECS" ]; do
         if printf '%s' "$evidence" | grep -qaE "$WPA_END_RE"; then
             [ "$ended" = no ] || break
