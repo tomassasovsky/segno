@@ -127,7 +127,8 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   `no-secrets`.
 - `segno-wifi-ctl connect` reads wpa_supplicant's lines for the attempt:
   `wrong-password` only after "WPA: 4-Way Handshake failed - pre-shared key
-  may be incorrect"; `CTRL-EVENT-ASSOC-REJECT status_code=16` (#1816) and
+  may be incorrect", and only for a key that has not connected on that
+  profile (#1816); `CTRL-EVENT-ASSOC-REJECT status_code=16` (#1816) and
   "Authentication with ... timed out." (#470) are `no-connection`.
 - Still different: systemd-resolved instead of NetworkManager writing
   `/etc/resolv.conf` (#1849, which needs a test image).

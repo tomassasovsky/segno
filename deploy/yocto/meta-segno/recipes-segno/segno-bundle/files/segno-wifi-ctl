@@ -190,7 +190,15 @@ key_refusals() {
 # mid-handshake drops the station once, with a reason of its own, and that
 # once read as a wrong password (#1817). A wrong key is refused on every try,
 # about every 3 s.
+#
+# A join whose handshake completed (CTRL-EVENT-CONNECTED) proves the key
+# right, so refusals before or after it in the same join prove nothing: on
+# 2026-11-18 the RT-AX89X refused the right key once and accepted it 0.2 s
+# later, and the watch took that connection down (#1816).
 key_wrong() {
+    if printf '%s\n' "$1" | grep -qa 'CTRL-EVENT-CONNECTED'; then
+        return 1
+    fi
     kw_refusals=$(key_refusals "$1")
     [ -n "$kw_refusals" ] || return 1
     kw_line=$(printf '%s\n' "$kw_refusals" | grep -E ' reason=(14|15|23)( |/)' | head -n1)
@@ -228,7 +236,8 @@ WPA_END_RE='4-Way Handshake failed|CTRL-EVENT-ASSOC-REJECT|CTRL-EVENT-AUTH-REJEC
 #
 #   wrong-password  the access point refused the key (key_wrong): it ended
 #                   the handshake once with a reason that means the key, or
-#                   twice with any reason. wpa_supplicant logs the handshake
+#                   twice with any reason. Only for a key that has not
+#                   connected on this profile (<judge> is yes, key_proven). wpa_supplicant logs the handshake
 #                   line for any drop during the handshake (events.c,
 #                   could_be_psk_mismatch), so its own timeout
 #                   (locally_generated=1) and a single drop with another
@@ -254,7 +263,8 @@ WPA_END_RE='4-Way Handshake failed|CTRL-EVENT-ASSOC-REJECT|CTRL-EVENT-AUTH-REJEC
 # provided"), and reading that as a wrong password made the owner forget good
 # networks (#466, #1817).
 # <err> is nmcli's output, <cursor> and <epoch> mark the attempt's start,
-# and <uuid> and <ssid> name the profile it activated.
+# <uuid> and <ssid> name the profile it activated, and <judge> (yes unless
+# given) says whether a refusal may be read as a wrong key.
 join_failure() {
     err=$1
     lower=$(printf '%s' "$err" | tr '[:upper:]' '[:lower:]')
@@ -280,7 +290,10 @@ join_failure() {
     done
     # The refusal that proves the key wrong, as "<disconnect line> /
     # <handshake line>", or nothing.
-    refused=$(key_wrong "$evidence") || refused=
+    refused=
+    if [ "${6:-yes}" = yes ]; then
+        refused=$(key_wrong "$evidence") || refused=
+    fi
     # NetworkManager's lines about this join only: from the activation of
     # this profile on, and about this interface. Another device's failure
     # (eth0 with no DHCP server), or NM's own attempt at another profile on
@@ -308,6 +321,27 @@ join_failure() {
     fi
     log "join failed: $code (${wpa_said:-no wpa_supplicant evidence}; nmcli: $err)"
     printf '{"error":"%s"}\n' "$code"
+}
+
+# Whether the key a join uses has already connected on saved profile <uuid>:
+# the profile has connected (NetworkManager's connection.timestamp, set on
+# each successful activation, is not 0) and the join uses its stored key,
+# either because no key was typed (<typed> empty) or because the typed one is
+# the stored one. Android trusts a refused handshake as a wrong password
+# only for a network that has never connected
+# (NetworkSelectionStatus.hasEverConnected, reset when the key changes); on
+# one that has, it counts a temporary authentication failure and retries.
+# A proven key refused is the access point's fault, not the key's: after a
+# radio restart the owner's RT-AX89X refused the right key with reason 2 for
+# 44 minutes (#1816). NetworkManager keeps the timestamp when set-password
+# stores a new key and nmcli cannot reset it, so a key stored that way for a
+# network that has connected before reads as proven until it connects.
+key_proven() {
+    case "$(profile_field "$1" connection.timestamp)" in
+        ''|0|*[!0-9]*) return 1 ;;
+    esac
+    [ -n "$2" ] || return 0
+    [ "$(nmcli -s -e no -g 802-11-wireless-security.psk connection show uuid "$1" 2>/dev/null || true)" = "$2" ]
 }
 
 # Whether <ssid> is missing from what the radio can see: NetworkManager's list
@@ -705,6 +739,17 @@ do_connect_nm() {
             no) prior_autoconnect=no ;;
         esac
     fi
+    # Whether a refusal in this join may be read as a wrong key, and the
+    # join's start for the watch in up_with_key: neither for a key the
+    # profile has already connected with (key_proven).
+    judge=yes
+    watch_mark=$mark
+    watch_since=$since
+    if [ -n "$existing" ] && key_proven "$existing" "$psk"; then
+        judge=no
+        watch_mark=
+        watch_since=
+    fi
     join_priority=$(next_autoconnect_priority)
     errf=$(mktemp)
     passf=
@@ -731,13 +776,13 @@ do_connect_nm() {
             passf=$(mktemp)
             chmod 600 "$passf"
             write_passwd_file "$passf" "$psk"
-            up_with_key "$existing" "$NM_CONNECT_WAIT_SECS" "$passf" "$mark" "$since" >"$errf" 2>&1
+            up_with_key "$existing" "$NM_CONNECT_WAIT_SECS" "$passf" "$watch_mark" "$watch_since" >"$errf" 2>&1
             rc=$?
             if [ "$rc" -eq 0 ]; then
                 persist_psk_and_enable "$existing" "$psk"
             fi
         elif [ "$rc" -eq 0 ]; then
-            up_saved "$existing" "$NM_CONNECT_WAIT_SECS" "$mark" "$since" >"$errf" 2>&1
+            up_saved "$existing" "$NM_CONNECT_WAIT_SECS" "$watch_mark" "$watch_since" >"$errf" 2>&1
             rc=$?
         fi
     elif [ -n "$psk" ]; then
@@ -781,7 +826,7 @@ do_connect_nm() {
     set -e
     rm -f "$passf"
     if [ "$rc" -ne 0 ]; then
-        join_failure "$(cat "$errf")" "$mark" "$since" "${existing:-$created}" "$ssid"
+        join_failure "$(cat "$errf")" "$mark" "$since" "${existing:-$created}" "$ssid" "$judge"
         rm -f "$errf"
         # A failed attempt leaves nothing behind and takes nothing away. A
         # profile made for it is removed, so the list never shows a network

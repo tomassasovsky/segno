@@ -38,11 +38,20 @@ setup() {
     : > "$work/journalctl-watch"
 
     # nmcli that creates the profile and then fails activation with $UP_ERROR,
-    # NM's wording for this case. `device wifi list` answers $LIST.
+    # NM's wording for this case. `device wifi list` answers $LIST. With
+    # SAVED_TS set, SomeNetwork is already saved: its connection.timestamp is
+    # SAVED_TS (0 until it has connected) and its stored key SAVED_PSK.
     cat > "$work/bin/nmcli" <<STUB
 #!/bin/sh
 echo "\$@" >> "$work/nmcli-args"
+saved=\${SAVED_TS:+5a7ed000-0000-4000-8000-000000001859}
 case "\$*" in
+    *"-t -f UUID,TYPE connection show") [ -n "\$saved" ] && echo "\$saved:802-11-wireless" ;;
+    *"-g connection.id connection show uuid "*|*"-g 802-11-wireless.ssid connection show uuid "*)
+        echo SomeNetwork ;;
+    *"-g connection.timestamp connection show uuid "*) echo "\$SAVED_TS" ;;
+    *"-g 802-11-wireless-security.psk connection show uuid "*) echo "\${SAVED_PSK:-}" ;;
+    *"-g connection.autoconnect connection show uuid "*) echo yes ;;
     *"device wifi list"*) [ -n "\${LIST:-}" ] && printf '%s\n' "\$LIST" ;;
     *"connection up"*)
         # UP_HOLD: the activation runs until it is taken down, as
@@ -114,6 +123,7 @@ run_connect() {
     SEGNO_JOIN_EVIDENCE_WAIT="${WAIT-0}" LATE_FROM="${LATE_FROM:-2}" \
     SEGNO_JOIN_WATCH_INTERVAL=0.5 \
     LIST="${LIST:-}" UP_ERROR="${UP_ERROR:-}" UP_HOLD="${UP_HOLD:-}" \
+    SAVED_TS="${SAVED_TS:-}" SAVED_PSK="${SAVED_PSK:-}" \
     PATH="$work/bin:$PATH" \
         sh "$CTL" connect "SomeNetwork" 2>"$work/stderr" >"$work/stdout"
     rc=$?
@@ -469,6 +479,62 @@ LOG
 UP_HOLD=1 run_connect
 check "does not take it down" no "$(called_with 'connection down uuid')"
 check "is a failed connection" no-connection "$(code)"
+teardown
+
+# --- a key that has connected before (#1816) --------------------------------
+
+echo "a saved network refuses the key it has connected with"
+setup
+# After a radio restart the RT-AX89X refused the right key with reason 2
+# for 44 minutes (2026-11-18). Android counts a refusal as a wrong password
+# only on a network that has never connected.
+refused_twice
+KEY= SAVED_TS=1795051833 SAVED_PSK=hunter2000 UP_HOLD=1 run_connect
+check "fails" 1 "$rc"
+check "is not watched" 0 "$(wc -l < "$work/journalctl-watch" | tr -d ' ')"
+check "is not taken down" no "$(called_with 'connection down uuid')"
+check "is a failed connection, not a password" no-connection "$(code)"
+teardown
+
+echo "a saved network refuses the stored key typed again"
+setup
+refused_twice
+SAVED_TS=1795051833 SAVED_PSK=hunter2000 UP_HOLD=1 run_connect
+check "is not taken down" no "$(called_with 'connection down uuid')"
+check "is a failed connection" no-connection "$(code)"
+teardown
+
+echo "a saved network refuses a new key"
+setup
+refused_twice
+SAVED_TS=1795051833 SAVED_PSK=the-old-key UP_HOLD=1 run_connect
+check "takes the activation down" yes "$(called_with 'connection down uuid')"
+check "is a wrong password" wrong-password "$(code)"
+teardown
+
+echo "a saved network that never connected refuses its stored key"
+setup
+refused_twice
+KEY= SAVED_TS=0 SAVED_PSK=hunter2000 UP_HOLD=1 run_connect
+check "takes the activation down" yes "$(called_with 'connection down uuid')"
+check "is a wrong password" wrong-password "$(code)"
+teardown
+
+echo "a join whose handshake completed is not taken down"
+setup
+# 23:14:13 on 2026-11-18: one refusal, then the same key connected, and the
+# watch took the connection down 0.2 s later.
+logged <<'LOG'
+wlan0: CTRL-EVENT-DISCONNECTED bssid=58:11:22:34:39:1c reason=2
+wlan0: WPA: 4-Way Handshake failed - pre-shared key may be incorrect
+wlan0: Associated with 58:11:22:34:39:1c
+wlan0: CTRL-EVENT-CONNECTED - Connection to 58:11:22:34:39:1c completed [id=0 id_str=]
+wlan0: CTRL-EVENT-DISCONNECTED bssid=58:11:22:34:39:1c reason=2
+wlan0: WPA: 4-Way Handshake failed - pre-shared key may be incorrect
+LOG
+UP_HOLD=1 run_connect
+check "is not taken down" no "$(called_with 'connection down uuid')"
+check "is not a wrong password" no-connection "$(code)"
 teardown
 
 echo "an open network's join is not watched"
