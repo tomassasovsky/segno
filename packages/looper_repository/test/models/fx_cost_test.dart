@@ -843,7 +843,6 @@ void main() {
       expect(load(4, 8), lessThanOrEqualTo(budget));
       expect(load(4, 6, outputs: 1), lessThanOrEqualTo(budget));
       expect(load(4, 7, outputs: 1), greaterThan(budget));
-      expect(load(4, 8, outputs: 1), greaterThan(budget));
       // On the output, beside the four on the inputs: three, not four.
       expect(load(4, 0, outputs: 3), lessThanOrEqualTo(budget));
       expect(load(4, 0, outputs: 4), greaterThan(budget));

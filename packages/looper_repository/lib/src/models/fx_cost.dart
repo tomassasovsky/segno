@@ -174,14 +174,19 @@ const int kFxBenchPeriod = 64;
 /// is 0.773, so 0.77. The engine counts the services past it
 /// (`over_share_periods`, LE_CB_OVER_SHARE_NUM / DEN).
 ///
-/// Measured again on build 278 with nothing reading the sound card's status
-/// meanwhile (#1724): with a rack on each of four inputs and on six tracks
-/// and four takes playing, the app's per-period service had a p99.9 of
-/// 579 us, 1.20 times the 482 us this file then charged. The bench's engine
-/// ran the same rig at 452 us; the app's own work adds about the same
-/// microseconds to any rig. On the callback alone, beside the inputs' four,
-/// three racks on the output (91 %) ran clean and four (109 %) did not, so
-/// the share stands.
+/// The 1.16 came from a run whose sampling script read the sound card's
+/// status from /proc once a second, which delays the callback (see
+/// [kFxTrackJobNs]). Measured again on build 278 without it (#1724): with a
+/// rack on each of four inputs and on six tracks and four takes playing,
+/// the app's per-period service had a p99.9 of 579 us, 1.20 times the
+/// 482 us this file then charged, against the bench engine's 452 us for the
+/// same rig. Read as a factor, 1.20 would put the limit's p99.9 at 0.92 of
+/// the block, past the tenth kept; read as what it looks like, a constant
+/// the app adds (127 us here), it depends on the rig. The bench's engine
+/// itself crosses the line where this share puts it: beside the inputs'
+/// four racks, three on the output (91 %) ran clean and four (109 %) ran
+/// late. The share is unchanged until the app is measured at its limit
+/// with racks on the callback, which the 1.20 run did not have.
 const double kFxBudgetShare = 0.77;
 
 /// The rate the charges default to.
@@ -287,13 +292,14 @@ const Map<int, double> kFxHandoffUs = {1: 4.48, 2: 5.184, 3: 6.208};
 /// Rack on the four inputs, racks on 6, 7 and 8 tracks ran with no late
 /// period and no xrun (the callback's worst service 542, 531 and 579 us of
 /// 666), and so did 6 beside a rack on output pair 0 (632 us); 8 beside it
-/// ran 2 late. Every one of those runs that ran clean is lighter on the
-/// callback than three racks on the output with the four on the inputs
-/// (636 us), which the budget admits at 91 %. A charge of up to 223 ns
-/// admits all of them and still refuses 8 beside the output's rack, which
-/// no figure here admits; this keeps most of it as a margin for the app's
-/// own work on each lane. It is the console's setting's figure: a longer
-/// block spends less a frame on it.
+/// ran 2 late. None of the clean runs served a period more slowly than
+/// three racks on the output with the four on the inputs did (636 us),
+/// which the budget admits at 91 %, and their p99.9 was at most 7 us past
+/// its 502. A charge of up to 223 ns admits all of them; 8 beside the
+/// output's rack is refused even at none. This keeps most of that range as
+/// a margin for the app's own work on each lane. The work it pays for is
+/// per frame, so a longer block spends no more a frame on it; it was run
+/// only at 48 kHz / 32.
 ///
 /// The 500 ns it replaces came from #1729's runs on build 238, whose late
 /// periods were the measurement's: the sampling script read the sound
@@ -321,9 +327,8 @@ const int kFxTrackJobNs = 200;
 /// (build 274, 48 kHz / 32, no workers) Ed's Racks on 3 and 4 tracks ran
 /// as the same racks on the inputs did, and on 5, at 90 % of the budget,
 /// with 6 to 9 late periods in 120 s and no xrun (#1746). That is a little
-/// heavier than five racks on the inputs and output (none), and inside
-/// #1724's bar only by the share's margin: a share or a rack charge cut
-/// reaches the track racks first.
+/// heavier than five racks on the inputs and output (none): a share or a
+/// rack charge cut reaches the track racks first.
 int fxLoadNs({
   required int serial,
   required Iterable<int> jobs,
