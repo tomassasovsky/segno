@@ -38,7 +38,6 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 | Issue | Thread | Stage | Autonomy | Branch |
 |-------|--------|-------|----------|--------|
-| #1746 | Serial track racks on the callback (no effects workers) charge what they cost: the budget refuses what xruns | build | auto | `claude/serial-track-racks-1746` |
 | #1850 | Land the trunk on master and retire `claude/segno-integration` | build | merge-gate | `claude/land-trunk-1850` |
 | #1821 | Devlog and RSS feed on segno.aquiles.dev: Markdown entries in `site/log`, built by `site/build_log.py` | in-review | merge-gate | `claude/devlog-1821` |
 | #1795 | NVMe drive drops off the bus mid-recording: the Pi 5 cmdline turns off APST and PCIe ASPM on every link | in-review | blocked-verify | `claude/nvme-power-1795` |
