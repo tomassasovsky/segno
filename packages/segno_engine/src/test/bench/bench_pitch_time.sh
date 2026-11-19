@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Build + run the pitch/time CPU bench (#1179 Part 1). NOT part of the test
 # gate; CI builds and smoke-runs it (native-tests) and runs the arm64 proxy
-# assertions (native-bench-arm64). See docs/plan/2026-10-06-feat-pitch-time-core-plan.md
-# Part 1 and docs/plan/2026-10-06-pitch-time-spike-findings.md.
+# assertions (native-bench-pitch-arm64). See
+# docs/plan/2026-10-06-feat-pitch-time-core-plan.md Part 1 and docs/plan/2026-10-06-pitch-time-spike-findings.md.
 #
 # Links the real engine sources (so `baseline` measures le_engine_process as
 # shipped) plus the Signalsmith Stretch C shim. The source list is ENGINE_SRC

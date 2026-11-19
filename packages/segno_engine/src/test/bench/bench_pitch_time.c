@@ -2,8 +2,8 @@
  *
  * Standalone harness built by bench_pitch_time.sh against the real engine
  * sources and the Signalsmith Stretch C shim. NOT part of the test gate; the
- * native-tests CI job smoke-runs it and native-bench-arm64 asserts the proxy
- * thresholds. Numbers and verdicts live in
+ * native-tests CI job smoke-runs it and native-bench-pitch-arm64 asserts the
+ * proxy thresholds. Numbers and verdicts live in
  * docs/plan/2026-10-06-pitch-time-spike-findings.md.
  *
  * Scenarios (each over --seconds of simulated audio at --rate / --period):

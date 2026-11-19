@@ -226,16 +226,51 @@ jobs:
           packages/segno_engine/tool/check_ffi_symbols.sh \
             build/appliance/bundle/lib/libsegno_engine.so
 
-  # The #1179 pitch/time and #1197 instrument CPU proxies: the bench harnesses
+  # The #1197 instrument CPU proxy and the effects benches: the bench harnesses
   # on the same native arm64 runner as appliance-bundle, asserting the arm64
   # PROXY thresholds (p50 and throughput only — a shared Neoverse VM without
   # SCHED_FIFO has no meaningful p99) at half the Pi 5 figures. The Pi 5
   # thresholds themselves are a hardware criterion (Part 1 of
-  # docs/plan/2026-10-06-feat-pitch-time-core-plan.md and of
   # docs/plan/2026-10-06-feat-instruments-plan.md): each built binary is
   # uploaded as an artifact so the owner can copy it to the appliance and run
   # it with `--budget-us 667 --assert` there. upload-artifact does not keep
   # file modes: `chmod +x` the binary on the appliance before running it.
+  # The #1179 pitch/time CPU proxy, the same way, in a job of its own: the
+  # plan times each scenario over 60 s of audio (the harness's default), which
+  # takes several minutes and would otherwise hold up the benches below.
+  native-bench-pitch-arm64:
+    needs: changes
+    if: needs.changes.outputs.native == 'true'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install ccache
+        uses: hendrikmuhs/ccache-action@v1.2.25
+        with:
+          install: binary
+          restore: false
+          save: false
+          max-size: 100M
+      - name: Build + run the pitch/time bench (arm64 proxy thresholds)
+        # `shell: bash` runs the step as `bash -eo pipefail`. The default shell
+        # has no pipefail, so the pipeline would exit with tee's status and a
+        # failed threshold (or a failed build) would leave the job green.
+        shell: bash
+        run: >
+          bash packages/segno_engine/src/test/bench/bench_pitch_time.sh
+          --budget-us 667 --assert --proxy
+          | tee bench-pitch-time-arm64.md
+      - name: Upload the harness and its report for the appliance
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: bench-pitch-time-arm64
+          path: |
+            packages/segno_engine/build/bench/bench_pitch_time
+            bench-pitch-time-arm64.md
+          if-no-files-found: error
+
   native-bench-arm64:
     needs: changes
     if: needs.changes.outputs.native == 'true'
@@ -265,29 +300,10 @@ jobs:
           restore: false
           save: false
           max-size: 100M
-      - name: Build + run the pitch/time bench (arm64 proxy thresholds)
-        # `shell: bash` runs the step as `bash -eo pipefail`. The default shell
-        # has no pipefail, so the pipeline would exit with tee's status and a
-        # failed threshold (or a failed build) would leave the job green.
-        shell: bash
-        run: >
-          bash packages/segno_engine/src/test/bench/bench_pitch_time.sh
-          --budget-us 667 --assert --proxy --seconds 20
-          | tee bench-pitch-time-arm64.md
-      - name: Upload the harness and its report for the appliance
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: bench-pitch-time-arm64
-          path: |
-            packages/segno_engine/build/bench/bench_pitch_time
-            bench-pitch-time-arm64.md
-          if-no-files-found: error
       # The #1197 instrument voice bench: the same proxy rule (p50 at half the
       # Pi 5 percentages), its binary uploaded for the owner's appliance run
       # (docs/plan/2026-10-06-instruments-spike-findings.md, "Pi 5").
       - name: Build + run the instrument voice bench (arm64 proxy thresholds)
-        if: always()
         shell: bash
         run: >
           bash packages/segno_engine/src/test/bench/bench_instruments.sh
@@ -457,7 +473,7 @@ jobs:
       # The #1179 pitch/time bench (src/test/bench/bench_pitch_time.{c,sh}) is
       # outside the test gate, so this one-second smoke run is what keeps it
       # compiling and running; the arm64 proxy thresholds are asserted by
-      # native-bench-arm64 below.
+      # native-bench-pitch-arm64 below.
       - name: Build + smoke the pitch/time bench
         run: bash packages/segno_engine/src/test/bench/bench_pitch_time.sh --smoke
       # The #1197 instrument voice bench (src/test/bench/bench_instruments.{c,sh}),

@@ -6,8 +6,8 @@ Tracking: #1179, Part 1 of
 [the plan](2026-10-06-feat-pitch-time-core-plan.md). Status: the harness, the
 vendored library and its C shim, and the read-head header are built; the
 dev-machine run is recorded below as information; the arm64 proxy run is the
-CI job `native-bench-arm64` on the PR head; the Pi 5 table is appended when the
-owner has run the uploaded artifact on the appliance.
+CI job `native-bench-pitch-arm64` on the PR head; the Pi 5 table is appended
+when the owner has run the uploaded artifact on the appliance.
 
 ## What was built
 
@@ -85,9 +85,10 @@ owner has run the uploaded artifact on the appliance.
 - `src/test/bench/bench_pitch_time.{c,sh}` and `bench_alloc.cpp` (a counting
   global `operator new`, linked into the bench only, which also counts every
   call): the harness (scenarios below), `--smoke` (48 kHz / 128 frames, the
-  plan's smoke) in the `native-tests` CI job, `--assert --proxy` in the
-  `native-bench-arm64` job on `ubuntu-24.04-arm`, which uploads the binary and
-  its report as the artifact `bench-pitch-time-arm64`. That step runs with
+  plan's smoke) in the `native-tests` CI job, `--assert --proxy` at the
+  plan's 60 s per scenario in the `native-bench-pitch-arm64` job on
+  `ubuntu-24.04-arm`, which uploads the binary and its report as the artifact
+  `bench-pitch-time-arm64`. That step runs with
   `shell: bash` (`bash -eo pipefail`): under the default `bash -e` the
   `| tee` made the step's status tee's, so a failed threshold or a failed build
   left the job green. Proof, the step's own pipe run locally with a
@@ -161,7 +162,8 @@ that a pre-existing finding for its own issue, not this gate's failure.
 
 Apple M4 Pro (macOS, Apple clang 21), `bench_pitch_time.sh --budget-us 667
 --assert --proxy --seconds 20`: 96 kHz, 64-frame period (667 µs budget), 20 s
-per scenario (the CI setting), 30 s loops, no real-time scheduling available.
+per scenario (CI's setting until #1192, which moved the proxy to its own job
+at the plan's 60 s), 30 s loops, no real-time scheduling available.
 The proxy verdicts are printed because the harness asserts them anywhere with
 `--proxy`; this machine is neither the Pi nor the proxy, so they gate nothing.
 
@@ -244,7 +246,7 @@ The same harness linked against the first version of the shim (the whole lap
 copied and the whole output buffered) measures 19,855 to 26,448 KiB of render
 scratch and fails that criterion (25.83 MiB against 1 MiB).
 
-## arm64 proxy (CI, `native-bench-arm64`)
+## arm64 proxy (CI, `native-bench-pitch-arm64`)
 
 Filled from the first green run of the job on the PR head; the report is the
 job's `bench-pitch-time-arm64.md` artifact. Until then: pending.
