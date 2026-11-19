@@ -840,6 +840,12 @@ typedef struct le_fx_state {
    * read with a relaxed load. */
   int32_t enable_drain[LE_FX_MAX];
   int32_t enable_quiet[LE_FX_MAX];
+  /* 1 once a lane chain's output has reached LE_FX_DRAIN_FLOOR since the
+   * lane's snapshot last cleared it (#1870): le_fx_note_output sets it
+   * wherever the lane's chain runs, whichever thread runs it, and the
+   * snapshot reads it after the block's jobs have joined
+   * (le_lane_chain_sleeps). Unused on other chains. */
+  int32_t out_loud;
   /* A rack's crossfade, kept on its LAST entry and advanced at its head
    * (fx_rack_head): rack_mix is how much of the rack's input and output
    * sides apply (1 while any of its entries is on, 0 with all of them off),
@@ -1235,6 +1241,16 @@ typedef struct le_lane {
   uint32_t run_gen;
   uint32_t run_top;
   int32_t run_len;
+  /* Audio-thread-LOCAL (#1870, le_lane_chain_sleeps): the FX clock frame
+   * from which the chain's output has stayed under LE_FX_DRAIN_FLOOR on an
+   * EMPTY track, the chain-edit generation (a_fx_gen) that quiet began
+   * under, and 1 once the chain has been quiet for its whole tail and
+   * stopped running, and the chain's le_fx_chain_quiet_frames for that
+   * generation (0 until it is first needed). */
+  uint32_t fx_quiet_since;
+  uint32_t fx_quiet_gen;
+  int32_t fx_asleep;
+  int32_t fx_quiet_need;
 } le_lane;
 
 /* Bumps a lane's chain-edit generation (see a_fx_gen above). Both threads
