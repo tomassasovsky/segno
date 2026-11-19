@@ -101,8 +101,8 @@ void le_stretch_flush(le_stretch* s, float* const* out,
  * mono at 96 kHz) plus block + interval frames of scratch per channel,
  * streaming from in[] and into out[] (no copy of the lap); deterministic for a
  * given seed, preset, sample rate and input. No out[] channel may share
- * memory with any in[] channel: the render reads in[] while it writes out[],
- * so an in-place call is refused. LE_STRETCH_ERR_INVALID on bad arguments,
+ * memory with any in[] channel or another out[] channel: the render reads
+ * in[] while it writes out[], so an in-place call is refused. LE_STRETCH_ERR_INVALID on bad arguments,
  * overlapping buffers or an out_frames the ratio cannot fill,
  * LE_STRETCH_ERR_ALLOC on allocation failure. */
 int32_t le_stretch_render_offline(const float* const* in, int32_t in_frames,

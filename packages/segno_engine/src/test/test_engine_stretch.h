@@ -226,6 +226,10 @@ static void test_stretch_offline_deterministic_and_guards(void) {
     const float* in_two[2] = {src, buf};
     float* out_two[2] = {buf, a}; /* out[0] over in[1] */
     CHECK(le_stretch_render_offline(in_two, n, 2, sr, 1.0, 5.0f, 0.0f, 1, 99u, 1, out_two, n) == LE_STRETCH_ERR_INVALID);
+    /* two outputs over each other */
+    const float* in_pair[2] = {src, src};
+    float* out_same[2] = {a, a};
+    CHECK(le_stretch_render_offline(in_pair, n, 2, sr, 1.0, 5.0f, 0.0f, 1, 99u, 1, out_same, n) == LE_STRETCH_ERR_INVALID);
     /* adjacent is not overlapping: out right after in renders */
     float* out_next[1] = {buf + n};
     CHECK(le_stretch_render_offline(in_place, n, 1, sr, 1.0, 5.0f, 0.0f, 1, 99u, 1, out_next, n) == LE_STRETCH_OK);

@@ -280,10 +280,12 @@ int32_t le_stretch_render_offline(const float* const* in, int32_t in_frames,
   }
   /* The render reads in[] while it writes out[] (the cyclic run-out reads
    * the lap's head after out[] has been written), so an output that shares
-   * memory with any input would read its own result. */
+   * memory with any input would read its own result; two outputs that share
+   * memory would write over each other. */
   for (int32_t c = 0; c < channels; ++c) {
     for (int32_t d = 0; d < channels; ++d) {
-      if (spans_overlap(out[c], out_frames, in[d], in_frames)) {
+      if (spans_overlap(out[c], out_frames, in[d], in_frames) ||
+          (d > c && spans_overlap(out[c], out_frames, out[d], out_frames))) {
         return LE_STRETCH_ERR_INVALID;
       }
     }

@@ -1222,15 +1222,16 @@ int main(int argc, char** argv) {
              "is not judged\n",
              100.0 * base1.p99 / g_budget_us);
     }
-    int failed = allocated;
+    int failed = 0;
     for (int i = 0; i < g_nverdicts; ++i) {
       printf("- %s: %s (%.2f vs %.2f)\n", g_verdicts[i].pass ? "PASS" : "FAIL",
              g_verdicts[i].what, g_verdicts[i].value, g_verdicts[i].limit);
       if (!g_verdicts[i].pass) failed++;
     }
     printf("\n%s\n", failed ? "THRESHOLDS FAILED" : "ALL THRESHOLDS MET");
+    if (allocated) printf("ALLOCATED IN A REAL-TIME CALL (see inline)\n");
     free(src);
-    return failed ? 1 : 0;
+    return failed || allocated ? 1 : 0;
   }
   free(src);
   printf("(no assertions requested)\n");
