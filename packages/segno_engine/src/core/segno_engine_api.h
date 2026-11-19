@@ -286,13 +286,9 @@ typedef enum le_command_code {
                                   * (arg_f = track, arg_i = output bitmask) */
   LE_CMD_ARM = 16,    /* arg_i = track: arm a quantized record (fire at loop
                        * top). arg_f selects the trigger: 0 = grid/loop-top
-                       * (quantize), 1 = input level (auto-record), 2 = Band
-                       * section transport (B3b) -- a play/stop TOGGLE on a
-                       * content-bearing non-primary track, deferred to the
-                       * next primary-track loop top rather than a record
-                       * action; see le_engine_toggle_section. 3 = a Song or
-                       * Band Record waiting for the sounding section's end
-                       * (#1323; le_engine_record). */
+                       * (quantize), 1 = input level (auto-record), 3 = a
+                       * Song or Band Record waiting for the sounding
+                       * section's end (#1323; le_engine_record). */
   LE_CMD_DISARM = 17, /* arg_i = track: cancel a pending quantized record
                        * (any trigger). */
   /* ---- click + count-in (A2, D5/D9). The click is its own routable source:
@@ -431,7 +427,7 @@ typedef enum le_command_code {
    * (le_primary_reconcile, engine_process.c — the accepted-design rule
    * that supersedes D18's never-auto-assign reading). See
    * le_sync_quantize_active (engine_private.h) for how this gates Sync/Band's
-   * finalize + section-transport behavior. */
+   * finalize behavior. */
   LE_CMD_CROWN_PRIMARY = 46, /* arg_i = channel */
 
   /* One Shot: a per-track setting in every mode. Finishes the current
@@ -1296,9 +1292,9 @@ typedef struct le_track_snapshot {
   int32_t position_frames;
   /* Trailing (accepted design, slice 1): what the arm reported by `pending`
    * waits for — 0 = the quantize grid (next loop top / subdivision), 1 = a
-   * signal at the recording input (Sound start), 2 = a Band section toggle
-   * at the primary's loop top, 3 = a Song or Band Record waiting for the
-   * sounding section's end (#1323); -1 while nothing is pending. The stage names
+   * signal at the recording input (Sound start), 3 = a Song or Band Record
+   * waiting for the sounding section's end (#1323); -1 while nothing is
+   * pending. The stage names
    * the boundary from this rather than guessing from the settings. */
   int32_t pending_trigger;
   /* ---- per-track record timing and decay overrides (accepted design,
@@ -2806,8 +2802,9 @@ LE_EXPORT int32_t le_engine_set_record_offset(le_engine* engine,
                                               int32_t frames);
 
 /* Cancels track [channel]'s pending record arm, whatever armed it — the
- * quantized loop-top arm, the signal-triggered (auto-record) arm, or a Band
- * section toggle. No-op (LE_OK) when the track is not armed.
+ * quantized loop-top arm, the signal-triggered (auto-record) arm, or a Song
+ * or Band Record waiting for the handoff. No-op (LE_OK) when the track is
+ * not armed.
  *
  * Returns LE_OK only when the cancel actually reached the audio thread. The
  * disarm rides the command ring, so it can be refused (a full ring behind
@@ -3001,8 +2998,8 @@ LE_EXPORT int32_t le_engine_set_looper_mode_with_presets(
  * fixed-multiple tracks; a division (1/4, 1/2) plays a repeating slice of
  * ITS OWN (shorter) buffer, phase-locked to the primary's loop top. Band
  * layers the SAME primary/multiple-division machinery, plus non-primary
- * "section" tracks that start/stop independently — see
- * le_engine_toggle_section. Both are inert until a primary is crowned AND
+ * "section" tracks, one sounding at a time, that switch through ordinary
+ * Play and Record (#1323). Both are inert until a primary is crowned AND
  * that primary already has an established (single-base-loop) length; until
  * then Sync/Band's non-primary tracks record exactly like Multi (D16
  * fallback). */
@@ -3014,20 +3011,6 @@ LE_EXPORT int32_t le_engine_set_looper_mode_with_presets(
  * completed take on its own and clears the crown when the session empties
  * (LE_CMD_CROWN_PRIMARY's doc). */
 LE_EXPORT int32_t le_engine_crown_primary(le_engine* engine, int32_t channel);
-
-/* Toggles Band section transport (D19 §2 Q3) on [channel]: a play/stop
- * press on a non-primary, content-bearing track in BAND mode, deferred
- * (quantized) to the next time the PRIMARY track returns to its loop top —
- * matching the manual's "quantized to the primary track" section semantics,
- * genuinely different from Sync (where non-primary tracks are locked to
- * always play, never independently started/stopped). A second call before
- * the boundary fires cancels the pending toggle (mirrors le_engine_record's
- * quantize-arm toggle shape). Returns LE_ERR_INVALID outside BAND mode, for
- * the primary track itself, or for a still-EMPTY track (nothing to
- * start/stop — a section reaches this only after its own defining,
- * sync-quantized recording has finalized). */
-LE_EXPORT int32_t le_engine_toggle_section(le_engine* engine,
-                                           int32_t channel);
 
 /* ---- One Shot (B4, Sheeran manual §5.9.4; every mode since slice 2b) ----
  * "A track plays just once and then stops" — the manual's tool for a

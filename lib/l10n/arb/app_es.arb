@@ -1865,7 +1865,6 @@
     "stageQueueSixteenth": "Próxima semicorchea",
     "stageQueueSound": "Sonido",
     "stageQueuePlay": "Reproducir",
-    "stageQueueStop": "Detener",
     "a11yTrackQueued": "{action} en cola, {timing}",
     "readoutStateEmpty": "Vacía",
     "readoutStateRecording": "Grabando",

@@ -3688,7 +3688,6 @@
     "stageQueueSixteenth": "Next sixteenth note",
     "stageQueueSound": "Sound",
     "stageQueuePlay": "Play",
-    "stageQueueStop": "Stop",
     "a11yTrackQueued": "{action} queued, {timing}",
     "@a11yTrackQueued": {
         "placeholders": {

@@ -135,7 +135,7 @@ behaviour changes, record every decision). Each goes into the PR body and on
 7. **`le_engine_toggle_section`** (Band trigger-2 transport) is not called
    by the app. Revised 2026-10-27: its start now waits for a sounding
    section like any other request, and a toggle on the waiting section
-   cancels it. #1324 still tracks removing it.
+   cancels it. Removed in #1324 (2026-11-19).
 8. **The handoff is the Record's boundary.** A waiting Record starts at the
    handoff even with Sound start, quantize or Count-in on; none applies to
    it. A Sound-start or grid arm set while no section sounded, firing while

@@ -51,26 +51,17 @@ enum QueueAction {
   /// Start an overdub pass on the recorded track.
   overdub,
 
-  /// Play: an overdub's punch-out, or a section arm on a stopped track.
+  /// Play: an overdub's punch-out, or a take's end.
   play,
-
-  /// Stop: a section arm on a sounding track.
-  stop,
 }
 
 /// The [QueueAction] [track]'s pending arm fires — read off the engine's own
 /// facts (`pendingTrigger`, state, content), never guessed from settings.
 ///
-/// A section arm (Band transport) plays a stopped track and stops a sounding
-/// one; a record arm ends an overdub pass, ends a take (landing it playing,
-/// or overdubbing under the rec/dub setting [recDub]), starts a pass on a
+/// A record arm ends an overdub pass, ends a take (landing it playing, or
+/// overdubbing under the rec/dub setting [recDub]), starts a pass on a
 /// recorded track, or starts the take on an empty one.
 QueueAction queueActionOf(Track track, {required bool recDub}) {
-  if (track.pendingTrigger == ArmTrigger.section) {
-    return track.state == TrackState.stopped
-        ? QueueAction.play
-        : QueueAction.stop;
-  }
   return switch (track.state) {
     TrackState.overdubbing => QueueAction.play,
     TrackState.recording => recDub ? QueueAction.overdub : QueueAction.play,
@@ -82,14 +73,14 @@ QueueAction queueActionOf(Track track, {required bool recDub}) {
 /// The boundary [track]'s pending arm waits for under the live quantize
 /// [division].
 ///
-/// Sound start fires on signal; a section arm and an overdub's punch-out fire
-/// only at the loop top (the engine holds those to the primary's cycle and the
-/// layer boundary, never a subdivision); a grid arm follows the division.
+/// Sound start fires on signal; a Song or Band handoff and an overdub's
+/// punch-out fire only at the loop top (the engine holds those to the
+/// primary's cycle and the layer boundary, never a subdivision); a grid arm
+/// follows the division.
 QueueTiming queueTimingOf(Track track, GridDivision division) {
   switch (track.pendingTrigger) {
     case ArmTrigger.sound:
       return QueueTiming.sound;
-    case ArmTrigger.section:
     // A Song or Band Record waits for the sounding section's end (#1323).
     case ArmTrigger.handoff:
       return QueueTiming.loopStart;
@@ -422,7 +413,6 @@ String _queueActionLabel(AppLocalizations l10n, QueueAction action) =>
       QueueAction.record => l10n.stageQueueRecord,
       QueueAction.overdub => l10n.stageQueueOverdub,
       QueueAction.play => l10n.stageQueuePlay,
-      QueueAction.stop => l10n.stageQueueStop,
     };
 
 /// The accepted stage's wording for a [QueueTiming].

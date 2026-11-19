@@ -13,9 +13,6 @@ enum ArmTrigger {
   /// A signal at the recording input (Sound start).
   sound,
 
-  /// A Band section toggle at the primary's loop top.
-  section,
-
   /// A Song or Band Record waiting for the sounding section's end (#1323).
   handoff;
 
@@ -23,7 +20,6 @@ enum ArmTrigger {
   static ArmTrigger? fromCode(int code) => switch (code) {
     0 => ArmTrigger.grid,
     1 => ArmTrigger.sound,
-    2 => ArmTrigger.section,
     3 => ArmTrigger.handoff,
     _ => null,
   };

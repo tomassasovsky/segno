@@ -2228,7 +2228,7 @@ static le_record_admission le_classify_record(le_engine* e, int channel) {
   if (e->armed[channel] && load_i32(&t->a_pending)) {
     const int trigger = e->armed_trigger[channel];
     if ((sound && trigger == 1) || (!sound && quantized && trigger == 0)) return LE_RECORD_CANCEL;
-    if (trigger == 2 || sound || quantized) return LE_RECORD_REFUSE;
+    if (sound || quantized) return LE_RECORD_REFUSE;
   }
   return LE_RECORD_ACQUIRE;
 }
@@ -2446,9 +2446,7 @@ static int32_t le_record_impl(le_engine* engine, int32_t channel,
    * exactly as before, so an accepted CANCEL/Undo-to-empty followed by a
    * defining capture still rides one batch
    * (test_record_image_grid_clear_is_in_capture_batch). Cancellations (a
-   * second press on a pending arm) prepare nothing and are exempt; the
-   * trigger-2 immediate case is refused below without touching PCM (the grid
-   * redefinition it passes through drops history and posts no buffer edit).
+   * second press on a pending arm) prepare nothing and are exempt.
    *
    * Residual: emptyings the audio thread decides on its own — a quantized
    * finish arm firing on a take that captured nothing, a launch commit
@@ -2464,8 +2462,7 @@ static int32_t le_record_impl(le_engine* engine, int32_t channel,
    * Without a master nothing is touched, so it is still admitted. */
   if (st == LE_TRACK_EMPTY &&
       !(engine->armed[channel] && load_i32(&t->a_pending) &&
-        (sound_arm || quantized_arm || handoff_arm ||
-         engine->armed_trigger[channel] == 2))) {
+        (sound_arm || quantized_arm || handoff_arm))) {
     /* Zeroing: every deferred arm, and an immediate start over a grid this
      * capture does not redefine (has_master survives the internal clear). A
      * Song handoff starts its take at the top of its own clock, like an
@@ -2512,8 +2509,6 @@ static int32_t le_record_impl(le_engine* engine, int32_t channel,
     const int clear = redefine_grid && (has_master || t->cancel_pending);
     if (!le_record_capacity(engine, 1u + clear + prearm)) return LE_ERR_INVALID;
     if (prearm) {
-      if (engine->armed[channel] && load_i32(&t->a_pending) &&
-          engine->armed_trigger[channel] == 2) return LE_ERR_INVALID;
       fresh_shadow = le_prepare_image_capture(engine, channel, &zeroed_live);
       if (fresh_shadow < 0) return LE_ERR_INVALID;
     }
@@ -2620,7 +2615,7 @@ static int32_t le_record_impl(le_engine* engine, int32_t channel,
     if (engine->armed[channel]) {
       /* B3b BUG 2 (adversarial review): armed[]/armed_trigger[] is shared
        * across every arm-capable command on this channel (auto-record here,
-       * the quantize arm below, and le_engine_toggle_section's trigger 2).
+       * the quantize arm below, and the Song/Band handoff's trigger 3).
        * A pending arm belonging to a DIFFERENT trigger must be rejected,
        * not silently cancelled — treating "someone else's live arm" as
        * "my own second press" would swallow their pending action with no
@@ -2698,24 +2693,12 @@ static int32_t le_record_impl(le_engine* engine, int32_t channel,
     return rc;
   }
 
-  /* Immediate (quantize off, or the defining recording). A pending Band
-   * section-transport arm (trigger 2, le_engine_toggle_section) belongs to
-   * a DIFFERENT command and must not be silently discarded here — B3b
-   * BUG 2: LE_CMD_RECORD unconditionally zeroes pending_record/a_pending on
-   * the audio thread with no way to tell whose arm it was clearing, so an
-   * immediate record on a channel with a live toggle-section arm would
-   * otherwise swallow the user's original toggle with zero error to either
-   * caller. A genuinely spent arm (already fired: a_pending reads 0) still
-   * decays as normal, regardless of trigger — nothing to protect there.
-   * Scoped to trigger 2 specifically (not "any armed[channel]"): a stale
-   * trigger-0/1 arm reaching here (e.g. quantize toggled off mid-arm)
-   * predates B3b and must keep its existing behavior — falling through to
-   * an immediate record — bit-identical for Multi/Sync. */
+  /* Immediate (quantize off, or the defining recording). A spent arm
+   * (already fired: a_pending reads 0) decays here. A stale trigger-0/1 arm
+   * (e.g. quantize toggled off mid-arm) falls through to an immediate
+   * record. */
   if (engine->armed[channel] && load_i32(&t->a_pending) == 0) {
     engine->armed[channel] = 0;
-  }
-  if (engine->armed[channel] && engine->armed_trigger[channel] == 2) {
-    return LE_ERR_INVALID;
   }
   if (st == LE_TRACK_EMPTY) {
     le_begin_empty_capture(engine, channel, image != NULL, has_master);
@@ -4168,8 +4151,7 @@ static int32_t le_stop_record(le_engine* engine, int32_t channel, int park,
     const int quantized = le_effective_quantize(engine, channel) &&
         le_rig_effective_master_len(engine) > 0 && le_transport_active(engine);
     const int pending = engine->armed[channel] && load_i32(&t->a_pending);
-    if (pending && (quantized ? engine->armed_trigger[channel] != 0
-                              : engine->armed_trigger[channel] == 2))
+    if (pending && quantized && engine->armed_trigger[channel] != 0)
       return LE_ERR_INVALID;
     /* A second Stop drops the armed end, unless it parks an overdub: then
      * it keeps the arm, so the pass still ends, and parks, on the grid. */
@@ -4549,76 +4531,6 @@ int32_t le_engine_set_one_shot_mask(le_engine* engine, uint32_t channels,
   if (channels == 0 || (channels & ~valid) != 0) return LE_ERR_INVALID;
   return le_push(engine, LE_CMD_SET_ONE_SHOT_MASK, (int32_t)channels,
                  enabled ? 1.0f : 0.0f);
-}
-
-/* Reuses le_engine_record's own quantize-arm TOGGLE shape (armed[] /
- * armed_trigger[], LE_CMD_ARM/DISARM) with trigger 2 instead of inventing
- * parallel bookkeeping. B3b BUG 2 (adversarial review): armed[]/
- * armed_trigger[] is shared with le_engine_record's own trigger-0/1 arms —
- * "a section-transport arm and a record arm can never coexist on the same
- * channel" is true only because BOTH sides now check armed_trigger[]
- * before treating a live arm as their own to cancel (see this function's
- * body and le_engine_record's two arm-check branches + its Immediate path)
- * — a DIFFERENT trigger's pending arm is rejected, never silently
- * cancelled. */
-int32_t le_engine_toggle_section(le_engine* engine, int32_t channel) {
-  if (engine == NULL) return LE_ERR_INVALID;
-  if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire)) {
-    return LE_ERR_NOT_RUNNING;
-  }
-  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
-  if (load_i32(&engine->a_looper_mode) != LE_LOOPER_MODE_BAND) {
-    return LE_ERR_INVALID;
-  }
-  const int32_t primary = load_i32(&engine->a_primary_track);
-  if (primary < 0 || channel == primary) return LE_ERR_INVALID;
-  /* B3b BUG 1 (adversarial review): every other primary-relative decision
-   * in B3/B3b consults le_sync_quantize_active before trusting e->clock as
-   * "the primary's cycle" — this entry point didn't. Without an
-   * established primary, D16's own fallback applies: whoever records
-   * first defines e->clock, which may be a NON-primary track (the crowned
-   * primary itself might still be EMPTY). Arming trigger 2 in that state
-   * would fire against that other track's own clock at its own loop top,
-   * not "the primary's" — directly contradicting this function's
-   * documented guarantee. Reject instead: section-transport is meaningless
-   * without an established primary reference. */
-  if (!le_sync_quantize_active(engine, channel)) return LE_ERR_INVALID;
-  le_track* t = &engine->tracks[channel];
-  const int32_t st = le_effective_state(t);
-  if (st == LE_TRACK_EMPTY) return LE_ERR_INVALID;
-  if (!le_transport_active(engine)) {
-    /* The transport is HELD (every track stopped/empty): the primary's
-     * clock never ticks then, so a deferred arm would never fire — the
-     * same deadlock le_engine_record's quantize branch avoids for record
-     * arms (see its comment above). The held position IS the primary's
-     * loop top by definition, so act immediately instead of arming. */
-    const int32_t rc = le_push(
-        engine, st == LE_TRACK_STOPPED ? LE_CMD_PLAY : LE_CMD_STOP, channel, 0.0f);
-    if (rc == LE_OK && st == LE_TRACK_RECORDING) {
-      le_ticket_emptying(engine, channel); /* void take -> EMPTY */
-    }
-    return rc;
-  }
-  if (engine->armed[channel] && load_i32(&t->a_pending) == 0) {
-    engine->armed[channel] = 0; /* spent: the boundary already fired it */
-  }
-  if (engine->armed[channel]) {
-    /* B3b BUG 2 (adversarial review): reject rather than cancel a
-     * DIFFERENT trigger's pending arm (le_engine_record's quantize arm,
-     * trigger 0, or its auto-record arm, trigger 1) — see this function's
-     * header doc. */
-    if (engine->armed_trigger[channel] != 2) return LE_ERR_INVALID;
-    /* Second call before the boundary fires cancels the pending toggle. */
-    engine->armed[channel] = 0;
-    return le_push(engine, LE_CMD_DISARM, channel, 0.0f);
-  }
-  engine->armed[channel] = 1;
-  engine->armed_trigger[channel] = 2; /* Band section-transport trigger */
-  const int32_t rc = le_push(engine, LE_CMD_ARM, channel, 2.0f);
-  /* The fired toggle stops a RECORDING take (le_fire_section_arm): a void one
-   * empties. Covers the ARM's block; the firing block is autonomous. */
-  if (rc == LE_OK && st == LE_TRACK_RECORDING) le_ticket_emptying(engine, channel);
-  return rc;
 }
 
 /* ---- the native MIDI input sink (#1228 Part 1; segno_engine_api.h) ----

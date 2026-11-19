@@ -560,9 +560,10 @@ abstract interface class LooperTransport {
   });
 
   /// Cancels track [channel]'s pending record arm, whatever armed it (the
-  /// quantized loop-top arm, the signal-triggered one, or a Band section
-  /// toggle), or its stopped Count-in launch. This cancellation also reaches
-  /// an earlier queued request that has not appeared in a snapshot yet.
+  /// quantized loop-top arm, the signal-triggered one, or a Song or Band
+  /// Record waiting for the handoff), or its stopped Count-in launch. This
+  /// cancellation also reaches an earlier queued request that has not
+  /// appeared in a snapshot yet.
   /// It preserves ordinary playback/capture and older audio.
   ///
   /// The UNCONDITIONAL cancel, distinct from [record]: a record press only
