@@ -40495,6 +40495,9 @@ int main(void) {
   SHARD(test_routing_spdif_order_and_direct_monitor);
   SHARD(test_routing_roles_per_card);
   SHARD(test_routing_keeps_inputs_through_their_dsp);
+  SHARD(test_routing_fixtures);
+  SHARD(test_routing_scarlett_gen1_read_only);
+  SHARD(test_routing_other_vendors_left_alone);
   SHARD(test_inputs_4i4_gen3);
   SHARD(test_inputs_4i4_writes);
   SHARD(test_inputs_refused_writes);

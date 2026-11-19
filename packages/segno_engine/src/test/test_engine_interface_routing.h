@@ -1,9 +1,9 @@
-/* The interface's own routing (#1046): le_own_scarlett2_routing and
- * le_scarlett2_loopback_mask against a fake card. The 4i4 card is read from
- * an `amixer contents` dump of the console's (fixtures/alsa); the others are
- * built here. The fake card also serves the input-switch tests
- * (test_engine_interface_inputs.h), which read `alsactl` state dumps too.
- * Included by test_engine_core.c. */
+/* The interface's own routing (#1046): le_own_interface_routing and
+ * le_interface_loopback_mask against a fake card, read from the dumps in
+ * fixtures/alsa that the input-switch tests (test_engine_interface_inputs.h)
+ * read too: the console's 4i4 (`amixer contents`) and public `alsactl`
+ * state files, each citing its source. Cards for the rules' corner cases are
+ * built here. Included by test_engine_core.c. */
 
 #define RT_MAX_CTLS 256
 #define RT_MAX_ITEMS 64
@@ -256,7 +256,8 @@ static void rt_set(rt_card* card, const char* name, const char* item) {
   CHECK(strcmp(c->item[c->value], item) == 0);
 }
 
-#define RT_4I4 "src/test/fixtures/alsa/scarlett_4i4_gen3.txt"
+#define RT_FIXTURES "src/test/fixtures/alsa/"
+#define RT_4I4 RT_FIXTURES "scarlett_4i4_gen3.txt"
 #define RT_BOTH (LE_ROUTING_OUTPUTS | LE_ROUTING_INPUTS)
 
 /* The console's 4i4 as dumped: already pass-through, so nothing is written,
@@ -268,14 +269,14 @@ static void test_routing_4i4_pass_through_writes_nothing(void) {
   CHECK(card.count == 90);
   const le_mixer m = rt_mixer(&card);
   le_routing_report r;
-  le_own_scarlett2_routing(&m, RT_BOTH, &r);
+  le_own_interface_routing(&m, RT_BOTH, &r);
   CHECK(r.controls == 10); /* 4 analogue outputs, 6 capture channels */
   CHECK(r.changed == 0);
   CHECK(r.failed == 0);
   CHECK(r.first_failed[0] == '\0');
   CHECK(card.writes == 0);
-  CHECK(le_scarlett2_loopback_mask(&m, 6) == 0x30u);
-  CHECK(le_scarlett2_loopback_mask(&m, 4) == 0u);
+  CHECK(le_interface_loopback_mask(&m, 6) == 0x30u);
+  CHECK(le_interface_loopback_mask(&m, 4) == 0u);
 }
 
 /* The bench finding: outputs fed from the mixer (headphones = PCM 1-2 again),
@@ -295,10 +296,10 @@ static void test_routing_4i4_from_stored_mixes(void) {
   rt_set(&card, "PCM 06 Capture Enum", "Mix F");
   const unsigned mixer_in_1 = rt_value(&card, "Mixer Input 01 Capture Enum");
   const le_mixer m = rt_mixer(&card);
-  CHECK(le_scarlett2_loopback_mask(&m, 6) == 0u);
+  CHECK(le_interface_loopback_mask(&m, 6) == 0u);
 
   le_routing_report r;
-  le_own_scarlett2_routing(&m, RT_BOTH, &r);
+  le_own_interface_routing(&m, RT_BOTH, &r);
   CHECK(r.controls == 10);
   CHECK(r.changed == 8);
   CHECK(r.failed == 0);
@@ -318,10 +319,10 @@ static void test_routing_4i4_from_stored_mixes(void) {
   CHECK(strcmp(rt_selected(&card, "PCM 05 Capture Enum"), "PCM 1") == 0);
   CHECK(strcmp(rt_selected(&card, "PCM 06 Capture Enum"), "PCM 2") == 0);
   CHECK(rt_value(&card, "Mixer Input 01 Capture Enum") == mixer_in_1);
-  CHECK(le_scarlett2_loopback_mask(&m, 6) == 0x30u);
+  CHECK(le_interface_loopback_mask(&m, 6) == 0x30u);
 
   /* The next open finds it owned and writes nothing. */
-  le_own_scarlett2_routing(&m, RT_BOTH, &r);
+  le_own_interface_routing(&m, RT_BOTH, &r);
   CHECK(r.changed == 0);
   CHECK(card.writes == 8);
 }
@@ -339,7 +340,7 @@ static void test_routing_reports_what_it_could_not_set(void) {
   card.stuck = "PCM 05 Capture Enum";
   const le_mixer m = rt_mixer(&card);
   le_routing_report r;
-  le_own_scarlett2_routing(&m, RT_BOTH, &r);
+  le_own_interface_routing(&m, RT_BOTH, &r);
   CHECK(r.controls == 10);
   CHECK(r.changed == 3);
   CHECK(r.failed == 2);
@@ -357,12 +358,12 @@ static void test_routing_leaves_other_cards_alone(void) {
   rt_add_enum(&card, "Line In 1 Level Capture Enum", "Line|Inst", 1);
   const le_mixer m = rt_mixer(&card);
   le_routing_report r;
-  le_own_scarlett2_routing(&m, RT_BOTH, &r);
+  le_own_interface_routing(&m, RT_BOTH, &r);
   CHECK(r.controls == 0);
   CHECK(r.changed == 0);
   CHECK(card.writes == 0);
   CHECK(rt_value(&card, "Line In 1 Level Capture Enum") == 1u);
-  CHECK(le_scarlett2_loopback_mask(&m, 2) == 0u);
+  CHECK(le_interface_loopback_mask(&m, 2) == 0u);
 }
 
 /* The driver's order across port types: analogue, then S/PDIF outputs take
@@ -373,6 +374,7 @@ static void test_routing_spdif_order_and_direct_monitor(void) {
   printf("test_routing_spdif_order_and_direct_monitor\n");
   static rt_card card;
   memset(&card, 0, sizeof(card));
+  card.usb_vendor = 0x1235u;
   const char* items =
       "Off|Analogue 1|Analogue 2|S/PDIF 1|S/PDIF 2|Mix A|Mix B|PCM 1|PCM 2|"
       "PCM 3";
@@ -394,7 +396,7 @@ static void test_routing_spdif_order_and_direct_monitor(void) {
 
   const le_mixer m = rt_mixer(&card);
   le_routing_report r;
-  le_own_scarlett2_routing(&m, RT_BOTH, &r);
+  le_own_interface_routing(&m, RT_BOTH, &r);
   CHECK(r.controls == 12);
   CHECK(r.changed == 12);
   CHECK(r.failed == 0);
@@ -415,7 +417,7 @@ static void test_routing_spdif_order_and_direct_monitor(void) {
   CHECK(strcmp(rt_selected(&card, "Direct Monitor Playback Enum"), "Off") ==
         0);
   CHECK(rt_value(&card, "Direct Monitor Playback Switch") == 0u);
-  CHECK(le_scarlett2_loopback_mask(&m, 6) == 0x30u);
+  CHECK(le_interface_loopback_mask(&m, 6) == 0x30u);
 }
 
 /* Each card owns only its role: the card Segno plays to gets its outputs set,
@@ -431,25 +433,25 @@ static void test_routing_roles_per_card(void) {
   rt_set(&card, "PCM 05 Capture Enum", "Off");
   const le_mixer m = rt_mixer(&card);
   le_routing_report r;
-  le_own_scarlett2_routing(&m, LE_ROUTING_OUTPUTS, &r);
+  le_own_interface_routing(&m, LE_ROUTING_OUTPUTS, &r);
   CHECK(r.controls == 4);
   CHECK(r.changed == 1);
   CHECK(strcmp(rt_selected(&card, "Analogue Output 03 Playback Enum"),
                "PCM 3") == 0);
   CHECK(strcmp(rt_selected(&card, "PCM 05 Capture Enum"), "Off") == 0);
-  CHECK(le_scarlett2_loopback_mask(&m, 6) == 0x20u);
+  CHECK(le_interface_loopback_mask(&m, 6) == 0x20u);
 
   /* A capture-only card: Segno plays elsewhere, so nothing of its own would
    * return on the loopback slots; they go Off and nothing is excluded. */
   rt_set(&card, "Analogue Output 03 Playback Enum", "Mix C");
-  le_own_scarlett2_routing(&m, LE_ROUTING_INPUTS, &r);
+  le_own_interface_routing(&m, LE_ROUTING_INPUTS, &r);
   CHECK(r.controls == 6);
   CHECK(r.changed == 1);
   CHECK(strcmp(rt_selected(&card, "Analogue Output 03 Playback Enum"),
                "Mix C") == 0);
   CHECK(strcmp(rt_selected(&card, "PCM 05 Capture Enum"), "Off") == 0);
   CHECK(strcmp(rt_selected(&card, "PCM 06 Capture Enum"), "Off") == 0);
-  CHECK(le_scarlett2_loopback_mask(&m, 6) == 0u);
+  CHECK(le_interface_loopback_mask(&m, 6) == 0u);
 }
 
 /* A unit with input processing (Gen 4, Vocaster) may record a hardware input
@@ -459,6 +461,7 @@ static void test_routing_keeps_inputs_through_their_dsp(void) {
   printf("test_routing_keeps_inputs_through_their_dsp\n");
   static rt_card card;
   memset(&card, 0, sizeof(card));
+  card.usb_vendor = 0x1235u;
   const char* items =
       "Off|Analogue 1|Analogue 2|Mix A|Mix B|DSP 1|DSP 2|PCM 1|PCM 2";
   rt_add_enum(&card, "DSP Input 1 Capture Enum", items, 1); /* Analogue 1 */
@@ -467,7 +470,7 @@ static void test_routing_keeps_inputs_through_their_dsp(void) {
   rt_add_enum(&card, "PCM 02 Capture Enum", items, 6);      /* DSP 2 */
   const le_mixer m = rt_mixer(&card);
   le_routing_report r;
-  le_own_scarlett2_routing(&m, LE_ROUTING_INPUTS, &r);
+  le_own_interface_routing(&m, LE_ROUTING_INPUTS, &r);
   CHECK(r.controls == 2);
   CHECK(r.changed == 1);
   CHECK(r.failed == 0);
@@ -475,4 +478,136 @@ static void test_routing_keeps_inputs_through_their_dsp(void) {
   CHECK(strcmp(rt_selected(&card, "PCM 02 Capture Enum"), "Analogue 2") == 0);
   CHECK(strcmp(rt_selected(&card, "DSP Input 2 Capture Enum"), "Analogue 1") ==
         0);
+}
+
+/* Every Focusrite dump the input tests read, as dumped: scarlett2's routing
+ * table sets it to pass-through, and the next open writes nothing. The Gen 3
+ * Solo and 2i2 have no routing but their direct monitoring. The 18i20's 19
+ * hardware inputs (its talkback mic is Analogue 9) leave one loopback slot
+ * of 20 capture channels. Scarlett 1st Gen's routing is read, never set. */
+static void test_routing_fixtures(void) {
+  printf("test_routing_fixtures\n");
+  static const struct {
+    const char* file;
+    int controls;
+    int changed;
+    uint32_t mask; /* after, of 32 channels */
+  } k_cases[] = {
+      {"scarlett_solo_gen3.state", 1, 0, 0u},
+      {"scarlett_2i2_gen3.state", 1, 1, 0u},
+      {"scarlett_18i20_gen3.state", 40, 38, 0x80000u},
+      {"scarlett_solo_gen4.state", 7, 4, 0xcu},
+      {"scarlett_2i2_gen4.state", 7, 4, 0xcu},
+      {"scarlett_4i4_gen4.state", 12, 8, 0x30u},
+      {"vocaster_two.state", 20, 20, 0x3c0u},
+      {"scarlett_6i6_gen1.state", 0, 0, 0u},
+  };
+  static rt_card card;
+  for (size_t i = 0; i < sizeof(k_cases) / sizeof(k_cases[0]); ++i) {
+    char path[128];
+    snprintf(path, sizeof(path), RT_FIXTURES "%s", k_cases[i].file);
+    rt_load_state(&card, path);
+    CHECK(card.usb_vendor == 0x1235u);
+    const le_mixer m = rt_mixer(&card);
+    le_routing_report r;
+    le_own_interface_routing(&m, RT_BOTH, &r);
+    CHECK(r.controls == k_cases[i].controls);
+    CHECK(r.changed == k_cases[i].changed);
+    CHECK(r.failed == 0);
+    CHECK(card.writes == k_cases[i].changed);
+    CHECK(le_interface_loopback_mask(&m, 32) == k_cases[i].mask);
+    le_own_interface_routing(&m, RT_BOTH, &r);
+    CHECK(r.controls == k_cases[i].controls);
+    CHECK(r.changed == 0);
+    CHECK(card.writes == k_cases[i].changed);
+  }
+
+  /* Direct monitoring off: the Solo's switch (already off as dumped), the
+   * 2i2's enumeration. */
+  rt_load_state(&card, RT_FIXTURES "scarlett_solo_gen3.state");
+  rt_lookup(&card, "Direct Monitor Playback Switch")->value = 1;
+  le_mixer m = rt_mixer(&card);
+  le_routing_report r;
+  le_own_interface_routing(&m, LE_ROUTING_OUTPUTS, &r);
+  CHECK(r.changed == 1);
+  CHECK(rt_value(&card, "Direct Monitor Playback Switch") == 0u);
+  rt_load_state(&card, RT_FIXTURES "scarlett_2i2_gen3.state");
+  m = rt_mixer(&card);
+  le_own_interface_routing(&m, LE_ROUTING_OUTPUTS, &r);
+  CHECK(strcmp(rt_selected(&card, "Direct Monitor Playback Enum"), "Off") ==
+        0);
+
+  /* The Vocaster as dumped plays and records mixes. It has four playback
+   * streams for six outputs, so outputs 5-6 go Off; capture 7-10, past its
+   * six hardware inputs, return the four streams. */
+  rt_load_state(&card, RT_FIXTURES "vocaster_two.state");
+  m = rt_mixer(&card);
+  le_own_interface_routing(&m, RT_BOTH, &r);
+  CHECK(strcmp(rt_selected(&card, "Analogue Output 01 Playback Enum"),
+               "PCM 1") == 0);
+  CHECK(strcmp(rt_selected(&card, "Analogue Output 04 Playback Enum"),
+               "PCM 4") == 0);
+  CHECK(strcmp(rt_selected(&card, "Analogue Output 06 Playback Enum"),
+               "Off") == 0);
+  CHECK(strcmp(rt_selected(&card, "PCM 06 Capture Enum"), "Analogue 6") == 0);
+  CHECK(strcmp(rt_selected(&card, "PCM 07 Capture Enum"), "PCM 1") == 0);
+  CHECK(strcmp(rt_selected(&card, "PCM 10 Capture Enum"), "PCM 4") == 0);
+}
+
+/* Scarlett 1st Gen: its capture routing is read (the input switches need it
+ * pass-through), never set, and has no loopback. */
+static void test_routing_scarlett_gen1_read_only(void) {
+  printf("test_routing_scarlett_gen1_read_only\n");
+  static rt_card card;
+  rt_load_state(&card, RT_FIXTURES "scarlett_6i6_gen1.state");
+  rt_set(&card, "Input Source 01 Capture Route", "Mix A");
+  const le_mixer m = rt_mixer(&card);
+  le_routing_report r;
+  le_own_interface_routing(&m, RT_BOTH, &r);
+  CHECK(r.controls == 0);
+  CHECK(card.writes == 0);
+  CHECK(strcmp(rt_selected(&card, "Input Source 01 Capture Route"), "Mix A") ==
+        0);
+  CHECK(le_interface_loopback_mask(&m, 6) == 0u);
+}
+
+/* The routing is chosen by what the card is, like the input switches: a card
+ * whose USB vendor no routing table claims is left alone, whatever its
+ * controls are named. */
+static void test_routing_other_vendors_left_alone(void) {
+  printf("test_routing_other_vendors_left_alone\n");
+  static rt_card card;
+  static const char* const k_state[] = {
+      "motu_m2.state",
+      "motu_m4.state",
+      "audient_id4.state",
+      "hda_generic_alc1220.state",
+  };
+  le_routing_report r;
+  for (size_t i = 0; i < sizeof(k_state) / sizeof(k_state[0]); ++i) {
+    char path[128];
+    snprintf(path, sizeof(path), RT_FIXTURES "%s", k_state[i]);
+    rt_load_state(&card, path);
+    const le_mixer m = rt_mixer(&card);
+    le_own_interface_routing(&m, RT_BOTH, &r);
+    CHECK(r.controls == 0);
+    CHECK(card.writes == 0);
+    CHECK(le_interface_loopback_mask(&m, 32) == 0u);
+  }
+  rt_load(&card, RT_FIXTURES "behringer_umc204hd.txt");
+  le_mixer m = rt_mixer(&card);
+  le_own_interface_routing(&m, RT_BOTH, &r);
+  CHECK(r.controls == 0);
+  CHECK(card.writes == 0);
+
+  /* The console's 4i4 dump under another vendor: its scarlett2 names alone
+   * do not make it scarlett2's. */
+  rt_load(&card, RT_4I4);
+  rt_set(&card, "Analogue Output 01 Playback Enum", "Mix A");
+  card.usb_vendor = 0x07fdu;
+  m = rt_mixer(&card);
+  le_own_interface_routing(&m, RT_BOTH, &r);
+  CHECK(r.controls == 0);
+  CHECK(card.writes == 0);
+  CHECK(le_interface_loopback_mask(&m, 6) == 0u);
 }

@@ -331,9 +331,10 @@ Segno owns this routing (#1046). Every time it opens the interface (start,
 the warm-up switch, an apply in Settings, a replug) it sets the routing to
 plain pass-through before the audio starts, writing only the controls that
 differ: the outputs of the interface it plays to, the capture of the one it
-records from. The rules cover the `scarlett2` models (Scarlett Gen 2 and 3,
-Gen 4 Solo, 2i2 and 4i4, Clarett, Vocaster); the big Gen 4 units use another
-driver and are left alone.
+records from. The rules are the `scarlett2` adapter's routing table (Scarlett Gen 2 and 3,
+Gen 4 Solo, 2i2 and 4i4, Clarett, Vocaster), chosen like the input switches'
+adapter below: a Focusrite card with these controls. The big Gen 4 units use
+another driver and are left alone; Scarlett 1st Gen's routing is only read.
 
 - **Outputs:** `Analogue Output NN`, then `S/PDIF Output N`, then
   `ADAT Output N` play `PCM 1`, `PCM 2`, … in that order (`Off` past the last
@@ -379,7 +380,7 @@ powers, is armed or recording. A change the interface refuses (a Gen 4 unit
 while its Autogain runs) is said in the top bar.
 
 Which switches an interface has comes from an adapter in the engine
-(`engine_interface_inputs.c`):
+(`engine_interface.c`, which holds each family's routing table too):
 
 - **`scarlett2`** (Scarlett Gen 2, 3 and 4 Solo/2i2/4i4, Clarett, Vocaster):
   `Line In N Level`, `Pad`, `Air` and `Phantom Power` controls. They describe

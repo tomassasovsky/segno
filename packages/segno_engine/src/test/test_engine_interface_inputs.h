@@ -195,7 +195,7 @@ static void test_inputs_18i20_gen3(void) {
 
   const le_mixer m = rt_mixer(&card);
   le_routing_report r;
-  le_own_scarlett2_routing(&m, RT_BOTH, &r);
+  le_own_interface_routing(&m, RT_BOTH, &r);
   CHECK(r.failed == 0);
   caps = ii_scan(&card);
   CHECK(caps.state == LE_INTERFACE_CONTROLS);
@@ -276,7 +276,7 @@ static void test_inputs_vocaster_two(void) {
   ii_check_none(&caps);
   const le_mixer m = rt_mixer(&card);
   le_routing_report r;
-  le_own_scarlett2_routing(&m, RT_BOTH, &r);
+  le_own_interface_routing(&m, RT_BOTH, &r);
   CHECK(r.failed == 0);
   caps = ii_scan(&card);
   CHECK(caps.state == LE_INTERFACE_CONTROLS);

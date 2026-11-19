@@ -139,7 +139,8 @@ le_loopback_kind le_classify_capture_device(const char* name);
 int le_label_is_loopback(const char* label);
 
 /* Whether an ALSA scarlett2 capture source names the host's own playback
- * stream ("PCM 1"), so the channel it feeds is a loopback (#1541). Pure and
+ * stream ("PCM 1"), so the channel it feeds is a loopback (#1541): the
+ * scarlett2 routing table's loopback test (engine_interface.c). Pure and
  * unit-testable; NULL is not. */
 int le_capture_source_is_loopback(const char* source);
 
@@ -149,7 +150,7 @@ int le_capture_source_is_loopback(const char* source);
  * does not fit. Pure and unit-testable. */
 int le_alsa_ctl_name_from_uid(const char* uid, char* out, size_t cap);
 
-/* ---- The interface's own routing (#1046, engine_devices.c) ---- */
+/* ---- The interface's own routing (#1046, engine_interface.c) ---- */
 
 /* Control types, as alsa/control.h numbers them. */
 #define LE_MIXER_BOOLEAN 1
@@ -181,18 +182,7 @@ typedef struct le_mixer {
   int (*write)(void* ctx, const char* name, unsigned value);
 } le_mixer;
 
-/* The item enumerated `control` selects, copied into `out`; 0 when it cannot
- * be read. */
-int le_mixer_selected(const le_mixer* m, const char* control, char* out,
-                      size_t cap);
-
-/* Whether scarlett2 capture `control` records hardware source `hardware`
- * through the unit's input DSP: it selects "DSP n" and "DSP Input n Capture
- * Enum" selects `hardware`. */
-int le_capture_via_dsp(const le_mixer* m, const char* control,
-                       const char* hardware);
-
-/* What le_own_scarlett2_routing did to one card. */
+/* What le_own_interface_routing did to one card. */
 typedef struct le_routing_report {
   int controls; /* routing controls the rules cover on this card */
   int changed;  /* of those, the ones written because they differed */
@@ -200,29 +190,31 @@ typedef struct le_routing_report {
   char first_failed[48]; /* the first failed control's name, or "" */
 } le_routing_report;
 
-/* What le_own_scarlett2_routing owns on a card: the outputs of the card
+/* What le_own_interface_routing owns on a card: the outputs of the card
  * Segno plays to, the inputs of the card it records from. */
 #define LE_ROUTING_OUTPUTS 1
 #define LE_ROUTING_INPUTS 2
 
-/* Sets a card's routing to plain pass-through with the rules for the kernel's
- * scarlett2 driver (Scarlett Gen 2-3, Gen 4 Solo/2i2/4i4, Clarett USB/+,
- * Vocaster). LE_ROUTING_OUTPUTS: hardware output k plays playback stream k,
- * and direct monitoring is off. LE_ROUTING_INPUTS: capture channel k records
- * hardware input k (directly, or through the unit's input DSP), and capture
- * channels past the hardware inputs return playback streams 1, 2, ... (the
- * loopback, #1541) when the outputs are set too, and are Off otherwise. Writes only what differs and reads it back. A card
- * without these controls reports 0 controls and is left alone. The rules and
- * the reasons are in engine_devices.c. */
-void le_own_scarlett2_routing(const le_mixer* m, int roles,
+/* Sets a card's routing to plain pass-through with its adapter's routing
+ * table (engine_interface.c), chosen like the input switches' adapter: by
+ * USB vendor, then by the controls the table finds. Only scarlett2's routing
+ * (Scarlett Gen 2-3, Gen 4 Solo/2i2/4i4, Clarett USB/+, Vocaster) is set.
+ * LE_ROUTING_OUTPUTS: hardware output k plays playback stream k, and direct
+ * monitoring is off. LE_ROUTING_INPUTS: capture channel k records hardware
+ * input k (directly, or through the unit's input DSP), and capture channels
+ * past the hardware inputs return playback streams 1, 2, ... (the loopback,
+ * #1541) when the outputs are set too, and are Off otherwise. Writes only
+ * what differs and reads it back. A card no adapter's routing describes
+ * reports 0 controls and is left alone. */
+void le_own_interface_routing(const le_mixer* m, int roles,
                               le_routing_report* out);
 
-/* The capture channels (bit c = channel c, of the first `channel_count`) whose
- * scarlett2 source is one of the host's own playback streams
- * (le_capture_source_is_loopback). 0 on a card without the controls. */
-uint32_t le_scarlett2_loopback_mask(const le_mixer* m, int channel_count);
+/* The capture channels (bit c = channel c, of the first `channel_count`) that
+ * record one of the host's own playback streams, by the card's routing table
+ * (le_capture_source_is_loopback for scarlett2). 0 on a card without one. */
+uint32_t le_interface_loopback_mask(const le_mixer* m, int channel_count);
 
-/* ---- The interface's input switches (#1646, engine_interface_inputs.c) ----
+/* ---- The interface's input switches (#1646, engine_interface.c) ----
  *
  * The adapters and their rules, against an le_mixer so the tests can run them
  * on fixtures. le_interface_inputs_scan fills *out (state, inputs, phantom

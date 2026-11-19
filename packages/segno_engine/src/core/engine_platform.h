@@ -140,10 +140,10 @@ void le_platform_prefault_audio_code(void);
 
 /* Called at every device open, before the excluded-input mask is read: sets
  * the interface's own routing matrix to plain pass-through (#1046). Linux
- * applies le_own_scarlett2_routing to the inputs of the card behind the
+ * applies le_own_interface_routing to the inputs of the card behind the
  * capture id and the outputs of the card behind the playback id (NULL: the
  * system default, left alone), and logs what it changed or could not set; a
- * card without scarlett2 routing controls is left alone. No-op on macOS. */
+ * card whose adapter sets no routing is left alone. No-op on macOS. */
 void le_platform_own_interface_routing(const char* capture_uid,
                                        const char* playback_uid);
 
@@ -161,8 +161,8 @@ int32_t le_platform_interface_input_set(const char* uid, int32_t control,
 
 /* Excluded-input-channel mask: the input channels that are loopbacks. macOS
  * reads Core Audio channel labels (le_label_is_loopback). Linux reads the
- * capture sources of a scarlett2 card's routing (le_capture_source_is_loopback,
- * #1541); any other card excludes nothing. */
+ * capture sources of the card's routing table (le_interface_loopback_mask,
+ * #1541): scarlett2's; any other card excludes nothing. */
 uint32_t le_platform_excluded_input_mask(const char* uid, int channel_count);
 
 /* Platform-native device enumeration, taking precedence over the portable

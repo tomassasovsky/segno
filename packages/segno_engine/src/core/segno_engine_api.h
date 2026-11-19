@@ -2099,7 +2099,7 @@ LE_EXPORT int32_t le_enumerate_playback_devices(le_device_info* out, int32_t max
 LE_EXPORT int32_t le_enumerate_capture_devices(le_device_info* out, int32_t max,
                                                int32_t* count);
 
-/* ---- The interface's input switches (#1646, engine_interface_inputs.c) ----
+/* ---- The interface's input switches (#1646, engine_interface.c) ----
  *
  * What the interface Segno records from lets software set on each input:
  * the level (Line or Inst, which some drivers call Hi-Z), Pad, Air and 48 V
