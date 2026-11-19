@@ -93,8 +93,31 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1755 | Cheaper effects, same sound: the reverbs, delays, filters and the rest (pitch and drives are their own threads); bit-identical, guarded by bench_fx_equiv | in-review | auto | `claude/fx-opt-rest-1755` |
 | #1836 | A take's effect switching and setting changes as Live automation: the plugin's Enabled (1100) is the engine's switch, every change a step at its frame (#1806 part 6) | in-review | merge-gate | `claude/fx-automation-1836` |
 | #1816 | Console WiFi against an ASUS RT-AX89X with 802.11ax on: firmware already matches Pi OS; brcmfmac options aligned with Pi OS and a troubleshooting note; failure not reproduced, issue stays open until it recurs | in-review | auto | `claude/wifi-firmware-1816` |
+| #1870 | Lane chains on empty tracks stop running once their tails ring out: idle engine ≈151 → ≈97 µs a period on the console | in-review | merge-gate | `claude/dormant-lane-chains-1870` |
 
 ---
+
+## November 2026 Lane chains sleep on empty tracks (#1870)
+
+- A lane chain on an EMPTY track stops running once its output has stayed
+  under `LE_FX_DRAIN_FLOOR` for its whole tail (`le_lane_chain_sleeps` in
+  `engine_process.c`, `le_fx_chain_quiet_frames` in `engine_fx.c`): 50 ms
+  plus the drain horizon of every entry that holds a tail, summed. The track
+  then takes the idle skip and needs no job. Counted only while the track is
+  EMPTY, so a Clear's Post tail drains first. A chain with a hosted plugin
+  never sleeps.
+- It runs again, from its own state, when the track leaves EMPTY or the
+  chain is edited (`a_fx_gen`). A take recorded after a sleep plays exactly
+  as one through a chain kept awake (`test_engine_lane_chain_sleep.h`).
+  `le_fx_state.out_loud`, set by `fx_apply_chain_with_gain` on a frame at
+  or over the floor, is what the snapshot reads.
+- Monitor chains are untouched, so the first note played is never clipped.
+- Why the engine and not the app: the app keeps an inherited chain on a
+  track undone back to empty for Redo, and a Clear's Post tail drains
+  through the chain.
+- Console (Pi 5, 48 kHz / 32, idle stage, four empty tracks, the rig's
+  three inherited lane chains): `segno-audio` 99.3 → 75.5 µs a period, each
+  fx worker 26 → 10.5 µs and woken every other period; total 150.8 → 96.6.
 
 ## November 2026 The network stack is Raspberry Pi OS's (#1843)
 

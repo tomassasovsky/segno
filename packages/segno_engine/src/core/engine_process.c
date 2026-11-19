@@ -7701,6 +7701,42 @@ static inline LE_AUDIO_HOT_AT(1) void advance_transport_frame(le_engine* e, int 
  * chain so a lane with no effects skips it. `static inline` so these fold into
  * le_engine_process; out-params are the caller's stack arrays. */
 
+/* Whether lane [ln]'s chain sleeps this buffer (#1870). An EMPTY track's
+ * lane feeds its chain silence, so once the chain's output has stayed under
+ * LE_FX_DRAIN_FLOOR for its whole tail (le_fx_chain_quiet_frames, counted
+ * from [clock], the FX clock frame of the snapshot) nothing it holds can
+ * sound, and running it every frame for the run-on-silence rule buys
+ * nothing anyone hears. So it stops, as a DAW suspends a device whose input
+ * and output have fallen silent (Ableton's device sleep, REAPER's
+ * auto-bypass on silence, a VST3 host's silence flags). It runs again from
+ * its own state, everything in it below the floor, when the track leaves
+ * EMPTY (a recording starts with its chain running) or the chain is edited
+ * (a_fx_gen), which could make what it holds sound. A chain with a hosted
+ * plugin never sleeps. The quiet is counted only while the track is EMPTY,
+ * so a Clear's Post tail drains first. [out_loud] covers every frame the
+ * chain ran since the last snapshot: the block's jobs have joined. */
+static inline int le_lane_chain_sleeps(le_lane* ln, int empty, int32_t n,
+                                       const int32_t* types, int sr, int cap,
+                                       uint32_t clock) {
+  const uint32_t gen =
+      atomic_load_explicit(&ln->a_fx_gen, memory_order_relaxed);
+  if (empty && gen == ln->fx_quiet_gen && !ln->fx.out_loud) {
+    if (ln->fx_asleep) return 1;
+    const int32_t quiet = (int32_t)(clock - ln->fx_quiet_since);
+    if (quiet >= 0) {
+      const int32_t need =
+          le_fx_chain_quiet_frames(&ln->fx, n, types, sr, cap);
+      if (need >= 0 && quiet >= need) ln->fx_asleep = 1;
+      return ln->fx_asleep;
+    }
+  }
+  ln->fx.out_loud = 0;
+  ln->fx_quiet_gen = gen;
+  ln->fx_quiet_since = clock;
+  ln->fx_asleep = 0;
+  return 0;
+}
+
 /* Snapshots every active track LANE's effect chain into the caller's arrays.
  * fx_enabled carries the per-slot EFFECTIVE enable bit (D-EFFBITS:
  * chain-enabled && slot-enabled) — the only enable view the audio thread ever
@@ -7714,14 +7750,16 @@ static inline LE_AUDIO_HOT_AT(0) void snapshot_lane_fx(
     int32_t fx_type[][LE_MAX_LANES][LE_FX_MAX],
     float fx_params[][LE_MAX_LANES][LE_FX_MAX][LE_FX_PARAMS],
     int32_t fx_enabled[][LE_MAX_LANES][LE_FX_MAX], int has_fx[][LE_MAX_LANES],
-    uint64_t log_frame) {
+    uint64_t log_frame, uint32_t clock) {
   /* While a performance is armed, a parameter that differs from the one
    * this slot held at the last snapshot is logged here, at the frame the
    * callback first applies it (#887 part 4): the setters' own stamp could
    * be a block early or late. */
   const int log = e->perf.armed;
+  const int sr = e->sample_rate > 0 ? e->sample_rate : 48000;
   for (int t = 0; t < tc; ++t) {
     if (!(track_mask & (1u << t))) continue;
+    const int empty = load_i32(&e->tracks[t].a_state) == LE_TRACK_EMPTY;
     for (int l = 0; l < lane_n[t]; ++l) {
       le_lane* ln = &e->tracks[t].lanes[l];
       has_fx[t][l] = 0;
@@ -7773,6 +7811,13 @@ static inline LE_AUDIO_HOT_AT(0) void snapshot_lane_fx(
                               ln->a_fx_chan_gl_bits, ln->a_fx_chan_gr_bits,
                               ln->a_fx_chan_level_bits, ln->a_fx_chan_rack)) {
         has_fx[t][l] = 1;
+      }
+      /* A chain that has rung out on an EMPTY track sleeps (#1870): not
+       * processed, so the track can take the idle skip and needs no job. */
+      if (has_fx[t][l] &&
+          le_lane_chain_sleeps(ln, empty, n, fx_type[t][l], sr,
+                               e->fx_delay_frames, clock)) {
+        has_fx[t][l] = 0;
       }
       /* A slot the chain will NOT process this buffer (chain skipped, beyond
        * the active count, or LE_FX_NONE) cannot advance its enable ramp; if
@@ -9348,7 +9393,9 @@ LE_AUDIO_HOT_AT(4) void mix_tracks_frame_heard(
    *    not enough: seam_capture > 0 keeps the track out of the skip.
    *  - An effect chain must keep ticking on silence (delay tails, LFO phase),
    *    which is the documented run-on-silence rule; lane_fx_any keeps any
-   *    track holding one out of the skip. (The TRACK-stage chain and its
+   *    track holding one out of the skip. A lane chain that has rung out on
+   *    an EMPTY track sleeps instead (le_lane_chain_sleeps, #1870): its
+   *    has_fx is 0, so it does not hold the track out. (The TRACK-stage chain and its
    *    a_recoverable / meter publishing all live OUTSIDE the lane loop and
    *    are untouched by this.)
    *  - od_gain is the punch-out tail. It can only drive a write from inside
@@ -10144,7 +10191,8 @@ LE_AUDIO_HOT_AT(4) void mix_tracks_frame_heard(
        * volume while it sounds, silence otherwise, run through the lane's whole
        * (stageless) effects chain on its `fx` state. Effects run every frame the
        * lane has them (even on silence) so delay tails and LFO phase stay
-       * continuous. Two gates (slice 3b; accepted tail distinctions): `fed`
+       * continuous, until a chain on an EMPTY track has rung out and sleeps
+       * (le_lane_chain_sleeps, #1870). Two gates (slice 3b; accepted tail distinctions): `fed`
        * — the lane is playing and not gated — feeds the chain; `gate_ok` —
        * not muted, not soloed away — lets the chain's output through. So a
        * Stop or Clear cuts the feed and the lane's Post tail drains through
@@ -11419,12 +11467,13 @@ LE_AUDIO_HOT_AT(0) void le_engine_process(le_engine* e, float* output, const flo
   int32_t(*const fx_enabled)[LE_MAX_LANES][LE_FX_MAX] = snap->lane_enabled;
   int(*const has_fx)[LE_MAX_LANES] = snap->lane_has;
   snapshot_lane_fx(e, tc, (1u << tc) - 1u, lane_n, fx_count, fx_pre_count, fx_type, fx_params,
-                   fx_enabled, has_fx, perf_frame_base);
+                   fx_enabled, has_fx, perf_frame_base, e->fx_clock_base);
   /* "Does ANY lane of this track carry a chain?", folded once per buffer.
    * mix_tracks_frame's per-frame idle-track skip needs it (a chain must keep
    * ticking on silence — tails and LFO phase — so a track with one runs its
    * lane body every frame however silent it is), and folding it there would
-   * put an 8-iteration scan back on the very path the skip exists to avoid. */
+   * put an 8-iteration scan back on the very path the skip exists to avoid.
+   * A chain that sleeps on an EMPTY track (#1870) does not count. */
   int lane_fx_any[LE_MAX_TRACKS];
   for (int t = 0; t < tc; ++t) {
     lane_fx_any[t] = 0;
@@ -11662,7 +11711,8 @@ LE_AUDIO_HOT_AT(0) void le_engine_process(le_engine* e, float* output, const flo
         e->capture_image_dirty = 0;
         le_trk_jobs_flush(e, dirty); /* before their chains' view changes */
         snapshot_lane_fx(e, tc, dirty, lane_n, fx_count, fx_pre_count, fx_type,
-                         fx_params, fx_enabled, has_fx, perf_frame_base + f);
+                         fx_params, fx_enabled, has_fx, perf_frame_base + f,
+                         e->fx_clock_base + f);
         for (int t = 0; t < tc; ++t) {
           if (!(dirty & (1u << t))) continue;
           lane_fx_any[t] = 0;
