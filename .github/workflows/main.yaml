@@ -320,14 +320,27 @@ jobs:
   # uploaded as an artifact so the owner can copy it to the appliance and run
   # it with `--budget-us 667 --assert` there. upload-artifact does not keep
   # file modes: `chmod +x` the binary on the appliance before running it.
-  # The #1179 pitch/time CPU proxy, the same way, in a job of its own: the
-  # plan times each scenario over 60 s of audio (the harness's default), which
-  # takes several minutes and would otherwise hold up the benches below.
+  # The #1179 pitch/time CPU proxy, the same way, in jobs of its own: the
+  # plan times each scenario over 60 s of audio (the harness's default),
+  # which took seven minutes in one job and would otherwise hold up the
+  # benches below. Its scenarios run in two parts, each on a runner of its
+  # own (#1771): every scenario is timed as in a whole run, with the same
+  # samples, and each part judges the thresholds its scenarios measure
+  # (--part in bench_pitch_time.c).
   native-bench-pitch-arm64:
+    name: native-bench-pitch-arm64 (part ${{ matrix.part }} of 2)
     needs: changes
     if: needs.changes.outputs.native == 'true'
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - part: 1
+            artifact: bench-pitch-time-arm64
+          - part: 2
+            artifact: bench-pitch-time-arm64-part-2
     steps:
       - uses: actions/checkout@v7
       - name: Install ccache
@@ -337,23 +350,23 @@ jobs:
           restore: false
           save: false
           max-size: 100M
-      - name: Build + run the pitch/time bench (arm64 proxy thresholds)
+      - name: Build + run part ${{ matrix.part }} of the pitch/time bench (arm64 proxy thresholds)
         # `shell: bash` runs the step as `bash -eo pipefail`. The default shell
         # has no pipefail, so the pipeline would exit with tee's status and a
         # failed threshold (or a failed build) would leave the job green.
         shell: bash
         run: >
           bash packages/segno_engine/src/test/bench/bench_pitch_time.sh
-          --budget-us 667 --assert --proxy
-          | tee bench-pitch-time-arm64.md
+          --budget-us 667 --assert --proxy --part ${{ matrix.part }}
+          | tee bench-pitch-time-arm64-part-${{ matrix.part }}.md
       - name: Upload the harness and its report for the appliance
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: bench-pitch-time-arm64
+          name: ${{ matrix.artifact }}
           path: |
             packages/segno_engine/build/bench/bench_pitch_time
-            bench-pitch-time-arm64.md
+            bench-pitch-time-arm64-part-${{ matrix.part }}.md
           if-no-files-found: error
 
   native-bench-arm64:

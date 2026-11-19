@@ -86,10 +86,11 @@ when the owner has run the uploaded artifact on the appliance.
   global `operator new`, linked into the bench only, which also counts every
   call): the harness (scenarios below), `--smoke` (48 kHz / 128 frames, the
   plan's smoke) in the `native-tests` CI job, `--assert --proxy` at the
-  plan's 60 s per scenario in the `native-bench-pitch-arm64` job on
-  `ubuntu-24.04-arm`, which uploads the binary and its report as the artifact
-  `bench-pitch-time-arm64`. That step runs with
-  `shell: bash` (`bash -eo pipefail`): under the default `bash -e` the
+  plan's 60 s per scenario in the two `native-bench-pitch-arm64` jobs on
+  `ubuntu-24.04-arm` (`--part 1` and `--part 2`, half the scenarios each,
+  #1771), which upload the binary and their reports as the artifacts
+  `bench-pitch-time-arm64` and `bench-pitch-time-arm64-part-2`. That step
+  runs with `shell: bash` (`bash -eo pipefail`): under the default `bash -e` the
   `| tee` made the step's status tee's, so a failed threshold or a failed build
   left the job green. Proof, the step's own pipe run locally with a
   deliberately failing `--budget-us 1`: exit 0 under `set -e`, exit 1 under
