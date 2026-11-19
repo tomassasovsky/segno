@@ -39,7 +39,6 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | Issue | Thread | Stage | Autonomy | Branch |
 |-------|--------|-------|----------|--------|
 | #1850 | Land the trunk on master and retire `claude/segno-integration` | build | merge-gate | `claude/land-trunk-1850` |
-| #1648 | The interface's routing rules become the adapters' routing tables | build | auto | `claude/routing-adapters-1648` |
 | #1821 | Devlog and RSS feed on segno.aquiles.dev: Markdown entries in `site/log`, built by `site/build_log.py` | in-review | merge-gate | `claude/devlog-1821` |
 | #1795 | NVMe drive drops off the bus mid-recording: the Pi 5 cmdline turns off APST and PCIe ASPM on every link | in-review | blocked-verify | `claude/nvme-power-1795` |
 | #1797 | A finished export to a FAT stick is on the device: copies and the export end with a volume sync | in-review | blocked-verify | `claude/usb-export-durable-1797` |
