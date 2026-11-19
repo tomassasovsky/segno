@@ -8478,9 +8478,10 @@ static void fx_degrade_kprocess(void* ks, float* l, float* r) {
  *   passes 4 at 84.5 % and reaches 5.5 at 100 %, where the oscillation
  *   settles at about 0.26 peak (the Looper X's 0.25 and 0.28). Below 50 %
  *   it adds under 0.004 to k;
- * - the corner is 1.04 x the cutoff at 0 % resonance, 1.015 x at 100 %, so
- *   the oscillation lands within 1 % of where the Looper X's does (644.5 Hz
- *   for 632 Hz shown, 3575.5 for 3557); the responses fit within 0.4 dB at
+ * - the corner is 1.04 x the cutoff at 0 % resonance, 1.015 x at 100 %,
+ *   fit by #1445 as if gC ran at 632 Hz shown (its screens show 647 Hz, so
+ *   the oscillation sits at 656 Hz against the Looper X's 644.5; #1888);
+ *   the responses fit within 0.4 dB at
  *   632 Hz (0 and 50 %) and 0.7 dB at 112 Hz, down to -50 dB; at 3557 Hz
  *   the ladder at the
  *   engine's rate falls faster than the Looper X's above 8 kHz (-31 dB

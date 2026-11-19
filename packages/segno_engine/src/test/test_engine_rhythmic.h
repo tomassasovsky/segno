@@ -1066,8 +1066,8 @@ static void test_slicer_reverse_at_the_ring_edge(void) {
 /* ---- The Rhythmic LPF's LFO ---- */
 
 /* The capture's level of a -12 dBFS 1 kHz sine through the Rhythmic LPF at
- * 647 Hz shown and 50.2 % resonance (gD's screenshots; #1628), its LFO at rate 2 (a half note, 1 s at
- * 120 BPM), at every 1/40 of the LFO's period from its start (#891, gD
+ * 647 Hz shown and 50.2 % resonance (gD's screenshots; #1628), its LFO
+ * at rate 2 (a half note, 1 s at 120 BPM), at every 1/40 of the LFO's period from its start (#891, gD
  * passes 3 and 4: Depth 50 % and 100 %), in dB against the input. */
 static const float RH_LFO_50[40] = {
     -12.0f, -6.7f,  -2.3f,  1.1f,   3.1f,   3.9f,   4.1f,   3.9f,
