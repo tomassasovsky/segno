@@ -848,6 +848,37 @@ void main() {
       expect(6 * ns, greaterThan(budget));
     });
 
+    // With no effects workers the mixer runs every track's chains on the
+    // callback, frame by frame (#1746). On the console (build 274, 48 kHz /
+    // 32, bench_rt_faults, 120 s each) Ed's Racks on 3 and 4 tracks ran
+    // with no late period and no xrun, and their service matched the same
+    // racks on the inputs; on 5 tracks, 9 late periods and no xrun, inside
+    // #1724's bar of 42 in 200 s. #1729's 91 late periods and 3 xruns on
+    // 3 tracks were on build 238, where a rack charged 4640 ns and three
+    // filled 95 % of the budget; #1755 made the racks cheaper.
+    test("at 48 kHz / 32 with no workers, five of Ed's Racks on tracks fit "
+        'and six do not: summed on the callback, with no job charge '
+        '(#1746)', () {
+      final ns = fxChainCostNs(rack, period: 32, sampleRate: 48000);
+      final budget = fxBudgetNs(48000, period: 32);
+      int load(int tracks, {int workers = 0}) => fxLoadNs(
+        serial: 0,
+        jobs: List.filled(tracks, ns),
+        workers: workers,
+        period: 32,
+        trackJobs: tracks,
+      );
+      for (var tracks = 1; tracks <= 6; tracks++) {
+        expect(load(tracks), tracks * ns);
+      }
+      expect(load(3), lessThanOrEqualTo(budget));
+      expect(load(5), lessThanOrEqualTo(budget));
+      expect(load(6), greaterThan(budget));
+      // One track's chains with workers run on the callback too: one job
+      // alone is not handed off.
+      expect(load(1, workers: 2), ns);
+    });
+
     test('with no workers the load is every chain summed', () {
       expect(fxLoadNs(serial: 500, jobs: [rackNs, rackNs]), 500 + 2 * rackNs);
       // One job is run on the callback, workers or not: no handoff.
@@ -1014,6 +1045,59 @@ void main() {
           [for (final fx in rack) fx.type],
         );
         expect(repo.state.fxHeld, hasLength(4));
+        expect(repo.fxRoomNs, greaterThanOrEqualTo(0));
+      });
+
+      test("without workers, at 48 kHz / 32, Ed's Racks on five tracks run "
+          'on the callback and a sixth is refused (#1746)', () {
+        repo.stopEngine();
+        engine.setFxWorkers(count: 0);
+        repo.startEngine(
+          const EngineConfig(
+            sampleRate: 48000,
+            bufferFrames: 32,
+            inputChannels: 2,
+          ),
+        );
+        final ns = fxChainCostNs(rack, period: 32, sampleRate: 48000);
+        for (var track = 0; track < 5; track++) {
+          // Each track's rack charges itself alone: no handoff, no job.
+          expect(
+            repo.fxGrowthNs({
+              FxAddress(stage: FxStage.track, index: track): rack,
+            }),
+            ns,
+          );
+          expect(
+            repo.setTrackEffects(channel: track, effects: rack),
+            EngineResult.ok,
+          );
+        }
+        expect(repo.fxCostNs, 5 * ns);
+        expect(repo.state.fxHeld, isEmpty);
+        expect(repo.fxRoomNs, greaterThanOrEqualTo(0));
+        // A sixth, on a track or on a track's lane, does not fit.
+        expect(
+          repo.fxGrowthNs({
+            const FxAddress(stage: FxStage.track, index: 5): rack,
+          }),
+          greaterThan(repo.fxRoomNs),
+        );
+        expect(
+          repo.fxGrowthNs({
+            const FxAddress(stage: FxStage.loop, index: 5, lane: 1): rack,
+          }),
+          greaterThan(repo.fxRoomNs),
+        );
+        // Restored anyway, it comes up switched off.
+        expect(
+          repo.setTrackEffects(channel: 5, effects: rack),
+          EngineResult.ok,
+        );
+        expect(
+          repo.fxChainHeld(const FxAddress(stage: FxStage.track, index: 5)),
+          isTrue,
+        );
         expect(repo.fxRoomNs, greaterThanOrEqualTo(0));
       });
     });
