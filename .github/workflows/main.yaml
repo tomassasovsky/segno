@@ -171,10 +171,17 @@ jobs:
       # that does not start with `-` as a test file, and then turns its
       # optimization off (each file compiles on its own: 7 to 8 minutes a
       # shard).
+      #
+      # One ordering seed for the three shards, the run's id: package:test
+      # shuffles each group's tests before it cuts the shards, so shards
+      # with seeds of their own cut different orders, and some tests ran in
+      # two shards and others in none (the merged coverage read 89.6 % where
+      # the whole suite reads 94.9 %). A rerun keeps the run's id, so it
+      # repeats the order.
       - name: Run shard ${{ matrix.shard }} of the app's tests
         run: >
           very_good test -j 4 --optimization --coverage --report-on lib
-          --test-randomize-ordering-seed random
+          --test-randomize-ordering-seed ${{ github.run_id }}
           -- --total-shards=3 --shard-index=${{ matrix.index }}
       - uses: actions/upload-artifact@v7
         with:
