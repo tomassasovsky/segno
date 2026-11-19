@@ -299,7 +299,10 @@ const int kFxTrackJobNs = 500;
 /// mixer's frame loop, and need no charge of their own: on the console
 /// (build 274, 48 kHz / 32, no workers) Ed's Racks on 3 and 4 tracks ran
 /// as the same racks on the inputs did, and on 5, at 90 % of the budget,
-/// with 6 and 9 late periods in 120 s and no xrun (#1746).
+/// with 6 to 9 late periods in 120 s and no xrun (#1746). That is a little
+/// heavier than five racks on the inputs and output (none), and inside
+/// #1724's bar only by the share's margin: a share or a rack charge cut
+/// reaches the track racks first.
 int fxLoadNs({
   required int serial,
   required Iterable<int> jobs,
