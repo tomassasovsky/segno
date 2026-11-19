@@ -40,14 +40,14 @@ class StorageVolumeCard extends StatelessWidget {
   /// The buttons at the trailing edge, in order.
   final List<Widget> actions;
 
-  /// The title column's width: the pen's 340 of 1744, at the tray's scale.
-  static const double titleWidth = 250;
+  /// The title column's width: the pen's 340 of 1744, at full size (#1631).
+  static const double titleWidth = 340;
 
   /// The drive glyph's box.
-  static const double iconSize = 34;
+  static const double iconSize = 44;
 
-  /// The actions slot: the pen's 352 of 1744, at the tray's scale.
-  static const double actionsWidth = 180;
+  /// The actions slot: the pen's 352 of 1744.
+  static const double actionsWidth = 352;
 
   @override
   Widget build(BuildContext context) {
@@ -57,7 +57,7 @@ class StorageVolumeCard extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.symmetric(
             horizontal: kConsoleRowInset + 4,
-            vertical: 30,
+            vertical: 32,
           ),
           child: Row(
             children: [
@@ -82,7 +82,7 @@ class StorageVolumeCard extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               color: surface.textPrimary,
-                              fontSize: 19,
+                              fontSize: kConsoleRowTextSize,
                               height: 1.2,
                             ),
                           ),
@@ -93,7 +93,7 @@ class StorageVolumeCard extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               color: surface.textSecondary,
-                              fontSize: 14,
+                              fontSize: kConsoleRowDetailSize,
                               height: 1.2,
                             ),
                           ),
@@ -118,7 +118,7 @@ class StorageVolumeCard extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
                     for (final (index, action) in actions.indexed) ...[
-                      if (index > 0) const SizedBox(width: 10),
+                      if (index > 0) const SizedBox(width: kConsoleRowGap),
                       action,
                     ],
                   ],
@@ -179,7 +179,7 @@ class StorageCapacity extends StatelessWidget {
                 maxLines: 1,
                 style: TextStyle(
                   color: surface.textPrimary,
-                  fontSize: 18,
+                  fontSize: kConsoleRowTextSize,
                   height: 1.2,
                 ),
               ),
@@ -188,7 +188,7 @@ class StorageCapacity extends StatelessWidget {
               total,
               style: TextStyle(
                 color: surface.textSecondary,
-                fontSize: 14,
+                fontSize: kConsoleRowDetailSize,
                 height: 1.2,
               ),
             ),
@@ -235,8 +235,8 @@ class StorageCardMessage extends StatelessWidget {
     final surface = context.surface;
     return Row(
       children: [
-        Icon(icon, size: 22, color: surface.textSecondary),
-        const SizedBox(width: 14),
+        Icon(icon, size: kConsoleDisclosureWidth, color: surface.textSecondary),
+        const SizedBox(width: kConsoleRowGap),
         Expanded(
           child: AppText(
             message,
@@ -244,7 +244,7 @@ class StorageCardMessage extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               color: surface.textSecondary,
-              fontSize: 15,
+              fontSize: kConsoleRowDetailSize,
               height: 1.2,
             ),
           ),

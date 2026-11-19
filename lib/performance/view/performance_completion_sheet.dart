@@ -18,9 +18,9 @@ import 'package:url_launcher/url_launcher.dart';
 /// completion face once it settles.
 ///
 /// A centred dialog, not a bottom sheet: `SESSION & CAPTURE / capture-saved`
-/// draws this as a 744 panel in the console's own `Dialog` idiom, over the
-/// stage. The sheet this replaces rose from the bottom edge in Material's
-/// idiom, which nothing else on the console uses.
+/// draws this as a panel in the console's own `Dialog` idiom, over the stage,
+/// at full size (#1631). The sheet this replaces rose from the bottom edge in
+/// Material's idiom, which nothing else on the console uses.
 Future<void> showPerformanceCompletionSheet(BuildContext context) async {
   // One at a time. The listener fires on entering Rendering AND on entering
   // Completed; when the render outlives the operator's patience they Hide the
@@ -310,44 +310,42 @@ class _Face extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           _DialogTitle(l10n.perfDone),
-          const SizedBox(height: 10),
+          SizedBox(height: context.spacing.lg),
           AppText(
             subtitle,
             key: const Key('perfCompletion_subtitle'),
             style: TextStyle(
               color: surface.textSecondary,
-              fontSize: 16,
+              fontSize: ConsoleDialogShell.bodySize,
               height: 1.25,
               leadingDistribution: TextLeadingDistribution.even,
             ),
           ),
           if (banner != null) ...[
-            const SizedBox(height: 14),
+            SizedBox(height: context.spacing.lg),
             ConsoleBanner(
               key: const Key('perfCompletion_banner'),
               message: banner,
               tone: tone,
             ),
           ],
-          const SizedBox(height: 19),
+          SizedBox(height: context.spacing.xl),
           // A Wrap, not a Row: the reveal label is platform text ("Show in
           // Finder" on macOS, "Show in file manager" on Linux — six
-          // characters longer), and on the harness font the Linux one
-          // overflowed the 694 by 20px. One line when it fits, which is
-          // every real case; a second line instead of a clipped button when
-          // it does not.
+          // characters longer). One line when it fits; a second line instead
+          // of a clipped button when it does not.
           Wrap(
             alignment: WrapAlignment.end,
             crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: 10,
-            runSpacing: 10,
+            spacing: context.spacing.lg,
+            runSpacing: context.spacing.lg,
             children: [
-              ConsoleSmallButton(
+              ConsoleDialogButton(
                 key: const Key('perfCompletion_reveal'),
                 label: _revealLabel(l10n),
                 onPressed: () => unawaited(_reveal(path)),
               ),
-              ConsoleSmallButton(
+              ConsoleDialogButton(
                 key: const Key('perfCompletion_rename'),
                 label: l10n.perfRenameButton,
                 onPressed: () => onRename(path),
@@ -385,19 +383,19 @@ class _RenderingDialog extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           _DialogTitle(l10n.perfRenderingTitle(state.percent)),
-          const SizedBox(height: 10),
+          SizedBox(height: context.spacing.lg),
           AppText(
             name == null
                 ? l10n.perfRenderingSubtitle
                 : l10n.perfRenderingSubtitleNamed(name),
             style: TextStyle(
               color: surface.textSecondary,
-              fontSize: 16,
+              fontSize: ConsoleDialogShell.bodySize,
               height: 1.25,
               leadingDistribution: TextLeadingDistribution.even,
             ),
           ),
-          const SizedBox(height: 19),
+          SizedBox(height: context.spacing.xl),
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
@@ -415,7 +413,7 @@ class _RenderingDialog extends StatelessWidget {
   }
 }
 
-/// The 19/650 dialog title both faces share.
+/// The dialog title both faces share, at the full-size dialogs' 32 (#1631).
 class _DialogTitle extends StatelessWidget {
   const new(this.text);
 
@@ -426,7 +424,7 @@ class _DialogTitle extends StatelessWidget {
     text,
     style: TextStyle(
       color: context.surface.textPrimary,
-      fontSize: 19,
+      fontSize: ConsoleDialogShell.titleSize,
       height: 1.15,
       fontWeight: FontWeight.w600,
       leadingDistribution: TextLeadingDistribution.even,

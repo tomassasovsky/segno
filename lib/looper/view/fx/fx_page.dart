@@ -1238,6 +1238,7 @@ class _HearLive extends StatelessWidget {
           (MonitorMode.auto, l10n.routingHearAuto),
           (MonitorMode.on, l10n.routingHearOn),
         ]) ...[
+          if (value != MonitorMode.off) SizedBox(width: context.spacing.sm),
           LoopChoiceButton(
             key: Key('fx_hear_${value.name}'),
             label: label,
@@ -1247,10 +1248,9 @@ class _HearLive extends StatelessWidget {
             height: 64,
             fontSize: 20,
           ),
-          const SizedBox(width: 5),
         ],
         if (state.muted) ...[
-          const SizedBox(width: 16),
+          SizedBox(width: context.spacing.lg),
           AppText(
             l10n.fxMutedInMixer,
             style: TextStyle(color: context.surface.warning, fontSize: 20),

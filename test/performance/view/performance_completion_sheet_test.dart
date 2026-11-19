@@ -249,7 +249,7 @@ void main() {
       ),
     );
 
-    final reveal = tester.widget<ConsoleSmallButton>(
+    final reveal = tester.widget<ConsoleDialogButton>(
       find.byKey(const Key('perfCompletion_reveal')),
     );
     expect(find.byKey(const Key('perfCompletion_reveal')), findsOneWidget);

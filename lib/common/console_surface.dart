@@ -13,8 +13,8 @@
 /// **The rule this promotion set:** a primitive lives here once a second
 /// domain reads it, and keeps no domain in its name.
 ///
-/// Everything here is layout with two exceptions, [ConsoleSwitch] and
-/// [ConsoleCard]'s inset; both carry their reasoning on the class.
+/// Everything here is layout with one exception, [ConsoleCard]'s inset,
+/// which carries its reasoning on the class.
 library;
 
 import 'dart:async';
@@ -26,7 +26,6 @@ import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
-import 'package:segno/common/pill_tabs.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/theme/theme.dart';
 
@@ -352,7 +351,7 @@ class ConsoleRow extends StatelessWidget {
   /// against the card edge instead of against an empty column.
   final bool showDisclosure;
 
-  /// A control that replaces the readouts and the marker — a [ConsoleSwitch],
+  /// A control that replaces the readouts and the marker — a switch,
   /// for a row that IS a setting rather than a thing that opens.
   final Widget? trailing;
 
@@ -601,1140 +600,6 @@ class ConsoleGroupLabel extends StatelessWidget {
   }
 }
 
-/// A sentence of explanation under a group label — what the group is for, or
-/// what the protocol below it says.
-class ConsoleProse extends StatelessWidget {
-  /// Creates a [ConsoleProse].
-  const new(this.text, {super.key});
-
-  /// The sentence.
-  final String text;
-
-  /// The width the mockups wrap this prose at. Left free rather than
-  /// stretched to the pane: a 1700px measure is unreadable, and the mockups
-  /// wrap it well short of the edge.
-  static const double maxWidth = 923;
-
-  @override
-  Widget build(BuildContext context) {
-    final surface = context.surface;
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: maxWidth),
-      child: AppText(
-        text,
-        style: TextStyle(
-          color: surface.textMuted,
-          fontSize: 14,
-          height: 1.5,
-          leadingDistribution: TextLeadingDistribution.even,
-        ),
-      ),
-    );
-  }
-}
-
-/// A group caption that can explain what its controls do.
-///
-/// The console names its controls accurately and explains them nowhere. "In
-/// the mix", "hear while playing" — someone who built this knows what they
-/// mean; nobody else does, and there is no manual, no hover and no tooltip on
-/// a screen operated with a foot.
-///
-/// **Here on one caller, against this file's own rule.** The library doc above
-/// says a primitive earns its place here once a SECOND domain reads it, and
-/// today only the Signal panel does. It sits here anyway because it is made of
-/// what is here — [ConsoleProse] for the answer, the same caption type
-/// [ConsoleGroupLabel] uses — and moving it beside its caller would put a
-/// widget that composes three neighbours in a different library from all three.
-/// Worth revisiting if Signal is still its only reader when the next domain
-/// grows captions.
-///
-/// **Per GROUP, not per control.** A `?` on every switch would litter a dense
-/// face, and one help page per screen makes you hunt for the control you were
-/// confused about. A caption already names a group, so it is where the
-/// question belongs.
-///
-/// **A floating answer, not inline prose.** It began inline, under the
-/// caption, on the argument that an overlay covers the control it explains.
-/// What inline actually did was push every control below it down by a
-/// paragraph's height — on a face with four captions that is most of a 600px
-/// console, and the shove lands under the finger that just tapped. The
-/// overlay opens under the caption, over the face, and closes on the next
-/// touch anywhere; the control it describes is one tap away, unmoved.
-class ConsoleCaption extends StatefulWidget {
-  /// Creates a [ConsoleCaption].
-  const new(
-    this.label, {
-    this.explain,
-    this.explainLabel,
-    this.trailing,
-    super.key,
-  }) : assert(
-         (explain == null) == (explainLabel == null),
-         'explain and explainLabel travel together: an explanation with no '
-         'label is an unnamed button, and a label with no explanation is a '
-         'button that does nothing.',
-       );
-
-  /// The caption itself.
-  final String label;
-
-  /// What the group's controls do, in plain language — or null for a caption
-  /// whose own word is the whole answer.
-  final String? explain;
-
-  /// What a screen reader calls the button that opens [explain]. A row of
-  /// identical "?" buttons says nothing about which control each belongs to.
-  final String? explainLabel;
-
-  /// Controls that belong beside the caption, at the trailing edge of its
-  /// row — a chain's power switch, say.
-  ///
-  /// Here rather than in a `Row` around this widget, because the explanation
-  /// has to escape that row: a paragraph sharing a row with controls gets a
-  /// fraction of the width and stacks into a narrow column with the panel
-  /// blank beside it, and without a `Flexible` it overflows them off screen
-  /// instead. Given the row, the caption can put its controls IN it and its
-  /// prose UNDER it, at the full width the panel has.
-  final Widget? trailing;
-
-  /// The glyph's drawn size.
-  static const double _glyphSize = 18;
-
-  /// Gap between the caption's question mark and whatever rides beside it.
-  static const double _captionGap = 16;
-
-  /// Minimum height of the tappable caption row. 48, not the 44 of Apple's
-  /// guideline: Android's is the stricter of the two and this is a console
-  /// people stand over, where the finger arrives at a worse angle than either
-  /// guideline assumes.
-  static const double _targetHeight = 48;
-
-  @override
-  State<ConsoleCaption> createState() => _ConsoleCaptionState();
-}
-
-class _ConsoleCaptionState extends State<ConsoleCaption> {
-  final GlobalKey _anchorKey = GlobalKey();
-  final _portal = OverlayPortalController();
-  bool _open = false;
-
-  /// Where the caption sits in the overlay.
-  ///
-  /// Measured rather than followed: a `CompositedTransformFollower` moves the
-  /// answer with the caption but cannot see the screen, so it will happily
-  /// place a paragraph past the bottom edge — which on the 1024x600 console is
-  /// exactly what the lowest caption on the panel did. Positioning from a rect
-  /// lets the layout flip the answer above the caption when there is no room
-  /// under it.
-  ///
-  /// Re-measured after every frame it is open, which is what the follower gave
-  /// for free. The barrier stops a FINGER reaching the face, not the face
-  /// changing under it: this panel grows an overdub-mismatch notice on its own,
-  /// the rig can add a lane while you read, and a desktop window resizes. Any
-  /// of those moved the caption and left the answer hanging off nothing.
-  Rect? _anchor;
-
-  /// Whether a re-measuring chain is already running. See [_watchAnchor].
-  bool _watching = false;
-
-  @override
-  void didUpdateWidget(ConsoleCaption oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    // A caption that loses its explanation while the answer is up takes the
-    // overlay out of the tree without closing it, and `_open` stays true — so
-    // the next tap toggles the state SHUT and the one after it opens, which
-    // from the outside is a `?` that ignores you. Rare, but the null-explain
-    // caption is a supported shape of this widget, not a hypothetical.
-    //
-    // The FLAG only, not [_close]: this runs inside the build that is about to
-    // drop the portal, and `hide()` asserts when it is called during one. The
-    // rebuild takes the overlay away by itself; all that is left is to stop
-    // believing it is up.
-    if (widget.explain == null) _open = false;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final surface = context.surface;
-    final explain = widget.explain;
-    final caption = Text(
-      widget.label,
-      style: TextStyle(
-        color: surface.textSecondary,
-        fontSize: 14,
-        height: 1.21,
-        leadingDistribution: TextLeadingDistribution.even,
-      ),
-    );
-    final trailing = widget.trailing;
-    if (explain == null) {
-      if (trailing == null) return caption;
-      // The same row the explaining caption builds, minus the question — same
-      // gap included. Two shapes of one widget that differ by a spacer is how
-      // a group with a `?` and a group without stop looking like siblings.
-      return Row(
-        children: [
-          caption,
-          const SizedBox(width: ConsoleCaption._captionGap),
-          Expanded(child: trailing),
-        ],
-      );
-    }
-
-    // One row, whatever happens. The explanation is an OVERLAY, so opening it
-    // moves nothing: as inline prose it pushed every control on the card down
-    // by its own height, which on a face with four captions is most of a
-    // small console's screen, and it did it under the reader's finger.
-    final button = OverlayPortal(
-      controller: _portal,
-      overlayChildBuilder: (context) => _Explanation(
-        anchor: _anchor ?? Rect.zero,
-        text: explain,
-        surface: surface,
-        onDismiss: _close,
-        // Flutter's own word for this, not one of ours: every barrier in the
-        // app should say the same thing to a reader, and this one is already
-        // translated into every locale the framework ships.
-        dismissLabel: MaterialLocalizations.of(context)
-            .modalBarrierDismissLabel,
-      ),
-      child: _CaptionButton(
-        anchorKey: _anchorKey,
-        open: _open,
-        label: widget.explainLabel,
-        onTap: _toggle,
-        caption: caption,
-      ),
-    );
-    // Shrink-wrapped to the words. The panel that hosts these captions lays
-    // its children out with `CrossAxisAlignment.stretch`, so a bare return
-    // here handed the tap target the full panel width — 950px at 1024x600,
-    // most of it blank. A tap on empty panel, or one aimed slightly high of
-    // the control below, opened a paragraph over the face, and the next tap
-    // went on dismissing it. The caption with `trailing` never had this: its
-    // `Row` bounds the button already.
-    if (trailing == null) {
-      // What does the work is the `Align` itself: it re-loosens the child's
-      // constraints, so the `InkWell` shrinks to the words, and
-      // `RenderPositionedBox` does not hit-test itself — so the blank
-      // remainder of a stretched row takes no taps.
-      //
-      // `heightFactor` for the case the panel does not cover: under the loose
-      // BOUNDED constraints a caption gets outside a stretching column, an
-      // `Align` without it fills the height it is offered and moves the
-      // caption instead of bounding it. There is no `widthFactor` because
-      // there is nothing for one to do — under a tight width the constrain
-      // returns the full width either way.
-      return Align(
-        alignment: AlignmentDirectional.centerStart,
-        heightFactor: 1,
-        child: button,
-      );
-    }
-    // `Expanded`, so [trailing]'s own flex children get a bounded width: this
-    // row shrink-wraps otherwise, and a `Flexible` inside an unbounded row is
-    // a layout assertion.
-    return Row(
-      children: [
-        button,
-        // The controls do not butt against the question mark.
-        const SizedBox(width: ConsoleCaption._captionGap),
-        Expanded(child: trailing),
-      ],
-    );
-  }
-
-  /// Catches the caption up with wherever each frame put it, until it closes.
-  ///
-  /// After every frame rather than on every build, because the caption is not
-  /// what rebuilds when it moves: a notice appearing above it, or a window
-  /// resize, leaves this widget untouched and its position different. Cheap
-  /// and self-limiting — it schedules no frame of its own (so it costs nothing
-  /// on a still screen), and a measurement equal to the one held does not
-  /// `setState`, so it cannot spin.
-  ///
-  /// Both its guards are pinned by tests: dropping `mounted` fails eleven of
-  /// them, and dropping the arming call fails the one that moves the face.
-  /// That it stops on CLOSE is deliberately NOT claimed as proven — a chain
-  /// that kept running would measure, find nothing changed and be invisible
-  /// from outside the widget.
-  ///
-  /// [_watching] holds it to one chain. The barrier does NOT: `show()` only
-  /// marks this state dirty, so the barrier is not in the render tree until
-  /// the next frame is built, and every touch arriving in that gap lands on
-  /// the `?` itself. Taps inside one frame interval — a bouncing panel, a
-  /// double-tap — arm a chain each, and each is a `findRenderObject` plus a
-  /// `localToGlobal` on every frame until the answer closes. Bounded, since
-  /// they all die at the first post-frame after `_open` goes false, and still
-  /// work nobody asked for on an appliance.
-  ///
-  /// Not pinned by a test, and it cannot be: chain count is invisible from
-  /// outside the widget — two chains measure the same rect and produce the
-  /// same one rebuild as one. It stays because the state is reproducible with
-  /// an instrumented chain id, not because it might happen.
-  void _watchAnchor() {
-    if (_watching) return;
-    _watching = true;
-    void tick() {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || !_open) {
-          _watching = false;
-          return;
-        }
-        final now = _measure();
-        if (now != null && now != _anchor) setState(() => _anchor = now);
-        tick();
-      });
-    }
-
-    tick();
-  }
-
-  /// The caption's rect in the overlay's own coordinates, or null if either
-  /// render object is missing — which only happens before the first layout,
-  /// and a caption cannot be tapped before then.
-  Rect? _measure() {
-    final box = _anchorKey.currentContext?.findRenderObject();
-    final overlay = Overlay.of(context).context.findRenderObject();
-    if (box is! RenderBox || overlay is! RenderBox) return null;
-    final topLeft = box.localToGlobal(Offset.zero, ancestor: overlay);
-    return topLeft & box.size;
-  }
-
-  void _close() {
-    if (!_open) return;
-    setState(() => _open = false);
-    _portal.hide();
-  }
-
-  /// Opens or closes, and SAYS which.
-  ///
-  /// Focus stays on the button, so without this a reader hears nothing at all
-  /// — the paragraph it just summoned is only found by swiping forward, which
-  /// is a poor result for a control whose entire job is answering a question.
-  void _toggle() {
-    if (_open) {
-      _close();
-      return;
-    }
-    setState(() {
-      _open = true;
-      _anchor = _measure();
-    });
-    _portal.show();
-    _watchAnchor();
-    final explain = widget.explain;
-    if (explain != null) {
-      unawaited(
-        SemanticsService.sendAnnouncement(
-          View.of(context),
-          explain,
-          Directionality.of(context),
-        ),
-      );
-    }
-  }
-}
-
-/// The caption and its glyph, which together ARE the button.
-///
-/// The whole caption and not just the glyph, and a real 48px of it: an
-/// `OverflowBox` around an 18px child grows what is PAINTED and not what is
-/// hit — every ancestor's `hitTest` rejects a pointer outside its own size
-/// before the larger child is consulted — so the earlier version drew a
-/// 48px affordance you had to hit within 18px of centre. On a floor unit
-/// aimed at with a foot-height finger that is the difference between a
-/// control and a decoration.
-///
-/// The label opens it too. A `?` that only answers when struck dead centre
-/// teaches people it is broken; the words beside it are the same question.
-class _CaptionButton extends StatelessWidget {
-  const new({
-    required this.anchorKey,
-    required this.open,
-    required this.label,
-    required this.onTap,
-    required this.caption,
-  });
-
-  /// Where the explanation anchors: the caption measures this node.
-  final GlobalKey anchorKey;
-
-  /// Whether the explanation is showing.
-  final bool open;
-
-  /// The button's announced label.
-  final String? label;
-
-  /// Opens or closes the explanation.
-  final VoidCallback onTap;
-
-  /// The caption's words.
-  final Widget caption;
-
-  @override
-  Widget build(BuildContext context) => Semantics(
-    key: anchorKey,
-    button: true,
-    expanded: open,
-    label: label,
-    child: InkWell(
-      key: const Key('console_caption_explain'),
-      onTap: onTap,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(
-          minHeight: ConsoleCaption._targetHeight,
-        ),
-        // Inside the InkWell, not around it: outside, the exclusion swallows
-        // the tap action too, and the node a reader lands on is a button it
-        // cannot press. Inside, the gesture survives and only the words go —
-        // the label already says them, and the bare "?" was being read out.
-        child: ExcludeSemantics(
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              caption,
-              const SizedBox(width: 8),
-              _ExplainGlyph(open: open),
-            ],
-          ),
-        ),
-      ),
-    ),
-  );
-}
-
-/// The `?` itself. Drawn, never hit — [_CaptionButton] is the target.
-class _ExplainGlyph extends StatelessWidget {
-  const new({required this.open});
-
-  /// Whether the explanation is showing, which fills the glyph.
-  final bool open;
-
-  @override
-  Widget build(BuildContext context) {
-    final surface = context.surface;
-    return Container(
-      width: ConsoleCaption._glyphSize,
-      height: ConsoleCaption._glyphSize,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        border: Border.all(color: open ? surface.accent : surface.borderStrong),
-        color: open ? surface.accent : null,
-      ),
-      child: Center(
-        child: Text(
-          '?',
-          style: TextStyle(
-            color: open ? surface.onAccent : surface.textSecondary,
-            fontSize: 11,
-            height: 1,
-            fontWeight: FontWeight.w600,
-            leadingDistribution: TextLeadingDistribution.even,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// The floating answer, anchored under the `?` that summoned it.
-///
-/// A barrier under it rather than beside it: an explanation that stays up
-/// while you go and use the control it describes is a panel, not an answer,
-/// and this surface already has one thing at a time everywhere else.
-class _Explanation extends StatelessWidget {
-  const new({
-    required this.anchor,
-    required this.text,
-    required this.surface,
-    required this.onDismiss,
-    required this.dismissLabel,
-  });
-
-  /// The caption's rect, in the overlay's coordinates.
-  final Rect anchor;
-  final String text;
-  final SurfaceTheme surface;
-  final VoidCallback onDismiss;
-  final String dismissLabel;
-
-  /// Wide enough for a sentence to breathe, narrow enough to read as a note
-  /// about one control rather than as the face's own body text.
-  static const double _width = 460;
-
-  /// Keeps the answer off the screen edge on every side.
-  static const double _margin = 12;
-
-  /// How far the answer rides up into the caption's own row, so it reads as
-  /// hanging off the `?` rather than floating loose under it. The row is 48px
-  /// tall around a 17px line, so this eats slack, not the caption.
-  static const double _overlap = 6;
-
-  @override
-  Widget build(BuildContext context) => Stack(
-    children: [
-      // Dismiss on a tap anywhere else, INCLUDING on another caption's `?`:
-      // that tap closes this one and the next tap opens that one, which is
-      // one tap more than it looks like it should be, and still better than
-      // two explanations open over each other.
-      //
-      // A real barrier, not a GestureDetector: the face underneath must not
-      // take a drag either. A bare tap-only detector absorbs the touch and
-      // then nothing recognises the gesture, so a scroll under an open answer
-      // silently does nothing — which reads as the console having frozen.
-      // `ModalBarrier` blocks POINTERS on every platform, and brings its own
-      // `BlockSemantics` for readers — but it only offers the DISMISS action
-      // where the host platform has a back gesture, which it reads as Android,
-      // iOS and macOS. On Linux, Windows and Fuchsia it excludes itself from
-      // semantics entirely, and since the face behind is blocked either way, a
-      // reader was left holding one paragraph and no way out. This console
-      // SHIPS on Linux.
-      Positioned.fill(
-        child: ModalBarrier(
-          key: const Key('console_caption_scrim'),
-          semanticsLabel: dismissLabel,
-          onDismiss: onDismiss,
-        ),
-      ),
-      // And a keyboard is the third way in, which the barrier does not cover
-      // at all: tab walked straight through it to the control the answer was
-      // describing, and space operated it with the answer still up — the
-      // "panel, not an answer" state the class doc rejects. The scope keeps
-      // traversal in here; `DismissIntent` is what Escape already means
-      // everywhere else in the app.
-      Positioned.fill(
-        child: FocusScope(
-          child: Actions(
-            actions: {
-              DismissIntent: CallbackAction<DismissIntent>(
-                onInvoke: (_) => onDismiss(),
-              ),
-            },
-            child: Focus(
-              autofocus: true,
-              child: CustomSingleChildLayout(
-                delegate: _ExplanationLayout(anchor),
-                // So the answer itself carries the way out, on every platform
-                // — and carries it on the SAME node as the words. Split across
-                // two, the node that answers the question announces nothing
-                // and the node that announces it cannot be closed, so a reader
-                // has to swipe back to silence to get out.
-                child: Semantics(
-                  container: true,
-                  label: text,
-                  onDismiss: onDismiss,
-                  child: Material(
-                    key: const Key('console_caption_explanation'),
-                    color: surface.cardHigh,
-                    elevation: 8,
-                    borderRadius: BorderRadius.circular(12),
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
-                      // Scrolls only when the answer is taller than the room
-                      // on either side of the caption — which the longest of
-                      // them is, on the short console, with the tallest
-                      // caption open. Clipping instead would drop the last
-                      // sentence, and the last sentence is where these
-                      // paragraphs put the consequence.
-                      //
-                      // The prose is excluded because the label above already
-                      // IS it: left in, the same paragraph is a second node,
-                      // and which one a reader lands on decides whether they
-                      // can close it.
-                      child: SingleChildScrollView(
-                        child: ExcludeSemantics(child: ConsoleProse(text)),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    ],
-  );
-}
-
-/// Puts the answer under its caption, or above it when the screen is out of
-/// room, and never past an edge.
-///
-/// Left-anchored, not leading-anchored: the app ships `en` and `es`, and a
-/// direction this delegate never receives would be a parameter nothing could
-/// exercise. An RTL locale would want [getPositionForChild] to hang the answer
-/// off `anchor.right` instead.
-class _ExplanationLayout extends SingleChildLayoutDelegate {
-  const new(this.anchor);
-
-  /// The caption's rect, in the same coordinates as the laid-out box.
-  final Rect anchor;
-
-  /// The taller of the two gaps the answer could occupy.
-  double _room(BoxConstraints constraints) => math.max(
-    constraints.maxHeight - anchor.bottom - _Explanation._margin,
-    anchor.top - _Explanation._margin,
-  );
-
-  @override
-  BoxConstraints getConstraintsForChild(BoxConstraints constraints) =>
-      BoxConstraints(
-        maxWidth: math.min(
-          _Explanation._width,
-          math.max(0, constraints.maxWidth - _Explanation._margin * 2),
-        ),
-        // Plus the overlap, which is room the answer gets back by sitting in
-        // the caption's own row.
-        maxHeight: math.max(0, _room(constraints) + _Explanation._overlap),
-      );
-
-  @override
-  Offset getPositionForChild(Size size, Size childSize) {
-    final below = anchor.bottom - _Explanation._overlap;
-    final fitsBelow =
-        below + childSize.height <= size.height - _Explanation._margin;
-    final top = fitsBelow
-        ? below
-        : anchor.top + _Explanation._overlap - childSize.height;
-    // Leading edge of the caption, where the eye already is — pulled back
-    // only by however much of the answer would otherwise leave the screen.
-    return Offset(
-      _clamp(anchor.left, size.width, childSize.width),
-      _clamp(top, size.height, childSize.height),
-    );
-  }
-
-  /// Keeps `start` inside a [span] with a margin at both ends, preferring the
-  /// near edge when the child is too big for the span at all.
-  static double _clamp(double start, double span, double extent) => start.clamp(
-    _Explanation._margin,
-    math.max(_Explanation._margin, span - extent - _Explanation._margin),
-  );
-
-  @override
-  bool shouldRelayout(_ExplanationLayout oldDelegate) =>
-      oldDelegate.anchor != anchor;
-}
-
-/// A row that can open in place: the row itself over a tinted, bordered card
-/// of its actions.
-///
-/// Rows open **in place**, one at a time. A tap that pushes a sheet loses the
-/// list it came from, and on a console the list is the context for the action.
-///
-/// Always in the tree, open or shut, so opening is a transition rather than a
-/// swap. Building the shut state as a bare row and the open state as this
-/// widget makes the tint, the border and the whole action strip appear between
-/// two frames, which on a 70px row reads as the list jolting.
-class ConsoleExpandedRow extends StatelessWidget {
-  /// Creates a [ConsoleExpandedRow].
-  const new({
-    required this.row,
-    required this.actions,
-    this.expanded = true,
-    super.key,
-  });
-
-  /// The row, drawn with `expanded: true` when this is open.
-  final Widget row;
-
-  /// The action chips, laid out at the trailing edge.
-  final List<Widget> actions;
-
-  /// Whether the actions are showing.
-  final bool expanded;
-
-  @override
-  Widget build(BuildContext context) {
-    final surface = context.surface;
-    return AnimatedContainer(
-      duration: consoleMotion(context),
-      curve: Curves.easeOut,
-      decoration: BoxDecoration(
-        // Transparent rather than absent while shut: a null decoration would
-        // rebuild the box on every open and lose the colour lerp.
-        color: expanded ? surface.control : surface.control.withAlpha(0),
-        borderRadius: BorderRadius.circular(ConsoleCard.radius),
-        border: Border.all(
-          color: expanded ? surface.borderSubtle : Colors.transparent,
-        ),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          row,
-          ConsoleExpansion(
-            expanded: expanded,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(
-                kConsoleRowInset,
-                0,
-                kConsoleRowInset,
-                14,
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  for (final (index, action) in actions.indexed) ...[
-                    if (index > 0) const SizedBox(width: 10),
-                    action,
-                  ],
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// One action inside an opened row: a pill with an icon and a label.
-///
-/// [destructive] recolours the outline and the label rather than filling the
-/// pill — a filled red chip inside a list row reads as a state the row is in.
-class ConsoleActionChip extends StatelessWidget {
-  /// Creates a [ConsoleActionChip].
-  const new({
-    required this.label,
-    required this.onPressed,
-    this.icon,
-    this.destructive = false,
-    this.accent = false,
-    super.key,
-  });
-
-  /// Visible caption.
-  final String label;
-
-  /// Leading glyph, or null for a chip that is only a word — the mapping
-  /// editor's Relearn / Remove, where the pair sits under a control the row
-  /// already names and a second glyph adds nothing to read.
-  final IconData? icon;
-
-  /// Tap action; null disables the chip.
-  final VoidCallback? onPressed;
-
-  /// Whether this action destroys something.
-  final bool destructive;
-
-  /// Whether this is the accent (primary) action of its row — the Simulate
-  /// pill (#519), which leads the mapping editor's action strip. Ignored when
-  /// [destructive], which owns its own tone.
-  final bool accent;
-
-  @override
-  Widget build(BuildContext context) {
-    final surface = context.surface;
-    final tint = destructive
-        ? surface.rec
-        : accent
-        ? surface.accent
-        : surface.textSecondary;
-    final edge = destructive
-        ? surface.recLine
-        : accent
-        ? surface.accent
-        : surface.line;
-    return Opacity(
-      opacity: onPressed == null ? surface.disabledOpacity : 1,
-      child: FocusableTapTarget(
-        onTap: onPressed,
-        semanticLabel: label,
-        borderRadius: 999,
-        child: InkWell(
-          onTap: onPressed,
-          borderRadius: BorderRadius.circular(999),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 11),
-            decoration: BoxDecoration(
-              color: surface.cardHigh,
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: edge),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (icon case final glyph?) ...[
-                  Icon(glyph, size: 17, color: tint),
-                  const SizedBox(width: 10),
-                ],
-                AppText(
-                  label,
-                  style: TextStyle(
-                    color: tint,
-                    fontSize: 14,
-                    height: 1.21,
-                    leadingDistribution: TextLeadingDistribution.even,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// A domain's whole face: its name, its tab strip, and the tab's body.
-///
-/// **The title sits above the strip.** A tab that carries a per-tab control (a
-/// radio's power switch, a rescan) needs a title row to hang it on and puts
-/// its tabs first; a domain whose tabs carry no such control says its name
-/// once, at the top. That is the mockups' own distinction, and Control and
-/// Loop are both on the second side of it — which is why they were the same
-/// widget written twice before this existed.
-class ConsoleDomainPanel<T> extends StatelessWidget {
-  /// Creates a [ConsoleDomainPanel].
-  const new({
-    required this.title,
-    required this.tabs,
-    required this.selected,
-    required this.onChanged,
-    required this.body,
-    this.tabsKey,
-    super.key,
-  });
-
-  /// The domain's name.
-  final String title;
-
-  /// The tabs, in display order.
-  final List<PillTab<T>> tabs;
-
-  /// The showing tab.
-  final T selected;
-
-  /// Called with the newly chosen tab.
-  final ValueChanged<T> onChanged;
-
-  /// The showing tab's body; fills the rest of the sheet.
-  final Widget body;
-
-  /// Key for the strip, so a test can find one domain's tabs.
-  final Key? tabsKey;
-
-  /// Gap between the title and the strip, as the mockups set it.
-  static const double titleGap = 14;
-
-  @override
-  Widget build(BuildContext context) {
-    final surface = context.surface;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        AppText(
-          title,
-          style: TextStyle(
-            color: surface.textPrimary,
-            fontSize: 20,
-            height: 1.15,
-            leadingDistribution: TextLeadingDistribution.even,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: titleGap),
-        // No strip at all when there is nothing to choose between. A domain
-        // can have one tab today and four tomorrow — the Tuner has one per
-        // tunable input, and a rig with none would otherwise get an empty
-        // rail of pills over its "nothing to tune" message.
-        if (tabs.isNotEmpty)
-          Align(
-            alignment: Alignment.centerLeft,
-            child: PillTabs<T>(
-              key: tabsKey,
-              selected: selected,
-              onChanged: onChanged,
-              tabs: tabs,
-            ),
-          ),
-        Expanded(child: body),
-      ],
-    );
-  }
-}
-
-/// A domain face's title row: its name, an optional live-state line, and that
-/// surface's own controls.
-///
-/// The domain says its name **here**, not in a chrome bar above the tab strip.
-/// The surrounding frame has its own Back, so a chrome bar would be a second
-/// navigation surface, and a per-tab control (a rescan, a power switch)
-/// belongs to the tab rather than to the domain — which puts the tabs first
-/// and the title under them.
-class ConsoleFaceHeader extends StatelessWidget {
-  /// Creates a [ConsoleFaceHeader].
-  const new({
-    required this.title,
-    this.status,
-    this.actions = const [],
-    super.key,
-  });
-
-  /// The face's name.
-  final String title;
-
-  /// A live-state line beside the title — "joining Studio 5G", "could not
-  /// pair with AirTurn BT-200". Echoes what the banner says, at the one place
-  /// the eye is already on.
-  final String? status;
-
-  /// The face's own controls, at the trailing edge.
-  final List<Widget> actions;
-
-  /// Height of the row; the rescan button's own height, so the title's
-  /// baseline does not move when the button appears.
-  static const double height = 38;
-
-  @override
-  Widget build(BuildContext context) {
-    final surface = context.surface;
-    return SizedBox(
-      height: height,
-      child: Row(
-        children: [
-          AppText(
-            title,
-            style: TextStyle(
-              color: surface.textPrimary,
-              fontSize: 20,
-              height: 1.15,
-              leadingDistribution: TextLeadingDistribution.even,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: status == null
-                ? const SizedBox.shrink()
-                : AppText(
-                    status!,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: surface.textMuted,
-                      fontSize: 14,
-                      height: 1.21,
-                      leadingDistribution: TextLeadingDistribution.even,
-                    ),
-                  ),
-          ),
-          for (final (index, action) in actions.indexed) ...[
-            if (index > 0) const SizedBox(width: 10),
-            action,
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-/// A square icon button for a face header — the rescan control.
-///
-/// Spins the glyph rather than swapping in a `CircularProgressIndicator`: the
-/// control and its own busy state are the same object, so the button does not
-/// move or resize when a scan starts.
-class ConsoleIconButton extends StatefulWidget {
-  /// Creates a [ConsoleIconButton].
-  const new({
-    required this.icon,
-    required this.onPressed,
-    required this.tooltip,
-    this.spinning = false,
-    super.key,
-  });
-
-  /// The glyph.
-  final IconData icon;
-
-  /// Tap action; null disables the button.
-  final VoidCallback? onPressed;
-
-  /// Hover/long-press explanation, and the announced label.
-  final String tooltip;
-
-  /// Whether the glyph should turn.
-  final bool spinning;
-
-  @override
-  State<ConsoleIconButton> createState() => _ConsoleIconButtonState();
-}
-
-class _ConsoleIconButtonState extends State<ConsoleIconButton>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _spin = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 900),
-  );
-
-  @override
-  void initState() {
-    super.initState();
-    if (widget.spinning) _spin.repeat();
-  }
-
-  @override
-  void didUpdateWidget(ConsoleIconButton oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.spinning == oldWidget.spinning) return;
-    if (widget.spinning) {
-      _spin.repeat();
-    } else {
-      _spin
-        ..stop()
-        ..value = 0;
-    }
-  }
-
-  @override
-  void dispose() {
-    _spin.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final surface = context.surface;
-    return Tooltip(
-      message: widget.tooltip,
-      child: Opacity(
-        opacity: widget.onPressed == null ? surface.disabledOpacity : 1,
-        child: FocusableTapTarget(
-          onTap: widget.onPressed,
-          semanticLabel: widget.tooltip,
-          borderRadius: 10,
-          child: InkWell(
-            onTap: widget.onPressed,
-            borderRadius: BorderRadius.circular(10),
-            child: Container(
-              width: 38,
-              height: 38,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: surface.line),
-              ),
-              child: RotationTransition(
-                turns: _spin,
-                child: Icon(
-                  widget.icon,
-                  size: 19,
-                  color: surface.textSecondary,
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// The console's switch: a 53x31 pill with a 25px knob.
-///
-/// Hand-drawn rather than Material's [Switch], which brings its own 40x24
-/// geometry, ripple and thumb elevation — none of which the mockups have, and
-/// all of which read as borrowed once the switch is sitting in a list row
-/// beside a hand-drawn card. #498 also settles that a boolean is a switch and
-/// never the words "on" and "off".
-class ConsoleSwitch extends StatelessWidget {
-  /// Creates a [ConsoleSwitch].
-  const new({
-    required this.value,
-    required this.onChanged,
-    this.semanticLabel,
-    this.small = false,
-    super.key,
-  });
-
-  /// Whether the switch is on.
-  final bool value;
-
-  /// Called with the new value; null disables the switch.
-  final ValueChanged<bool>? onChanged;
-
-  /// The announced label.
-  final String? semanticLabel;
-
-  /// The pen's `ToggleSm` rather than its `Toggle` — the size the FX
-  /// parameter grid uses, where a full-size switch would be wider than the
-  /// 78px tile that holds it.
-  final bool small;
-
-  /// Track size for a row switch.
-  static const Size trackSize = Size(53, 31);
-
-  /// Track size inside a parameter tile.
-  static const Size smallTrackSize = Size(37, 22);
-
-  /// Knob diameter for a row switch.
-  static const double knobSize = 25;
-
-  /// Knob diameter inside a parameter tile.
-  static const double smallKnobSize = 18;
-
-  static const double _inset = 3;
-
-  Size get _track => small ? smallTrackSize : trackSize;
-
-  double get _knob => small ? smallKnobSize : knobSize;
-
-  @override
-  Widget build(BuildContext context) {
-    final surface = context.surface;
-    final changed = onChanged;
-    final pill = Opacity(
-      opacity: changed == null ? surface.disabledOpacity : 1,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        curve: Curves.easeOut,
-        width: _track.width,
-        height: _track.height,
-        decoration: BoxDecoration(
-          color: value ? surface.accent : surface.control,
-          borderRadius: BorderRadius.circular(_track.height),
-          border: Border.all(color: value ? surface.accent : surface.line),
-        ),
-        child: Stack(
-          children: [
-            AnimatedPositioned(
-              duration: const Duration(milliseconds: 160),
-              curve: Curves.easeOut,
-              top: _inset - 1,
-              left: value ? _track.width - _knob - _inset - 1 : _inset - 1,
-              child: Container(
-                width: _knob,
-                height: _knob,
-                decoration: BoxDecoration(
-                  color: value ? surface.onAccent : surface.textSecondary,
-                  shape: BoxShape.circle,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-
-    return Semantics(
-      toggled: value,
-      label: semanticLabel,
-      child: FocusableTapTarget(
-        onTap: changed == null ? null : () => changed(!value),
-        borderRadius: _track.height,
-        semanticLabel: semanticLabel,
-        child: GestureDetector(
-          onTap: changed == null ? null : () => changed(!value),
-          child: pill,
-        ),
-      ),
-    );
-  }
-}
-
 /// The phase of whatever the list is currently doing.
 enum ConsoleBannerTone {
   /// Something is in flight — amber.
@@ -1755,17 +620,11 @@ enum ConsoleBannerTone {
 ///
 /// A banner and not a dialog: the flow it describes is *about* the list, so it
 /// belongs in the list rather than over it — and the rows stay live behind it,
-/// which a modal would not allow. One banner carries a whole flow; its dot and
-/// its action change with the phase.
+/// which a modal would not allow. One banner carries a whole flow; its dot
+/// changes with the phase.
 class ConsoleBanner extends StatelessWidget {
   /// Creates a [ConsoleBanner].
-  const new({
-    required this.message,
-    required this.tone,
-    this.actions = const [],
-    this.progress,
-    super.key,
-  });
+  const new({required this.message, required this.tone, super.key});
 
   /// What is happening, in the words a toast would have used.
   final String message;
@@ -1773,36 +632,8 @@ class ConsoleBanner extends StatelessWidget {
   /// Which phase this is.
   final ConsoleBannerTone tone;
 
-  /// What the banner offers, if anything — Cancel while listening, Keep and
-  /// Replace once a control that is already mapped has been caught. A banner
-  /// that only explains (the idle notice at the head of the mapping list)
-  /// carries none.
-  final List<Widget> actions;
-
-  /// How far along the thing described is, `0..1`, or null when it is not the
-  /// kind of thing that has a "how far".
-  ///
-  /// Under the message rather than beside it, because the message already
-  /// carries the percentage in words and the bar is the same fact drawn — a
-  /// bar in the action slot would read as a control. `SYSTEM /
-  /// update-downloading` is the one screen that draws it, and it is the one
-  /// phase on this console with a genuinely long, genuinely observable middle:
-  /// `UpdateCubit` emits a fresh progress on every chunk the repository yields.
-  final double? progress;
-
-  /// The dot's diameter — also the reason the banner is 46px tall with no
-  /// action and 61px with one: the button is taller than the sentence.
-  static const double dotSize = 11;
-
-  /// Thickness of the [progress] track.
-  static const double progressHeight = 7;
-
-  /// The gap between the message and the [progress] track under it.
-  static const double progressGap = 10;
-
-  /// The track's own key: a bar has no text to assert on, and "the banner
-  /// rendered" is not the same claim as "the banner drew a bar".
-  static const Key progressKey = Key('console_banner_progress');
+  /// The dot's diameter.
+  static const double dotSize = 14;
 
   @override
   Widget build(BuildContext context) {
@@ -1819,9 +650,9 @@ class ConsoleBanner extends StatelessWidget {
       // the Network and the Control faces to say so.
       padding: const EdgeInsets.fromLTRB(
         ConsoleRow.indentedInset,
-        14,
+        kConsoleRowGap,
         kConsoleRowInset,
-        14,
+        kConsoleRowGap,
       ),
       child: Row(
         children: [
@@ -1832,90 +663,20 @@ class ConsoleBanner extends StatelessWidget {
           ),
           const SizedBox(width: kConsoleRowGap),
           Expanded(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                AppText(
-                  message,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: surface.textSecondary,
-                    fontSize: 16,
-                    height: 1.13,
-                    leadingDistribution: TextLeadingDistribution.even,
-                  ),
-                ),
-                if (progress case final fraction?) ...[
-                  const SizedBox(height: progressGap),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(progressHeight / 2),
-                    child: LinearProgressIndicator(
-                      key: progressKey,
-                      value: fraction.clamp(0.0, 1.0),
-                      minHeight: progressHeight,
-                      backgroundColor: surface.control,
-                      valueColor: AlwaysStoppedAnimation(surface.accent),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          for (final action in actions) ...[const SizedBox(width: 10), action],
-        ],
-      ),
-    );
-  }
-}
-
-/// A short, low-emphasis button — the banner's Cancel / Try again.
-class ConsoleSmallButton extends StatelessWidget {
-  /// Creates a [ConsoleSmallButton].
-  const new({required this.label, required this.onPressed, super.key});
-
-  /// Visible caption, and the announced label.
-  final String label;
-
-  /// Tap action; null disables the button.
-  final VoidCallback? onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final surface = context.surface;
-    return Opacity(
-      opacity: onPressed == null ? surface.disabledOpacity : 1,
-      child: FocusableTapTarget(
-        onTap: onPressed,
-        semanticLabel: label,
-        borderRadius: 10,
-        child: InkWell(
-          onTap: onPressed,
-          // The tap target is the one focus stop; a focusable InkWell inside
-          // it would make the encoder stop twice on one button.
-          canRequestFocus: false,
-          borderRadius: BorderRadius.circular(10),
-          child: Container(
-            height: 33,
-            alignment: Alignment.center,
-            padding: const EdgeInsets.symmetric(horizontal: 14),
-            decoration: BoxDecoration(
-              color: surface.cardHigh,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: surface.borderStrong),
-            ),
+            // A row's subtitle size, as the rows around it (#1631).
             child: AppText(
-              label,
+              message,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: surface.textPrimary,
-                fontSize: 14,
-                height: 1.21,
+                color: surface.textSecondary,
+                fontSize: kConsoleRowDetailSize,
+                height: 1.2,
                 leadingDistribution: TextLeadingDistribution.even,
               ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -1937,7 +698,8 @@ class ConsoleEmptyCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final surface = context.surface;
     return Container(
-      height: 78,
+      // A row's height and title size, as the list it stands in for (#1631).
+      height: kConsoleRowHeight,
       alignment: Alignment.center,
       padding: const EdgeInsets.symmetric(horizontal: 24),
       decoration: BoxDecoration(
@@ -1951,8 +713,8 @@ class ConsoleEmptyCard extends StatelessWidget {
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
           color: surface.textMuted,
-          fontSize: 16,
-          height: 1.13,
+          fontSize: kConsoleRowTextSize,
+          height: 1.2,
           leadingDistribution: TextLeadingDistribution.even,
         ),
       ),
@@ -2317,7 +1079,7 @@ class _ConsoleValueBarState extends State<ConsoleValueBar>
   }
 }
 
-/// One choice in a [ConsoleSegmented] or a [ConsoleChipGrid].
+/// One choice in a [ConsoleMiniToggle] or a [ConsoleChipGrid].
 @immutable
 class ConsoleSegment<T> {
   /// Creates a [ConsoleSegment].
@@ -2340,7 +1102,7 @@ class ConsoleSegment<T> {
   /// A second line under [label], in the mono face: the thing's own machine
   /// fact, where [label] is what a person calls it. `guitar` over `input 1`.
   ///
-  /// Ignored by [ConsoleSegmented] and [ConsoleMiniToggle], which are single
+  /// Ignored by [ConsoleMiniToggle], whose choices are single
   /// short words by construction.
   ///
   /// **An empty [label] promotes this line to the primary tone.** The Audio
@@ -2356,119 +1118,10 @@ class ConsoleSegment<T> {
   final Key? optionKey;
 }
 
-/// A pick-one control for a short, symmetric pair — Toggle vs Momentary.
-///
-/// Not a `PillTabs` strip: those are the face's tabs, and a second strip in
-/// the same shape, inside a row, would read as a second set of them.
-class ConsoleSegmented<T> extends StatelessWidget {
-  /// Creates a [ConsoleSegmented].
-  const new({
-    required this.segments,
-    required this.selected,
-    required this.onChanged,
-    this.stretch = false,
-    super.key,
-  });
-
-  /// Whether the strip fills its parent instead of shrink-wrapping.
-  ///
-  /// Shrink-wrapped is right where the strip sits beside the thing it
-  /// qualifies. The Signal panel's two strips are **rows in a stack of rows**,
-  /// each under its own caption, and a stack whose rows end at different
-  /// x-positions reads as a ragged edge rather than as a column of settings —
-  /// so there the segments divide the panel's full width.
-  final bool stretch;
-
-  /// The choices, in display order.
-  final List<ConsoleSegment<T>> segments;
-
-  /// The current choice.
-  final T selected;
-
-  /// Called with the newly chosen value.
-  final ValueChanged<T> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final surface = context.surface;
-    final strip = Container(
-      padding: const EdgeInsets.all(5),
-      decoration: BoxDecoration(
-        color: surface.background,
-        borderRadius: BorderRadius.circular(11),
-      ),
-      child: Row(
-        mainAxisSize: stretch ? MainAxisSize.max : MainAxisSize.min,
-        children: [
-          for (final (index, segment) in segments.indexed) ...[
-            if (index > 0) const SizedBox(width: 5),
-            Expanded(
-              child: Semantics(
-                button: true,
-                selected: segment.value == selected,
-                label: segment.label,
-                child: InkWell(
-                  // Re-tapping the chosen segment is a no-op, as on
-                  // [PillTabs]: this is a pick-one and there is no "none".
-                  // Load-bearing beyond tidiness — a caller whose handler
-                  // TOGGLES would otherwise invert the rig from the very
-                  // segment that says what the rig is currently doing.
-                  //
-                  // Guarded INSIDE the callback, exactly as [PillTabs] does
-                  // it: a null `onTap` would also drop the chosen segment's
-                  // tap action and take it out of focus traversal, so a
-                  // screen reader could no longer reach the segment that
-                  // says what the setting currently is.
-                  onTap: () {
-                    if (segment.value == selected) return;
-                    onChanged(segment.value);
-                  },
-                  borderRadius: BorderRadius.circular(7),
-                  child: AnimatedContainer(
-                    duration: consoleMotion(context),
-                    curve: Curves.easeOut,
-                    height: 42,
-                    alignment: Alignment.center,
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    decoration: BoxDecoration(
-                      color: segment.value == selected
-                          ? surface.accent
-                          : Colors.transparent,
-                      borderRadius: BorderRadius.circular(7),
-                    ),
-                    child: AppText(
-                      segment.label,
-                      style: TextStyle(
-                        color: segment.value == selected
-                            ? surface.onAccent
-                            : surface.textSecondary,
-                        fontSize: 16,
-                        height: 1.13,
-                        leadingDistribution: TextLeadingDistribution.even,
-                        // One weight for both states, as everywhere on this
-                        // surface: a weight change re-measures the label and
-                        // the pair either side of it moves.
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-    // Shrink-wrapped by default; a stretched strip takes the width its parent
-    // offers, which is what makes the segments divide it evenly.
-    return stretch ? strip : IntrinsicWidth(child: strip);
-  }
-}
-
 /// The small pick-one that sits beside a caption it qualifies — the pedal's
 /// A/B bank selector.
 ///
-/// Smaller than [ConsoleSegmented] and outlined rather than filled, because it
+/// Small and outlined rather than filled, because it
 /// is a *qualifier* on the list below it, not a setting of its own. It sits
 /// next to the caption rather than at the far edge of the pane: floating it
 /// right on a 1920px surface puts it a screen away from the words it changes.
@@ -2490,8 +1143,9 @@ class ConsoleMiniToggle<T> extends StatelessWidget {
   /// Called with the newly chosen value.
   final ValueChanged<T> onChanged;
 
-  /// Height of the control.
-  static const double height = 33;
+  /// Height of the control: the Material tap target, at the 20 px captions it
+  /// sits beside (#1631).
+  static const double height = 48;
 
   @override
   Widget build(BuildContext context) {
@@ -2519,7 +1173,7 @@ class ConsoleMiniToggle<T> extends StatelessWidget {
                     duration: consoleMotion(context),
                     curve: Curves.easeOut,
                     alignment: Alignment.center,
-                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
                     color: segment.value == selected
                         ? surface.control
                         : Colors.transparent,
@@ -2529,8 +1183,8 @@ class ConsoleMiniToggle<T> extends StatelessWidget {
                         color: segment.value == selected
                             ? surface.textPrimary
                             : surface.textMuted,
-                        fontSize: 14,
-                        height: 1.21,
+                        fontSize: kConsoleRowDetailSize,
+                        height: 1.2,
                         leadingDistribution: TextLeadingDistribution.even,
                       ),
                     ),
@@ -2748,35 +1402,6 @@ class ConsoleChooser extends StatelessWidget {
   );
 }
 
-/// A caption that splits one drawer into named sub-groups.
-///
-/// `AUDIO / settings-rate` draws it: one chooser holding SAMPLE RATE and
-/// BUFFER, because those are two questions the row asks at once. The Loop
-/// face's time signatures use it for the same reason — seventeen of them are
-/// two families, not one list, and the note value is the thing you narrow by
-/// first.
-///
-/// Stepped in to the 40px inset an opened row's children take, so it lines up
-/// with the choices under it rather than with the list outside.
-class ConsoleDrawerLabel extends StatelessWidget {
-  /// Creates a [ConsoleDrawerLabel].
-  const new(this.label, {super.key});
-
-  /// The caption. Upper-cased by the caller, as [ConsoleGroupLabel]'s is.
-  final String label;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.fromLTRB(
-      ConsoleRow.indentedInset,
-      14,
-      kConsoleRowInset,
-      7,
-    ),
-    child: ConsoleGroupLabel(label),
-  );
-}
-
 /// A wrapping grid of equal cells — the console's pick-one for options that
 /// are **bare tokens**: `3/4`, `1/8`, `x2`, `Out 3`.
 ///
@@ -2788,11 +1413,11 @@ class ConsoleDrawerLabel extends StatelessWidget {
 /// width on four characters, and seventeen time signatures become a
 /// 1,200px scroll inside a sheet that is 830px tall.
 ///
-/// The cell is `LOOP / loop-quantise`'s: 166x48 at an 11px radius on a 10px
-/// gutter, accent-surface and accent-outlined when lit. That screen drew the
-/// grid inside a centred modal; this puts the same grid inside the drawer the
-/// rest of the file opens rows into, which is the half each of the two
-/// drawings got right.
+/// The cell is `LOOP / loop-quantise`'s at full size (#1631): 200x64 with a
+/// 24 px label at an 11px radius on a 12px gutter, accent-surface and
+/// accent-outlined when lit. That screen drew the grid inside a centred modal;
+/// this puts the same grid inside the drawer the rest of the file opens rows
+/// into, which is the half each of the two drawings got right.
 ///
 /// [selected] is a set rather than one value, so the same control serves a
 /// pick-one (`{current}`) and a bitmask (`{every lit bit}`) without a second
@@ -2830,17 +1455,17 @@ class ConsoleChipGrid<T> extends StatelessWidget {
   /// width the row layout was already wasting. The grid fits as many cells of
   /// about this size as it can and shares out the remainder, so the cells stay
   /// equal and the run stays flush to both edges.
-  static const double cellWidth = 166;
+  static const double cellWidth = 200;
 
   /// Gap between cells, both ways.
-  static const double gutter = 10;
+  static const double gutter = 12;
 
-  /// Cell height, for a grid of single-line cells.
-  static const double cellHeight = 48;
+  /// Cell height, for a grid of single-line cells: a full-size button's.
+  static const double cellHeight = 64;
 
   /// Cell height once any option carries a [ConsoleSegment.sublabel]. Uniform
   /// across the grid — cells of two heights in one run read as two controls.
-  static const double twoLineCellHeight = 56;
+  static const double twoLineCellHeight = kConsoleRowHeight;
 
   /// How many cells to put across, given the room and how many there are.
   ///
@@ -2910,7 +1535,7 @@ class ConsoleChipGrid<T> extends StatelessWidget {
               reason,
               style: TextStyle(
                 color: surface.textSecondary,
-                fontSize: 15,
+                fontSize: kConsoleRowDetailSize,
                 height: 1.3,
                 leadingDistribution: TextLeadingDistribution.even,
               ),
@@ -2987,7 +1612,7 @@ class _ConsoleChip extends StatelessWidget {
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: selected ? surface.accent : surface.textPrimary,
-                    fontSize: 16,
+                    fontSize: kConsoleRowTextSize,
                     height: 1.13,
                     leadingDistribution: TextLeadingDistribution.even,
                     // One weight for both states, as everywhere here.
@@ -3003,7 +1628,7 @@ class _ConsoleChip extends StatelessWidget {
                   style: TextStyle(
                     color: selected ? surface.accent : subTint,
                     fontFamily: SurfaceTheme.monoFont,
-                    fontSize: 14,
+                    fontSize: kConsoleRowDetailSize,
                     height: 1.14,
                     leadingDistribution: TextLeadingDistribution.even,
                   ),
@@ -3045,7 +1670,9 @@ class ConsoleCheck extends StatelessWidget {
 /// is about to stop existing.
 ///
 /// Drawn to `NETWORK / wifi-forget` and `LOOP / settings-mode-confirm`, which
-/// are the same 528px dialog with different words.
+/// are the same dialog with different words, at full size (#1631): the
+/// [ConsoleDialogShell] with a 32 px title and a 24 px body, as the Device
+/// page's confirmation.
 ///
 /// The dismissive label is fixed rather than a parameter: "keep it" is the
 /// same answer on every one of these, and a per-caller override only invited
@@ -3061,17 +1688,10 @@ Future<bool> showConsoleConfirmDialog(
   final confirmed = await showDialog<bool>(
     context: context,
     barrierColor: surface.scrim,
-    builder: (dialogContext) => Center(
-      child: Material(
-        color: Colors.transparent,
-        child: Container(
-          width: 528,
-          padding: const EdgeInsets.all(25),
-          decoration: BoxDecoration(
-            color: surface.card,
-            borderRadius: BorderRadius.circular(17),
-            border: Border.all(color: surface.borderStrong),
-          ),
+    builder: (dialogContext) {
+      final spacing = dialogContext.spacing;
+      return Center(
+        child: ConsoleDialogShell(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -3080,21 +1700,22 @@ Future<bool> showConsoleConfirmDialog(
                 title,
                 style: TextStyle(
                   color: surface.textPrimary,
-                  fontSize: 19,
+                  fontSize: ConsoleDialogShell.titleSize,
+                  height: 1.15,
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              const SizedBox(height: 10),
+              SizedBox(height: spacing.xl),
               AppText(
                 body,
                 style: TextStyle(
                   color: surface.textSecondary,
-                  fontSize: 16,
-                  height: 1.4,
+                  fontSize: ConsoleDialogShell.bodySize,
+                  height: 1.5,
                   leadingDistribution: TextLeadingDistribution.even,
                 ),
               ),
-              const SizedBox(height: 19),
+              SizedBox(height: spacing.xl),
               // A Wrap, not a Row: a long confirm label ("Stop loops and
               // switch") takes the next line instead of overflowing. Each
               // button keeps its own width (a Wrap child would otherwise fill
@@ -3104,8 +1725,8 @@ Future<bool> showConsoleConfirmDialog(
                 width: double.infinity,
                 child: Wrap(
                   alignment: WrapAlignment.end,
-                  spacing: 10,
-                  runSpacing: 10,
+                  spacing: spacing.lg,
+                  runSpacing: spacing.lg,
                   children: [
                     IntrinsicWidth(
                       child: ConsoleDialogButton(
@@ -3128,8 +1749,8 @@ Future<bool> showConsoleConfirmDialog(
             ],
           ),
         ),
-      ),
-    ),
+      );
+    },
   );
   return confirmed ?? false;
 }
@@ -3458,12 +2079,10 @@ enum ConsoleDialogTone {
   primary,
 }
 
-/// A 40px button at the foot of a panel or sheet.
+/// A button at the foot of a panel or sheet.
 ///
-/// Taller and larger-lettered than [ConsoleSmallButton], which is the *inline*
-/// button — a banner's Cancel, sitting inside a 61px strip. This one closes a
-/// panel, and the mockups draw the two at different sizes because they end
-/// different things.
+/// Full size, as the pages it opens over (#1631): 64 high with a 24 px label,
+/// the settings pages' own button.
 class ConsoleDialogButton extends StatelessWidget {
   /// Creates a [ConsoleDialogButton].
   const new({
@@ -3482,8 +2101,11 @@ class ConsoleDialogButton extends StatelessWidget {
   /// What this button is for.
   final ConsoleDialogTone tone;
 
-  /// Height of the button, as every mockup that draws one sets it.
-  static const double height = 40;
+  /// Height of the button: the full-size pages' 64.
+  static const double height = 64;
+
+  /// The label's size: the full-size pages' 24.
+  static const double fontSize = 24;
 
   @override
   Widget build(BuildContext context) {
@@ -3531,7 +2153,7 @@ class ConsoleDialogButton extends StatelessWidget {
         child: Container(
           height: height,
           alignment: Alignment.center,
-          padding: const EdgeInsets.symmetric(horizontal: 14),
+          padding: const EdgeInsets.symmetric(horizontal: 24),
           decoration: BoxDecoration(
             color: background,
             borderRadius: BorderRadius.circular(10),
@@ -3541,7 +2163,7 @@ class ConsoleDialogButton extends StatelessWidget {
             label,
             style: TextStyle(
               color: ink,
-              fontSize: 15,
+              fontSize: fontSize,
               height: 1.2,
               leadingDistribution: TextLeadingDistribution.even,
               // The solid tones carry their weight; the outlined ones stay
@@ -3561,9 +2183,12 @@ class ConsoleDialogButton extends StatelessWidget {
   }
 }
 
-/// The console's own dialog shell, from the pen's `Dialog` component: a 744
-/// panel inset from the scrim, 25 inside, radius 17, on the card tone with a
-/// strong border.
+/// The console's own dialog shell, from the pen's `Dialog` component: a panel
+/// inset from the scrim, radius 17, on the card tone with a strong border.
+///
+/// Full size, as the pages it opens over (#1631): the Device page dialog's
+/// 960 wide panel, 41 inside, rather than the pen's 744 and 25, which were
+/// drawn for the tray.
 ///
 /// Extracted rather than hand-rolled per caller. `track_routing_dialog` had
 /// these numbers written out and every other dialog on a console surface was a
@@ -3582,18 +2207,24 @@ class ConsoleDialogShell extends StatelessWidget {
   /// The panel's contents, already laid out as rows.
   final Widget child;
 
-  /// Panel width. The pen draws 744 for every dialog it holds.
+  /// Panel width.
   final double width;
 
-  /// The pen's dialog width.
-  static const double defaultWidth = 744;
+  /// The full-size dialog width, the Device page dialog's.
+  static const double defaultWidth = 960;
 
   /// Gap between the panel and the screen edge, so a tall panel scrolls
   /// rather than running off.
   static const double scrimInset = 29;
 
-  /// Inside the panel, from the pen's `Dialog`.
-  static const double padding = 25;
+  /// Inside the panel, the Device page dialog's.
+  static const double padding = 41;
+
+  /// A dialog title's size.
+  static const double titleSize = 32;
+
+  /// A dialog body's size.
+  static const double bodySize = 24;
 
   /// The panel's corner.
   static const double radius = 17;

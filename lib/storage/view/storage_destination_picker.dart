@@ -278,25 +278,26 @@ class ConnectUsbSheet extends StatelessWidget {
               l10n.connectUsbTitle,
               style: TextStyle(
                 color: surface.textPrimary,
-                fontSize: 19,
+                fontSize: ConsoleDialogShell.titleSize,
+                height: 1.15,
                 fontWeight: FontWeight.w600,
               ),
             ),
-            const SizedBox(height: 10),
+            SizedBox(height: context.spacing.xl),
             AppText(
               l10n.connectUsbBody,
               style: TextStyle(
                 color: surface.textSecondary,
-                fontSize: 16,
-                height: 1.4,
+                fontSize: ConsoleDialogShell.bodySize,
+                height: 1.5,
                 leadingDistribution: TextLeadingDistribution.even,
               ),
             ),
-            const SizedBox(height: 19),
+            SizedBox(height: context.spacing.xl),
             Wrap(
               alignment: WrapAlignment.end,
-              spacing: 10,
-              runSpacing: 10,
+              spacing: context.spacing.lg,
+              runSpacing: context.spacing.lg,
               children: [
                 IntrinsicWidth(
                   child: ConsoleDialogButton(

@@ -500,6 +500,10 @@ void main() {
       await pump(tester);
       await tester.tap(find.byKey(const Key('audio_max_loop_row')));
       await tester.pumpAndSettle();
+      // The open grid's second row runs under the Apply row: the workspace
+      // scrolls to it.
+      await tester.ensureVisible(find.byKey(const Key('audio_max_loop_5')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('audio_max_loop_5')));
       await tester.pumpAndSettle();
       verifyNever(() => repository.applyAudioConfig(any()));
