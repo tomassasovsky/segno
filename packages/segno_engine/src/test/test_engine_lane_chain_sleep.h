@@ -4,7 +4,8 @@
  * nobody hears: the track takes the idle skip and needs no job. A Clear's
  * Post tail drains first; a Record or a chain edit runs the chain again, and
  * a take recorded after a sleep plays exactly as one through a chain that
- * never slept. Monitor chains never sleep. On the callback, on two workers
+ * never slept; an Undo of the Clear plays the take through it from its
+ * first frame. Monitor chains never sleep. On the callback, on two workers
  * and forced through the jobs (pts_mode). Included by test_engine_core.c
  * after test_engine_post_tail_stopped.h (pts_* helpers). */
 
@@ -173,6 +174,54 @@ static void test_lane_chain_wakes_for_a_take(void) {
   le_test_trk_jobs_force = force;
 }
 
+/* An Undo of a Clear brings the take back with its chain running from the
+ * first frame: the same as through a chain kept awake while the track sat
+ * empty, but for what the drained tail left under the floor. [n] frames of
+ * the restored playback into [out]. */
+static void lcs_undo_session(int awake, int mode, float* out, int32_t n) {
+  le_engine* e = heard_engine(48000);
+  pts_mode(e, mode);
+  pts_lane_post(e, LE_FX_DELAY);
+  pts_take(e);
+  CHECK(le_engine_clear_undoable(e, 0) == LE_OK);
+  for (int k = 0; k < 120; ++k) {
+    if (awake) {
+      CHECK(le_engine_set_lane_fx_param(e, 0, 0, 0, 0, 0.2f) == LE_OK);
+      drain(e);
+    }
+    heard_silence(e, 4800, 64, NULL);
+  }
+  CHECK(lcs_lane(e)->fx_asleep == !awake);
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  heard_silence(e, 64, 64, out);
+  CHECK(!lcs_lane(e)->fx_asleep);
+  heard_silence(e, n - 64, 64, out + 128);
+  le_test_trk_jobs_force = 0;
+  le_engine_destroy(e);
+}
+
+static void test_lane_chain_wakes_on_undo(void) {
+  printf("test_lane_chain_wakes_on_undo\n");
+  enum { N = 3 * PTS_TAKE };
+  static float ref[2 * N];
+  static float got[2 * N];
+  const int force = le_test_trk_jobs_force;
+  lcs_undo_session(1, 0, ref, N);
+  CHECK(pts_peak(ref, N) > 1e-2f);
+  for (int mode = 0; mode < 3; ++mode) {
+    lcs_undo_session(0, mode, got, N);
+    float worst = 0.0f;
+    for (int32_t i = 0; i < 2 * N; ++i) {
+      worst = fmaxf(worst, fabsf(ref[i] - got[i]));
+    }
+    if (!(worst < 1e-3f)) {
+      printf("  %s: %g from a chain kept awake\n", pts_mode_name[mode], worst);
+    }
+    CHECK(worst < 1e-3f);
+  }
+  le_test_trk_jobs_force = force;
+}
+
 /* An edit wakes a sleeping chain for another whole horizon. */
 static void test_lane_chain_wakes_on_edit(void) {
   printf("test_lane_chain_wakes_on_edit\n");
@@ -213,6 +262,7 @@ static void run_lane_chain_sleep_tests(void) {
   test_lane_chain_sleeps_on_empty_track();
   test_lane_chain_drains_before_it_sleeps();
   test_lane_chain_wakes_for_a_take();
+  test_lane_chain_wakes_on_undo();
   test_lane_chain_wakes_on_edit();
   test_lane_chain_sleep_leaves_monitors();
 }
