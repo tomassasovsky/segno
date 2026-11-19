@@ -307,21 +307,115 @@ void main() {
         expect(engine.laneSources[(0, 0)], LaneSource.clean);
       });
 
-      test('a heard take whose Post entries do not fit has its own chain '
-          'switched off, said by the standing notice', () {
+      test(
+        'Post entries that do not fit are recorded into the take: they '
+        'land at Pre, nothing on the lane is held, and its track says so',
+        () async {
+          final printed = <int>[];
+          final sub = repo.fxTakePrinted.listen(printed.add);
+          addTearDown(sub.cancel);
+          final post = [
+            for (final fx in _rack())
+              (fx as BuiltInEffect).copyWith(placement: FxPlacement.post),
+          ];
+          repo
+            ..setMonitorEffects(input: 1, effects: _rack())
+            ..setMonitorEffects(input: 0, effects: [reverb, ...post]);
+          final before = repo.fxCostNs;
+          repo.record();
+          expect(engine.lastRecordImage!.heardLanes, {0});
+          final lane = repo.laneEffects(0, 0);
+          expect(lane, hasLength(10));
+          expect(lane.every((fx) => fx.placement == FxPlacement.pre), isTrue);
+          // The image is the whole chain's: the lane carries no Post entry,
+          // which is what tells the engine to record past the Pre run.
+          final recipe = engine.recipes[(le.FxOwner.lane, 0, 0)]!;
+          expect(recipe.preCount, recipe.slots.length);
+          expect(repo.fxChainHeld(_lane(0)), isFalse);
+          expect(repo.state.fxHoldNotice, isEmpty);
+          expect(engine.laneSources[(0, 0)], LaneSource.heard);
+          expect(repo.fxCostNs, before);
+          await pumpEventQueue();
+          expect(printed, [0]);
+        },
+      );
+
+      test('an input chain that is all Post and does not fit is recorded '
+          'into the take, so the take is heard, not dry', () async {
+        final printed = <int>[];
+        final sub = repo.fxTakePrinted.listen(printed.add);
+        addTearDown(sub.cancel);
         final post = [
           for (final fx in _rack())
             (fx as BuiltInEffect).copyWith(placement: FxPlacement.post),
         ];
         repo
           ..setMonitorEffects(input: 1, effects: _rack())
+          ..setMonitorEffects(input: 0, effects: post);
+        final before = repo.fxCostNs;
+        repo.record();
+        expect(engine.lastRecordImage!.heardLanes, {0});
+        expect(
+          repo.laneEffects(0, 0).map((fx) => fx.placement),
+          everyElement(FxPlacement.pre),
+        );
+        expect(repo.state.fxHeld, isEmpty);
+        expect(engine.laneSources[(0, 0)], LaneSource.heard);
+        expect(repo.fxCostNs, before);
+        await pumpEventQueue();
+        expect(printed, [0]);
+      });
+
+      test(
+        'Post entries that fit still run live, and nothing is said',
+        () async {
+          final printed = <int>[];
+          final sub = repo.fxTakePrinted.listen(printed.add);
+          addTearDown(sub.cancel);
+          repo
+            ..setMonitorEffects(input: 0, effects: [reverb, delay])
+            ..record();
+          expect(repo.laneEffects(0, 0).last.placement, FxPlacement.post);
+          expect(engine.recipes[(le.FxOwner.lane, 0, 0)]!.preCount, 1);
+          await pumpEventQueue();
+          expect(printed, isEmpty);
+        },
+      );
+
+      test("takes pressed together weigh each other's Post entries", () {
+        final post = [
+          for (final fx in _rack())
+            (fx as BuiltInEffect).copyWith(placement: FxPlacement.post),
+        ];
+        repo
+          ..setMonitorEffects(input: 0, effects: post)
+          ..setLaneInput(channel: 1, lane: 0, inputChannel: 0)
+          ..record()
+          ..record(channel: 1);
+        // The first take's Post rack fits beside the input's; the second's,
+        // pressed before the first landed, does not, and is recorded in.
+        expect(engine.recipes[(le.FxOwner.lane, 0, 0)]!.preCount, 0);
+        expect(engine.lastRecordImage!.heardLanes, {0});
+        expect(engine.recipes[(le.FxOwner.lane, 1, 0)]!.preCount, 9);
+      });
+
+      test("R2 never holds a heard take's Post entries", () {
+        final post = [
+          for (final fx in _rack())
+            (fx as BuiltInEffect).copyWith(placement: FxPlacement.post),
+        ];
+        repo
           ..setMonitorEffects(input: 0, effects: [reverb, ...post])
           ..record();
-        expect(engine.lastRecordImage!.heardLanes, {0});
-        expect(repo.fxChainHeld(_lane(0)), isTrue);
-        expect(repo.state.fxHoldNotice, contains(_lane(0)));
+        // Two racks fit: the take's Post rack runs live.
+        expect(repo.laneEffects(0, 0).last.placement, FxPlacement.post);
+        // The boot restore lands a third: the rig is over budget. Holding
+        // the take would make room, but it plays its Post rack; the input
+        // is held instead.
+        repo.setMonitorEffects(input: 1, effects: _rack());
+        expect(repo.fxChainHeld(_lane(0)), isFalse);
+        expect(repo.state.fxHeld, {_input(1)});
         expect(engine.laneSources[(0, 0)], LaneSource.heard);
-        expect(repo.fxRoomNs, greaterThanOrEqualTo(0));
       });
 
       test('an overdub over a take recorded dry, through an input that is '

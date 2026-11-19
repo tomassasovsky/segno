@@ -505,6 +505,7 @@ class LooperRepository {
   bool _retrySuperseded = false;
   final _recordRefusals = StreamController<int>.broadcast();
   final _overdubRefusals = StreamController<int>.broadcast();
+  final _fxTakePrinted = StreamController<int>.broadcast();
   final _lengthHistoryRefusals = StreamController<int>.broadcast();
   final _lengthHistoryRefusalCounts = <int, int>{};
 
@@ -1369,10 +1370,11 @@ class LooperRepository {
           }
           onLaneChainChanged?.call(ch, lane);
         }
-        // What a take runs live: its chain where the engine could not give
-        // it an image (#1713), its Post entries over the image where it did
-        // (#1741). When that does not fit, its own chains are switched off,
-        // as a chain the rig cannot run is (R2), never another track's.
+        // A take the engine could not give an image runs its chain live
+        // (#1713). When that does not fit, its own chains are switched off,
+        // as a chain the rig cannot run is (R2), never another track's. One
+        // playing its image runs only the Post entries the press found room
+        // for, and is never switched off.
         _holdUnheardTake(ch, pending);
         _pendingImages.remove(ch);
         _reproject();
@@ -1392,12 +1394,9 @@ class LooperRepository {
     final budget = fxBudgetNs(rate, period: period);
     for (final MapEntry(key: lane, value: effects)
         in pending.inherited.entries) {
-      // A lane playing its image still runs its Post entries (#1741).
-      if (effects.isEmpty) continue;
-      if (_laneHeard.contains((channel, lane)) &&
-          fxPreCount(effects) == effects.length) {
-        continue;
-      }
+      // A lane playing its image is never switched off (#1713): the press
+      // printed whatever of its Post entries did not fit.
+      if (effects.isEmpty || _laneHeard.contains((channel, lane))) continue;
       if (_fxLoadAt(rate, period) <= budget) return;
       final at = FxAddress(stage: FxStage.loop, index: channel, lane: lane);
       _fxHeld.add(at);
@@ -3968,6 +3967,10 @@ class LooperRepository {
     final inheritedHandles = <int, Map<String, PluginSlotHandle>>{};
     final detached = <PluginSlotHandle>[];
     EngineResult? preparationFailure;
+    // The Post entries this press's lanes would run live, beside what the
+    // takes not landed yet will run ([_takeChargesPending]).
+    final pressCharges = _takeChargesPending();
+    var printed = false;
     if (state == TrackState.empty) {
       try {
         for (var lane = 0; lane < laneCount(channel); lane++) {
@@ -3986,15 +3989,31 @@ class LooperRepository {
             }
             continue;
           }
-          // What a take records is the chain's Pre run (#1741): a chain
-          // with none is recorded clean, its Post entries live on the lane.
-          if (fxPreCount(chain) > 0) heardLanes.add(lane);
           final captured = <TrackEffect>[];
           for (var index = 0; index < chain.length; index++) {
             final fx = _capturePluginForLane(chain[index], input, index);
             if (fx != null) captured.add(fx);
           }
-          final copied = withFreshSlotIds(captured);
+          // What a take records is the chain's Pre run (#1741): its Post
+          // entries run live on the lane, so they ring out past Stop. Where
+          // they do not fit beside the rest of the rig, the take records the
+          // whole chain instead and they land on the lane at Pre (#1713,
+          // the owner's option A): the take sounds as heard, and those
+          // effects stop with it.
+          final at = FxAddress(stage: FxStage.loop, index: channel, lane: lane);
+          final post = captured.sublist(fxPreCount(captured));
+          final print =
+              post.isNotEmpty && !_takeChargeFits(pressCharges, at, post);
+          pressCharges[at] = print ? const [] : post;
+          printed |= print;
+          // A chain with no Pre run is recorded clean, its Post entries live
+          // on the lane, unless they are printed.
+          if (print || fxPreCount(chain) > 0) heardLanes.add(lane);
+          final copied = withFreshSlotIds(
+            print
+                ? [for (final fx in captured) _placed(fx, FxPlacement.pre)]
+                : captured,
+          );
           final edges = fxRackEdges(copied);
           final paths = fxRackPathsToEngine(copied);
           final slots = <FxRecipeSlot>[];
@@ -4130,6 +4149,7 @@ class LooperRepository {
         clearOnCommit: state == TrackState.empty,
       );
       _reproject();
+      if (printed) _fxTakePrinted.add(channel);
     } else {
       detached.forEach(_engine.discardPreparedPlugin);
       // The engine's own fresh-capture refusal (#1146): the callback may
@@ -4141,6 +4161,36 @@ class LooperRepository {
       }
     }
     return result;
+  }
+
+  /// What the takes that have not landed yet will run live once they do, by
+  /// lane: each one's Post entries (#1741), its chain switched on.
+  Map<FxAddress, List<TrackEffect>> _takeChargesPending() => {
+    for (final MapEntry(key: channel, value: pending) in _pendingImages.entries)
+      for (final MapEntry(key: lane, value: effects)
+          in pending.inherited.entries)
+        FxAddress(stage: FxStage.loop, index: channel, lane: lane): effects
+            .sublist(fxPreCount(effects)),
+  };
+
+  /// Whether a take's [post] entries on lane [at] fit the budget beside
+  /// [charges] (the other takes' Post entries, [_takeChargesPending]) and
+  /// the rest of the rig, their chains switched on as a take's come in.
+  bool _takeChargeFits(
+    Map<FxAddress, List<TrackEffect>> charges,
+    FxAddress at,
+    List<TrackEffect> post,
+  ) {
+    final rate = _fxRate;
+    final period = _fxPeriod;
+    final replaced = {...charges, at: post};
+    return _fxLoadAt(
+          rate,
+          period,
+          replaced: replaced,
+          switches: {for (final lane in replaced.keys) lane: true},
+        ) <=
+        fxBudgetNs(rate, period: period);
   }
 
   /// Drops the remembered per-lane mutes for [channel] — used when the engine
@@ -9479,9 +9529,10 @@ class LooperRepository {
   /// R2: while the chains (with [incoming] replaced by [chain], when given)
   /// are over budget, chains are held off, the newest stage first: lane
   /// chains, then track, All tracks, output and monitor chains, the highest
-  /// index first within a stage, until the rest fits. Every chain keeps its
-  /// entries and its saved switch. A chain held here that was not held
-  /// [before] and that the player had on joins the standing notice.
+  /// index first within a stage, until the rest fits. A take playing its
+  /// image is never held (#1713): its Post entries play with it. Every chain
+  /// keeps its entries and its saved switch. A chain held here that was not
+  /// held [before] and that the player had on joins the standing notice.
   ///
   /// The boot restore lands chain by chain after the device has started,
   /// and a reopen replays the rig, so this runs before every recipe goes to
@@ -9563,6 +9614,9 @@ class LooperRepository {
         break;
       }
       if (_fxHeld.contains(at) || chainOf(at).isEmpty) continue;
+      // A take playing its image keeps its Post entries on (#1713): holding
+      // them would play it without effects the player heard.
+      if (_playsImage(at, chainOf(at), chainOn: switchOf(at))) continue;
       // A chain whose hold frees nothing in any state stays as it is: one
       // that charges nothing (off, and no control reaches it, #1723), or
       // only for tails that drain whether it is held or not (#1733).
@@ -9921,6 +9975,12 @@ class LooperRepository {
   /// Record presses on a reversed track (the channel): overdub is
   /// unavailable while a track plays reversed, from any surface.
   Stream<int> get overdubRefusals => _overdubRefusals.stream;
+
+  /// Fresh takes (the channel) that record their input chain's Post entries
+  /// into the take, since there was no room to run them live beside the rest
+  /// of the rig (#1713): the take sounds as heard, but those effects stop
+  /// with it on Stop instead of ringing out.
+  Stream<int> get fxTakePrinted => _fxTakePrinted.stream;
 
   /// Undo or Redo taps on a track's length edit that did nothing (the
   /// channel), from any surface (#1168), that their own result could not
@@ -10620,6 +10680,7 @@ class LooperRepository {
     await _recordingInputRequired.close();
     await _recordRefusals.close();
     await _overdubRefusals.close();
+    await _fxTakePrinted.close();
     await _lengthHistoryRefusals.close();
     await _mixSettingsFailures.close();
     await _mix.dispose();

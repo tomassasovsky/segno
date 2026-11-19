@@ -1762,6 +1762,43 @@ void main() {
       );
     }
 
+    testWidgets("a take that records its Post effects in, since they don't "
+        'fit live, says so on its track (#1713)', (tester) async {
+      repository = LooperRepository(
+        engine: engine,
+        ticker: const Stream<void>.empty(),
+      );
+      addTearDown(repository.dispose);
+      await pumpApp(tester, NoopWaveformWindowService());
+      repository.startEngine(const EngineConfig());
+      final rack = [
+        for (final type in [
+          TrackEffectType.dualOctaver,
+          TrackEffectType.ampCab,
+          TrackEffectType.roomVerb,
+        ])
+          BuiltInEffect(type: type),
+      ];
+      // Room for the input's chain, not for the take's Post copy beside it.
+      expect(
+        repository.setMonitorEffects(
+          input: 0,
+          effects: [for (var i = 0; i < 3; i++) ...rack],
+        ),
+        EngineResult.ok,
+      );
+      expect(repository.record(), EngineResult.ok);
+      await tester.pumpAndSettle();
+      expect(noticeTracks(AppNoticeId.fxTakePrinted), [0]);
+      expect(
+        saidTitles,
+        contains("This take's Post effects are recorded into it"),
+      );
+      await tester.pump(const Duration(seconds: 7));
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    });
+
     testWidgets('a Record press on a reversed track says overdub is '
         'unavailable', (tester) async {
       engine = _ReversedEngine();
