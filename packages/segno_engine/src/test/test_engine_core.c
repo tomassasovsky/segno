@@ -32644,6 +32644,40 @@ static void test_band_handoff_overdub_once_and_hold(void) {
   }
 }
 
+/* A quantized punch-in on the one sounding Band section waits for the
+ * primary's top and lands there as an overdub: with no other section
+ * sounding, the one-section rule leaves the grid arm alone. */
+static void test_band_section_quantized_punch_in_fires_at_top(void) {
+  printf("test_band_section_quantized_punch_in_fires_at_top\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_BAND) == LE_OK);
+  drain(e);
+  sb_make_primary(e, 1.0f);
+  sb_arm_and_start(e, 1);
+  process_const(e, 2.0f, SB_BASE, out);
+  le_engine_record(e, 1);
+  drain(e);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  CHECK(timing_gate(e, 1) == LE_OK);
+  drain(e);
+  tg_advance(e, 5); /* mid-cycle */
+  CHECK(le_engine_record(e, 1) == LE_OK); /* arms a punch-in, trigger 0 */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].pending == 1);
+  CHECK(s.tracks[1].pending_trigger == 0);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  tg_advance(e, SB_BASE - 5);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_position_frames == 0);
+  CHECK(s.tracks[1].state == LE_TRACK_OVERDUBBING);
+  CHECK(s.tracks[1].pending == 0);
+  le_engine_destroy(e);
+}
+
 /* A Sync force-armed DEFINING take begins at the primary's loop top, even
  * when a division would offer an earlier boundary.
  *
@@ -40254,6 +40288,7 @@ int main(void) {
   SHARD(test_band_handoff_overdub_once_and_hold);
   SHARD(test_band_handoff_grid_arms_and_closing_takes);
   SHARD(test_band_handoff_keeps_a_stopped_primary_stopped);
+  SHARD(test_band_section_quantized_punch_in_fires_at_top);
   SHARD(test_sync_force_arm_ignores_a_per_track_division);
 
   SHARD(test_clock_send_defaults_and_persistence);
