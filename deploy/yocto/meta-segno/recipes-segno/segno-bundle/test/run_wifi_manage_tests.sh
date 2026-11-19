@@ -24,10 +24,22 @@ setup() {
     : > "$work/ctl-args"
     : > "$work/passwd-file"
     : > "$work/added"
+    : > "$work/used-keys"
+    : > "$work/busctl-args"
+    mkdir -p "$work/stored" "$work/mem" "$work/run/system-connections"
     # Saved profiles come from SAVED (space-separated names). Their UUIDs are
     # uuid-<name> with ':' made '_', so, like real UUIDs, they carry no colon,
     # while the names may. A profile the helper adds is remembered by the UUID
     # it was given.
+    #
+    # Each profile's key is NetworkManager's: stored/<uuid> once something has
+    # saved one (STORED_PSK until then), and mem/<uuid> while a copy of the
+    # profile is held in memory (modify --temporary), whose file is then
+    # run/system-connections/<uuid>.nmconnection. ClearSecrets empties the key
+    # of the copy, or of the stored profile when there is none. An activation
+    # uses the profile's key, and asks the agent (the passwd-file) only when
+    # it has none, saving the agent's key into a held copy. With GOOD_KEY set,
+    # an activation on any other key fails.
     cat > "$work/bin/nmcli" <<STUB
 #!/bin/sh
 echo "\$@" >> "$work/nmcli-args"
@@ -40,9 +52,64 @@ name_of() {
     done
     printf '%s\n' "\${1#uuid-}"
 }
+all_uuids() {
+    for n in \${SAVED:-}; do uuid_of "\$n"; echo; done
+    cut -f1 "$work/added"
+}
+key_of() {
+    if [ -f "$work/mem/\$1" ]; then cat "$work/mem/\$1"
+    elif [ -f "$work/stored/\$1" ]; then cat "$work/stored/\$1"
+    else printf '%s' "\${STORED_PSK:-}"
+    fi
+}
+run_file() { printf '%s' "$work/run/system-connections/\$1.nmconnection"; }
 last=\$(eval "printf '%s' \"\\\${\$#}\"")
 case "\$*" in
-    *"connection edit"*) cat >> "$work/nmcli-stdin" ;;
+    *"connection edit"*)
+        target=\$(printf '%s' "\$*" | sed 's/.*connection edit uuid //')
+        input=\$(cat)
+        printf '%s\n' "\$input" >> "$work/nmcli-stdin"
+        if printf '%s\n' "\$input" | grep -qx 'save persistent'; then
+            printf '%s\n' "\$input" \
+                | sed -n 's/^set 802-11-wireless-security\.psk //p' | tr -d '\n' \
+                > "$work/stored/\$target"
+            rm -f "$work/mem/\$target" "\$(run_file "\$target")"
+        fi
+        ;;
+    *"connection modify --temporary uuid "*)
+        target=\$(printf '%s' "\$*" | sed 's/.*connection modify --temporary uuid \([^ ]*\) .*/\1/')
+        [ -f "$work/mem/\$target" ] || key_of "\$target" > "$work/mem/\$target"
+        : > "\$(run_file "\$target")"
+        ;;
+    *"connection modify uuid "*)
+        # Saved to disk: a copy held in memory becomes the stored profile.
+        target=\$(printf '%s' "\$*" | sed 's/.*connection modify uuid \([^ ]*\) .*/\1/')
+        if [ -f "$work/mem/\$target" ]; then
+            mv "$work/mem/\$target" "$work/stored/\$target"
+            rm -f "\$(run_file "\$target")"
+        fi
+        ;;
+    *"connection load "*)
+        # A held copy whose file is gone: the stored profile is back.
+        for u in \$(all_uuids); do
+            [ "\$last" = "\$(run_file "\$u")" ] && [ ! -f "\$last" ] && rm -f "$work/mem/\$u"
+        done
+        ;;
+    *"UUID,FILENAME connection show"*)
+        [ -n "\${NO_FILE:-}" ] && exit 0
+        for u in \$(all_uuids); do
+            if [ -f "$work/mem/\$u" ]; then
+                printf '%s:%s\n' "\$u" "\$(run_file "\$u")"
+            else
+                printf '%s:/data/NetworkManager/system-connections/%s.nmconnection\n' "\$u" "\$u"
+            fi
+        done
+        ;;
+    *"UUID,DBUS-PATH connection show"*)
+        for u in \$(all_uuids); do
+            printf '%s:/org/freedesktop/NetworkManager/Settings/%s\n' "\$u" "\$u"
+        done
+        ;;
     *"connection add"*)
         printf '%s\n' "\$*" \
             | sed 's/.*con-name \(.*\) connection\.uuid \([^ ]*\) .*/\2\t\1/' >> "$work/added"
@@ -57,7 +124,7 @@ case "\$*" in
         for n in \${SAVED:-}; do printf '%s:802-11-wireless\n' "\$(uuid_of "\$n")"; done
         ;;
     *"-g 802-11-wireless-security.psk connection show"*)
-        printf '%s\n' "\${STORED_PSK:-}"
+        printf '%s\n' "\$(key_of "\$last")"
         ;;
     *"-g connection.autoconnect connection show"*)
         printf '%s\n' "\${PRIOR_AC:-yes}"
@@ -69,18 +136,30 @@ case "\$*" in
         name_of "\$last"
         ;;
     *"connection up"*)
+        target=\$(printf '%s' "\$*" | sed 's/.*connection up //; s/^uuid //; s/ passwd-file.*//')
+        key=\$(key_of "\$target")
         case "\$*" in
-            *passwd-file*) cp "\$last" "$work/passwd-file" ;;
+            *passwd-file*)
+                cp "\$last" "$work/passwd-file"
+                if [ -z "\$key" ]; then
+                    key=\$(sed 's/^802-11-wireless-security\.psk://; s/\\\\\\(.\\)/\\1/g' "\$last")
+                    [ -f "$work/mem/\$target" ] && printf '%s' "\$key" > "$work/mem/\$target"
+                fi
+                ;;
         esac
+        printf '%s [%s]\n' "\$target" "\$key" >> "$work/used-keys"
         # One radio: any activation drops the link that was up.
         : > "$work/active"
-        target=\$(printf '%s' "\$*" | sed 's/.*connection up //; s/^uuid //; s/ passwd-file.*//')
         case "\$* \$(name_of "\$target")" in
             *"\${FAIL_UP:-<none>}"*)
                 echo "Error: Connection activation failed: (7) Secrets were required, but not provided" >&2
                 exit 4
                 ;;
         esac
+        if [ -n "\${GOOD_KEY:-}" ] && [ "\$key" != "\$GOOD_KEY" ]; then
+            echo "Error: Connection activation failed: (7) Secrets were required, but not provided" >&2
+            exit 4
+        fi
         printf '%s' "\$target" > "$work/active"
         ;;
     *"WIFI radio"*) printf 'enabled\n' ;;
@@ -91,6 +170,19 @@ esac
 exit 0
 STUB
     chmod +x "$work/bin/nmcli"
+    cat > "$work/bin/busctl" <<STUB
+#!/bin/sh
+echo "\$@" >> "$work/busctl-args"
+case "\$*" in
+    *" ClearSecrets")
+        u=\$(basename "\$3")
+        [ "\${BUSCTL_RC:-0}" -eq 0 ] || { echo "Call failed: Access denied" >&2; exit "\$BUSCTL_RC"; }
+        if [ -f "$work/mem/\$u" ]; then : > "$work/mem/\$u"; else : > "$work/stored/\$u"; fi
+        ;;
+esac
+exit 0
+STUB
+    chmod +x "$work/bin/busctl"
     cat > "$work/bin/journalctl" <<'STUB'
 #!/bin/sh
 exit 0
@@ -122,7 +214,8 @@ run_with_stdin() {
         LISTING="${LISTING:-}" PRIOR_AC="${PRIOR_AC:-yes}" \
         GENERAL_STATE="${GENERAL_STATE:-30 (disconnected)}" \
         HIDDEN="${HIDDEN:-no}" LIST="${LIST:-}" SEGNO_JOIN_EVIDENCE_WAIT=0 \
-        STORED_PSK="${STORED_PSK:-}" DEV_AC="${DEV_AC:-yes}" \
+        STORED_PSK="${STORED_PSK:-}" DEV_AC="${DEV_AC:-yes}" GOOD_KEY="${GOOD_KEY:-}" BUSCTL_RC="${BUSCTL_RC:-0}" NO_FILE="${NO_FILE:-}" \
+        SEGNO_NM_RUN_DIR="$work/run" \
         HTTP_CODE="${HTTP_CODE:-200}" CURL_RC="${CURL_RC:-0}" \
         "$TEST_SHELL" "$CTL" "$@" >"$work/stdout" 2>"$work/stderr"
     rc=$?
@@ -186,15 +279,91 @@ echo "a wrong new password on a saved network keeps its autoconnect"
 setup
 SAVED="Rehearsal" ACTIVE="The Studio" FAIL_UP="uuid-Rehearsal" PRIOR_AC=no \
     run_with_stdin 'wrongpass' connect Rehearsal
-check "autoconnect goes back to what it was" yes \
-    "$(has 'connection modify uuid uuid-Rehearsal connection.autoconnect no' "$work/nmcli-args")"
+check "autoconnect is turned off in memory only" yes \
+    "$(has 'connection modify --temporary uuid uuid-Rehearsal connection.autoconnect no' "$work/nmcli-args")"
+check "nothing is saved to the stored profile" no \
+    "$(has 'connection modify uuid uuid-Rehearsal' "$work/nmcli-args")"
+check "the copy in memory is dropped" no \
+    "$([ -e "$work/mem/uuid-Rehearsal" ] || [ -e "$work/run/system-connections/uuid-Rehearsal.nmconnection" ] && echo yes || echo no)"
+check "and NetworkManager loads the stored profile again" yes \
+    "$(has "connection load $work/run/system-connections/uuid-Rehearsal.nmconnection" "$work/nmcli-args")"
 check "the saved profile is kept" no \
     "$(has 'connection delete' "$work/nmcli-args")"
+teardown
+
+# A typed key for a saved network used to be handed only to an agent, and
+# NetworkManager asks none while it holds a key: the join went up on the
+# stored key and then stored the typed one over it, wrong or not (#1872).
+echo "a wrong key typed for a saved network whose stored key is right"
+setup
+SAVED="Studio" ACTIVE="Studio" STORED_PSK='right-key' GOOD_KEY='right-key' \
+    run_with_stdin 'notthekey' connect Studio
+check "the join fails" 1 "$rc"
+check "the activation tried the typed key" yes \
+    "$(has 'uuid-Studio [notthekey]' "$work/used-keys")"
+check "the stored key is unchanged" 'right-key' "$(cat "$work/stored/uuid-Studio" 2>/dev/null || printf '%s' 'right-key')"
+check "the typed key is not stored" no "$(has 'notthekey' "$work/nmcli-stdin")"
+check "no copy is left in memory" no \
+    "$([ -e "$work/mem/uuid-Studio" ] && echo yes || echo no)"
+check "the network comes back on its stored key" yes \
+    "$(sed -n '$p' "$work/used-keys" | grep -qxF 'uuid-Studio [right-key]' && echo yes || echo no)"
+check "prints why, then restored" '{"error":"no-connection"}
+{"restored":"Studio"}' "$(cat "$work/stdout")"
+teardown
+
+echo "the right new key typed for a saved network joins on it and is stored"
+setup
+SAVED="Studio" ACTIVE="Studio" STORED_PSK='old-key' GOOD_KEY='new-key' \
+    run_with_stdin 'new-key' connect Studio
+check "the join succeeds" 0 "$rc"
+check "the activation used the typed key" yes \
+    "$(has 'uuid-Studio [new-key]' "$work/used-keys")"
+check "the stored key is the new one" 'new-key' "$(cat "$work/stored/uuid-Studio" 2>/dev/null)"
+check "no copy is left in memory" no \
+    "$([ -e "$work/mem/uuid-Studio" ] && echo yes || echo no)"
+check "autoconnect comes on with it" yes \
+    "$(has 'connection modify uuid uuid-Studio wifi-sec.psk-flags 0 connection.autoconnect yes' "$work/nmcli-args")"
+check "the key is cleared on the copy, not on the stored profile" \
+    'call org.freedesktop.NetworkManager /org/freedesktop/NetworkManager/Settings/uuid-Studio org.freedesktop.NetworkManager.Settings.Connection ClearSecrets' \
+    "$(cat "$work/busctl-args")"
+teardown
+
+echo "a new key with a space at either end for a saved network is used and stored as typed"
+setup
+SAVED="Studio" STORED_PSK='old-key' GOOD_KEY=' edge ' run_with_stdin ' edge ' connect Studio
+check "the join succeeds" 0 "$rc"
+check "the activation used the key as typed" yes "$(has 'uuid-Studio [ edge ]' "$work/used-keys")"
+check "and it is stored as typed" ' edge ' "$(cat "$work/stored/uuid-Studio" 2>/dev/null)"
+check "without the editor" no "$(has 'connection edit' "$work/nmcli-args")"
+teardown
+
+echo "a saved profile whose key cannot be cleared is not joined on its stored key"
+setup
+SAVED="Studio" STORED_PSK='right-key' GOOD_KEY='right-key' BUSCTL_RC=1 \
+    run_with_stdin 'notthekey' connect Studio
+check "the join fails" 1 "$rc"
+check "nothing is activated with the typed key" no "$(has 'passwd-file' "$work/nmcli-args")"
+check "the stored key is unchanged" no "$(has 'notthekey' "$work/nmcli-stdin")"
+check "no copy is left in memory" no \
+    "$([ -e "$work/mem/uuid-Studio" ] && echo yes || echo no)"
 teardown
 
 # Only Forget deletes a saved network (#1817): the owner forgot two good
 # networks after the page blamed their keys, and a join that deleted one on
 # failure would do the same without asking.
+# The copy is told from the stored profile by the stored file's path, so a
+# join whose profile has no path it can read is not tried.
+echo "a saved profile whose stored file cannot be found is not set aside"
+setup
+SAVED="Studio" STORED_PSK='right-key' GOOD_KEY='right-key' NO_FILE=1 \
+    run_with_stdin 'notthekey' connect Studio
+check "the join fails" 1 "$rc"
+check "the profile is not changed in memory" no "$(has 'modify --temporary' "$work/nmcli-args")"
+check "nothing is activated with the typed key" no "$(has 'passwd-file' "$work/nmcli-args")"
+check "no file is loaded" no "$(has 'connection load' "$work/nmcli-args")"
+check "and says why" yes "$(has 'could not find where the saved network is stored' "$work/stderr")"
+teardown
+
 echo "a failed join never deletes a saved network"
 setup
 SAVED="Rehearsal" FAIL_UP="uuid-Rehearsal" STORED_PSK='s3cret' run connect Rehearsal
@@ -307,6 +476,16 @@ check "succeeds" 0 "$rc"
 check "no passwd-file" no "$(has 'passwd-file' "$work/nmcli-args")"
 teardown
 
+# A join that tests a typed key holds the profile with autoconnect off and no
+# key; segno-wifi-retry may have listed it just before.
+echo "activate leaves a profile that may not auto-join alone"
+setup
+SAVED="Studio" PRIOR_AC=no STORED_PSK='s3cret' run activate uuid-Studio
+check "fails" 1 "$rc"
+check "activates nothing" no "$(has 'connection up' "$work/nmcli-args")"
+check "and says why" yes "$(has 'may not auto-join now' "$work/stderr")"
+teardown
+
 echo "activate reports a failed activation"
 setup
 SAVED="Studio" STORED_PSK='s3cret' FAIL_UP="uuid-Studio" run activate uuid-Studio
@@ -333,8 +512,8 @@ setup
 SAVED="Rehearsal" run_with_stdin 'n3w-s3cret' connect Rehearsal
 check "succeeds" 0 "$rc"
 check "nmcli's argv never holds the key" no "$(has 'n3w-s3cret' "$work/nmcli-args")"
-check "the key is stored" yes \
-    "$(has 'set 802-11-wireless-security.psk n3w-s3cret' "$work/nmcli-stdin")"
+check "nor busctl's" no "$(has 'n3w-s3cret' "$work/busctl-args")"
+check "the key is stored" 'n3w-s3cret' "$(cat "$work/stored/uuid-Rehearsal" 2>/dev/null)"
 teardown
 
 echo "a failed join never puts the key in any argv"
