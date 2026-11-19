@@ -38,6 +38,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 | Issue | Thread | Stage | Autonomy | Branch |
 |-------|--------|-------|----------|--------|
+| #1786 | Image fetches meta-flutter's published Flutter 3.50 arm64 engines (release and profile digests) | build | auto | `claude/meta-flutter-engine-1786` |
 | #1850 | Land the trunk on master and retire `claude/segno-integration` | build | merge-gate | `claude/land-trunk-1850` |
 | #1821 | Devlog and RSS feed on segno.aquiles.dev: Markdown entries in `site/log`, built by `site/build_log.py` | in-review | merge-gate | `claude/devlog-1821` |
 | #1795 | NVMe drive drops off the bus mid-recording: the Pi 5 cmdline turns off APST and PCIe ASPM on every link | in-review | blocked-verify | `claude/nvme-power-1795` |
@@ -712,12 +713,6 @@ a take's chains, where it used to hold each effect as it stood at arm.
   needed no change for it. ivi-homescreen is now pinned at upstream v3.0
   `9eeee89`, which has the pixel-ratio and shutdown fixes (#1834); the MSAA
   framebuffer (#1687) is the one patch left.
-- Until meta-flutter publishes the 371f772 engine (their build was queued,
-  runners offline, on 2026-11-12), both engine digests on the branch are
-  from a build of meta-flutter's own workflow on our runner, and only the
-  self-hosted image build can fetch it (the tarball is in its Yocto
-  downloads directory). Swapping in meta-flutter's digests gates the merge
-  of PR #1781.
 - 3.50 adds `--impeller-use-sdfs`: rects, rounded rects, circles, ovals and
   lines drawn from signed distance fields and anti-aliased in the shader.
   Flutter's GTK, macOS and Windows embedders always pass it; the embedder API
