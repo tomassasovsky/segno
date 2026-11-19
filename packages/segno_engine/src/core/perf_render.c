@@ -1880,8 +1880,12 @@ static int le_pr_apply_dub(le_pr_track_build* b, const char* dir,
   const double phase = last->image != NULL
                            ? le_pr_build_phase_at(b, edge->frame)
                            : (double)le_pr_arm_phase(m, arm_track, frames);
+  const int stopped = last->silent;
   le_pr_append_segment(b, edge->frame, phase, image, frames);
   le_pr_mark_heard(b, heard);
+  /* A pass that retires after its track stopped (the drain completes after
+   * the Stop) stays silent (#1170). */
+  if (!b->load_failed) b->segments[b->segment_count - 1].silent = stopped;
   return !b->load_failed;
 }
 
@@ -2028,7 +2032,38 @@ static le_pr_track_build* le_pr_track_open(const char* dir,
     }
     if (build->load_failed) break;
     if (e->cmd.code == LE_CMD_CUT_SOUND) cut_frame = e->frame;
-    if ((e->cmd.code == LE_PLOG_SOURCE_APPLIED || e->cmd.code == LE_PLOG_SOURCE_TRANSPORT) &&
+    if (e->cmd.code == LE_PLOG_SOURCE_TRANSPORT &&
+        e->cmd.restore_log.channel == channel &&
+        e->cmd.restore_log.image_id == 0 &&
+        e->cmd.restore_log.state != LE_TRACK_EMPTY) {
+      /* The snapshot source's Stop or Play (#1170): the material sounding
+       * now, whichever fact loaded it, goes silent or sounds again from the
+       * logged phase. An image source names its own id. */
+      const le_pr_segment* last = &build->segments[build->segment_count - 1];
+      const int32_t state = e->cmd.restore_log.state;
+      const int32_t phase = e->cmd.restore_log.phase;
+      if (restore_id != 0 ||
+          (state != LE_TRACK_PLAYING && state != LE_TRACK_STOPPED) ||
+          (last->image != NULL &&
+           (phase < 0 || phase >= last->image_len))) {
+        build->load_failed = 1;
+        break;
+      }
+      float* const image = last->image;
+      const int32_t image_len = last->image_len;
+      const double anchor =
+          image != NULL ? le_pr_anchor(build, e->frame, phase) : 0.0;
+      le_pr_append_segment(build, e->frame, 0, NULL, 0);
+      if (build->load_failed) break;
+      le_pr_segment* seg = &build->segments[build->segment_count - 1];
+      seg->owns_image = 0;
+      seg->image = image;
+      seg->image_len = image_len;
+      seg->rate = le_pr_rate(build, image_len);
+      seg->phase0 = anchor;
+      seg->silent = state == LE_TRACK_STOPPED;
+      seg->snap_in = seg->silent && e->frame == cut_frame;
+    } else if ((e->cmd.code == LE_PLOG_SOURCE_APPLIED || e->cmd.code == LE_PLOG_SOURCE_TRANSPORT) &&
         e->cmd.restore_log.channel == channel) {
       const int initial = e->cmd.code == LE_PLOG_SOURCE_APPLIED;
       const uint32_t id = e->cmd.restore_log.image_id;
@@ -2482,15 +2517,13 @@ static void le_pr_seed_channels(le_fx_state* fx, const le_json_value* effects,
  * the lane, the track-addressed LE_CMD_SET_MUTE and LE_CMD_SET_OUTPUT_MASK,
  * which map to lane 0, and the track gain LE_CMD_SET_VOLUME, which scales
  * every lane — engine_process.c). The Track stage chain (le_fx_bus) the
- * lanes sum into is not replayed (its commands are manifest-only). It does NOT
- * reconstruct the full RECORDING/PLAYING/STOPPED transport state machine: a
- * manual stop-then-resume of an already-recorded track mid-performance is
- * out of scope here (matching this part's fixed golden-parity protocol,
- * which already excludes monitor inputs, plugin slots, and pre-arm FX tails
- * BY CONSTRUCTION rather than widening tolerance) — content presence (from
- * `dry`, which carries the play and tail fades of the transport facts it
- * does replay) is this render's only audibility gate beyond mute, solo and
- * Cut (which silences at once, live and here). */
+ * lanes sum into is not replayed (its commands are manifest-only). The
+ * track's transport arrives through `dry`, which replays every logged Stop
+ * and Play (322/323, the snapshot source's included, #1170) with their play
+ * and tail fades: content presence is this render's only audibility gate
+ * beyond mute, solo and Cut (which silences at once, live and here). Monitor
+ * inputs, plugin slots and pre-arm FX tails stay out of its parity protocol
+ * by construction. */
 /* The render's chains' musical time (le_fx_tempo, #887 part 10): what the
  * live engine runs before its first anchor, 120 BPM in 4/4 from beat 0 at
  * capture frame 0, until the log's first LE_PLOG_FX_TEMPO (version 14). */

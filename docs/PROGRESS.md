@@ -39,11 +39,9 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | Issue | Thread | Stage | Autonomy | Branch |
 |-------|--------|-------|----------|--------|
 | #1834 | ivi-homescreen moves to upstream v3.0 at `9eeee89`, which carries the pixel-ratio and shutdown fixes (upstream #859, #860); their local patches go, the MSAA patch is refreshed, and the shell is built without libseat, so seatd leaves the image | in-review | blocked-verify | `claude/ivi-upstream-1834` |
-| #1843 | Network stack as on Raspberry Pi OS: NetworkManager on wpa_supplicant, dnsmasq and Avahi (DNS follows in #1849) | in-review | merge-gate | `claude/pios-network-1843` |
 | #1850 | Land the trunk on master and retire `claude/segno-integration` | build | merge-gate | `claude/land-trunk-1850` |
 | #1821 | Devlog and RSS feed on segno.aquiles.dev: Markdown entries in `site/log`, built by `site/build_log.py` | in-review | merge-gate | `claude/devlog-1821` |
 | #1795 | NVMe drive drops off the bus mid-recording: the Pi 5 cmdline turns off APST and PCIe ASPM on every link | in-review | blocked-verify | `claude/nvme-power-1795` |
-| #1740 | Penpot: the Effects page frames for the compact single-effect card and the built-in pedal faces (#1754, PR #1756 merged) and the cards' assignment lines (#1757, #1760), the Source-note clean-up and a segno-design snapshot; waits for a connected Penpot MCP tab | build | merge-gate | (none yet) |
 | #1797 | A finished export to a FAT stick is on the device: copies and the export end with a volume sync | in-review | blocked-verify | `claude/usb-export-durable-1797` |
 | #1760 | A rack card names the controls bound to the rack itself; a switch's press and hold on one target read as one control | in-review | auto | `claude/rack-card-assignment-1760` |
 | #1674 | Anti-aliasing under Impeller: ivi-homescreen renders into a 4x MSAA framebuffer and resolves it before each flip | in-review | auto | `claude/ivi-msaa-1674` |
@@ -96,6 +94,30 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 ---
 
+## November 2026 Lane chains sleep on empty tracks (#1870)
+
+- A lane chain on an EMPTY track stops running once its output has stayed
+  under `LE_FX_DRAIN_FLOOR` for its whole tail (`le_lane_chain_sleeps` in
+  `engine_process.c`, `le_fx_chain_quiet_frames` in `engine_fx.c`): 50 ms
+  plus the drain horizon of every entry that holds a tail, summed. The track
+  then takes the idle skip and needs no job. Counted only while the track is
+  EMPTY, so a Clear's Post tail drains first. A chain with a hosted plugin
+  never sleeps.
+- It runs again, from its own state, when the track leaves EMPTY or the
+  chain is edited (`a_fx_gen`). A take recorded after a sleep plays exactly
+  as one through a chain kept awake (`test_engine_lane_chain_sleep.h`).
+  `le_fx_state.out_loud`, set by `le_fx_note_output` where a lane's chain
+  runs (the mixer, the track job, the lane flush) on a frame at or over the
+  floor, is what the snapshot reads; the horizon is computed once per chain
+  edit.
+- Monitor chains are untouched, so the first note played is never clipped.
+- Why the engine and not the app: the app keeps an inherited chain on a
+  track undone back to empty for Redo, and a Clear's Post tail drains
+  through the chain.
+- Console (Pi 5, 48 kHz / 32, idle stage, four empty tracks, the rig's
+  three inherited lane chains): `segno-audio` 99.3 → 75.5 µs a period, each
+  fx worker 26 → 10.5 µs and woken every other period; total 150.8 → 96.6.
+
 ## November 2026 The network stack is Raspberry Pi OS's (#1843)
 
 - NetworkManager drives the radio through wpa_supplicant, as on Raspberry Pi
@@ -126,7 +148,8 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   `no-secrets`.
 - `segno-wifi-ctl connect` reads wpa_supplicant's lines for the attempt:
   `wrong-password` only after "WPA: 4-Way Handshake failed - pre-shared key
-  may be incorrect"; `CTRL-EVENT-ASSOC-REJECT status_code=16` (#1816) and
+  may be incorrect", and only for a key that has not connected on that
+  profile (#1816); `CTRL-EVENT-ASSOC-REJECT status_code=16` (#1816) and
   "Authentication with ... timed out." (#470) are `no-connection`.
 - Still different: systemd-resolved instead of NetworkManager writing
   `/etc/resolv.conf` (#1849, which needs a test image).

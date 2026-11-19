@@ -10392,7 +10392,8 @@ static int poll_file_reaches_size_for_test(const char* path, long min_bytes,
  * on-disk format, not just the in-memory ring. ---- */
 #define LE_TEST_EVENTS_HEADER_BYTES 12
 #define LE_TEST_EVENTS_ENTRY_BYTES 28
-/* The version perf_drain.c writes today. 9 = LE_PLOG_TRANSPOSE and 8 =
+/* The version perf_drain.c writes today. 18 = the snapshot source's 323
+ * (#1170); 9 = LE_PLOG_TRANSPOSE and 8 =
  * LE_PLOG_SPEED (#1179); 7 =
  * Reverse and Peel (#1162, #1164); 6 = every callback-applied history
  * image logs 322 and LE_CMD_UNDO_TO_EMPTY is raw-logged (#1143); 5 = applied
@@ -10401,7 +10402,7 @@ static int poll_file_reaches_size_for_test(const char* path, long min_bytes,
  * (#405); 2 = an aborted take logs LE_PLOG_RECORD_ABORT; 1 = it logged a
  * RECORD_END (every capture written before #264). See the format doc's "What
  * `version` means". */
-#define LE_TEST_EVENTS_VERSION 17
+#define LE_TEST_EVENTS_VERSION 18
 
 static size_t read_binary_file_for_test(const char* path, unsigned char* out,
                                         size_t cap) {
@@ -39778,6 +39779,7 @@ static void test_session_commit_stays_stopped_until_play(void) {
 #include "test_engine_heard_post.h"
 #include "test_engine_trk_jobs.h"
 #include "test_engine_post_tail_stopped.h"
+#include "test_engine_lane_chain_sleep.h"
 #include "test_engine_overdub_stop_park.h"
 
 /* le_platform_name_thread names the thread that calls it (#1563): per-thread
@@ -39865,6 +39867,7 @@ int main(void) {
   SHARD(run_fx_workers_tests);
   SHARD(run_trk_jobs_tests);
   SHARD(run_post_tail_stopped_tests);
+  SHARD(run_lane_chain_sleep_tests);
   SHARD(run_overdub_stop_park_tests);
   if (getenv("SEGNO_FX_WORKERS_TESTS_ONLY")) return g_failures ? 1 : 0;
   if (getenv("SEGNO_FADE_STAGING_TESTS_ONLY")) {

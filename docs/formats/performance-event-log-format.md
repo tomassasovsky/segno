@@ -61,6 +61,7 @@ when the 28-byte record does.
 | `15`     | The pitch bridge (#1675): `LE_PLOG_SOURCE_LEN` (331) carries a second field, `bridge`, 1 when the source it names (the take, or a plain Transpose render of the take's length) plays through the pitch bridge while the track's stretch render is pending or refused. The bridge is a real-time WSOLA stretch (`engine_bridge.h`) that keeps the track's pitch at the head's timing; the renderer replays it on lane 0 from the next 328 with the callback's arithmetic, its grains on the engine clock (`perf_arm_fx_clock + frame`) and laid on the head at capture frame 0 and wherever the bridge starts. A version-14 file has 0 there: the pending take plays through the varispeed head. |
 | `16`     | The heard image (#1713): `LE_PLOG_HEARD_SOURCE` (333, `lanei` `{channel, lane, value}`) names what a lane that holds a heard image plays from a block's first frame: 1 its image, 0 its clean take through its chain (source CLEAN), 2 its clean take because its source render cannot play the image at the track's pitch yet (a Transpose or stretch render made before the image was). Logged for every such lane at its first block after `PERF_ARM` and at every change. The renderer plays lane 0's heard image (from the layer files' heard section and the snapshots' `heardPcmRef`) where it sounds and the source is 1, with the chain idle, and crossfades over 10 ms (`sample_rate / 100` frames) at every change of value (2 fades to the clean take as 0 does), settling the chain to bypass on leaving the image, as the callback does. A version-15 file has none: a heard image, if any, plays as source 1. |
 | `17`     | Lane count (#1824): `LE_CMD_SET_LANE_COUNT` (74, `lanei` `{channel, 0, count}`) names how many lanes a track mixes, for every track at `PERF_ARM` and at every change that applies (a lane added, or an empty one removed, by a count or a mix). The renderer renders every lane of a track to its own stems, and silences a lane while it is at or past the count: the callback neither mixes it nor runs its chain. A version-16 file has no count, and every lane renders as mixed throughout. |
+| `18`     | The snapshot source's transport (#1170): `323` with image ID zero and state `PLAYING` or `STOPPED` is a Stop or Play of a track sounding the arm snapshot, or a take or layer recorded in the capture. A track stopped at `PERF_ARM` logs its Stop at capture frame 0, an overdub started on a stopped track logs its Play, and a finalize into `STOPPED` logs its Stop. The renderer silences the current material from the fact, with the Stop's fade-out (#1400), and a layer that retires after the Stop stays silent. A version-17 reader keeps such a track sounding to the end of the capture. |
 
 Neither reader in this repo (`perf_render.c`'s `le_pr_load_log`, the Dart
 `EventLogReader`) gates on the field — both check the magic and skip these four
@@ -396,6 +397,17 @@ frame, but a lane `k >= 1` may mix the new slot up to one frame before it
 (the live pool slot is published per lane, not per track). Nothing logs that
 frame, so a lane `k >= 1`'s stem may switch one frame later than the lane
 did.
+
+From version 18, `323` with image ID zero and state `PLAYING` or `STOPPED`
+is the snapshot source's own transport (#1170): the arm snapshot, or a take
+or retired layer recorded in the capture, has no staged image, so its Stop
+and Play edges carry image 0. Only the edges are logged; the snapshot
+source's phase stays with the arm, record and retire facts. A track stopped
+at `PERF_ARM` logs its Stop at capture frame 0, an overdub on a stopped track
+logs its Play, and recording otherwise leaves the source sounding, as a
+reader plays a finished take. The reader applies the fact to whatever
+material the channel sounds at that frame and fails the stem if a staged
+image is current instead.
 
 Code `323` with image ID zero and state EMPTY means provenance was lost: a
 slot became live without a staged image (staging refused or the id space

@@ -356,6 +356,182 @@ static void test_gate_fade_render_matches_live_stop_and_play(void) {
   le_engine_destroy(e);
 }
 
+/* The live output against the stem, frame by frame; the mismatches. */
+static int gf_stem_mismatches(const float* live, const float* replay,
+                              int frames) {
+  int bad = 0;
+  for (int i = 0; i < frames; ++i) {
+    if (fabsf(replay[i] - live[i]) > 1e-3f) {
+      if (bad == 0) {
+        printf("  first mismatch at %d: live %.4f replay %.4f\n", i, live[i],
+               replay[i]);
+      }
+      bad++;
+    }
+  }
+  return bad;
+}
+
+/* The arm snapshot's Stop and Play replay too (#1170): the take imported
+ * before the arm logs no image, so its 323 carries image 0. A Stop fades out
+ * and stays silent, a Play inside the fade fades in over the tail, and a Play
+ * after it resumes from the held index. */
+static void test_gate_fade_render_matches_live_snapshot_stop_and_play(void) {
+  printf("test_gate_fade_render_matches_live_snapshot_stop_and_play\n");
+  const int len = 1000;
+  le_engine* e = reverse_fixture(48000, len, len);
+  const char* dir = render_test_dir("gate-fade-snapshot");
+  CHECK(perf_arm_dir(e, dir) == LE_OK);
+  drain(e);
+  static float live[4000], replay[4000];
+  rev_process(e, live, 300, 512);
+  CHECK(le_engine_stop_track(e, 0) == LE_OK);
+  rev_process(e, live + 300, 200, 512);
+  CHECK(le_engine_play(e, 0) == LE_OK);
+  rev_process(e, live + 500, 800, 512);
+  CHECK(le_engine_stop_track(e, 0) == LE_OK);
+  rev_process(e, live + 1300, 900, 512);
+  CHECK(le_engine_play(e, 0) == LE_OK);
+  rev_process(e, live + 2200, 700, 512);
+  CHECK(le_perf_disarm(e) == LE_OK);
+  CHECK(live[1300] != 0.0f && live[1300 + 480] == 0.0f);
+  CHECK(live[2199] == 0.0f && live[2201] != 0.0f);
+  rev_render_track_wav(e, dir, len);
+  const int frames = test_read_wet_stem(dir, 0, replay, 4000);
+  CHECK(frames == 2900);
+  for (int i = 1300 + 480; i < 2200; ++i) CHECK(replay[i] == 0.0f);
+  CHECK(gf_stem_mismatches(live, replay, frames) == 0);
+  le_engine_destroy(e);
+}
+
+/* A track already stopped when the capture arms is silent in the stem until
+ * its Play (#1170): the arm logs the Stop at capture frame 0. */
+static void test_gate_fade_render_matches_live_stopped_at_arm(void) {
+  printf("test_gate_fade_render_matches_live_stopped_at_arm\n");
+  const int len = 1000;
+  le_engine* e = reverse_fixture(48000, len, len);
+  CHECK(le_engine_stop_track(e, 0) == LE_OK);
+  static float live[4000], replay[4000];
+  rev_process(e, live, 600, 512); /* the Stop's fade is over */
+  const char* dir = render_test_dir("gate-fade-stopped-arm");
+  CHECK(perf_arm_dir(e, dir) == LE_OK);
+  drain(e);
+  rev_process(e, live, 700, 512);
+  CHECK(le_engine_play(e, 0) == LE_OK);
+  rev_process(e, live + 700, 900, 512);
+  CHECK(le_perf_disarm(e) == LE_OK);
+  CHECK(live[699] == 0.0f && live[701] != 0.0f);
+  rev_render_track_wav(e, dir, len);
+  const int frames = test_read_wet_stem(dir, 0, replay, 4000);
+  CHECK(frames == 1600);
+  for (int i = 0; i < 700; ++i) CHECK(replay[i] == 0.0f);
+  CHECK(gf_stem_mismatches(live, replay, frames) == 0);
+  le_engine_destroy(e);
+}
+
+/* An overdub on the stopped snapshot is its Play, and a Stop out of the
+ * overdub stays silent through the pass's retire (#1170). The input is
+ * silence, so the retired layer is the ramp again. */
+static void test_gate_fade_render_matches_live_snapshot_overdub(void) {
+  printf("test_gate_fade_render_matches_live_snapshot_overdub\n");
+  const int len = 1000;
+  le_engine* e = reverse_fixture(48000, len, len);
+  const char* dir = render_test_dir("gate-fade-snapshot-dub");
+  CHECK(perf_arm_dir(e, dir) == LE_OK);
+  drain(e);
+  static float live[4000], replay[4000];
+  rev_process(e, live, 300, 512);
+  CHECK(le_engine_stop_track(e, 0) == LE_OK);
+  rev_process(e, live + 300, 700, 512);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  rev_process(e, live + 1000, 600, 512);
+  le_track_snapshot s;
+  le_engine_get_track(e, 0, &s);
+  CHECK(s.state == LE_TRACK_OVERDUBBING);
+  CHECK(le_engine_stop_track(e, 0) == LE_OK);
+  for (int at = 1600; at < 2500; at += 100) {
+    rev_process(e, live + at, 100, 512);
+    drain(e);
+  }
+  CHECK(le_engine_play(e, 0) == LE_OK);
+  rev_process(e, live + 2500, 500, 512);
+  CHECK(le_perf_disarm(e) == LE_OK);
+  CHECK(live[999] == 0.0f && live[1001] != 0.0f);
+  CHECK(live[1600 + 480] == 0.0f && live[2499] == 0.0f);
+  {
+    char path[700];
+    snprintf(path, sizeof(path), "%s/events.log", dir);
+    static unsigned char buf[262144];
+    const size_t count =
+        log_entry_count(read_binary_file_for_test(path, buf, sizeof(buf)));
+    le_perf_log_entry retired;
+    CHECK(find_log_entry(buf, count, 0, LE_PLOG_LAYER_RETIRED, &retired) >= 0);
+  }
+  rev_render_track_wav(e, dir, len);
+  const int frames = test_read_wet_stem(dir, 0, replay, 4000);
+  CHECK(frames == 3000);
+  for (int i = 300 + 480; i < 1000; ++i) CHECK(replay[i] == 0.0f);
+  for (int i = 1600 + 480; i < 2500; ++i) CHECK(replay[i] == 0.0f);
+  CHECK(gf_stem_mismatches(live, replay, frames) == 0);
+  le_engine_destroy(e);
+}
+
+/* A first take stopped while recording finalizes into STOPPED: live never
+ * sounds it, and neither does the stem (#1170). The defining take's
+ * finalize waits out the seam crossfade, so it lands inside a block. */
+static void test_gate_fade_render_take_stopped_while_recording(void) {
+  printf("test_gate_fade_render_take_stopped_while_recording\n");
+  le_engine* e = le_engine_create();
+  CHECK(le_engine_configure(e, GF_SR, 1, 1, 2 * GF_LEN) == LE_OK);
+  const char* dir = render_test_dir("gate-fade-take-stop");
+  CHECK(perf_arm_dir(e, dir) == LE_OK);
+  drain(e);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  feed_const(e, 0.25f, GF_LEN, NULL, NULL);
+  CHECK(le_engine_stop_track(e, 0) == LE_OK);
+  feed_const(e, 0.0f, GF_LEN, NULL, NULL);
+  CHECK(le_perf_disarm(e) == LE_OK);
+  le_track_snapshot s;
+  le_engine_get_track(e, 0, &s);
+  CHECK(s.state == LE_TRACK_STOPPED && s.settled_take_id > 0);
+  static float pcm[GF_LEN];
+  CHECK(le_engine_export_track(e, 0, pcm, GF_LEN) == GF_LEN);
+  CHECK(pcm[GF_LEN / 2] == 0.25f);
+  char path[700];
+  snprintf(path, sizeof(path), "%s/take.wav", dir);
+  test_write_wav_mono(path, pcm, GF_LEN, GF_SR);
+  snprintf(path, sizeof(path), "%s/performance.json", dir);
+  char* json = malloc(1024 * 1024);
+  CHECK(json != NULL && read_file_for_test(path, json, 1024 * 1024) > 0);
+  char* end = json != NULL ? strrchr(json, '}') : NULL;
+  CHECK(end != NULL);
+  if (end != NULL) {
+    FILE* f = fopen(path, "wb");
+    CHECK(f != NULL);
+    if (f != NULL) {
+      fwrite(json, 1, (size_t)(end - json), f);
+      fprintf(f,
+              ",\"armSnapshot\":{\"followOutput\":false,\"captureMask\":1,"
+              "\"tracks\":[]},\"disarmSnapshot\":{\"tracks\":[{\"channel\":0,"
+              "\"lanes\":[{\"lane\":0,\"deferred\":false,\"takeId\":%d,"
+              "\"pcmRef\":\"take.wav\"}]}]}}",
+              s.settled_take_id);
+      CHECK(fclose(f) == 0);
+    }
+  }
+  free(json);
+  CHECK(le_perf_render_begin(e, dir) == LE_OK);
+  test_wait_for_render(e, 5000);
+  static float stem[4 * GF_LEN];
+  const int frames = test_read_wet_stem(dir, 0, stem, 4 * GF_LEN);
+  CHECK(frames > GF_LEN);
+  int loud = 0;
+  for (int i = 0; i < frames; ++i) loud += stem[i] != 0.0f;
+  if (loud) printf("  %d loud frames\n", loud);
+  CHECK(loud == 0);
+  le_engine_destroy(e);
+}
+
 /* Cut all sound stays a cut: it silences at once rather than fading, so no
  * Stop fade-out feeds the chains whose tails it clears. A Post delay on the
  * lane does not ring after it. */
@@ -417,4 +593,8 @@ static void run_gate_fade_tests(void) {
   test_gate_fade_stop_then_play_inside_the_fade();
   test_gate_fade_render_matches_live_mute_and_solo();
   test_gate_fade_render_matches_live_stop_and_play();
+  test_gate_fade_render_matches_live_snapshot_stop_and_play();
+  test_gate_fade_render_matches_live_stopped_at_arm();
+  test_gate_fade_render_matches_live_snapshot_overdub();
+  test_gate_fade_render_take_stopped_while_recording();
 }

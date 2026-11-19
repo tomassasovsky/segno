@@ -35,17 +35,39 @@ setup() {
     mkdir -p "$work/bin"
     : > "$work/nmcli-args"
     : > "$work/journalctl-args"
+    : > "$work/journalctl-watch"
 
     # nmcli that creates the profile and then fails activation with $UP_ERROR,
-    # NM's wording for this case. `device wifi list` answers $LIST.
+    # NM's wording for this case. `device wifi list` answers $LIST. With
+    # SAVED_TS set, SomeNetwork is already saved: its connection.timestamp is
+    # SAVED_TS (0 until it has connected) and its stored key SAVED_PSK.
     cat > "$work/bin/nmcli" <<STUB
 #!/bin/sh
 echo "\$@" >> "$work/nmcli-args"
+saved=\${SAVED_TS:+5a7ed000-0000-4000-8000-000000001859}
 case "\$*" in
+    *"-t -f UUID,TYPE connection show") [ -n "\$saved" ] && echo "\$saved:802-11-wireless" ;;
+    *"-g connection.id connection show uuid "*|*"-g 802-11-wireless.ssid connection show uuid "*)
+        echo SomeNetwork ;;
+    *"-g connection.timestamp connection show uuid "*) echo "\$SAVED_TS" ;;
+    *"-g 802-11-wireless-security.psk connection show uuid "*) echo "\${SAVED_PSK:-}" ;;
+    *"-g connection.autoconnect connection show uuid "*) echo yes ;;
     *"device wifi list"*) [ -n "\${LIST:-}" ] && printf '%s\n' "\$LIST" ;;
     *"connection up"*)
+        # UP_HOLD: the activation runs until it is taken down, as
+        # NetworkManager's does while wpa_supplicant retries a refused key,
+        # and fails as NM reports a deactivated one. Bounded, so a helper
+        # that never takes it down fails the test instead of hanging it.
+        if [ -n "\${UP_HOLD:-}" ]; then
+            i=0
+            while [ ! -f "$work/down" ] && [ \$i -lt 50 ]; do /bin/sleep 0.1; i=\$((i + 1)); done
+            [ -f "$work/down" ] || { echo "Error: Timeout expired (45 seconds)" >&2; exit 3; }
+            echo "Error: Connection activation failed: The device was disconnected by user or client" >&2
+            exit 4
+        fi
         echo "\${UP_ERROR:-Error: Connection activation failed: Secrets were required, but not provided}" >&2
         exit 4 ;;
+    *"connection down"*) : > "$work/down" ;;
     *"-t -f GENERAL.STATE device show"*)
         echo "GENERAL.STATE:30 (disconnected)" ;;
     *) : ;;
@@ -65,7 +87,12 @@ case "\$*" in
         echo '-- cursor: s=1817;i=42'
         exit 0 ;;
 esac
-echo "\$@" >> "$work/journalctl-args"
+# The join's watch reads wpa_supplicant alone; it is counted apart, so the
+# counts below are the classifier's reads.
+case "\$*" in
+    *NetworkManager*) echo "\$@" >> "$work/journalctl-args" ;;
+    *) echo "\$@" >> "$work/journalctl-watch" ;;
+esac
 if [ -f "$work/journal-late" ] \
     && [ "\$(wc -l < "$work/journalctl-args")" -ge "\${LATE_FROM:-2}" ]; then
     cat "$work/journal-late"
@@ -94,7 +121,9 @@ run_connect() {
     SEGNO_JOURNALCTL="$work/bin/journalctl" \
     SEGNO_WIFI_NM_CONNECT_TIMEOUT=1 \
     SEGNO_JOIN_EVIDENCE_WAIT="${WAIT-0}" LATE_FROM="${LATE_FROM:-2}" \
-    LIST="${LIST:-}" UP_ERROR="${UP_ERROR:-}" \
+    SEGNO_JOIN_WATCH_INTERVAL=0.5 \
+    LIST="${LIST:-}" UP_ERROR="${UP_ERROR:-}" UP_HOLD="${UP_HOLD:-}" \
+    SAVED_TS="${SAVED_TS:-}" SAVED_PSK="${SAVED_PSK:-}" \
     PATH="$work/bin:$PATH" \
         sh "$CTL" connect "SomeNetwork" 2>"$work/stderr" >"$work/stdout"
     rc=$?
@@ -112,6 +141,10 @@ check() {
         fail=$((fail + 1))
     fi
 }
+
+# The classifier's one-second waits for the journal; the join's watch sleeps
+# SEGNO_JOIN_WATCH_INTERVAL (0.5 here) and is not counted.
+waits() { grep -cx 1 "$work/sleeps"; }
 
 # The code the helper printed, or empty.
 code() {
@@ -242,7 +275,7 @@ wlan0: WPA: 4-Way Handshake failed - pre-shared key may be incorrect
 LOG
 WAIT= run_connect
 check "the journal is read again" 2 "$(wc -l < "$work/journalctl-args" | tr -d ' ')"
-check "after one second" 1 "$(wc -l < "$work/sleeps" | tr -d ' ')"
+check "after one second" 1 "$(waits)"
 check "and the wrong key is found" wrong-password "$(code)"
 teardown
 
@@ -278,7 +311,7 @@ teardown
 echo "a failure wpa_supplicant never logs waits 3 s at most"
 setup
 UP_ERROR='Error: Timeout expired (45 seconds)' WAIT= run_connect
-check "three waits of a second" 3 "$(wc -l < "$work/sleeps" | tr -d ' ')"
+check "three waits of a second" 3 "$(waits)"
 check "four reads" 4 "$(wc -l < "$work/journalctl-args" | tr -d ' ')"
 check "then no-connection" no-connection "$(code)"
 teardown
@@ -290,7 +323,7 @@ wlan0: CTRL-EVENT-ASSOC-REJECT bssid=00:00:00:00:00:00 status_code=16
 LOG
 WAIT= run_connect
 check "two reads" 2 "$(wc -l < "$work/journalctl-args" | tr -d ' ')"
-check "one wait" 1 "$(wc -l < "$work/sleeps" | tr -d ' ')"
+check "one wait" 1 "$(waits)"
 check "a failed connection" no-connection "$(code)"
 teardown
 
@@ -302,7 +335,7 @@ wlan0: WPA: 4-Way Handshake failed - pre-shared key may be incorrect
 LOG
 WAIT= run_connect
 check "one read" 1 "$(wc -l < "$work/journalctl-args" | tr -d ' ')"
-check "no wait" 0 "$(wc -l < "$work/sleeps" | tr -d ' ')"
+check "no wait" 0 "$(waits)"
 teardown
 
 echo "a rejected attempt, then a wrong key whose line comes late"
@@ -371,6 +404,144 @@ run_connect
 check "is a wrong password" wrong-password "$(code)"
 check "names the disconnect and the handshake" yes \
     "$(has 'reason=14 / wlan0: WPA: 4-Way Handshake failed' "$work/stderr")"
+teardown
+
+# What an ASUS RT-AX89X logged for a wrong key on 2026-11-18 (#1859): it
+# ends the handshake with reason 2, "previous authentication no longer
+# valid", and wpa_supplicant tries again every 3 s.
+refused_twice() {
+    logged <<'LOG'
+wlan0: Trying to associate with 58:11:22:34:39:1c (SSID='SomeNetwork' freq=5200 MHz)
+wlan0: Associated with 58:11:22:34:39:1c
+wlan0: CTRL-EVENT-DISCONNECTED bssid=58:11:22:34:39:1c reason=2
+wlan0: WPA: 4-Way Handshake failed - pre-shared key may be incorrect
+wlan0: CTRL-EVENT-SSID-TEMP-DISABLED id=0 ssid="SomeNetwork" auth_failures=1 duration=10 reason=WRONG_KEY
+wlan0: Trying to associate with 58:11:22:34:39:1c (SSID='SomeNetwork' freq=5200 MHz)
+wlan0: Associated with 58:11:22:34:39:1c
+wlan0: CTRL-EVENT-DISCONNECTED bssid=58:11:22:34:39:1c reason=2
+wlan0: WPA: 4-Way Handshake failed - pre-shared key may be incorrect
+wlan0: CTRL-EVENT-SSID-TEMP-DISABLED id=0 ssid="SomeNetwork" auth_failures=2 duration=20 reason=WRONG_KEY
+LOG
+}
+
+echo "an access point that refuses the key twice with reason 2"
+setup
+refused_twice
+UP_ERROR='Error: Timeout expired (45 seconds)' run_connect
+check "is a wrong password" wrong-password "$(code)"
+check "names the refusal" yes \
+    "$(has 'reason=2 / wlan0: WPA: 4-Way Handshake failed' "$work/stderr")"
+teardown
+
+echo "one reason-2 drop in the handshake is not the key"
+setup
+logged <<'LOG'
+wlan0: Associated with 58:11:22:34:39:1c
+wlan0: CTRL-EVENT-DISCONNECTED bssid=58:11:22:34:39:1c reason=2
+wlan0: WPA: 4-Way Handshake failed - pre-shared key may be incorrect
+wlan0: CTRL-EVENT-ASSOC-REJECT bssid=58:11:22:34:39:1c status_code=16
+LOG
+UP_ERROR='Error: Timeout expired (45 seconds)' run_connect
+check "is a failed connection" no-connection "$(code)"
+teardown
+
+echo "two drops of wpa_supplicant's own are not the key"
+setup
+logged <<'LOG'
+wlan0: CTRL-EVENT-DISCONNECTED bssid=58:11:22:34:39:1c reason=3 locally_generated=1
+wlan0: WPA: 4-Way Handshake failed - pre-shared key may be incorrect
+wlan0: CTRL-EVENT-DISCONNECTED bssid=58:11:22:34:39:1c reason=3 locally_generated=1
+wlan0: WPA: 4-Way Handshake failed - pre-shared key may be incorrect
+LOG
+run_connect
+check "is a failed connection" no-connection "$(code)"
+teardown
+
+echo "the join ends at the second refusal, not at NetworkManager's timeout"
+setup
+refused_twice
+UP_HOLD=1 run_connect
+check "fails" 1 "$rc"
+check "takes the activation down" yes "$(called_with 'connection down uuid')"
+check "is a wrong password" wrong-password "$(code)"
+check "says why it ended the join" yes "$(has 'the access point refused the key; ending the join' "$work/stderr")"
+check "the watch reads wpa_supplicant from the join's start" yes \
+    "$(grep -qF -- '--after-cursor s=1817;i=42 --no-pager -o cat -t wpa_supplicant' "$work/journalctl-watch" && echo yes || echo no)"
+teardown
+
+echo "a join the access point has not refused runs to NetworkManager's end"
+setup
+logged <<'LOG'
+wlan0: Associated with 58:11:22:34:39:1c
+wlan0: CTRL-EVENT-DISCONNECTED bssid=58:11:22:34:39:1c reason=2
+wlan0: WPA: 4-Way Handshake failed - pre-shared key may be incorrect
+LOG
+UP_HOLD=1 run_connect
+check "does not take it down" no "$(called_with 'connection down uuid')"
+check "is a failed connection" no-connection "$(code)"
+teardown
+
+# --- a key that has connected before (#1816) --------------------------------
+
+echo "a saved network refuses the key it has connected with"
+setup
+# After a radio restart the RT-AX89X refused the right key with reason 2
+# for 44 minutes (2026-11-18). Android counts a refusal as a wrong password
+# only on a network that has never connected.
+refused_twice
+KEY= SAVED_TS=1795051833 SAVED_PSK=hunter2000 UP_HOLD=1 run_connect
+check "fails" 1 "$rc"
+check "is not watched" 0 "$(wc -l < "$work/journalctl-watch" | tr -d ' ')"
+check "is not taken down" no "$(called_with 'connection down uuid')"
+check "is a failed connection, not a password" no-connection "$(code)"
+teardown
+
+echo "a saved network refuses the stored key typed again"
+setup
+refused_twice
+SAVED_TS=1795051833 SAVED_PSK=hunter2000 UP_HOLD=1 run_connect
+check "is not taken down" no "$(called_with 'connection down uuid')"
+check "is a failed connection" no-connection "$(code)"
+teardown
+
+echo "a saved network refuses a new key"
+setup
+refused_twice
+SAVED_TS=1795051833 SAVED_PSK=the-old-key UP_HOLD=1 run_connect
+check "takes the activation down" yes "$(called_with 'connection down uuid')"
+check "is a wrong password" wrong-password "$(code)"
+teardown
+
+echo "a saved network that never connected refuses its stored key"
+setup
+refused_twice
+KEY= SAVED_TS=0 SAVED_PSK=hunter2000 UP_HOLD=1 run_connect
+check "takes the activation down" yes "$(called_with 'connection down uuid')"
+check "is a wrong password" wrong-password "$(code)"
+teardown
+
+echo "a join whose handshake completed is not taken down"
+setup
+# 23:14:13 on 2026-11-18: one refusal, then the same key connected, and the
+# watch took the connection down 0.2 s later.
+logged <<'LOG'
+wlan0: CTRL-EVENT-DISCONNECTED bssid=58:11:22:34:39:1c reason=2
+wlan0: WPA: 4-Way Handshake failed - pre-shared key may be incorrect
+wlan0: Associated with 58:11:22:34:39:1c
+wlan0: CTRL-EVENT-CONNECTED - Connection to 58:11:22:34:39:1c completed [id=0 id_str=]
+wlan0: CTRL-EVENT-DISCONNECTED bssid=58:11:22:34:39:1c reason=2
+wlan0: WPA: 4-Way Handshake failed - pre-shared key may be incorrect
+LOG
+UP_HOLD=1 run_connect
+check "is not taken down" no "$(called_with 'connection down uuid')"
+check "is not a wrong password" no-connection "$(code)"
+teardown
+
+echo "an open network's join is not watched"
+setup
+refused_twice
+KEY= run_connect
+check "no watch reads" 0 "$(wc -l < "$work/journalctl-watch" | tr -d ' ')"
 teardown
 
 echo "another interface's failure says nothing about this join"

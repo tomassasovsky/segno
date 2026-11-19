@@ -112,6 +112,20 @@ check "wpa_supplicant is not masked" no \
 check "the image refuses iwd" yes \
     "$(yesno grep -qx 'PACKAGE_EXCLUDE += "iwd"' "$IMAGE")"
 
+# --- journald is the only log ----------------------------------------------
+
+echo "journald is the only log, as on Raspberry Pi OS"
+# A syslog daemon takes /dev/log from journald, and the wpa_supplicant lines
+# segno-wifi-ctl reads then never reach the journal (#1857).
+check "no syslog daemon is recommended into the image" yes \
+    "$(yesno grep -qx '    VIRTUAL-RUNTIME_base-utils-syslog = ""' "$KAS")"
+check "the image refuses busybox-syslog" yes \
+    "$(yesno grep -qx 'PACKAGE_EXCLUDE += "busybox-syslog"' "$IMAGE")"
+check "journald forwards to no syslog daemon" ForwardToSyslog=no \
+    "$(grep -E '^ForwardToSyslog=' "$FILES/journald-segno.conf")"
+check "no other syslog daemon is asked for" "" \
+    "$(settings 'IMAGE_INSTALL.*(busybox-syslog|rsyslog|sysklogd|syslog-ng)')"
+
 # --- the recipe and its files agree ----------------------------------------
 
 echo "every file the bundle recipe names exists, and none is left over"
