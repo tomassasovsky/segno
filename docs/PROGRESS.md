@@ -59,11 +59,32 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1540 | Drive pedals' aliasing at 48 kHz: four kinds oversampled (#1552); the owner's blind pairs decide whether the built-in Drive is oversampled too | build | plan-gate | `claude/drive-alias-1540` |
 | #1498 | Restart and shut down also wait for RAUC's own install, after an app restart | in-review | blocked-verify | `claude/rauc-power-gate-1498` |
 | #1755 | Every effect cheaper without changing its sound: pitch (#1764, #1770), drives (#1759), reverbs/delays/filters (#1762) and the Vinyl (#1904, part 4) bit-identical; part 5, the Degrade at 96 kHz, is next (scope on the issue) | build | auto | `claude/fx-opt-part5-1755` |
-| #1724 | Effects budget from the console's measured headroom: the track-job charge re-measured without the sampling script's perturbation (500 to 200 ns a frame); Ed's Racks on all four inputs and all eight tracks now fit at 48 kHz / 32 | in-review | auto | `claude/fx-headroom-1724-p2` |
+| #1724 | Effects budget from the app's measured headroom: 10-minute untraced in-app ladder at 48 kHz / 32 (build 279); track job 200 → 300 ns, chains on the callback charged 2.5× (`kFxSerialFactor`); 4 inputs + 7 tracks or + 1 output rack fit | in-review | auto | `claude/fx-headroom-1724-p3` |
 | #1515 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track and lane chains) is #1729 | build | plan-gate | `claude/fx-multicore-1515-p1b` |
 | #1816 | Console WiFi against an ASUS RT-AX89X with 802.11ax on: firmware already matches Pi OS; brcmfmac options aligned with Pi OS and a troubleshooting note; failure not reproduced, issue stays open until it recurs | in-review | auto | `claude/wifi-firmware-1816` |
 
 ---
+
+## November 2026 The effects budget from the app (#1724)
+
+- The bar (the owner's): no dropout over ten minutes in the app, nothing
+  traced, four takes playing on the stage, a take recorded at 2 and 7.5
+  minutes and a screen change (Settings, the Device page, back) at 5; the
+  budget admits one rig fewer than the heaviest that passes. Dropouts and
+  late periods are the engine's own counters, read from the app's memory.
+- Tracing `sched_switch` on every core made periods late (Ed's Racks on 4
+  inputs and 6 tracks: 7 traced, 0 untraced), and so does opening a screen:
+  the Device page added 14 late periods at 4 + 6.
+- Build 279, 48 kHz / 32, two workers, Ed's Rack on the four inputs and:
+  7 tracks, no dropout (40 late); 8 tracks, none (144 late); 3 racks in
+  series on output pair 0, 1 dropout at the screen change (318 late);
+  6 tracks and 1 output rack, 1 at the screen change (309 late); 2 output
+  racks, none (11 late).
+- `kFxTrackJobNs` 200 → 300 ns (7 tracks admitted, 8 refused) and
+  `kFxSerialFactor` 2.5 on All tracks and the outputs (1 output rack
+  admitted, 2 refused). The share stays 77 %. Only 48 kHz / 32 was run;
+  96 kHz / 64 is next, and #1914 (the app's extra time on the callback)
+  should raise both figures, after which the ladder runs again.
 
 ## November 2026 The track-job charge from clean console runs (#1724)
 
