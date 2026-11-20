@@ -316,10 +316,17 @@ const int kFxTrackJobNs = 300;
 /// periods), though the rule before this charged them at 91 %, under the
 /// eight tracks' 96 % that ran clean; two ran with no dropout. So one is
 /// admitted and two refused: a factor from 1.76 to 3.51 does that, and 2.5
-/// sits near the middle. The racks on the tracks fit beside one rack on
-/// the output's chain only up to [kFxTrackJobNs]'s margin less its charge.
-/// #1914 is removing the callback's own extra work in the app, after which
-/// this is measured again.
+/// sits near the middle. Beside the four input racks and one on the
+/// output's chain, racks then fit on two tracks and not on three (98 % and
+/// 106 %).
+///
+/// It was measured only at 48 kHz / 32 and applies at every setting, and
+/// with no workers too: there the jobs run on the callback beside the
+/// serial chains and charge their cost, as the no-worker runs of #1746
+/// measured, while a chain on the callback in the app was only measured
+/// with the workers running, so it keeps the factor rather than lose it
+/// unmeasured. #1914 is removing the callback's own extra work in the app,
+/// after which this is measured again.
 const double kFxSerialFactor = 2.5;
 
 /// What the effects charge the audio thread's worst block, in nanoseconds

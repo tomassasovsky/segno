@@ -845,6 +845,9 @@ void main() {
       expect(load(4, 8), greaterThan(budget));
       expect(load(4, 0, outputs: 1), lessThanOrEqualTo(budget));
       expect(load(4, 0, outputs: 2), greaterThan(budget));
+      // Beside the four and one on the output: two tracks, not three.
+      expect(load(4, 2, outputs: 1), lessThanOrEqualTo(budget));
+      expect(load(4, 3, outputs: 1), greaterThan(budget));
       // The rigs that dropped out are refused too.
       expect(load(4, 0, outputs: 3), greaterThan(budget));
       expect(load(4, 6, outputs: 1), greaterThan(budget));
