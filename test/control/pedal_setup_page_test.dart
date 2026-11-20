@@ -629,8 +629,8 @@ void main() {
         expect(control.state.pedalSetup, stored);
       });
 
-      testWidgets('Restore after a default and then a Clear still puts the '
-          'first map back', (tester) async {
+      testWidgets('Restore after a default and then a Clear puts back the '
+          'map the Clear took, the default', (tester) async {
         await openDialog(tester);
         await tester.tap(find.byKey(useDefault));
         await tester.pumpAndSettle();
@@ -642,7 +642,7 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(save));
         await tester.pumpAndSettle();
-        expect(control.state.pedalSetup, stored);
+        expect(control.state.pedalSetup, stored.withDefaultCustom());
       });
 
       testWidgets('Cancel discards it', (tester) async {

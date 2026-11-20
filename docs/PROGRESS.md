@@ -81,7 +81,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   on Custom.
 - Settings > Pedals > Custom controls: the Clear custom assignments dialog
   has a second action, `Use default assignments`. It replaces the draft's
-  Custom map; Restore puts back the map from before the first Clear or
+  Custom map; Restore puts back the map from before the latest Clear or
   default; nothing reaches the rig until Save. The titlebar button is
   always available in Custom controls, and each dialog action dims when it
   has nothing to do.

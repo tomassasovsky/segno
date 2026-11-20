@@ -77,8 +77,8 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
   /// live one, and the first edit forks from whatever is current then.
   PedalSetup? _draft;
 
-  /// The setup from before Clear custom assignments emptied or replaced its
-  /// Custom map, until the draft is saved or cancelled.
+  /// The setup from before the latest Clear custom assignments emptied or
+  /// replaced its Custom map, until the draft is saved or cancelled.
   PedalSetup? _replaced;
 
   PedalSetupContext _context = PedalSetupContext.tracks;
@@ -369,10 +369,10 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
     );
     if (choice == null || !mounted) return;
     setState(() {
-      // Restore keeps the Custom draft from before the first Clear or
-      // default. Later edits to Track controls remain independent of
-      // restoring this map.
-      _replaced ??= setup;
+      // Restore keeps the Custom draft from before this Clear or default,
+      // edits made since an earlier one included. Later edits to Track
+      // controls remain independent of restoring this map.
+      _replaced = setup;
       _draft = switch (choice) {
         PedalClearChoice.clear => setup.clearedCustom(),
         PedalClearChoice.useDefault => setup.withDefaultCustom(),
