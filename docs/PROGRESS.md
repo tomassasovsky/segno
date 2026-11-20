@@ -1335,6 +1335,18 @@ a take's chains, where it used to hold each effect as it stood at arm.
   with no Pre entry records clean. The rendered tail is the Pre run's. A
   re-amp the Effects page did not weigh that does not fit is held and named
   by the standing notice.
+- Post entries that do not fit (the owner's option A, 2026-11-19): at the
+  press, a take whose input Post entries would not fit beside the rest of
+  the rig (and the takes pressed before it that have not landed,
+  `_takeChargesPending`) copies them onto its lane at Pre. Its lane then
+  carries no Post entry, so the engine records the input chain's whole
+  output into the image (the tap point is the lane's own split, as for an
+  overdub over a dry take), and the take sounds as heard; those effects stop
+  with it on Stop. Its track says so (`fxTakePrinted`, "Effects recorded").
+  Post entries that fit still run live. A lane playing its image is never
+  held: not when its take lands (`_holdUnheardTake`), not by R2
+  (`_fitRig`). An input chain that is all Post and does not fit is recorded
+  heard, where before it recorded clean and could be held dry.
 - Local tool: `SEGNO_HEARD_FORCE=1` runs the whole native core suite with
   every take recording an image of an input with no chain, which must equal
   the clean take after every callback.
