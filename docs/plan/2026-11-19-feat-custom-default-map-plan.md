@@ -64,8 +64,8 @@ acts on contact and its hold is an addition; Custom has no such rule.
 
 ### D1. The default map
 
-Recommended: the drawn map, with the unbuilt actions dropped and a gesture
-left empty where nothing built belongs there.
+Recommended: the drawn map, with each action that is not built replaced by
+one that is, or dropped.
 
 | Switch | Bank A, Press / Hold | Bank B, Press / Hold |
 |---|---|---|
@@ -92,7 +92,8 @@ Departures from the drawn map, each one the owner can refuse:
   already covers it.
 - Rec/Play: no Hold (D2).
 
-The alternative is the drawn map with only the unbuilt actions removed:
+The alternative is the drawn map with only the actions that are not built
+removed:
 Track 1 A `Reverse`, Track 4 A `Mixer`, Track 1 B `Reverse`, Clear `Mute`.
 It leaves Tap tempo, Record performance and Clear all tracks unassigned.
 
