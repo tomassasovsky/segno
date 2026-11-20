@@ -47,8 +47,6 @@ class _MockSessionCubit extends MockCubit<SessionState> implements SessionCubit;
 
 class _MockSessionRepository extends Mock implements SessionRepository;
 
-class _FakePreviewTrack extends Fake implements SessionPreviewTrack;
-
 class _MockPerformanceRecorderCubit extends MockCubit<PerformanceRecorderState>
     implements PerformanceRecorderCubit;
 
@@ -220,7 +218,6 @@ void main() {
     when(() => session.state).thenReturn(const SessionState());
     // The Sessions face's preview (#1921) reads a saved session from here.
     sessionRepository = _MockSessionRepository();
-    registerFallbackValue(_FakePreviewTrack());
     performanceRecorder = _MockPerformanceRecorderCubit();
     when(() => performanceRecorder.state)
         .thenReturn(const PerformanceRecorderIdle());
@@ -613,10 +610,10 @@ void main() {
   // second page, with two empty positions. `opening`: an Open asked from the
   // face and not settled. `failed`: one that did not open. `folders`: a
   // folder in view, with Bank's Hold. `stopped`: nothing playing. `none`: no
-  // saved session. A tap previews and a Hold opens (#1921): `preview` shows a
-  // session with recordings, `preview_setup` one that holds a setup and no
-  // recordings, `preview_unreadable` one that does not read, and `hold` a
-  // Hold to open halfway through.
+  // saved session. A press shows a session and a Hold opens it (#1921):
+  // `preview` shows a session with recordings, `preview_setup` one that
+  // holds a setup and no recordings, `preview_unreadable` one that does not
+  // read, and `hold` a Hold to open halfway through.
   for (final scene in [
     'default',
     'page',
@@ -741,7 +738,6 @@ void main() {
               sampleRate: 48000,
               looperMode: LooperMode.song,
               loopBars: 4,
-              countInBars: 1,
               inputChains: [
                 chainOf(const [TrackEffectType.drive, TrackEffectType.delay]),
               ],
@@ -760,8 +756,6 @@ void main() {
               sampleRate: 48000,
               looperMode: LooperMode.band,
               loopBars: 8,
-              countInBars: 2,
-              clickMode: ClickMode.rec,
               inputChains: [
                 chainOf(const [TrackEffectType.chorus, TrackEffectType.reverb]),
               ],
@@ -776,14 +770,6 @@ void main() {
             throw StateError('unreadable');
         }
       });
-      when(() => sessionRepository.readPeaks(any(), any()))
-          .thenAnswer((call) async {
-            final track = call.positionalArguments[1] as SessionPreviewTrack;
-            return Float32List.fromList([
-              for (var i = 0; i < 96; i++)
-                0.15 + 0.8 * ((i * (7 + track.channel * 4) % 23) / 23),
-            ]);
-          });
       // Name order: Encore, Evening loop, Intro, Outro, Slow one, Stomp.
       final catalogue = FootSessionCatalogue(
         sessions: switch (scene) {
@@ -824,7 +810,7 @@ void main() {
       if (scene == 'opening') {
         control.activateFootSessionsPedal(PedalButton.track1, hold: true);
       }
-      // A tap: Evening loop, the setup-only Outro, and Encore, which the
+      // A press: Evening loop, the setup-only Outro, and Encore, which the
       // repository cannot read.
       final tapped = switch (scene) {
         'preview' => PedalButton.track2,
@@ -837,12 +823,15 @@ void main() {
         tester,
         locale: scene == 'spanish' ? const Locale('es') : null,
       );
-      // The preview's manifest, then its waveforms.
+      // The shown session's manifest.
       await tester.pump();
       await tester.pump();
       const contact = Object();
       if (scene == 'hold') {
         control.footSessionsPressed(PedalButton.track2, contact);
+        // The press shows the session at once; then its manifest lands.
+        await tester.pump();
+        await tester.pump();
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 400));
       }

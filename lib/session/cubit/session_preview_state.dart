@@ -8,38 +8,11 @@ enum SessionPreviewStatus {
   /// The manifest is being read.
   loading,
 
-  /// The preview is in the state. Its waveforms may still be arriving.
+  /// The preview is in the state.
   ready,
 
   /// The session's manifest could not be read.
   unreadable,
-}
-
-/// The effects a saved session holds, by where they sit in the signal path,
-/// in chain order.
-class SessionPreviewEffects extends Equatable {
-  /// Creates the effects of one session.
-  const new({
-    this.inputs = const [],
-    this.tracks = const [],
-    this.allTracks = const [],
-    this.outputs = const [],
-  });
-
-  /// On the inputs.
-  final List<TrackEffect> inputs;
-
-  /// On the tracks and their lanes.
-  final List<TrackEffect> tracks;
-
-  /// On the All tracks stage.
-  final List<TrackEffect> allTracks;
-
-  /// On the outputs.
-  final List<TrackEffect> outputs;
-
-  @override
-  List<Object?> get props => [inputs, tracks, allTracks, outputs];
 }
 
 /// One session's preview as a surface draws it.
@@ -49,8 +22,7 @@ class SessionPreviewState extends Equatable {
     this.id,
     this.status = SessionPreviewStatus.none,
     this.preview,
-    this.effects = const SessionPreviewEffects(),
-    this.peaks = const {},
+    this.effects = const [],
   });
 
   /// The session asked for, or null for none.
@@ -62,23 +34,9 @@ class SessionPreviewState extends Equatable {
   /// What the manifest says, once [status] is ready.
   final SessionPreview? preview;
 
-  /// The session's effects by place.
-  final SessionPreviewEffects effects;
-
-  /// Each recorded track's waveform by channel, for the tracks whose audio
-  /// has been read.
-  final Map<int, List<double>> peaks;
-
-  /// Returns a copy with [peaks].
-  SessionPreviewState copyWith({Map<int, List<double>>? peaks}) =>
-      SessionPreviewState(
-        id: id,
-        status: status,
-        preview: preview,
-        effects: effects,
-        peaks: peaks ?? this.peaks,
-      );
+  /// The session's effects, in signal order.
+  final List<TrackEffect> effects;
 
   @override
-  List<Object?> get props => [id, status, preview, effects, peaks];
+  List<Object?> get props => [id, status, preview, effects];
 }

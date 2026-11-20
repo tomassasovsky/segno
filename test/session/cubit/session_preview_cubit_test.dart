@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -10,35 +9,21 @@ import 'package:session_repository/session_repository.dart';
 
 class _Sessions extends Mock implements SessionRepository;
 
-class _FakeTrack extends Fake implements SessionPreviewTrack;
-
 String _chain(List<TrackEffectType> types) => encodeFxChain(
   FxChainEnvelope(
     entries: [for (final type in types) BuiltInEffect(type: type)],
   ),
 );
 
-SessionPreviewTrack _track(int channel) => SessionPreviewTrack(
-  channel: channel,
-  lengthFrames: 96000,
-  baseLengthFrames: 96000,
-  bars: 1,
-  layers: 1,
-  muted: false,
-  fxCount: 0,
-  liveLayerFile: 'track${channel}_lane0_L0.wav',
-);
-
 SessionPreview _preview(
   String id, {
-  List<SessionPreviewTrack> tracks = const [],
   List<String> inputChains = const [],
   List<String> trackChains = const [],
   String allTracksChain = '',
   List<String> outputChains = const [],
 }) => SessionPreview(
   summary: SessionSummary(id: id, name: id),
-  tracks: tracks,
+  tracks: const [],
   fxCount: 0,
   sampleRate: 48000,
   inputChains: inputChains,
@@ -54,12 +39,7 @@ List<TrackEffectType> _types(List<TrackEffect> effects) => [
 void main() {
   late _Sessions sessions;
 
-  setUpAll(() => registerFallbackValue(_FakeTrack()));
-
-  setUp(() {
-    sessions = _Sessions();
-    when(() => sessions.readPeaks(any(), any())).thenAnswer((_) async => null);
-  });
+  setUp(() => sessions = _Sessions());
 
   group(SessionPreviewCubit, () {
     test('starts with no preview', () {
@@ -69,11 +49,10 @@ void main() {
       expect(cubit.state.status, SessionPreviewStatus.none);
     });
 
-    test('reads the manifest, names the effects by place, then reads each '
-        "recording's waveform", () async {
+    test('reads the manifest and names the effects in signal order: the '
+        'inputs, the tracks, All tracks, the outputs', () async {
       final preview = _preview(
         'a',
-        tracks: [_track(0), _track(2)],
         inputChains: [
           _chain(const [TrackEffectType.delay]),
           _chain(const [TrackEffectType.reverb]),
@@ -87,11 +66,6 @@ void main() {
         ],
       );
       when(() => sessions.readPreview('a')).thenAnswer((_) async => preview);
-      when(() => sessions.readPeaks('a', any())).thenAnswer((call) async {
-        final track = call.positionalArguments[1] as SessionPreviewTrack;
-        // The second track's audio does not read: it draws its length only.
-        return track.channel == 0 ? Float32List.fromList([0.25, 0.5]) : null;
-      });
       final cubit = SessionPreviewCubit(sessions);
       addTearDown(cubit.close);
       final states = <SessionPreviewState>[];
@@ -104,25 +78,19 @@ void main() {
       expect(states.map((s) => s.status), [
         SessionPreviewStatus.loading,
         SessionPreviewStatus.ready,
-        SessionPreviewStatus.ready,
       ]);
-      // The setup lands before any audio is read.
       expect(states[1].preview, same(preview));
-      expect(states[1].peaks, isEmpty);
-      final effects = states[1].effects;
-      expect(_types(effects.inputs), [
+      expect(_types(states[1].effects), [
         TrackEffectType.delay,
         TrackEffectType.reverb,
+        TrackEffectType.drive,
+        TrackEffectType.compressor,
+        TrackEffectType.eq,
       ]);
-      expect(_types(effects.tracks), [TrackEffectType.drive]);
-      expect(_types(effects.allTracks), [TrackEffectType.compressor]);
-      expect(_types(effects.outputs), [TrackEffectType.eq]);
-      expect(states[2].peaks.keys, [0]);
-      expect(states[2].peaks[0], [0.25, 0.5]);
     });
 
     blocTest<SessionPreviewCubit, SessionPreviewState>(
-      'a session with no recordings and no effects is ready with neither',
+      'a session with no effects is ready with none',
       setUp: () =>
           when(() => sessions.readPreview('a'))
               .thenAnswer((_) async => _preview('a')),
@@ -130,9 +98,7 @@ void main() {
       act: (cubit) => cubit.show('a'),
       verify: (cubit) {
         expect(cubit.state.status, SessionPreviewStatus.ready);
-        expect(cubit.state.effects, const SessionPreviewEffects());
-        expect(cubit.state.peaks, isEmpty);
-        verifyNever(() => sessions.readPeaks(any(), any()));
+        expect(cubit.state.effects, isEmpty);
       },
     );
 
@@ -162,8 +128,7 @@ void main() {
       act: (cubit) => cubit.show('a'),
       verify: (cubit) {
         expect(cubit.state.status, SessionPreviewStatus.ready);
-        expect(cubit.state.effects.inputs, isEmpty);
-        expect(_types(cubit.state.effects.allTracks), [TrackEffectType.reverb]);
+        expect(_types(cubit.state.effects), [TrackEffectType.reverb]);
       },
     );
 
@@ -204,19 +169,15 @@ void main() {
       expect(cubit.state.preview?.summary.id, 'b');
     });
 
-    test('waveforms of a superseded session are dropped', () async {
-      final peaks = Completer<Float32List?>();
-      when(() => sessions.readPreview('a'))
-          .thenAnswer((_) async => _preview('a', tracks: [_track(0)]));
-      when(() => sessions.readPeaks('a', any()))
-          .thenAnswer((_) => peaks.future);
+    test('a read that ends after none was asked for is dropped', () async {
+      final read = Completer<SessionPreview>();
+      when(() => sessions.readPreview('a')).thenAnswer((_) => read.future);
       final cubit = SessionPreviewCubit(sessions);
       addTearDown(cubit.close);
 
       final slow = cubit.show('a');
-      await Future<void>.delayed(Duration.zero);
       await cubit.show(null);
-      peaks.complete(Float32List.fromList([1]));
+      read.complete(_preview('a'));
       await slow;
 
       expect(cubit.state, const SessionPreviewState());

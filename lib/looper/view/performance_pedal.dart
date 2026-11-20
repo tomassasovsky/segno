@@ -34,8 +34,14 @@ class PerformancePedal extends StatefulWidget {
     this.titleMaxLines = 1,
     this.holdPending = false,
     this.holdThreshold = const Duration(milliseconds: 800),
+    this.holdFillsLed = false,
     super.key,
   });
+
+  /// Whether a pending Hold fills the LED bar above the face from the left,
+  /// as the switch's own LEDs do for that Hold (the Sessions face's Hold to
+  /// open, #1921), in place of the bar under the face.
+  final bool holdFillsLed;
 
   /// Key prefix for the contact target, followed by the button name.
   final String keyPrefix;
@@ -221,14 +227,36 @@ class _PerformancePedalState extends State<PerformancePedal>
                 opacity: widget.enabled ? 1 : surface.disabledOpacity,
                 child: Column(
                   children: [
-                    Container(
-                      width: 112,
-                      height: 12,
-                      decoration: BoxDecoration(
-                        color: widget.selected
-                            ? surface.textPrimary
-                            : surface.controlStrong,
-                        borderRadius: BorderRadius.circular(8),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: SizedBox(
+                        width: 112,
+                        height: 12,
+                        child: ColoredBox(
+                          color: widget.selected
+                              ? surface.textPrimary
+                              : surface.controlStrong,
+                          child: widget.holdFillsLed && widget.holdPending
+                              ? Align(
+                                  alignment: AlignmentDirectional.centerStart,
+                                  child: AnimatedBuilder(
+                                    animation: _hold,
+                                    builder: (context, _) =>
+                                        FractionallySizedBox(
+                                          key: Key(
+                                            '${widget.keyPrefix}_'
+                                            '${widget.button.name}_led_fill',
+                                          ),
+                                          widthFactor: _hold.value,
+                                          heightFactor: 1,
+                                          child: ColoredBox(
+                                            color: surface.textPrimary,
+                                          ),
+                                        ),
+                                  ),
+                                )
+                              : null,
+                        ),
                       ),
                     ),
                     const SizedBox(height: 20),
@@ -247,7 +275,7 @@ class _PerformancePedalState extends State<PerformancePedal>
                       key: Key(
                         '${widget.keyPrefix}_${widget.button.name}_hold',
                       ),
-                      pending: widget.holdPending,
+                      pending: widget.holdPending && !widget.holdFillsLed,
                       progress: _hold,
                     ),
                     const SizedBox(height: 8),

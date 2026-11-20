@@ -88,8 +88,8 @@ extension _FootSessionsControl on ControlCubit {
         return;
       }
       // One hold to open at a time. A second switch going down while one
-      // is pending is a foot across two switches: neither opens, and
-      // neither previews.
+      // is pending is a foot across two switches: neither opens, and the
+      // second does not take the readout.
       final pending = _openFill;
       if (pending != null && pending.button != button) {
         _trackHoldGestures[pending.button]?.cancel();
@@ -97,7 +97,7 @@ extension _FootSessionsControl on ControlCubit {
       }
       final gesture = _trackHoldGestures.putIfAbsent(button, _HoldGesture.new);
       if (gesture._active) return;
-      // The session is asked for again when the gesture ends: the catalogue
+      // The session is asked for again when the hold fires: the catalogue
       // can change while the switch is down (entering the face asks for a
       // fresh one), and the switch must still stand for this session.
       FootSessionsPedal? stillThere() {
@@ -106,13 +106,13 @@ extension _FootSessionsControl on ControlCubit {
         return now.session?.id == session.id ? now : null;
       }
 
+      // The readout shows the session from the moment the switch goes
+      // down, so a hold fills under the name of what it is about to open.
+      _previewSession(session.id);
       _armGesture(
         gesture,
         cue: button,
         onSettled: () => _endOpenFill(button),
-        onTap: () {
-          if (stillThere()?.available ?? false) _previewSession(session.id);
-        },
         onHold: () {
           if (stillThere()?.opens ?? false) _openSessionFromFace(session.id);
         },

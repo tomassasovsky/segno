@@ -685,7 +685,7 @@ class SessionRepository {
   }
 
   /// The decoded manifest and derived facts for a preview panel — the
-  /// setup (looper mode, grid, click, the stored chains by place) and the
+  /// setup (looper mode, loop length, the stored chains by place) and the
   /// populated tracks, bars, layers, mutes, effect counts — with no audio
   /// read. Throws the typed [SessionException]s a load would, and
   /// [StateError] for an id with no bundle.
@@ -744,8 +744,6 @@ class SessionRepository {
       hasMixdown: File('$path/$mixdownName').existsSync(),
       looperMode: session.looperMode,
       loopBars: session.loopBars,
-      countInBars: session.countInBars,
-      clickMode: session.clickMode,
       inputChains: [
         for (final monitor in [
           ...session.monitors,

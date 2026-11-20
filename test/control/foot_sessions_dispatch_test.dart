@@ -164,7 +164,7 @@ void main() {
     }
   });
 
-  test('a tap on a track switch previews its session and opens '
+  test('a tap on a track switch shows its session and opens '
       'nothing', () async {
     final rig = await enter();
     try {
@@ -181,16 +181,21 @@ void main() {
     }
   });
 
-  test('a release before the long-press threshold is a tap', () async {
+  test('the session is shown from the moment the switch goes down, and a '
+      'release before the long-press threshold opens nothing', () async {
     final rig = await enter();
     try {
       rig.asked.clear();
-      await rig.stomp(
-        PedalButton.track3,
-        hold: const Duration(milliseconds: 300),
-      );
+      rig.link.press(PedalButton.track3, down: true);
+      await _pump(const Duration(milliseconds: 30));
+      // Shown at once, so a hold fills under the name of what it opens.
+      expect(rig.selection.previewId, 'c');
+      await _pump(const Duration(milliseconds: 300));
+      rig.link.press(PedalButton.track3, down: false);
+      await _pump(const Duration(milliseconds: 30));
       expect(rig.asked, isEmpty);
       expect(rig.selection.previewId, 'c');
+      expect(rig.selection.openingId, isNull);
     } finally {
       await rig.close();
     }
@@ -370,8 +375,8 @@ void main() {
       }
     });
 
-    test('a second switch going down while one is held opens neither and '
-        'previews neither', () async {
+    test('a second switch going down while one is held opens neither, and '
+        'does not take the readout', () async {
       final rig = await enter();
       try {
         rig.asked.clear();
@@ -389,7 +394,8 @@ void main() {
         rig.link.press(PedalButton.track3, down: false);
         await _pump(const Duration(milliseconds: 30));
         expect(rig.asked, isEmpty);
-        expect(rig.selection.previewId, isNull);
+        // The first switch's session stays shown; the second's never was.
+        expect(rig.selection.previewId, 'b');
         expect(rig.selection.openingId, isNull);
       } finally {
         await rig.close();
@@ -412,23 +418,6 @@ void main() {
         await _pump(const Duration(milliseconds: 30));
         expect(rig.asked, isEmpty);
         expect(rig.selection.openingId, isNull);
-      } finally {
-        await rig.close();
-      }
-    });
-
-    test('a tap previews nothing when its session left the switch while it '
-        'was down', () async {
-      final rig = await enter();
-      try {
-        rig.link.press(PedalButton.track2, down: true);
-        await _pump(const Duration(milliseconds: 100));
-        rig.control.setSessionCatalogue(
-          _catalogue(const ['a', 'aa', 'bb', 'c'], openId: 'a'),
-        );
-        rig.link.press(PedalButton.track2, down: false);
-        await _pump(const Duration(milliseconds: 30));
-        expect(rig.selection.previewId, isNull);
       } finally {
         await rig.close();
       }

@@ -1,11 +1,11 @@
 import 'dart:async';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:intl/intl.dart';
 import 'package:looper_repository/looper_repository.dart' show kMaxTracks;
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:segno/common/console_rename_sheet.dart';
-import 'package:segno/common/saved_date_label.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/library/cubit/library_cubit.dart';
 import 'package:segno/library/view/library_backup_view.dart';
@@ -586,6 +586,29 @@ class _StripSlot extends StatelessWidget {
       child: SizedBox(width: size.slotWidth, height: size.height),
     );
   }
+}
+
+/// The pen's saved-date label: `today 14:02`, `yesterday`, then `7 Sep`;
+/// empty when the date is unknown. [now] is the clock (the wall clock when
+/// omitted).
+String savedDateLabel(BuildContext context, DateTime? at, {DateTime? now}) {
+  if (at == null) return '';
+  final l10n = context.l10n;
+  final clock = now ?? DateTime.now();
+  final today = DateTime(clock.year, clock.month, clock.day);
+  final day = DateTime(at.year, at.month, at.day);
+  if (day == today) {
+    final hh = at.hour.toString().padLeft(2, '0');
+    final mm = at.minute.toString().padLeft(2, '0');
+    return l10n.sessionDateToday('$hh:$mm');
+  }
+  if (day == today.subtract(const Duration(days: 1))) {
+    return l10n.sessionDateYesterday;
+  }
+  return DateFormat(
+    'd MMM',
+    Localizations.localeOf(context).toString(),
+  ).format(at);
 }
 
 /// The USB location without a drive (pen 18/06, worded for sessions):

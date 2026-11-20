@@ -7,7 +7,7 @@ import 'package:session_repository/src/models/session_summary.dart';
 ///
 /// Only populated tracks appear in [tracks]. A session with none is not
 /// empty: it can be a prepared setup, which is what the looper mode, the
-/// grid and the chains describe (#1921).
+/// loop length and the chains describe (#1921).
 @immutable
 class SessionPreview {
   /// Creates a [SessionPreview].
@@ -20,8 +20,6 @@ class SessionPreview {
     this.hasMixdown = false,
     this.looperMode = LooperMode.multi,
     this.loopBars = 0,
-    this.countInBars = 0,
-    this.clickMode = ClickMode.off,
     this.inputChains = const [],
     this.trackChains = const [],
     this.allTracksChain = '',
@@ -54,12 +52,6 @@ class SessionPreview {
   /// The loop length in bars the session's grid is set to; 0 when it has
   /// none.
   final int loopBars;
-
-  /// Bars of count-in before a take; 0 when off.
-  final int countInBars;
-
-  /// When the click sounds.
-  final ClickMode clickMode;
 
   /// The stored chain of each input that has one, in input order. Like every
   /// chain here it is the manifest's own string: this package does not look

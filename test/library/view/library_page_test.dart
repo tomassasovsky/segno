@@ -13,11 +13,11 @@ import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/common/console_surface.dart'
     show ConsoleBanner, ConsoleBannerTone;
-import 'package:segno/common/peaks_painter.dart';
-import 'package:segno/common/saved_date_label.dart';
 import 'package:segno/l10n/gen/app_localizations.dart';
 import 'package:segno/library/cubit/library_cubit.dart';
 import 'package:segno/library/view/library_page.dart';
+import 'package:segno/library/view/library_preview_card.dart';
+import 'package:segno/library/view/library_sessions_tab.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
@@ -2129,7 +2129,7 @@ void main() {
         findsOneWidget,
       );
       final painter =
-          tester.widget<CustomPaint>(peaks).painter! as PeaksPainter;
+          tester.widget<CustomPaint>(peaks).painter! as LibraryPeaksPainter;
       expect(painter.peaks, [0.25, 1]);
     });
 

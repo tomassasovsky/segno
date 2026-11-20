@@ -238,26 +238,27 @@ board lights the whole switch when the hold fires, and the card says
 ## The face after this plan
 
 - **Entering.** The face opens on the page that holds the open session, or
-  on page 1 when the open session has no position. No session is previewed.
-  The side says `Tap to preview · Hold to open`. When the open session has
-  no position, the side also names it: `Open: <name>`.
-- **A tap** on a switch with a session previews it. A tap on an empty
-  position does nothing.
-- **A hold** on a switch with a session fills the switch's LEDs left to
-  right, and the bar on the drawn pedal with them. Releasing before the
-  threshold is a tap, and the LEDs go dark again. At the threshold the
-  whole switch lights and the Open is asked for: the card says `Opening…`
-  and the other switches do nothing until it settles. Then the face
-  closes, as today. A hold needs no tap first.
-- **A failed Open** keeps the face up with the reason on the card, as
-  today, and the switch goes dark again.
-- **The open session's switch.** A tap previews it. A hold does nothing and
+  on page 1 when the open session has no position. No session is shown.
+  The readout says `Press a switch to see its session. Hold it to open.`
+  When the open session has no position, the readout also names it:
+  `Open: <name>`.
+- **A press** on a switch with a session shows it in the readout at once.
+  A press on an empty position does nothing.
+- **A hold** on that switch fills its LEDs left to right, and the LED bar
+  of the drawn switch with them. Releasing before the threshold opens
+  nothing: the LEDs go dark and the session stays shown. At the threshold
+  the whole switch lights and the Open is asked for: the readout and the
+  switch's caption say `Opening…` and the other switches do nothing until
+  it settles. Then the face closes, as today.
+- **A failed Open** keeps the face up with `Could not open` under the
+  switch, as today, and the switch goes dark again.
+- **The open session's switch.** A press shows it. A hold does nothing and
   draws no fill.
-- **Captions.** A switch with a session says `Open` with `Hold` under it,
-  as Clear says `New loop` with `Hold`. An empty position's caption is
-  dimmed.
-- **Touch.** A tap on a card or on a drawn switch previews. A long press
-  opens; the drawn switch shows the progress bar, and a card does not.
+- **Captions.** A switch with a session is named for it, with its looper
+  mode and tempo under the name and `Hold · Open` under that. An empty
+  position says `Empty`, dimmed.
+- **Touch.** The drawn switches take contacts as on every face: a press
+  shows the session and a hold opens it.
 - **LEDs.** Unchanged apart from the fill: the switch under the open
   session is lit, the others are dark. Clear's Hold for New loop keeps the
   red fill from both ends: it is the clearing Hold.
@@ -355,27 +356,49 @@ On the face as built (name order, folders).
 - Penpot: page 19, the boards drawn for #1917 redrawn with the panel, plus
   a board for a pending Hold; a `c/` note with R4 and R5 as answered.
 
-As built:
+As built, after the owner's review of the face on 2026-11-20:
 
-- The setup stayed in this PR.
-- The fill goes out every 30 ms while the hold is pending
+- **The owner rejected the first build's look** (bordered cards over the
+  switches and a boxed preview panel) and chose, from ten rendered
+  layouts, a labelled list drawn the way the Mixer and Fade faces draw
+  their readouts. This replaces R4's list of what the preview shows.
+- **The face has no cards.** Each track switch is named for its session in
+  the caption under it: the name, then the looper mode and tempo (or `Open
+  now`, `Opening…`, `Could not open`), then `Hold · Open`.
+- **One unboxed readout above the track switches,** seven evenly spaced
+  lines. Its first line's capitals sit on the top of the Clear and Bank
+  pedals' faces, its last line sits on the baseline of their captions,
+  and its left and right edges are the first and last track switches'
+  faces.
+  - With no session shown: the folder, the page, and `Press a switch to
+    see its session. Hold it to open.`
+  - With one shown: its name, then `Loop mode`, `Tempo`, `Loop length`
+    (left out when none is set), `Tracks` (a strip of eight segments and
+    how many are recorded) and `Effects` (names in signal order, four and
+    then `+N`, or `None`). The last line says what opening it would end,
+    or `Opening…`, `Open now`, `Could not open`.
+  - Not shown: the saved date, the count-in, the click, each track's
+    layers and waveform, and which place an effect is on.
+- **A press shows the session at once,** not on release, so a hold always
+  fills under the name of the session it opens. A release before the
+  threshold opens nothing and leaves the session shown.
+- **The hold's fill on the screen is the drawn switch's LED bar,** filling
+  from the left (`PerformancePedal.holdFillsLed`), in place of the bar
+  under the face. It is the same bar in the same place as on the pedal.
+- **The fill on the pedal** goes out every 30 ms while the hold is pending
   (`ControlCubit._openFillInterval`). `projectFrame` takes it as
-  `openHold`: the switch, and how far the hold has run, or no progress
-  once it has fired. The held switch then reads `selected` and no longer
-  `pressed`, so the board lights it whole.
+  `openFill`. A held switch over a session reads `selected`, not
+  `pressed`, so nothing changes colour between the fill and the Open.
+- **One hold to open at a time.** A second track switch going down while
+  one is pending cancels both; a hold opens only if its switch still
+  stands for the same session when it fires.
 - Nothing had to change to keep a waiting Song section off the face:
   `showsSectionQueue` already shows one only in Record mode and in Band's
-  Mute mode. `song-queue-mirrors-engine` now leaves the Sessions face to
-  the new invariant `sessions-fill-is-a-held-switch`.
-- The panel is 852 by 250 above the cards, with an accent outline, and the
-  cards are 196 high (they were 250), so a name takes two lines and not
-  three. The setup side has the mode, tempo and loop length on one line
-  and the count-in and click on the next.
-- A long press on a card opens with Flutter's own long-press timing and
-  draws no bar. The drawn switch keeps the bar, timed by the pedal's
-  long-press setting.
-- `PeaksPainter` and `savedDateLabel` moved from the Library to
-  `lib/common/`, since the face now uses both.
+  Mute mode. `song-queue-mirrors-engine` leaves the Sessions face to the
+  new invariant `sessions-fill-is-a-held-switch`.
+- `SessionPreview` carries the looper mode, the loop length and the stored
+  chains by place. It does not carry the count-in or the click, and the
+  preview reads no audio.
 - The Penpot writeback is owed: page 19's boards for #1917 are not redrawn
   yet.
 

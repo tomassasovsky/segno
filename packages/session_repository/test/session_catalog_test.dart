@@ -915,8 +915,8 @@ void main() {
       expect(third.lengthFrames, 192000);
     });
 
-    test('carries the setup: the looper mode, the grid, the count-in, the '
-        'click and the stored chains by place (#1921)', () async {
+    test('carries the setup: the looper mode and the stored chains by place '
+        '(#1921)', () async {
       // Nothing recorded: the session is a setup.
       final engine = FakeSessionEngine()
         ..tempoBpm = 120
@@ -928,8 +928,6 @@ void main() {
         settings: const SessionSettings(
           tempoBpm: 120,
           tempoSource: TempoSource.manual,
-          clickMode: ClickMode.rec,
-          countInBars: 2,
         ),
         chains: SessionChains(
           monitors: [
@@ -972,8 +970,6 @@ void main() {
 
       expect(preview.tracks, isEmpty);
       expect(preview.looperMode, LooperMode.song);
-      expect(preview.countInBars, 2);
-      expect(preview.clickMode, ClickMode.rec);
       expect(preview.summary.looperMode, LooperMode.song);
       // Inputs in input order; lanes before tracks.
       expect(preview.inputChains, [chain(1), chain(2)]);

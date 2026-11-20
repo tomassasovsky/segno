@@ -4,8 +4,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:pedal_repository/pedal_repository.dart';
-import 'package:segno/common/peaks_painter.dart';
-import 'package:segno/common/saved_date_label.dart';
 import 'package:segno/control/binding/pedal_button_legend.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/control/model/foot_sessions.dart';
@@ -23,27 +21,21 @@ import 'package:segno/session/session.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:session_repository/session_repository.dart';
 
-/// The Sessions face (#1910): the ten pedals, with the four sessions of the
-/// page in view drawn above the four track switches. A tap on a switch
-/// previews its session in the panel above the cards, and a Hold opens it
-/// (#1921). Driven by the shared Control owner.
+/// The Sessions face (#1910), drawn as the Mixer and Fade faces are: the ten
+/// pedals with their captions, and one unboxed readout above the track
+/// switches.
+///
+/// Each track switch is named for the session in its position. A press on
+/// it shows that session in the readout as a short labelled list, and
+/// holding it opens the session while the drawn switch's LED bar fills from
+/// the left, as the real one does (#1921). With nothing shown, the readout
+/// names the folder and the page in view.
 class FootSessionsView extends StatelessWidget {
   /// Creates the performance surface within the real Tracks hierarchy.
   const new({super.key});
 
   /// The frame every foot view draws its pedals in.
   static const double _frameWidth = 1800;
-
-  /// A card's width: the pedal pitch less the gap between two cards.
-  static const double _cardWidth = ConsolePedalLayout.pitch - 16;
-
-  /// The cards sit under the preview panel and over their switches.
-  static const double _cardTop = 262;
-  static const double _cardHeight = 196;
-
-  /// The preview panel: above the cards, as wide as the four of them.
-  static const double _panelTop = 4;
-  static const double _panelHeight = 250;
 
   @override
   Widget build(BuildContext context) {
@@ -54,7 +46,7 @@ class FootSessionsView extends StatelessWidget {
         cubit.state.footSessions,
       ),
     );
-    // What an Open would end, said on every card it applies to (D3).
+    // What an Open would end, said in the readout's last line (D3).
     final recording = context.select<PerformanceRecorderCubit, bool>(
       (cubit) => cubit.state is PerformanceRecorderArmed,
     );
@@ -63,146 +55,137 @@ class FootSessionsView extends StatelessWidget {
     );
     final l10n = context.l10n;
     final surface = context.surface;
-    final previewed = projection.previewed;
-    final panelLeft = ConsolePedalLayout.left(
+    FootSessionsPedal? shown;
+    for (final button in kTrackSwitches) {
+      if (projection[button].previewed) shown = projection[button];
+    }
+    // The readout spans the four track switches' drawn faces.
+    final left = ConsolePedalLayout.left(
       kTrackSwitches.first,
       _frameWidth,
-      _cardWidth,
+      _SessionsReadout.faceWidth,
     );
-    final panelRight =
-        ConsolePedalLayout.left(kTrackSwitches.last, _frameWidth, _cardWidth) +
-        _cardWidth;
-    // Read when a preview is first asked for, so a face that never previews
-    // never needs the repository.
+    final right =
+        ConsolePedalLayout.left(
+          kTrackSwitches.last,
+          _frameWidth,
+          _SessionsReadout.faceWidth,
+        ) +
+        _SessionsReadout.faceWidth;
+    // Read when a session is first shown, so a face that shows none never
+    // needs the repository.
     return BlocProvider(
       create: (context) =>
           SessionPreviewCubit(context.read<SessionRepository>()),
-      child: DefaultTextStyle.merge(
-        style: TextStyle(
-          fontWeight: FontWeight.w400,
-          fontFamily: SurfaceTheme.displayFont,
-          color: surface.textPrimary,
-        ),
-        child: Column(
-          key: const Key('foot_sessions_view'),
-          children: [
-            FootTopBar(
-              exitKey: const Key('foot_sessions_exit'),
-              onExit: () => control.activateFootSessionsPedal(PedalButton.mode),
-            ),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsetsDirectional.fromSTEB(60, 24, 60, 24),
-                child: FittedBox(
-                  child: SizedBox(
-                    width: _frameWidth,
-                    height: 880,
-                    child: Stack(
-                      children: [
-                        PositionedDirectional(
-                          start: 40,
-                          top: 16,
-                          child: AppText(
-                            l10n.actionModeSessions,
-                            style: const TextStyle(fontSize: 40),
-                          ),
-                        ),
-                        // The folder in view, once there is a session to be in
-                        // one: a held Bank goes through them.
-                        if (projection.sessions.isNotEmpty)
+      child: _SessionPreviewLoader(
+        id: projection.previewId,
+        child: DefaultTextStyle.merge(
+          style: TextStyle(
+            fontWeight: FontWeight.w400,
+            fontFamily: SurfaceTheme.displayFont,
+            color: surface.textPrimary,
+          ),
+          child: Column(
+            key: const Key('foot_sessions_view'),
+            children: [
+              FootTopBar(
+                exitKey: const Key('foot_sessions_exit'),
+                onExit: () =>
+                    control.activateFootSessionsPedal(PedalButton.mode),
+              ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsetsDirectional.fromSTEB(60, 24, 60, 24),
+                  child: FittedBox(
+                    child: SizedBox(
+                      width: _frameWidth,
+                      height: 880,
+                      child: Stack(
+                        children: [
                           PositionedDirectional(
                             start: 40,
-                            top: 84,
-                            width: 480,
+                            top: 16,
                             child: AppText(
-                              projection.folder ?? l10n.libraryFolderUnfiled,
-                              key: const Key('foot_sessions_folder'),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontSize: 30),
+                              l10n.actionModeSessions,
+                              style: const TextStyle(fontSize: 40),
                             ),
                           ),
-                        PositionedDirectional(
-                          start: 40,
-                          top: projection.sessions.isEmpty ? 84 : 128,
-                          width: 480,
-                          child: AppText(
-                            projection.sessions.isEmpty
-                                ? l10n.footSessionsNone
-                                : l10n.footSessionsPage(
-                                    projection.page + 1,
-                                    projection.pageCount,
-                                    projection.sessions.length,
-                                  ),
-                            key: const Key('foot_sessions_page'),
-                            style: TextStyle(
-                              fontSize: 26,
-                              color: surface.textSecondary,
+                          Positioned(
+                            left: left,
+                            top: 0,
+                            width: right - left,
+                            height: _SessionsReadout.height,
+                            child: _SessionsReadout(
+                              projection: projection,
+                              shown: shown,
+                              interruption: interruption,
                             ),
                           ),
-                        ),
-                        if (projection.sessions.isNotEmpty)
-                          PositionedDirectional(
-                            start: 40,
-                            top: 172,
-                            width: 480,
-                            child: AppText(
-                              l10n.footSessionsHint,
-                              key: const Key('foot_sessions_hint'),
-                              style: TextStyle(
-                                fontSize: 22,
-                                color: surface.textMuted,
+                          Positioned.fill(
+                            child: FootPedalRows(
+                              pedal: (button) => _FootSessionsPedal(
+                                button: button,
+                                projection: projection,
                               ),
                             ),
                           ),
-                        if (previewed != null)
-                          Positioned(
-                            left: panelLeft,
-                            top: _panelTop,
-                            width: panelRight - panelLeft,
-                            height: _panelHeight,
-                            child: _SessionPreviewPanel(
-                              session: previewed,
-                              current: previewed.id == projection.openId,
-                              interruption: interruption,
-                            ),
-                          ),
-                        // Each card over its switch, wherever the plate puts
-                        // it: the plate never mirrors.
-                        for (final button in kTrackSwitches)
-                          Positioned(
-                            left: ConsolePedalLayout.left(
-                              button,
-                              _frameWidth,
-                              _cardWidth,
-                            ),
-                            top: _cardTop,
-                            width: _cardWidth,
-                            height: _cardHeight,
-                            child: _SessionCard(
-                              pedal: projection[button],
-                              interruption: interruption,
-                            ),
-                          ),
-                        Positioned.fill(
-                          child: FootPedalRows(
-                            pedal: (button) => _FootSessionsPedal(
-                              button: button,
-                              projection: projection,
-                            ),
-                          ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
+}
+
+/// Asks the preview cubit for the session shown, and for none when there is
+/// none or the face goes away. One place asks, so a session taking
+/// another's place never has its read undone by the one that left.
+class _SessionPreviewLoader extends StatefulWidget {
+  const new({required this.id, required this.child});
+
+  final String? id;
+  final Widget child;
+
+  @override
+  State<_SessionPreviewLoader> createState() => _SessionPreviewLoaderState();
+}
+
+class _SessionPreviewLoaderState extends State<_SessionPreviewLoader> {
+  /// The cubit, once a session has been asked for.
+  SessionPreviewCubit? _cubit;
+
+  void _show() {
+    if (widget.id == null && _cubit == null) return;
+    final cubit = _cubit ??= context.read<SessionPreviewCubit>();
+    unawaited(cubit.show(widget.id));
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_cubit == null) _show();
+  }
+
+  @override
+  void didUpdateWidget(_SessionPreviewLoader oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.id != widget.id) _show();
+  }
+
+  @override
+  void dispose() {
+    unawaited(_cubit?.show(null));
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }
 
 /// The line that says what an Open would end, or null when it ends nothing.
@@ -220,86 +203,219 @@ String _bpm(double bpm) => bpm == bpm.roundToDouble()
     ? bpm.round().toString()
     : bpm.toStringAsFixed(1);
 
-/// One session above its switch: its name, its looper mode and tempo, what
-/// it holds, and one line of state: the open one, the one being opened, the
-/// one that could not be opened, or what opening it would end. An empty
-/// position says so. The card the panel previews is outlined. A tap on the
-/// card previews it, and a long press opens it.
-class _SessionCard extends StatelessWidget {
-  const new({required this.pedal, required this.interruption});
+/// A session's setup in a few words, for the caption under its switch: the
+/// looper mode and the tempo, or what it holds when the manifest names
+/// neither.
+String _setupWords(AppLocalizations l10n, FootSessionEntry session) {
+  final mode = session.looperMode;
+  final words = [
+    if (mode != null) looperModeLabels(l10n)[mode]!.label,
+    if (session.tempoBpm > 0) l10n.footSessionsTempo(_bpm(session.tempoBpm)),
+  ];
+  return words.isEmpty
+      ? l10n.footSessionsTracks(session.trackCount)
+      : words.join(' · ');
+}
 
-  final FootSessionsPedal pedal;
+/// The readout above the track switches: seven lines, evenly spaced, lined
+/// up with the pedals drawn beside it. The first line's capitals sit on the
+/// top of the Clear and Bank pedals' faces, and the last line sits on the
+/// baseline of their captions.
+///
+/// With no session shown it names the folder and the page, and says what a
+/// press and a Hold do. With one shown ([shown]) it is that session's name,
+/// a labelled list of its setup, and what opening it would end.
+class _SessionsReadout extends StatelessWidget {
+  const new({
+    required this.projection,
+    required this.shown,
+    required this.interruption,
+  });
+
+  final FootSessionsProjection projection;
+
+  /// The switch of the session shown, or null for none.
+  final FootSessionsPedal? shown;
   final FootSessionsInterruption interruption;
+
+  /// A drawn pedal's face width (`PerformancePedal`).
+  static const double faceWidth = 156;
+
+  /// The frame's height the readout may use: down to the track switches.
+  static const double height = 460;
+
+  /// Where a rear pedal's face starts below the frame's top: the row's top
+  /// (56), its LED bar (12) and the gap under it (20).
+  static const double _faceTop = 88;
+
+  /// Where a rear pedal's caption starts: under its face (drawn 84 by 114)
+  /// and the 16 px `PerformancePedal` leaves between the two. The last line
+  /// starts here with the caption's own font size as its strut, so the two
+  /// share a baseline whatever the font. A view test holds it there.
+  static const double _captionTop = _faceTop + faceWidth * 114 / 84 + 16;
+
+  /// The font size of a pedal's caption.
+  static const double _captionSize = 24;
+
+  /// That caption's baseline in the app's display face, which the lines
+  /// between the first and the last are spaced to.
+  static const double _captionBaseline = _captionTop + 25.9;
+
+  /// The capital height of the display face, as a share of the font size.
+  static const double _capHeight = 0.727;
+
+  static const double _nameSize = 30;
+  static const int _lines = 7;
+
+  /// How many effect names are written before it says how many more.
+  static const int _effectNames = 4;
+
+  /// The baseline of line [index], 0 to 6.
+  static double _baseline(int index) {
+    const first = _faceTop + _capHeight * _nameSize;
+    return first + (_captionBaseline - first) * index / (_lines - 1);
+  }
 
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final surface = context.surface;
-    final session = pedal.session;
-    // The outline is the panel's: the session it previews or is opening.
-    final marked = pedal.previewed || pedal.opening;
-    // One line, the most pressing first. The warnings read in the warning
-    // colour; the open and opening lines in the accent.
-    final (String? line, Color lineColor) = pedal.opening
-        ? (l10n.footSessionsOpening, surface.accent)
-        : pedal.current
-        ? (l10n.footSessionsOpenNow, surface.accent)
-        : pedal.failed
-        ? (l10n.footSessionsCouldNotOpen, surface.warning)
-        : (
-            // Only where a hold is taken: not while an Open is in flight.
-            pedal.opens ? _interruptionLine(l10n, interruption) : null,
-            surface.warning,
-          );
-    final mode = session?.looperMode;
-    final card = DecoratedBox(
-      key: Key('foot_sessions_card_${pedal.button.name}'),
-      decoration: ShapeDecoration(
-        color: surface.card,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-          side: BorderSide(
-            color: marked ? surface.accent : surface.borderStrong,
-            width: marked ? 2 : 1,
+    final pedal = shown;
+    final session = pedal?.session;
+    if (pedal == null || session == null) {
+      final none = projection.sessions.isEmpty;
+      return Stack(
+        children: [
+          if (!none)
+            _ReadoutLine(
+              _baseline(0),
+              AppText(
+                projection.folder ?? l10n.libraryFolderUnfiled,
+                key: const Key('foot_sessions_folder'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: _nameSize),
+              ),
+            ),
+          _ReadoutLine(
+            _baseline(none ? 0 : 1),
+            AppText(
+              none
+                  ? l10n.footSessionsNone
+                  : l10n.footSessionsPage(
+                      projection.page + 1,
+                      projection.pageCount,
+                      projection.sessions.length,
+                    ),
+              key: const Key('foot_sessions_page'),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 24, color: surface.textSecondary),
+            ),
+          ),
+          if (!none)
+            _ReadoutLastLine(
+              AppText(
+                l10n.footSessionsHint,
+                key: const Key('foot_sessions_hint'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 22, color: surface.textSecondary),
+              ),
+            ),
+        ],
+      );
+    }
+    final state = context.watch<SessionPreviewCubit>().state;
+    // The cubit may still hold the session shown before this one.
+    final loaded = state.id == session.id;
+    final preview = loaded ? state.preview : null;
+    final unreadable =
+        loaded && state.status == SessionPreviewStatus.unreadable;
+    // One name per effect, however many places carry it.
+    final effects = {
+      if (loaded)
+        for (final effect in state.effects) fxBlockName(l10n, effect),
+    }.toList();
+    final rows = <(String, Widget)>[
+      if (preview != null) ...[
+        (
+          l10n.loopTabMode,
+          _ReadoutValue(looperModeLabels(l10n)[preview.looperMode]!.label),
+        ),
+        (
+          l10n.loopTempoSliderLabel,
+          _ReadoutValue(
+            preview.summary.tempoBpm > 0
+                ? '${l10n.footSessionsTempo(_bpm(preview.summary.tempoBpm))}'
+                      ' · ${preview.summary.tsNum}/${preview.summary.tsDen}'
+                : l10n.footSessionsNoTempo,
           ),
         ),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: session == null
-            ? AppText(
-                l10n.readoutStateEmpty,
-                style: TextStyle(fontSize: 24, color: surface.textMuted),
-              )
-            : Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  AppText(
-                    session.name,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 26, height: 1.15),
-                  ),
-                  const SizedBox(height: 8),
-                  // The setup first: a session can hold one and nothing
-                  // recorded.
-                  if (mode != null || session.tempoBpm > 0)
-                    AppText(
-                      [
-                        if (mode != null) looperModeLabels(l10n)[mode]!.label,
-                        if (session.tempoBpm > 0)
-                          l10n.footSessionsTempo(_bpm(session.tempoBpm)),
-                      ].join(' · '),
-                      key: Key('foot_sessions_card_setup_${pedal.button.name}'),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 20,
-                        color: surface.textSecondary,
-                      ),
-                    ),
-                  AppText(
-                    l10n.footSessionsTracks(session.trackCount),
+        if (preview.loopBars > 0)
+          (
+            l10n.loopLengthLabel,
+            _ReadoutValue(l10n.stageBarsFigure(preview.loopBars)),
+          ),
+        (l10n.signalSectionTracks, _ReadoutTracks(preview: preview)),
+        (
+          l10n.fxTitle,
+          _ReadoutValue(
+            effects.isEmpty
+                ? l10n.actionNone
+                : [
+                    ...effects.take(_effectNames),
+                    if (effects.length > _effectNames)
+                      l10n.footSessionsMore(effects.length - _effectNames),
+                  ].join(', '),
+          ),
+        ),
+      ],
+    ];
+    final ends = pedal.opens ? _interruptionLine(l10n, interruption) : null;
+    final (String? last, Color lastColor) = pedal.opening
+        ? (l10n.footSessionsOpening, surface.textPrimary)
+        : pedal.current
+        ? (l10n.footSessionsOpenNow, surface.textPrimary)
+        : pedal.failed
+        ? (l10n.footSessionsCouldNotOpen, surface.warning)
+        : (ends, surface.warning);
+    return Stack(
+      key: const Key('foot_sessions_preview'),
+      children: [
+        _ReadoutLine(
+          _baseline(0),
+          AppText(
+            session.name,
+            key: const Key('foot_sessions_preview_name'),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: _nameSize),
+          ),
+        ),
+        if (unreadable)
+          _ReadoutLine(
+            _baseline(1),
+            AppText(
+              l10n.libraryPreviewUnreadable,
+              key: const Key('foot_sessions_preview_unreadable'),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 24, color: surface.warning),
+            ),
+          ),
+        for (final (index, (label, value)) in rows.indexed)
+          _ReadoutLine(
+            _baseline(1 + index),
+            Row(
+              key: Key('foot_sessions_preview_row_$index'),
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                SizedBox(
+                  width: 190,
+                  child: AppText(
+                    label,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
@@ -307,246 +423,19 @@ class _SessionCard extends StatelessWidget {
                       color: surface.textSecondary,
                     ),
                   ),
-                  const Spacer(),
-                  if (line != null)
-                    AppText(
-                      line,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 20, color: lineColor),
-                    ),
-                ],
-              ),
-      ),
-    );
-    if (session == null || !pedal.available) return card;
-    final control = context.read<ControlCubit>();
-    return GestureDetector(
-      key: Key('foot_sessions_card_tap_${pedal.button.name}'),
-      behavior: HitTestBehavior.opaque,
-      onTap: () => control.activateFootSessionsPedal(pedal.button),
-      onLongPress: pedal.opens
-          ? () => control.activateFootSessionsPedal(pedal.button, hold: true)
-          : null,
-      child: card,
-    );
-  }
-}
-
-/// The preview of the session a tap chose (#1921): its name and when it was
-/// saved, then the setup and the effects on one side and the recordings on
-/// the other. It asks the preview cubit for [session] when it appears and
-/// whenever the session changes, and for none when it goes away, so the
-/// next preview of the same session is read again.
-class _SessionPreviewPanel extends StatefulWidget {
-  const new({
-    required this.session,
-    required this.current,
-    required this.interruption,
-  });
-
-  final FootSessionEntry session;
-
-  /// Whether [session] is the open one.
-  final bool current;
-  final FootSessionsInterruption interruption;
-
-  @override
-  State<_SessionPreviewPanel> createState() => _SessionPreviewPanelState();
-}
-
-class _SessionPreviewPanelState extends State<_SessionPreviewPanel> {
-  late final SessionPreviewCubit _cubit = context.read<SessionPreviewCubit>();
-
-  @override
-  void initState() {
-    super.initState();
-    unawaited(_cubit.show(widget.session.id));
-  }
-
-  @override
-  void didUpdateWidget(_SessionPreviewPanel oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.session.id != widget.session.id) {
-      unawaited(_cubit.show(widget.session.id));
-    }
-  }
-
-  @override
-  void dispose() {
-    unawaited(_cubit.show(null));
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = context.l10n;
-    final surface = context.surface;
-    final state = context.watch<SessionPreviewCubit>().state;
-    // The cubit may still hold the session shown before this one.
-    final shown = state.id == widget.session.id;
-    final preview = shown ? state.preview : null;
-    final saved = savedDateLabel(context, preview?.summary.modifiedAt);
-    return DecoratedBox(
-      key: const Key('foot_sessions_preview'),
-      decoration: ShapeDecoration(
-        color: surface.card,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-          side: BorderSide(color: surface.accent, width: 2),
-        ),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.baseline,
-              textBaseline: TextBaseline.alphabetic,
-              children: [
-                Expanded(
-                  child: AppText(
-                    widget.session.name,
-                    key: const Key('foot_sessions_preview_name'),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 26, height: 1.15),
-                  ),
                 ),
-                if (saved.isNotEmpty)
-                  AppText(
-                    l10n.footSessionsSaved(saved),
-                    style: TextStyle(fontSize: 20, color: surface.textMuted),
-                  ),
+                Expanded(child: value),
               ],
             ),
-            const SizedBox(height: 4),
-            if (shown && state.status == SessionPreviewStatus.unreadable)
-              AppText(
-                l10n.libraryPreviewUnreadable,
-                key: const Key('foot_sessions_preview_unreadable'),
-                style: TextStyle(fontSize: 20, color: surface.warning),
-              ),
-            if (preview != null)
-              Expanded(
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: _PreviewSetup(
-                        preview: preview,
-                        effects: state.effects,
-                        current: widget.current,
-                        interruption: widget.interruption,
-                      ),
-                    ),
-                    const SizedBox(width: 20),
-                    Expanded(
-                      child: _PreviewRecordings(
-                        preview: preview,
-                        peaks: state.peaks,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// The setup side of the preview: the looper mode, the tempo and the loop
-/// length, the count-in and the click when they are on, the effects by
-/// place, and what opening the session would end.
-class _PreviewSetup extends StatelessWidget {
-  const new({
-    required this.preview,
-    required this.effects,
-    required this.current,
-    required this.interruption,
-  });
-
-  final SessionPreview preview;
-  final SessionPreviewEffects effects;
-  final bool current;
-  final FootSessionsInterruption interruption;
-
-  /// How many effect names a line shows before it says how many more.
-  static const int _namesPerLine = 3;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = context.l10n;
-    final surface = context.surface;
-    final summary = preview.summary;
-    final setup = [
-      looperModeLabels(l10n)[preview.looperMode]!.label,
-      if (summary.tempoBpm > 0)
-        '${l10n.footSessionsTempo(_bpm(summary.tempoBpm))} · '
-            '${summary.tsNum}/${summary.tsDen}'
-      else
-        l10n.footSessionsNoTempo,
-      if (preview.loopBars > 0) l10n.stageBarsFigure(preview.loopBars),
-    ].join(' · ');
-    // On a line of its own, so the first never ends in a separator.
-    final start = [
-      if (preview.countInBars > 0)
-        l10n.footSessionsCountIn(l10n.stageBarsFigure(preview.countInBars)),
-      if (preview.clickMode != ClickMode.off) l10n.footSessionsClickOn,
-    ].join(' · ');
-    final places = [
-      (l10n.signalSectionInputs, effects.inputs),
-      (l10n.signalSectionTracks, effects.tracks),
-      (l10n.fxAllTracks, effects.allTracks),
-      (l10n.signalSectionOutputs, effects.outputs),
-    ];
-    final ends = current
-        ? l10n.footSessionsOpenNow
-        : _interruptionLine(l10n, interruption);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _PreviewLine(
-          key: const Key('foot_sessions_preview_setup'),
-          label: l10n.footSessionsSetup,
-          text: setup,
-        ),
-        if (start.isNotEmpty)
-          _PreviewLine(
-            key: const Key('foot_sessions_preview_start'),
-            label: '',
-            text: start,
           ),
-        for (final (label, entries) in places)
-          if (entries.isNotEmpty)
-            _PreviewLine(
-              label: label,
-              text: () {
-                // One name per effect, however many tracks carry it.
-                final names = {
-                  for (final effect in entries) fxBlockName(l10n, effect),
-                }.toList();
-                final more = names.length - _namesPerLine;
-                return [
-                  ...names.take(_namesPerLine),
-                  if (more > 0) l10n.footSessionsMore(more),
-                ].join(', ');
-              }(),
-            ),
-        const Spacer(),
-        if (ends != null)
-          AppText(
-            ends,
-            key: const Key('foot_sessions_preview_ends'),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 20,
-              height: 1.3,
-              color: current ? surface.accent : surface.warning,
+        if (last != null)
+          _ReadoutLastLine(
+            AppText(
+              last,
+              key: const Key('foot_sessions_preview_ends'),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 22, color: lastColor),
             ),
           ),
       ],
@@ -554,124 +443,100 @@ class _PreviewSetup extends StatelessWidget {
   }
 }
 
-/// One labelled line of the preview's setup side.
-class _PreviewLine extends StatelessWidget {
-  const new({required this.label, required this.text, super.key});
+/// One line of the readout, with its text's baseline at [baseline] below
+/// the frame's top.
+class _ReadoutLine extends StatelessWidget {
+  const new(this.baseline, this.child);
 
-  final String label;
+  final double baseline;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Positioned(
+    left: 0,
+    right: 0,
+    top: 0,
+    child: Baseline(
+      baseline: baseline,
+      baselineType: TextBaseline.alphabetic,
+      child: child,
+    ),
+  );
+}
+
+/// The readout's last line: on the baseline of the captions under the
+/// pedals beside it. It starts where a caption starts and carries an unseen
+/// strut of a caption's size, so its text sits on the caption's baseline.
+class _ReadoutLastLine extends StatelessWidget {
+  const new(this.child);
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Positioned(
+    left: 0,
+    right: 0,
+    top: _SessionsReadout._captionTop,
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.baseline,
+      textBaseline: TextBaseline.alphabetic,
+      children: [
+        const AppText(
+          '\u200B',
+          style: TextStyle(fontSize: _SessionsReadout._captionSize),
+        ),
+        Expanded(child: child),
+      ],
+    ),
+  );
+}
+
+/// A value of the readout in words.
+class _ReadoutValue extends StatelessWidget {
+  const new(this.text);
+
   final String text;
 
   @override
-  Widget build(BuildContext context) {
-    final surface = context.surface;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: 124,
-          child: AppText(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 20,
-              height: 1.3,
-              color: surface.textMuted,
-            ),
-          ),
-        ),
-        Expanded(
-          child: AppText(
-            text,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 20,
-              height: 1.3,
-              color: surface.textSecondary,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
+  Widget build(BuildContext context) => AppText(
+    text,
+    maxLines: 1,
+    overflow: TextOverflow.ellipsis,
+    style: const TextStyle(fontSize: 24),
+  );
 }
 
-/// The recordings side of the preview: one row per recorded track with its
-/// waveform and its layers, or one line saying there are none.
-class _PreviewRecordings extends StatelessWidget {
-  const new({required this.preview, required this.peaks});
+/// The shown session's eight tracks as the Library's rows draw them: a
+/// segment per track, lit where it holds a recording, then how many do.
+class _ReadoutTracks extends StatelessWidget {
+  const new({required this.preview});
 
   final SessionPreview preview;
-  final Map<int, List<double>> peaks;
 
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final surface = context.surface;
-    if (preview.tracks.isEmpty) {
-      return AppText(
-        l10n.footSessionsTracks(0),
-        key: const Key('foot_sessions_preview_no_recordings'),
-        style: TextStyle(fontSize: 20, height: 1.3, color: surface.textMuted),
-      );
-    }
-    return Column(
+    final recorded = {for (final track in preview.tracks) track.channel};
+    return Row(
       children: [
-        for (final track in preview.tracks)
+        for (var channel = 0; channel < kMaxTracks; channel++) ...[
+          if (channel > 0) const SizedBox(width: 6),
           SizedBox(
-            height: 22,
-            child: Row(
-              children: [
-                SizedBox(
-                  width: 92,
-                  child: AppText(
-                    l10n.libraryTrackName(track.channel + 1),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 17, color: surface.textMuted),
-                  ),
-                ),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 2),
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(color: surface.accentSurface),
-                      child: SizedBox.expand(
-                        child: peaks[track.channel] == null
-                            ? null
-                            : CustomPaint(
-                                key: Key(
-                                  'foot_sessions_preview_peaks_'
-                                  '${track.channel}',
-                                ),
-                                painter: PeaksPainter(
-                                  peaks: peaks[track.channel]!,
-                                  color: surface.accent,
-                                ),
-                              ),
-                      ),
-                    ),
-                  ),
-                ),
-                SizedBox(
-                  width: 104,
-                  child: AppText(
-                    track.muted
-                        ? l10n.readoutStateMuted
-                        : l10n.stageLayersFigure(track.layers),
-                    textAlign: TextAlign.end,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 17,
-                      color: surface.textSecondary,
-                    ),
-                  ),
-                ),
-              ],
+            key: Key('foot_sessions_preview_track_$channel'),
+            width: 26,
+            height: 10,
+            child: ColoredBox(
+              color: recorded.contains(channel)
+                  ? surface.textPrimary
+                  : surface.controlStrong,
             ),
           ),
+        ],
+        const SizedBox(width: 20),
+        Expanded(
+          child: _ReadoutValue(l10n.footSessionsRecorded(recorded.length)),
+        ),
       ],
     );
   }
@@ -721,8 +586,9 @@ class _FootSessionsPedal extends StatelessWidget {
         _ => '${button.index - PedalButton.track1.index + 1}',
       },
       title: switch (pedal.role) {
-        FootSessionsRole.open =>
-          pedal.session == null ? '' : l10n.footSessionsOpen,
+        // A track switch is named for its session, as Mixer and Fade name
+        // theirs for their track.
+        FootSessionsRole.open => pedal.session?.name ?? l10n.readoutStateEmpty,
         FootSessionsRole.save => l10n.footSessionsSave,
         FootSessionsRole.newLoop => l10n.actionNewLoop,
         FootSessionsRole.nextPage =>
@@ -745,9 +611,24 @@ class _FootSessionsPedal extends StatelessWidget {
           cursor,
         ),
         FootSessionsRole.stop => l10n.actionScopeAllTracks,
+        FootSessionsRole.open => switch (pedal) {
+          FootSessionsPedal(session: null) => '',
+          FootSessionsPedal(opening: true) => l10n.footSessionsOpening,
+          FootSessionsPedal(current: true) => l10n.footSessionsOpenNow,
+          FootSessionsPedal(failed: true) => l10n.footSessionsCouldNotOpen,
+          FootSessionsPedal(:final session?) => _setupWords(l10n, session),
+        },
         _ => '',
       },
-      hint: newLoop || folderOnly || opens
+      // The session in the readout, the open one and the one being opened
+      // read in the primary colour.
+      detailHighlighted: pedal.previewed || pedal.opening || pedal.current,
+      titleMaxLines: pedal.role == FootSessionsRole.open ? 2 : 1,
+      // The Hold to open fills the switch's LED bar, as the real one fills.
+      holdFillsLed: opens,
+      hint: opens
+          ? l10n.footFxHoldAction(l10n.footSessionsOpen)
+          : newLoop || folderOnly
           ? l10n.footFxHold
           : nextFolder
           ? l10n.footFxHoldAction(l10n.footSessionsFolder)
