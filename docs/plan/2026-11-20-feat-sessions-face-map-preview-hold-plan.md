@@ -26,12 +26,24 @@ After the face was built, the owner asked for three changes:
 2. A simple tap shows a preview above the switch.
 3. A hold opens the session, with a progress animation on the switch's LED.
 
+## Owner corrections, 2026-11-20
+
+The owner read the first version of this plan and tried a sketch of it.
+
+- **The fill runs left to right,** not from both ends to the centre. This
+  settles the direction and changes how the fill is built (R5): the board
+  already has a left-to-right fill, so no new firmware is needed.
+- **A session's tracks may be empty.** What matters in a session can be
+  its setup: the loop mode, the tempo, the effects. The preview and the
+  cards must show the setup, and must not present a session with no
+  recordings as empty (R4).
+
 ## What changes on the face
 
 | Switch | As built (#1910) | After this plan |
 |---|---|---|
 | Track 1 to 4, tap | Opens the session above it | Shows that session's preview; opens nothing |
-| Track 1 to 4, held | The same as a press | Opens the session; the LED fills while the hold is pending |
+| Track 1 to 4, held | The same as a press | Opens the session; the LED fills left to right while the hold is pending |
 | Bank | Next four sessions in the folder | Next page of the map |
 | Bank, held | Next folder | Nothing (R1) |
 | Undo, Clear, Rec/Play, Stop, MODE | Save, New loop on a Hold, transport, Exit | Unchanged |
@@ -60,20 +72,39 @@ ends) and D6 (Save with no session, LEDs, the readout) stay.
   `onHold`. With a Hold armed, the tap runs on release. The threshold is
   the pedal's long-press setting (`loadPedalLongPressMs`, 800 ms by
   default). Bank on the face already works this way when there are folders.
-- **The LED fill.** Passing `clears:` to `_armGesture` sends `CLEAR_HOLD`
-  (`0x13`: switch, progress 0 to 255) every 20 ms. The board fills that
-  switch's LED from both ends toward the centre, and flashes it three times
-  when the app sends 255 (`_meetClearFill`). It works on any switch. The
-  colour is fixed in the firmware: red (`PILL_CLEAR_RED`,
-  `firmware/console_board/console_board.ino`). Clear's Hold for New loop on
-  this face already uses it.
-- **The on-screen cue.** A drawn pedal with a pending Hold shows a progress
-  bar timed against `ControlState.holdThreshold`.
+- **Two LED fills on the board.**
+  - The clearing fill (#1534). Passing `clears:` to `_armGesture` sends
+    `CLEAR_HOLD` (`0x13`: switch, progress) every 20 ms. The board fills
+    that switch's eight LEDs red from both ends toward the centre and
+    flashes them when the app sends 255. Clear's Hold for New loop on this
+    face uses it. Its colour and direction are fixed in the firmware.
+  - The left-to-right fill (#1077). The `STATE` frame names one switch and
+    a progress (`queued_button`, `queued_progress`, bytes 51 and 52 of the
+    frame; `queuedButton` and `queuedProgress` on `PedalStateFrame`). The
+    board fills that switch's LEDs left to right, in the colour the frame
+    gives the switch, and lights the whole switch when a later frame no
+    longer names it. Today only a waiting Song or Band section uses it:
+    green for a section waiting to play, red for one waiting to record. An
+    invariant (`song-queue-mirrors-engine`, `lib/control/invariants.dart`)
+    says the field mirrors the engine's queue.
+- **The on-screen cue.** A drawn pedal with a pending Hold shows a bar that
+  fills from the left over `ControlState.holdThreshold`
+  (`lib/looper/view/performance_pedal.dart`).
 - **The preview's data.** `SessionRepository.readPreview(id)` returns the
   populated tracks (length, bars, layers, muted, effect count), the tempo
   and whether a mixdown exists, without reading audio. `readPeaks(id,
   track)` returns a track's waveform, read off the UI isolate. The Library
   uses both (`LibraryCubit`, `lib/library/view/library_preview_card.dart`).
+  It carries no setup beyond the tempo and a count of effects.
+- **The setup is in the manifest.** A saved `Session`
+  (`packages/session_repository/lib/src/models/session.dart`) holds the
+  looper mode (Multi, Sync, Song, Band, Free), the tempo and time
+  signature, the loop length in bars, the record timing, the count-in, the
+  click, and the effect chains of each input, lane, track, the All tracks
+  stage and each output. `decodeFxChain` (`packages/looper_repository`)
+  turns a stored chain into its entries.
+- **A card today** shows the name, the count of recorded tracks and the
+  tempo. A session with no recordings reads `No tracks`.
 - **Listen.** `SessionRepository.startAudition(id)` plays the session's
   `mixdown.wav` through the engine's audition voice on every enabled
   output. The engine refuses it while a performance recording runs.
@@ -131,38 +162,59 @@ nobody chose (`New loop 7`), which the player must remove by hand.
 ### R4. What the preview shows, and whether it sounds
 
 Recommended: a silent preview, on the main screen, in a panel above the
-four cards. It shows:
+four cards. It shows the setup first and the recordings second, because a
+session can be a prepared setup with nothing recorded:
 
-- the name, the tempo and time signature, and the loop length in bars (or
-  seconds without a tempo);
-- one row per recorded track with its waveform, its number of layers and
-  its effect count, and `Muted` where every lane is muted;
-- when the session was last saved;
+- the name, and when the session was last saved;
+- the setup: the looper mode, the tempo and time signature (or `No
+  tempo`), the loop length in bars when one is set, and the count-in and
+  the click when they are on;
+- the effects, by place, named as the FX face names them: `Inputs`,
+  `Tracks`, `All tracks`, `Outputs`. A place with no effects is left out,
+  and a long list ends in `+N`;
+- the recordings: one row per recorded track with its waveform and its
+  number of layers, and `Muted` where every lane is muted. A session with
+  none says `No recordings` in one line and gives the space to the setup;
 - what opening it would end, in the warning colour, as the card says today
   (`Stops playback`, `Ends the take`, `Ends the recording`).
+
+The cards change with it. A card shows the name, then the looper mode and
+the tempo (`Song · 84 BPM`), then the recordings (`3 tracks`, or `No
+recordings` in place of `No tracks`).
 
 The previewed session's card is outlined. The panel stays until another
 tap, a page turn, or the face closes. The text shows first and the
 waveforms when they have been read.
 
+Which settings the panel lists is the owner's call. The list above is the
+recommendation; the manifest also holds the record timing, the quantize
+division and the input trims, which are left out to keep the panel
+readable from standing height.
+
 The alternative adds sound: the tap also plays the session's saved mix
 (Listen). The mix goes to every enabled output, so on stage the audience
 hears it, on top of whatever is playing. It cannot run during a performance
-recording. If the owner wants it, it should be a separate gesture and not
-the tap.
+recording, and a session with no recordings has no mix to play. If the
+owner wants it, it should be a separate gesture and not the tap.
 
 ### R5. The colour of the fill
 
-Recommended: the red fill that exists, with its three flashes when the Open
-is accepted. It needs no firmware change. On this face red already means
-"this hold replaces what is loaded": Clear's Hold fills red and starts a
-new loop.
+The direction is settled: left to right (owner, 2026-11-20). It is built on
+the board's left-to-right fill, which takes its colour from the frame, so
+the colour is the app's choice and needs no firmware change.
 
-The alternative is a fill in another colour (for example the `selected`
-colour of the Sessions LED map). The colour is fixed in the firmware, so it
-needs a new link message that carries a colour, new board firmware flashed
-on the console, and a linked PR in segno-hardware. It would be a separate
-issue after this one.
+Recommended: the `selected` colour of the Sessions LED map (white by
+default), which is the colour of the switch under the open session. The
+fill then ends as a fully lit switch in the colour that means "this
+session is open".
+
+The alternative is red. On the board a red left-to-right fill already
+means "a section is waiting to record", and a green one "a section is
+waiting to play", so both would say something else here.
+
+There is no flash at the end. The flash belongs to the clearing fill. The
+board lights the whole switch when the hold fires, and the card says
+`Opening…`.
 
 ## The face after this plan
 
@@ -172,14 +224,14 @@ issue after this one.
   no position, the side also names it: `Open: <name>`.
 - **A tap** on a switch with a session previews it. A tap on an empty
   position does nothing.
-- **A hold** on a switch with a session starts the fill on the switch's LED
-  and the progress bar on the drawn pedal. Releasing before the threshold
-  is a tap. At the threshold the Open is asked for: the card says
-  `Opening…`, the other switches do nothing until it settles, and the LED
-  flashes when the session is open. Then the face closes, as today. A hold
-  needs no tap first.
+- **A hold** on a switch with a session fills the switch's LEDs left to
+  right, and the bar on the drawn pedal with them. Releasing before the
+  threshold is a tap, and the LEDs go dark again. At the threshold the
+  whole switch lights and the Open is asked for: the card says `Opening…`
+  and the other switches do nothing until it settles. Then the face
+  closes, as today. A hold needs no tap first.
 - **A failed Open** keeps the face up with the reason on the card, as
-  today, and the LED does not flash.
+  today, and the switch goes dark again.
 - **The open session's switch.** A tap previews it. A hold does nothing and
   draws no fill.
 - **Captions.** A switch with a session says `Open` with `Hold` under it,
@@ -188,7 +240,12 @@ issue after this one.
 - **Touch.** A tap on a card or on a drawn switch previews. A long press
   opens, with the same progress bar.
 - **LEDs.** Unchanged apart from the fill: the switch under the open
-  session is lit, the others are dark.
+  session is lit, the others are dark. Clear's Hold for New loop keeps the
+  red fill from both ends: it is the clearing Hold.
+- **A waiting Song or Band section.** The frame has one left-to-right
+  fill. On this face the track switches stand for sessions, so the face
+  does not draw a waiting section on them, and the field is free for the
+  hold.
 - **The 7" readout.** Unchanged: `Sessions` and the page.
 - **While a take is locked** the switches do nothing, as today.
 
@@ -211,12 +268,26 @@ restored from USB have no position.
   `hasOtherFolders`, `nextFolder`, and `compareSessionNames` with
   `orderedSessions`.
 - **The gesture.** `_onSessionsPress` arms a track switch with
-  `_armGesture`: `onTap` sets the previewed id, `onHold` asks for the Open,
-  and `clears:` is true while the Open could still happen (the face is
-  editable, the position holds a session, and it is not the open one).
-  `_onSessionCatalogue` calls `_meetClearFill` when the Open it is waiting
-  for settles as opened. `FootSessionsSelection` gains `previewId`, cleared
-  by a page turn.
+  `_armGesture`: `onTap` sets the previewed id and `onHold` asks for the
+  Open. `FootSessionsSelection` gains `previewId`, cleared by a page turn.
+  A switch whose hold could not open anything (an empty position, the open
+  session, a locked take) arms no Hold, so its tap acts on contact.
+- **The fill.** It does not use `clears:` or `CLEAR_HOLD`. While a track
+  switch's hold is pending, the Sessions frame names that switch in
+  `queuedButton`, gives it the fill's colour, and sets `queuedProgress`
+  from the time held over the threshold. A ticker pushes a frame at a
+  fixed interval until the gesture settles; the interval is chosen on the
+  console (a `STATE` frame is about 57 bytes, 5 ms at 115200 baud). When
+  the hold fires, the next frame names no switch and keeps the colour, so
+  the board lights the whole switch; it goes dark when the Open settles or
+  fails. `song-queue-mirrors-engine` is narrowed to the modes that draw
+  sections, and a new invariant says that in Sessions the field is a
+  pending hold's or empty.
+- **The setup in the preview.** `SessionSummary` gains the looper mode,
+  read leniently like the tempo, for the cards. `SessionPreview` gains the
+  loop length, the count-in, the click and the stored chains grouped by
+  place. The repository still does not look inside a chain;
+  `SessionPreviewCubit` names the effects with `decodeFxChain`.
 - **The preview's data** is not Control's. A `SessionPreviewCubit` in
   `lib/session/cubit/`, over `SessionRepository`, loads `readPreview` and
   the peaks for one id and drops a result a later request superseded, as
@@ -239,20 +310,34 @@ Each part is one PR on a branch `claude/sessions-map-1921-p<K>`, stacked on
 On the face as built (name order, folders).
 
 - `lib/control/cubit/control_foot_sessions.dart`: the track switches' tap
-  and Hold, the fill, the flash on a settled Open. The open session's
-  switch no longer closes the face.
-- `lib/control/model/foot_sessions.dart`: `previewId`; the captions.
+  and Hold, and the ticker of the fill. The open session's switch no
+  longer closes the face.
+- `lib/control/model/foot_sessions.dart`: `previewId`, the pending hold,
+  the captions.
+- `lib/control/control_projection.dart`, `lib/control/binding/` and
+  `lib/control/invariants.dart`: the fill in the Sessions frame, no
+  waiting section on the face, and the two invariants.
+- `packages/session_repository`: the looper mode on `SessionSummary`, and
+  the setup and the chains by place on `SessionPreview`, with their tests.
 - `lib/session/cubit/session_preview_cubit.dart` and its state.
 - `lib/looper/view/foot_sessions_view.dart`: the panel, the outlined card,
-  the long press on a card, the side text.
+  the cards' mode and `No recordings` lines, the long press on a card, the
+  side text.
 - Strings in English and Spanish.
 - Tests: the dispatch tests (a tap never opens; a hold opens once; a
   release before the threshold previews; a hold on the open session does
-  nothing; no flash on a failed Open), the projection tests, a cubit test
-  for `SessionPreviewCubit`, the view tests, and the screenshot scenes
-  (previewing, holding, previewing an unreadable session).
+  nothing), the frame's fill at the start, the middle and the end of a
+  hold and after a release, the projection tests, a cubit test for
+  `SessionPreviewCubit`, the view tests, and the screenshot scenes
+  (previewing a session with recordings, one with a setup only, an
+  unreadable one, and a pending hold).
+- No firmware change, so `firmware/test/run_tests.sh` runs only if
+  `packages/pedal_repository` is touched.
 - Penpot: page 19, the boards drawn for #1917 redrawn with the panel, plus
   a board for a pending Hold; a `c/` note with R4 and R5 as answered.
+
+If the PR is too large to review, the setup on the cards and in the panel
+goes in a PR of its own after the gestures.
 
 ### Part 2: the map
 
@@ -284,16 +369,20 @@ On the face as built (name order, folders).
 
 - A tap with a shoe never opens, and a hold is not tiring at the long-press
   setting in use.
-- The red fill and the flash are visible on the track switches from
-  standing height.
+- The left-to-right fill is smooth at the chosen frame interval and is
+  visible on the track switches from standing height, and the switch
+  lights whole when the hold fires.
+- A hold on the face while a Song section waits: the fill is the hold's.
 - How long the preview takes to appear after a tap, text and waveforms, for
   a four-track and an eight-track session.
-- The panel is readable from standing height.
+- The panel is readable from standing height, for a session with eight
+  recorded tracks and for one with a setup and no recordings.
 
 ## Not in this plan
 
 - Sound in the preview (R4), unless the owner asks for it.
-- A fill in another colour (R5).
+- A new link message or new board firmware. The fill uses what the board
+  has.
 - Assigning from the face (R2).
 - A map per folder (R1).
 - The items #1910's plan lists under "Not in this plan".
