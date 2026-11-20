@@ -505,9 +505,15 @@ Built as "Owner decisions on the list" says.
   is replaced by `foot_sessions_hidden`, and the Library has
   `library_row_options`.
 - Not built: the map, its file, the assign sheet and the `Pedal` row.
-- Owed: the Penpot writeback of this part (page 19's boards 09 to 17 for
-  the new captions and readout, board 14 removed, a board for the row
-  options, and the `c/` notes).
+- The Penpot writeback is in tomassasovsky/segno-design#26: page 19's
+  boards 09 to 17 with the new captions and readout, board 14 redrawn as
+  the open session hidden from the pedal, the three-dot button on the
+  Library rows of boards 01 and 03, and both `c/` notes. The row's sheet
+  is the options sheet Manage uses, which the file does not draw.
+- Review: one round. Fixed: Undo's Save and New loop are asked again when
+  the gesture settles, so neither lands while an Open is in flight; a face
+  whose sessions are all hidden says so and where to show them; the
+  hidden ids are checked in one pass over the bundles.
 
 ### Part 3: an order set by hand (not started, if it is wanted)
 
