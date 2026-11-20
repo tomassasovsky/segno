@@ -1511,7 +1511,9 @@
     "SIGUSR",
     "scanout",
     "msaa",
-    "unwarped"
+    "unwarped",
+    "oversampler",
+    "oversamplers"
   ],
   "overrides": [
     {

@@ -452,7 +452,36 @@ static void test_drive_latency_sums_in_a_chain(void) {
   le_engine_destroy(e);
 }
 
+/* The oversamplers' designs are made once a rate (#1914): a second slot
+ * landing on the Overdrive at the same rate designs nothing, and runs as
+ * the first did. */
+extern int le_test_os_designs;
+static void test_drive_design_made_once(void) {
+  printf("test_drive_design_made_once\n");
+  const int sr = 50000; /* no other test runs it: the designs are the process's */
+  float p[LE_FX_PARAMS] = {0};
+  p[0] = 0.6f;
+  p[1] = 0.5f;
+  enum { N = 256 };
+  float in[N], a_l[N], a_r[N], b_l[N], b_r[N];
+  for (int i = 0; i < N; ++i) in[i] = 0.3f * sinf(2.0f * (float)M_PI * 440.0f * i / sr);
+  const int before = le_test_os_designs;
+  le_fx_state* a = dyn_state(LE_FX_OVERDRIVE, sr);
+  uint32_t clock = 0;
+  dyn_run(a, LE_FX_OVERDRIVE, p, sr, in, a_l, a_r, N, &clock);
+  const int first = le_test_os_designs - before;
+  CHECK(first > 0);
+  le_fx_state* b = dyn_state(LE_FX_OVERDRIVE, sr);
+  clock = 0;
+  dyn_run(b, LE_FX_OVERDRIVE, p, sr, in, b_l, b_r, N, &clock);
+  CHECK(le_test_os_designs - before == first);
+  CHECK(memcmp(a_l, b_l, sizeof(a_l)) == 0 && memcmp(a_r, b_r, sizeof(a_r)) == 0);
+  dyn_free(a);
+  dyn_free(b);
+}
+
 static void run_drive_tests(void) {
+  test_drive_design_made_once();
   test_drive_latency_sums_in_a_chain();
   test_overdrive_matches_the_capture();
   test_overdrive_controls();

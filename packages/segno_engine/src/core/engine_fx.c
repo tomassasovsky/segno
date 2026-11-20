@@ -6551,7 +6551,57 @@ static double le_os_pass_hz(int sr) {
  * edge to its image; the elliptic order that holds LE_OS_ATT_DB over it;
  * each coefficient from the elliptic functions' series (summed until their
  * terms are below what a float carries). */
+static int le_os_coefs_design(int sr, int s, float* c);
+
+#ifdef LE_NATIVE_TESTS
+int le_test_os_designs = 0; /* designs made from the series */
+#endif
+
+/* Every design made, by rate and stage. A slot landing on a kind that
+ * oversamples took its design from the series again, on the audio thread:
+ * 20 to 50 us of libm on the console in the block a take starts, where the
+ * take's lane racks land (#1914). The design depends on nothing else, so it
+ * is made once. Lock-free: an entry is claimed (LE_OS_MEMO_BUSY), written,
+ * then published under its key; threads that miss together each publish
+ * their own, and one that finds the table full designs without keeping it. */
+#define LE_OS_MEMO 16
+#define LE_OS_MEMO_BUSY UINT32_MAX
+static struct {
+  _Atomic uint32_t key; /* 0 free, LE_OS_MEMO_BUSY being written */
+  int32_t n;
+  float c[LE_OS_MAX_COEFS];
+} le_os_memo[LE_OS_MEMO];
+
 static int le_os_coefs(int sr, int s, float* c) {
+  const uint32_t key =
+      ((uint32_t)(sr > 0 ? sr : 48000) << 4 | (uint32_t)s) + 1u;
+  for (int i = 0; i < LE_OS_MEMO; ++i) {
+    if (atomic_load_explicit(&le_os_memo[i].key, memory_order_acquire) ==
+        key) {
+      const int32_t n = le_os_memo[i].n;
+      memcpy(c, le_os_memo[i].c, sizeof(float) * (size_t)n);
+      return n;
+    }
+  }
+  const int n = le_os_coefs_design(sr, s, c);
+#ifdef LE_NATIVE_TESTS
+  ++le_test_os_designs;
+#endif
+  for (int i = 0; i < LE_OS_MEMO; ++i) {
+    uint32_t free_key = 0u;
+    if (atomic_compare_exchange_strong_explicit(
+            &le_os_memo[i].key, &free_key, LE_OS_MEMO_BUSY,
+            memory_order_acquire, memory_order_relaxed)) {
+      le_os_memo[i].n = n;
+      memcpy(le_os_memo[i].c, c, sizeof(float) * (size_t)n);
+      atomic_store_explicit(&le_os_memo[i].key, key, memory_order_release);
+      break;
+    }
+  }
+  return n;
+}
+
+static int le_os_coefs_design(int sr, int s, float* c) {
   const double pi = 3.14159265358979323846;
   const double rate = (double)(sr > 0 ? sr : 48000);
   const double tbw = 0.25 - le_os_pass_hz(sr) / (2.0 * rate * (double)(1 << s));
