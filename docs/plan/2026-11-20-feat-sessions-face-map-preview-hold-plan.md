@@ -14,8 +14,8 @@ Tracking: [#1921](https://github.com/tomassasovsky/segno/issues/1921),
 [#1910](https://github.com/tomassasovsky/segno/issues/1910)
 ([`2026-11-19-feat-foot-session-actions-plan.md`](2026-11-19-feat-foot-session-actions-plan.md)),
 which is built and in review (#1911, #1912, #1913, #1915, #1916, #1919).
-Nothing here is built. The owner answers R1 to R5 below before Part 1
-starts.
+Nothing here is built. The owner answered R1 to R5 on 2026-11-20, so
+Part 1 can start.
 
 ## Owner direction, 2026-11-19
 
@@ -37,6 +37,25 @@ The owner read the first version of this plan and tried a sketch of it.
   its setup: the loop mode, the tempo, the effects. The preview and the
   cards must show the setup, and must not present a session with no
   recordings as empty (R4).
+
+## Owner decisions, 2026-11-20
+
+All five decisions were answered as recommended. The sections under
+"Decisions for the owner" keep the reasoning and the alternatives that were
+not chosen.
+
+1. **R1, the map.** One map for the whole Library. A position is a page
+   and a switch. Bank turns the pages, and a held Bank does nothing.
+2. **R2, assigning.** In the Library, on the session's preview card, with a
+   sheet that draws the pages and their positions. Not from the face.
+3. **R3, automatic assignment.** None. The face shows only the sessions the
+   player assigned.
+4. **R4, the preview.** Silent. Setup first (looper mode, tempo and time
+   signature, loop length, count-in and click when on), then the effects by
+   place, then the recordings or `No recordings`, then what opening would
+   end. The cards show the mode and the tempo, then the recordings.
+5. **R5, the fill.** Left to right, in the `selected` colour of the
+   Sessions LED map, with no flash.
 
 ## What changes on the face
 
