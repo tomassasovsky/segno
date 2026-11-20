@@ -3717,9 +3717,9 @@ class ControlCubit extends Cubit<ControlState> {
 
   /// Arms or disarms performance recording, mirroring the toolbar's own
   /// dispatch (`PerformanceRecorderCubit.toggleArm` calls the same
-  /// repository methods, including the guarded `disarm()` — not
-  /// `disarmAndFinalize()`, which is reserved for `SessionCubit`'s
-  /// unguarded auto-disarm-before-load) — the repository's own double-press
+  /// repository methods, including the guarded `disarm()` — not the
+  /// unguarded `disarmForSessionChange()`, which is `SessionCubit`'s
+  /// auto-disarm before a load) — the repository's own double-press
   /// guard covers a rapid re-press identically here, so it is not
   /// duplicated in this cubit.
   void togglePerformanceRecord() {

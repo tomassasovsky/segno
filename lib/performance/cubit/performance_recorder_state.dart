@@ -251,6 +251,7 @@ class PerformanceRecorderRendering extends PerformanceRecorderState {
     this.refusal = 0,
     this.refusedWith,
     this.stoppedOnItsOwn = false,
+    this.endedBySessionChange = false,
   });
 
   /// Render completion, `0..100`.
@@ -275,6 +276,11 @@ class PerformanceRecorderRendering extends PerformanceRecorderState {
   /// dialog does not open for it; the player is told when they come back.
   final bool stoppedOnItsOwn;
 
+  /// An Open or a New loop ended the take: the capture dialog does not open
+  /// over the new session, and the stage says the recording was saved once
+  /// it is delivered (#1229, #1910).
+  final bool endedBySessionChange;
+
   @override
   List<Object?> get props => [
     percent,
@@ -282,6 +288,7 @@ class PerformanceRecorderRendering extends PerformanceRecorderState {
     refusal,
     refusedWith,
     stoppedOnItsOwn,
+    endedBySessionChange,
   ];
 }
 
@@ -298,6 +305,7 @@ class PerformanceRecorderCompleted extends PerformanceRecorderState {
     this.tracks = const [],
     this.duration,
     this.hadGlitch = false,
+    this.endedBySessionChange = false,
   }) : discarded = false;
 
   /// Creates a [PerformanceRecorderCompleted] for a capture too short to
@@ -307,7 +315,8 @@ class PerformanceRecorderCompleted extends PerformanceRecorderState {
       discarded = true,
       tracks = const [],
       duration = null,
-      hadGlitch = false;
+      hadGlitch = false,
+      endedBySessionChange = false;
 
   /// The capture's outcome, or `null` when [discarded].
   final PerformanceRecordResult? result;
@@ -334,6 +343,17 @@ class PerformanceRecorderCompleted extends PerformanceRecorderState {
   /// capture completes — so the fact has to be carried, not re-read.
   final bool hadGlitch;
 
+  /// An Open or a New loop ended the take (see
+  /// [PerformanceRecorderRendering.endedBySessionChange]).
+  final bool endedBySessionChange;
+
   @override
-  List<Object?> get props => [result, discarded, tracks, duration, hadGlitch];
+  List<Object?> get props => [
+    result,
+    discarded,
+    tracks,
+    duration,
+    hadGlitch,
+    endedBySessionChange,
+  ];
 }

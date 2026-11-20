@@ -776,6 +776,8 @@
         }
     },
     "perfDone": "Captura guardada",
+    "perfSavedBySessionChange": "Grabación guardada",
+    "perfSavedFindInLibrary": "Está en Biblioteca > Audio.",
     "perfSavedSubtitle": "{name} — {count, plural, =1{1 pista} other{{count} pistas}}, {duration}. Guardada en la carpeta de la sesión.",
     "perfSavedSubtitleTimed": "{name} — {duration}. Guardada en la carpeta de la sesión.",
     "perfSavedSubtitlePlain": "{name} — guardada en la carpeta de la sesión.",

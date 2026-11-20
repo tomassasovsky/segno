@@ -322,7 +322,7 @@ void main() {
     captureSettings = buildCapture();
     // open's auto-disarm-before-load orchestration; a no-op success by
     // default since nothing is armed in these tests.
-    when(performance.disarmAndFinalize)
+    when(performance.disarmForSessionChange)
         .thenAnswer((_) async => EngineResult.ok);
   });
 
@@ -683,7 +683,7 @@ void main() {
           'previous mix',
         );
         expect((mixPersistence as _WriteThenThrowPersistence).restores, 0);
-        verifyNever(performance.disarmAndFinalize);
+        verifyNever(performance.disarmForSessionChange);
         verifyNever(() => looper.applySession(any()));
         verifyNever(looper.blockStartForSessionBoot);
         verifyNever(looper.stopEngine);
@@ -823,7 +823,7 @@ void main() {
       expect(cubit.state.refusedBy, GuardKind.deviceChange);
       // Counted like every other failure, so the Library shows it once.
       expect(cubit.state.failureCount, 1);
-      verifyNever(performance.disarmAndFinalize);
+      verifyNever(performance.disarmForSessionChange);
       verifyNever(() => looper.applySession(any()));
       expect(fxPersistence.sessionTransitionActive, isFalse);
       expect(guards.active.single.kind, GuardKind.deviceChange);
@@ -849,7 +849,7 @@ void main() {
       final guards = GuardRegistry();
       final seenAtFinalize = <GuardKind>[];
       final seenAtApply = <GuardKind>[];
-      when(performance.disarmAndFinalize).thenAnswer((_) async {
+      when(performance.disarmForSessionChange).thenAnswer((_) async {
         seenAtFinalize.addAll(guards.active.map((o) => o.kind));
         return EngineResult.ok;
       });
@@ -1334,7 +1334,7 @@ void main() {
           ),
         ).called(1);
         verify(() => looper.applySession(any())).called(1);
-        verify(performance.disarmAndFinalize).called(1);
+        verify(performance.disarmForSessionChange).called(1);
         verifyNever(() => repository.commitConversion(any(), any()));
       },
     );
@@ -2170,7 +2170,7 @@ void main() {
       test('a refusal before the apply gives the new id back and leaves the '
           'current session', () async {
         stubNewLoop();
-        when(performance.disarmAndFinalize)
+        when(performance.disarmForSessionChange)
             .thenAnswer((_) async => EngineResult.device);
         final cubit = build();
         addTearDown(cubit.close);
@@ -2685,7 +2685,7 @@ void main() {
             .having((s) => s.currentSessionName, 'current', 'A'),
       ],
       verify: (_) {
-        verifyNever(performance.disarmAndFinalize);
+        verifyNever(performance.disarmForSessionChange);
         verifyNever(() => looper.applySession(any()));
         verifyNever(looper.stopEngine);
       },
@@ -2716,7 +2716,7 @@ void main() {
         verifyInOrder([
           () =>
               repository.open(any(), liveSettings: any(named: 'liveSettings')),
-          performance.disarmAndFinalize,
+          performance.disarmForSessionChange,
           () => looper.applySession(any()),
         ]);
       },
@@ -2738,7 +2738,7 @@ void main() {
             ),
           ),
         );
-        when(performance.disarmAndFinalize)
+        when(performance.disarmForSessionChange)
             .thenAnswer((_) async => EngineResult.device);
       },
       seed: () =>
@@ -2756,7 +2756,7 @@ void main() {
             .having((s) => s.currentSessionName, 'current', 'A'),
       ],
       verify: (_) {
-        verify(performance.disarmAndFinalize).called(1);
+        verify(performance.disarmForSessionChange).called(1);
         verify(
           () =>
               repository.open(any(), liveSettings: any(named: 'liveSettings')),

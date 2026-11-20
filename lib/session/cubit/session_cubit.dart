@@ -685,7 +685,7 @@ class SessionCubit extends Cubit<SessionState> {
         const GuardScope.internal(),
         purpose: applyPurpose,
       );
-      final disarmed = await _performance.disarmAndFinalize();
+      final disarmed = await _performance.disarmForSessionChange();
       if (!disarmed.isOk) {
         throw StateError(
           'performance capture did not stop before session load',

@@ -635,8 +635,12 @@ void onPerformanceRecorderState(
   // A take that stopped on its own (#1767) stopped with nobody there: no
   // dialog waits for them; PerformanceAutoStopNotice tells them when they
   // come back.
+  // A take an Open or a New loop ended (#1229, #1910) is not drawn over the
+  // new session either: the stage says it was saved once it is delivered.
+  // One that did not come out whole still opens the dialog, which is where
+  // the player reads what is missing.
   if (state is PerformanceRecorderRendering) {
-    if (!state.stoppedOnItsOwn) {
+    if (!state.stoppedOnItsOwn && !state.endedBySessionChange) {
       unawaited(showPerformanceCompletionSheet(context));
     }
     return;
@@ -644,6 +648,19 @@ void onPerformanceRecorderState(
   if (state is PerformanceRecorderCompleted) {
     if (state.discarded) {
       say((l10n) => l10n.perfDiscarded, tone: NoticeTone.neutral);
+    } else if (state.endedBySessionChange &&
+        state.result is PerformanceRecordDone) {
+      context.read<NoticesCubit>().show(
+        Notice(
+          id: AppNoticeId.performance,
+          tone: NoticeTone.success,
+          title: (l10n) => l10n.perfSavedBySessionChange,
+          body: (l10n) => l10n.perfSavedFindInLibrary,
+          // Kept: the session's own notice arrives around the same time
+          // and would otherwise replace it unread.
+          detailed: true,
+        ),
+      );
     } else if (!perfStoppedOnItsOwn(state.result)) {
       unawaited(showPerformanceCompletionSheet(context));
     }

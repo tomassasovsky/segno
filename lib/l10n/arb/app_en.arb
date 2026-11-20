@@ -1283,6 +1283,14 @@
         }
     },
     "perfDone": "Capture saved",
+    "perfSavedBySessionChange": "Recording saved",
+    "@perfSavedBySessionChange": {
+        "description": "Stage notice title when opening a session or starting a new loop ended a running performance recording: it is kept, and no completion dialog opens over the new session."
+    },
+    "perfSavedFindInLibrary": "Find it in Library > Audio.",
+    "@perfSavedFindInLibrary": {
+        "description": "Stage notice body under 'Recording saved': where the finished recording is."
+    },
     "perfSavedSubtitle": "{name} — {count, plural, =1{1 track} other{{count} tracks}}, {duration}. Written to the session folder.",
     "@perfSavedSubtitle": {
         "description": "Completion dialog subtitle: capture name, exported track count, wall-clock length (M:SS).",
