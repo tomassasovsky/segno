@@ -24,6 +24,83 @@ void main() {
     });
   });
 
+  group('the default Custom map (#1908)', () {
+    test('assigns every editable switch, the track switches on both banks', () {
+      expect(PedalSetup.defaultCustom.keys.toSet(), {
+        for (final button in PedalButton.values)
+          if (!PedalBindingKey.unbindable.contains(button))
+            if (PedalBindingKey.isBankKeyed(button)) ...[
+              PedalBindingKey(button: button, bank: 0),
+              PedalBindingKey(button: button, bank: 1),
+            ] else
+              PedalBindingKey(button: button),
+      });
+    });
+
+    test('holds only actions the catalogue has', () {
+      final catalogue = controlActionCatalogue().toSet();
+      for (final MapEntry(:key, value: pair)
+          in PedalSetup.defaultCustom.entries) {
+        expect(pair.press, isNotNull, reason: '$key');
+        for (final action in [pair.press, ?pair.hold]) {
+          expect(catalogue, contains(action), reason: '$key');
+        }
+      }
+    });
+
+    test('keeps Record / Play and Stop on contact: neither is beside a '
+        'Hold', () {
+      final contact = {
+        const CommandAction(ControlCommand.recordPlay),
+        const CommandAction(ControlCommand.stop),
+      };
+      for (final pair in PedalSetup.defaultCustom.values) {
+        if (contact.contains(pair.press)) expect(pair.hold, isNull);
+        expect(contact, isNot(contains(pair.hold)));
+      }
+    });
+
+    test('carries the Tuner on a Hold of pedal 2, bank A', () {
+      expect(
+        PedalSetup.fresh.customFor(PedalButton.track2, bank: 0).hold,
+        const ModeAction(InteractionMode.tuner),
+      );
+    });
+
+    test('the fresh setup is the accepted Track controls with the default '
+        'map, and round-trips', () {
+      final fresh = PedalSetup.fresh;
+      expect(fresh.custom, PedalSetup.defaultCustom);
+      expect(fresh.hasDefaultCustom, isTrue);
+      expect(fresh.copyWith(custom: const {}), const PedalSetup());
+      expect(PedalSetup.decode(fresh.encode()), fresh);
+    });
+
+    test('withDefaultCustom replaces only the Custom assignments', () {
+      final edited = const PedalSetup()
+          .copyWith(
+            modePress: InteractionMode.fx,
+            clearModeHold: true,
+            recordHold: RecordHold.none,
+            trackHold: TrackHold.clearTrack,
+          )
+          .withCustom(
+            PedalButton.stop,
+            bank: 0,
+            pair: const ControlGesturePair(press: _pedal1),
+          );
+      expect(edited.hasDefaultCustom, isFalse);
+      final restored = edited.withDefaultCustom();
+      expect(restored.custom, PedalSetup.defaultCustom);
+      expect(restored.hasDefaultCustom, isTrue);
+      expect(restored.copyWith(custom: edited.custom), edited);
+    });
+
+    test('a setup with nothing on Custom is not the default', () {
+      expect(const PedalSetup().hasDefaultCustom, isFalse);
+    });
+  });
+
   group('the Custom map', () {
     test('keys the four track switches per bank and the rest per switch', () {
       var setup = const PedalSetup()

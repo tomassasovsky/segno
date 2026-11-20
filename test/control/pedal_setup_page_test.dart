@@ -488,55 +488,61 @@ void main() {
   });
 
   group('Clear custom assignments', () {
-    testWidgets(
-      'is offered only when something is assigned and clears both banks',
-      (tester) async {
-        await pump(tester);
-        await openCustom(tester);
-        const clear = Key('pedal_setup_clear_custom');
-        expect(
-          tester.widget<LoopOutlinedButton>(find.byKey(clear)).onTap,
-          isNull,
-        );
+    testWidgets('clears both banks, and has nothing to clear on an empty map', (
+      tester,
+    ) async {
+      store.values['pedal.setup'] = const PedalSetup().encode();
+      await pump(tester);
+      await openCustom(tester);
+      const clear = Key('pedal_setup_clear_custom');
+      const confirm = Key('pedal_setup_clear_confirm');
+      // With nothing assigned the dialog still opens, for the default
+      // map; its Clear action has nothing to do.
+      await tester.tap(find.byKey(clear));
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<LoopOutlinedButton>(find.byKey(confirm)).onTap,
+        isNull,
+      );
+      await tester.tap(find.byKey(const Key('pedal_setup_clear_cancel')));
+      await tester.pumpAndSettle();
+      expect(control.state.pedalSetup.hasCustomAssignments, isFalse);
+      expect(find.byKey(const Key('pedal_setup_restore_custom')), findsNothing);
 
-        await choose(
-          tester,
-          field: press,
-          group: 'transport',
-          choice: 'command:stop',
-        );
-        await tester.tap(find.byKey(const Key('pedal_setup_cap_bank')));
-        await tester.pumpAndSettle();
-        await choose(
-          tester,
-          field: hold,
-          group: 'transport',
-          choice: 'command:undo',
-        );
+      await choose(
+        tester,
+        field: press,
+        group: 'transport',
+        choice: 'command:stop',
+      );
+      await tester.tap(find.byKey(const Key('pedal_setup_cap_bank')));
+      await tester.pumpAndSettle();
+      await choose(
+        tester,
+        field: hold,
+        group: 'transport',
+        choice: 'command:undo',
+      );
 
-        await tester.tap(find.byKey(save));
-        await tester.pumpAndSettle();
-        expect(control.state.pedalSetup.custom, hasLength(2));
+      await tester.tap(find.byKey(save));
+      await tester.pumpAndSettle();
+      expect(control.state.pedalSetup.custom, hasLength(2));
 
-        await tester.tap(find.byKey(clear));
-        await tester.pumpAndSettle();
-        expect(
-          find.byKey(const Key('pedal_setup_clear_dialog')),
-          findsOneWidget,
-        );
-        await tester.tap(find.byKey(const Key('pedal_setup_clear_confirm')));
-        await tester.pumpAndSettle();
-        expect(control.state.pedalSetup.custom, hasLength(2));
+      await tester.tap(find.byKey(clear));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('pedal_setup_clear_dialog')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('pedal_setup_clear_confirm')));
+      await tester.pumpAndSettle();
+      expect(control.state.pedalSetup.custom, hasLength(2));
 
-        // Only Save publishes the cleared draft across both banks.
-        await tester.tap(find.byKey(save));
-        await tester.pumpAndSettle();
-        expect(control.state.pedalSetup.hasCustomAssignments, isFalse);
-        // The fixed Track controls are untouched by it.
-        expect(control.state.pedalSetup.modePress, InteractionMode.mute);
-        expect(control.state.pedalSetup.trackHold, TrackHold.armOverdub);
-      },
-    );
+      // Only Save publishes the cleared draft across both banks.
+      await tester.tap(find.byKey(save));
+      await tester.pumpAndSettle();
+      expect(control.state.pedalSetup.hasCustomAssignments, isFalse);
+      // The fixed Track controls are untouched by it.
+      expect(control.state.pedalSetup.modePress, InteractionMode.mute);
+      expect(control.state.pedalSetup.trackHold, TrackHold.armOverdub);
+    });
 
     testWidgets('Restore puts the cleared assignments back into the draft', (
       tester,
@@ -562,6 +568,114 @@ void main() {
         control.state.pedalSetup.customFor(PedalButton.track1, bank: 0).press,
         const CommandAction(ControlCommand.stop),
       );
+    });
+
+    group('Use default assignments (#1908)', () {
+      const open = Key('pedal_setup_clear_custom');
+      const useDefault = Key('pedal_setup_clear_default');
+      const restore = Key('pedal_setup_restore_custom');
+      final stored = const PedalSetup()
+          .copyWith(
+            modePress: InteractionMode.fx,
+            trackHold: TrackHold.clearTrack,
+            leds: const PedalLedMap().withColor(
+              InteractionMode.record,
+              PedalLedGroup.mode,
+              PedalLedState.current,
+              ledBlue,
+            ),
+          )
+          .withCustom(
+            PedalButton.stop,
+            bank: 0,
+            pair: const ControlGesturePair(
+              press: CommandAction(ControlCommand.cutSound),
+            ),
+          );
+
+      Future<void> openDialog(WidgetTester tester) async {
+        store.values['pedal.setup'] = stored.encode();
+        await pump(tester);
+        await openCustom(tester);
+        await tester.tap(find.byKey(open));
+        await tester.pumpAndSettle();
+      }
+
+      testWidgets('replaces only the Custom map, and only on Save', (
+        tester,
+      ) async {
+        await openDialog(tester);
+        await tester.tap(find.byKey(useDefault));
+        await tester.pumpAndSettle();
+        expect(control.state.pedalSetup, stored);
+
+        await tester.tap(find.byKey(save));
+        await tester.pumpAndSettle();
+        expect(control.state.pedalSetup, stored.withDefaultCustom());
+        expect(
+          PedalSetup.decode(store.values['pedal.setup']! as String),
+          stored.withDefaultCustom(),
+        );
+      });
+
+      testWidgets('Restore puts the earlier map back', (tester) async {
+        await openDialog(tester);
+        await tester.tap(find.byKey(useDefault));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(restore));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(save));
+        await tester.pumpAndSettle();
+        expect(control.state.pedalSetup, stored);
+      });
+
+      testWidgets('Restore after a default and then a Clear still puts the '
+          'first map back', (tester) async {
+        await openDialog(tester);
+        await tester.tap(find.byKey(useDefault));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(open));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('pedal_setup_clear_confirm')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(restore));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(save));
+        await tester.pumpAndSettle();
+        expect(control.state.pedalSetup, stored);
+      });
+
+      testWidgets('Cancel discards it', (tester) async {
+        await openDialog(tester);
+        await tester.tap(find.byKey(useDefault));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(cancel));
+        await tester.pumpAndSettle();
+        expect(control.state.pedalSetup, stored);
+        expect(find.byKey(restore), findsNothing);
+        expect(store.values['pedal.setup'], stored.encode());
+      });
+
+      testWidgets('is not offered while the map is the default', (
+        tester,
+      ) async {
+        await pump(tester);
+        await openCustom(tester);
+        await tester.tap(find.byKey(open));
+        await tester.pumpAndSettle();
+        expect(
+          tester.widget<LoopOutlinedButton>(find.byKey(useDefault)).onTap,
+          isNull,
+        );
+        expect(
+          tester
+              .widget<LoopOutlinedButton>(
+                find.byKey(const Key('pedal_setup_clear_confirm')),
+              )
+              .onTap,
+          isNotNull,
+        );
+      });
     });
 
     testWidgets('Restore Custom preserves later Track controls edits', (
@@ -638,6 +752,7 @@ void main() {
     });
 
     testWidgets('None clears the gesture', (tester) async {
+      store.values['pedal.setup'] = const PedalSetup().encode();
       await pump(tester);
       await openCustom(tester);
       await choose(

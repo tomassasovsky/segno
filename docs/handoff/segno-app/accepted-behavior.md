@@ -289,6 +289,13 @@ Sources:
 2. Save/Cancel applies to setup drafts. Clear custom assignments covers both banks
    and gestures, preserves fixed controls and LED colors, and offers Restore
    within the draft. Unrelated saves cannot apply unfinished assignments.
+   A console that has never saved a pedal setup starts with the default Custom
+   map (bank A: Record / Play; Stop; Undo, Hold Redo; Clear as Mute, Hold Clear
+   all; 1 Reverse; 2 FX, Hold Tuner; 3 Fade, Hold Peel; 4 Mixer, Hold Record
+   performance; bank B: 1 Tap tempo; 2 FX, Hold Fade; 3 Multiply, Hold Divide;
+   4 Peel, Hold Undo). A saved setup is kept as it is. The Clear custom
+   assignments dialog also offers Use default assignments, which puts that map
+   in the draft; Restore covers it as it covers a Clear.
 3. Press/Hold are separate actions. Holding a navigation/control pair must not
    first execute its short action or act again on release in the newly opened
    mode. Normal Record/Play and Stop retain their immediate contact behavior.

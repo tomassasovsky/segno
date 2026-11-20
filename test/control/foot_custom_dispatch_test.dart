@@ -78,8 +78,9 @@ class _Midi extends MidiDeviceRepository {
 }
 
 class _Rig {
-  new({ExternalJackSetup? jack}) {
+  new({ExternalJackSetup? jack, String? storedSetup}) {
     engine.publish();
+    if (storedSetup != null) store.values['pedal.setup'] = storedSetup;
     if (jack != null) {
       store.values['pedal.setup'] = const PedalSetup()
           .copyWith(
@@ -365,6 +366,92 @@ void main() {
         }
       },
     );
+  });
+
+  group('a console that never saved a pedal setup (#1908)', () {
+    test('loads the default map and stores nothing', () async {
+      final rig = _Rig();
+      try {
+        await rig.control.load();
+        await rig.poll();
+        expect(rig.control.state.pedalSetup, PedalSetup.fresh);
+        expect(rig.store.values.containsKey('pedal.setup'), isFalse);
+        rig.control.setMode(InteractionMode.custom);
+        await _pump();
+        // Every editable switch is published to the face; none is lit
+        // until a contact or the state its action shows.
+        expect(rig.control.state.customLit.keys.toSet(), {
+          for (final button in PedalButton.values)
+            if (!PedalBindingKey.unbindable.contains(button)) button,
+        });
+      } finally {
+        await rig.close();
+      }
+    });
+
+    test('a tap on pedal 3 enters Fade and a hold enters Peel', () async {
+      final rig = _Rig();
+      try {
+        await rig.control.load();
+        await rig.poll();
+        rig.control.setMode(InteractionMode.custom);
+        await _pump();
+        rig.press(PedalButton.track3);
+        await _pump(const Duration(milliseconds: 50));
+        rig.release(PedalButton.track3);
+        await _pump();
+        expect(rig.control.state.mode, InteractionMode.fade);
+
+        rig.control.setMode(InteractionMode.custom);
+        await _pump();
+        rig.press(PedalButton.track3);
+        await _pump(const Duration(milliseconds: 900));
+        rig.release(PedalButton.track3);
+        await _pump();
+        expect(rig.control.state.mode, InteractionMode.peel);
+      } finally {
+        await rig.close();
+      }
+    });
+
+    test('Record / Play, with no Hold beside it, acts on contact and '
+        'lights while held', () async {
+      final rig = _Rig();
+      try {
+        await rig.control.load();
+        await rig.poll();
+        rig.control.setMode(InteractionMode.custom);
+        await _pump();
+        expect(rig.engine.recordCalls, 0);
+        rig.press(PedalButton.recPlay);
+        await _pump();
+        expect(rig.engine.recordCalls, 1);
+        expect(rig.control.state.customLit[PedalButton.recPlay], isTrue);
+        expect(rig.lit(PedalButton.recPlay), isTrue);
+        rig.release(PedalButton.recPlay);
+      } finally {
+        await rig.close();
+      }
+    });
+
+    test('a saved setup with nothing on Custom loads with nothing on '
+        'Custom', () async {
+      final rig = _Rig(storedSetup: const PedalSetup().encode());
+      try {
+        await rig.control.load();
+        await rig.poll();
+        expect(rig.control.state.pedalSetup.hasCustomAssignments, isFalse);
+        rig.control.setMode(InteractionMode.custom);
+        await _pump();
+        rig.press(PedalButton.track3);
+        await _pump(const Duration(milliseconds: 50));
+        rig.release(PedalButton.track3);
+        await _pump();
+        expect(rig.control.state.mode, InteractionMode.custom);
+      } finally {
+        await rig.close();
+      }
+    });
   });
 
   test('the face and the switch LEDs read one published value', () async {

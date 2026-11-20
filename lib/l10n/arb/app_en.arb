@@ -5730,7 +5730,7 @@
     },
     "pedalSetupRestoreCustom": "Restore assignments",
     "@pedalSetupRestoreCustom": {
-        "description": "Puts back the Custom controls assignments the draft just cleared."
+        "description": "Puts back the Custom controls assignments the draft just cleared or replaced with the default."
     },
     "pedalSetupClearTitle": "Clear custom assignments?",
     "@pedalSetupClearTitle": {
@@ -5747,6 +5747,14 @@
     "pedalSetupClearDraft": "This changes the draft. Save applies it; Restore assignments brings these mappings back.",
     "@pedalSetupClearDraft": {
         "description": "That the clear is undoable until saved."
+    },
+    "pedalSetupClearDefault": "Use default assignments replaces both banks with the assignments a new console starts with.",
+    "@pedalSetupClearDefault": {
+        "description": "What the dialog's Use default assignments action does (#1908)."
+    },
+    "pedalSetupUseDefault": "Use default assignments",
+    "@pedalSetupUseDefault": {
+        "description": "Replaces every Custom controls assignment in the draft with the default map (#1908)."
     },
     "pedalSetupClearConfirm": "Clear both banks",
     "@pedalSetupClearConfirm": {
@@ -7043,14 +7051,6 @@
     "footTunerAtLimit": "A4 reference is at its limit.",
     "@footTunerAtLimit": {
         "description": "Foot Tuner: Reference + at 460 Hz or Reference − at 420 Hz."
-    },
-    "footTunerSeeded": "Tuner is on Custom",
-    "@footTunerSeeded": {
-        "description": "One-time notice when Hold · Tuner is added to Custom pedal 2 (#1229, D11)."
-    },
-    "footTunerSeededBody": "Hold MODE, then hold pedal 2",
-    "@footTunerSeededBody": {
-        "description": "Under footTunerSeeded (#1562)."
     },
     "actionOperationPeel": "Peel",
     "@actionOperationPeel": {

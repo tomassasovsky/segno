@@ -1812,6 +1812,7 @@ void main() {
       test(
         'hue-only Save retains a pending Mode gesture and FX return',
         () async {
+          await cubit.load();
           transport.press(PedalButton.mode, down: true);
           await pumpEventQueue();
           await cubit.setPedalSetup(
@@ -1877,6 +1878,7 @@ void main() {
       test(
         'storage refusal keeps the prior live setup and its gestures',
         () async {
+          await cubit.load();
           final prior = cubit.state.pedalSetup;
           setupStore.refuseSetup = true;
           await expectLater(

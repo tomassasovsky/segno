@@ -146,7 +146,6 @@ class AppRuntime {
       ),
       fadeSettings: fade,
       tunerSettings: tuner,
-      seedTunerDefault: true,
       pedal: pedal,
       performance: performance,
       controller: controllers,

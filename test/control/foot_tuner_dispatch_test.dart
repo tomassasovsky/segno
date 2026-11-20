@@ -36,7 +36,7 @@ class _Store extends FakeKeyValueStore {
 }
 
 class _Rig {
-  new({int inputs = 4, String? storedSetup, bool seed = false}) {
+  new({int inputs = 4, String? storedSetup}) {
     engine.nextSnapshot = engine.nextSnapshot.copyWith(inputChannels: inputs);
     if (storedSetup != null) store.values['pedal.setup'] = storedSetup;
     looper = LooperRepository(engine: engine, ticker: ticks.stream)
@@ -76,7 +76,6 @@ class _Rig {
         fade: fade,
       ),
       takeLocked: () => powerOffUp,
-      seedTunerDefault: seed,
     );
     link.hello();
   }
@@ -461,141 +460,4 @@ void main() {
       }
     },
   );
-
-  test('a cubit built without the seeding leaves the setup alone', () async {
-    final rig = _Rig();
-    try {
-      await rig.control.load();
-      for (var i = 0; i < 5; i++) {
-        await _pump();
-      }
-      expect(rig.store.values.containsKey('pedal.setup'), isFalse);
-      expect(
-        rig.store.values.containsKey('pedal.tuner_default_seeded'),
-        isFalse,
-      );
-    } finally {
-      await rig.close();
-    }
-  });
-
-  group('the one-shot Hold · Tuner default (#1229, D11)', () {
-    const tuner = ModeAction(InteractionMode.tuner);
-
-    Future<void> settle(_Rig rig) async {
-      await rig.control.load();
-      for (var i = 0; i < 5; i++) {
-        await _pump();
-      }
-    }
-
-    test(
-      'a default install gets it on Custom pedal 2 and is told once',
-      () async {
-        final rig = _Rig(seed: true);
-        try {
-          await settle(rig);
-          expect(
-            rig.control.state.pedalSetup
-                .customFor(PedalButton.track2, bank: 0)
-                .hold,
-            tuner,
-          );
-          expect(rig.control.state.tunerDefaultSeeded, isTrue);
-          expect(rig.store.values['pedal.tuner_default_seeded'], isTrue);
-          expect(
-            PedalSetup.decode(rig.store.values['pedal.setup']! as String)
-                .customFor(PedalButton.track2, bank: 0)
-                .hold,
-            tuner,
-          );
-        } finally {
-          await rig.close();
-        }
-      },
-    );
-
-    test('a stored setup with an empty pedal 2 Hold gets it; an assigned '
-        'one keeps it', () async {
-      final empty = _Rig(
-        seed: true,
-        storedSetup: const PedalSetup()
-            .withCustom(
-              PedalButton.track2,
-              bank: 0,
-              pair: const ControlGesturePair(
-                press: ModeAction(InteractionMode.fx),
-              ),
-            )
-            .encode(),
-      );
-      try {
-        await settle(empty);
-        final pair = empty.control.state.pedalSetup.customFor(
-          PedalButton.track2,
-          bank: 0,
-        );
-        expect(pair.press, const ModeAction(InteractionMode.fx));
-        expect(pair.hold, tuner);
-      } finally {
-        await empty.close();
-      }
-      const kept = ControlGesturePair(hold: ModeAction(InteractionMode.mixer));
-      final assigned = _Rig(
-        seed: true,
-        storedSetup: const PedalSetup()
-            .withCustom(PedalButton.track2, bank: 0, pair: kept)
-            .encode(),
-      );
-      try {
-        await settle(assigned);
-        expect(
-          assigned.control.state.pedalSetup.customFor(
-            PedalButton.track2,
-            bank: 0,
-          ),
-          kept,
-        );
-        expect(assigned.control.state.tunerDefaultSeeded, isFalse);
-        expect(assigned.store.values['pedal.tuner_default_seeded'], isTrue);
-      } finally {
-        await assigned.close();
-      }
-    });
-
-    test('removing it and rebooting does not bring it back', () async {
-      final rig = _Rig(storedSetup: const PedalSetup().encode(), seed: true);
-      rig.store.values['pedal.tuner_default_seeded'] = true;
-      try {
-        await settle(rig);
-        expect(
-          rig.control.state.pedalSetup
-              .customFor(PedalButton.track2, bank: 0)
-              .hold,
-          isNull,
-        );
-        expect(rig.control.state.tunerDefaultSeeded, isFalse);
-      } finally {
-        await rig.close();
-      }
-    });
-
-    test(
-      'a malformed stored setup is not written, and the flag stays unset',
-      () async {
-        final rig = _Rig(storedSetup: '{not json', seed: true);
-        try {
-          await settle(rig);
-          expect(rig.control.state.pedalSetupUnavailable, isTrue);
-          expect(rig.store.values['pedal.setup'], '{not json');
-          expect(
-            rig.store.values.containsKey('pedal.tuner_default_seeded'),
-            isFalse,
-          );
-        } finally {
-          await rig.close();
-        }
-      },
-    );
-  });
 }

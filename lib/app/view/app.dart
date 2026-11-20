@@ -1495,20 +1495,6 @@ class _AppViewState extends State<_AppView> {
     );
   }
 
-  /// Where the Tuner went once the tray stopped carrying it (#1229, D11):
-  /// said once, the boot `Hold · Tuner` was added to Custom pedal 2.
-  void _showTunerSeeded() {
-    _notices.show(
-      Notice(
-        id: AppNoticeId.tunerSeeded,
-        explains: true,
-        icon: LucideIcons.info,
-        title: (l10n) => l10n.footTunerSeeded,
-        body: (l10n) => l10n.footTunerSeededBody,
-      ),
-    );
-  }
-
   /// Labels come from [_l10n] (above [MaterialApp]), not a builder context —
   /// the menu bar must not live under [MaterialApp] or DevTools / theme
   /// rebuilds remount it and trip the single-delegate lock assertion.
@@ -1631,11 +1617,6 @@ class _AppViewState extends State<_AppView> {
               previous.retiredBootMode == null &&
               current.retiredBootMode != null,
           listener: (_, _) => _showBootModeRetired(),
-        ),
-        BlocListener<ControlCubit, ControlState>(
-          listenWhen: (previous, current) =>
-              !previous.tunerDefaultSeeded && current.tunerDefaultSeeded,
-          listener: (_, _) => _showTunerSeeded(),
         ),
         BlocListener<ControlCubit, ControlState>(
           listenWhen: (previous, current) =>

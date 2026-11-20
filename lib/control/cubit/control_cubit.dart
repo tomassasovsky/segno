@@ -236,7 +236,6 @@ class ControlCubit extends Cubit<ControlState> {
     required OwnedValueControl ownedValues,
     required FadeSettings fadeSettings,
     TunerSettings? tunerSettings,
-    bool seedTunerDefault = false,
     ControllerRepository? controller,
     MidiDeviceRepository? midiDevices,
     this._midiClock,
@@ -253,7 +252,6 @@ class ControlCubit extends Cubit<ControlState> {
        _footReverseActions = FootReverseActions(repository: looper),
        _footPeelActions = FootPeelActions(repository: looper),
        _ownsTunerSettings = tunerSettings == null,
-       _seedsTunerDefault = seedTunerDefault,
        _tunerSettings = tunerSettings ?? TunerSettings(settings: settings),
        _footLengthActions = FootLengthActions(repository: looper),
        _footFadeActions = FootFadeActions(
@@ -1159,10 +1157,6 @@ class ControlCubit extends Cubit<ControlState> {
   // app supplies them; a cubit built without them owns a private copy.
   final TunerSettings _tunerSettings;
   final bool _ownsTunerSettings;
-
-  // Whether boot adds the one-shot `Hold · Tuner` default (the app does;
-  // a cubit built for a narrower purpose leaves the setup alone).
-  final bool _seedsTunerDefault;
   late final FootTunerActions _footTunerActions = FootTunerActions(
     repository: _looper,
     settings: _tunerSettings,
@@ -1347,8 +1341,10 @@ class ControlCubit extends Cubit<ControlState> {
     }
     _fxStopNoticeShown = fxStopNoticeShown;
     try {
+      // A console that never saved a setup starts with the default Custom
+      // map (#1908). A stored setup is taken as it is, an empty map included.
       setup = encodedSetup == null
-          ? const PedalSetup()
+          ? PedalSetup.fresh
           : PedalSetup.decode(encodedSetup);
     } on FormatException catch (error, stackTrace) {
       // A corrupt explicit action must not become a default live command.
@@ -1368,39 +1364,6 @@ class ControlCubit extends Cubit<ControlState> {
     await _loadMidiConfiguration();
     if (_inputRetired || _closing || isClosed) return;
     setMode(InteractionMode.record);
-    // After the restore completes: the seeding saves through setPedalSetup,
-    // which waits for this load.
-    if (_seedsTunerDefault) unawaited(_seedTunerDefault());
-  }
-
-  /// Gives a default install a way to the Tuner (#1229, D11): `Hold ·
-  /// Tuner` on Custom pedal 2, bank A, where the pedal study and pen 10
-  /// `uEukr` put it. One-shot: the flag is written at the first attempt,
-  /// whatever its outcome, and a Hold already assigned there is kept. A
-  /// malformed or uncertain stored setup is never overwritten; the flag stays
-  /// unset for a later boot.
-  Future<void> _seedTunerDefault() async {
-    try {
-      if (await _settings.loadTunerDefaultSeeded()) return;
-      if (isClosed ||
-          state.pedalSetupUnavailable ||
-          state.pedalSetupPersistenceUncertain) {
-        return;
-      }
-      await _settings.saveTunerDefaultSeeded();
-      final pair = state.pedalSetup.customFor(PedalButton.track2, bank: 0);
-      if (pair.hold != null || isClosed) return;
-      await setPedalSetup(
-        state.pedalSetup.withCustom(
-          PedalButton.track2,
-          bank: 0,
-          pair: pair.withHold(const ModeAction(InteractionMode.tuner)),
-        ),
-      );
-      if (!isClosed) emit(state.copyWith(tunerDefaultSeeded: true));
-    } on Object catch (error, stackTrace) {
-      addError(error, stackTrace);
-    }
   }
 
   // ---------------------------------------------------------------------------

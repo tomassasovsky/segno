@@ -62,9 +62,39 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1724 | Effects budget from the console's measured headroom: charges at the configured rate and period, share 77 % from the 48 kHz / 32 stress run | in-review | auto | `claude/fx-headroom-1724` |
 | #1515 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track and lane chains) is #1729 | build | plan-gate | `claude/fx-multicore-1515-p1b` |
 | #1816 | Console WiFi against an ASUS RT-AX89X with 802.11ax on: firmware already matches Pi OS; brcmfmac options aligned with Pi OS and a troubleshooting note; failure not reproduced, issue stays open until it recurs | in-review | auto | `claude/wifi-firmware-1816` |
-| #1908 | Custom controls start with a default map, and Pedals can restore it: plan written, waiting on the owner's four decisions | plan | plan-gate | `claude/custom-defaults-1908` |
 
 ---
+
+## November 2026 Custom controls start with a default map (#1908)
+
+- A console that has never saved a pedal setup loads `PedalSetup.fresh`: the
+  accepted Track controls and `PedalSetup.defaultCustom`, the map Penpot
+  page 10 draws with the actions this build lacks replaced. Bank A: Record /
+  Play; Stop; Undo, Hold Redo; Clear as Mute, Hold Clear all; 1 Reverse; 2
+  FX, Hold Tuner; 3 Fade, Hold Peel; 4 Mixer, Hold Record performance. Bank
+  B changes the track switches: 1 Tap tempo; 2 FX, Hold Fade; 3 Multiply,
+  Hold Divide; 4 Peel, Hold Undo.
+- Record / Play and Stop carry no Hold, so both act on contact: a Custom
+  switch with a Hold moves its Press to the release.
+- A stored setup is taken as it is, an empty Custom map included, and
+  nothing is written at boot. `PedalSetup()` stays the setup with nothing
+  on Custom.
+- Settings > Pedals > Custom controls: the Clear custom assignments dialog
+  has a second action, `Use default assignments`. It replaces the draft's
+  Custom map; Restore puts back the map from before the first Clear or
+  default; nothing reaches the rig until Save. The titlebar button is
+  always available in Custom controls, and each dialog action dims when it
+  has nothing to do.
+- The one-time `Hold · Tuner` seed on Custom pedal 2 (#1229, D11) is
+  removed with its settings flag, state field and notice: the default map
+  carries that Hold.
+- An install that already saved a setup keeps its map until the owner uses
+  `Use default assignments`.
+- Design: Penpot pages 08 and 10, snapshot in segno-design#24.
+- Not checked on the console: the foot feel of each default assignment.
+- When Transpose and Speed ship (#1179), pedal 1 in bank A returns to
+  Transpose, Hold Reverse and the Hold on pedal 4 to Speed. Sessions by
+  foot (#1910) are not in the default map.
 
 ## November 2026 The stage's CPU figure reads the real load (#1868)
 

@@ -10,8 +10,9 @@ issue: 1908
 <!-- cspell:words Penpot titlebar writeback -->
 
 Tracking: [#1908](https://github.com/tomassasovsky/segno/issues/1908),
-`autonomy:plan-gate`. This plan stops for the owner's answers to the four
-decisions below. Nothing is built until they are answered.
+`autonomy:plan-gate`. The owner approved the four recommendations below as
+written on 2026-11-19, and the plan is built. "As built" at the end lists
+where the build departs from this text.
 
 ## Where it stands
 
@@ -208,6 +209,26 @@ connected.
   keeps the rest of the setup.
 - Transpose and Speed themselves (#1179).
 - External pedal and MIDI defaults.
+
+## As built
+
+- The titlebar's `Clear custom assignments` button is always available in
+  Custom controls. The plan put `Use default assignments` inside that
+  dialog, and the button was disabled on an empty map, so a console with
+  nothing assigned could not have reached the default. In the dialog,
+  `Clear both banks` dims when nothing is assigned and `Use default
+  assignments` dims when the map already is the default.
+- Part 1's test line "lights the assigned switches" was wrong about the
+  build. A Custom switch lights while it is held or while its action's
+  state is on, not because it is assigned. The tests check that a fresh
+  console publishes all eight editable switches to the face and that Record
+  / Play lights on contact.
+- In Spanish, the Hold line under Clear wraps to two lines. #1900 already
+  tracks the Spanish Hold lines.
+- `bloc lint` could not run in the agent's checkout (it finds no files
+  there); CI's Bloc lint step covers it.
+- The segno-design snapshot leaves out page 33, which the export returned
+  with recomputed text positions and no content change.
 
 ## Verification
 
