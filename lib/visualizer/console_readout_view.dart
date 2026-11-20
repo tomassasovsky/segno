@@ -358,8 +358,12 @@ class _Footer extends StatelessWidget {
       'mute' => l10n.readoutFunctionMute,
       'fx' => l10n.readoutFunctionFx,
       'custom' => l10n.readoutFunctionCustom,
+      'sessions' => l10n.actionModeSessions,
       _ => l10n.readoutFunctionTracks,
     };
+    // The Sessions face pages its own list: there the bank field carries
+    // its page (#1910).
+    final sessions = readout.mode == 'sessions';
     final bank = String.fromCharCode(0x41 + readout.activeBank);
     final secondary = TextStyle(
       fontFamily: SurfaceTheme.displayFont,
@@ -434,7 +438,9 @@ class _Footer extends StatelessWidget {
             child: FittedBox(
               fit: BoxFit.scaleDown,
               child: AppText(
-                l10n.readoutFunctionBank(function, bank),
+                sessions
+                    ? l10n.readoutFunctionPage(function, readout.activeBank + 1)
+                    : l10n.readoutFunctionBank(function, bank),
                 key: const Key('console_readout_function'),
                 style: secondary.copyWith(color: surface.textPrimary),
               ),

@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:looper_repository/looper_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/control/model/foot_sessions.dart';
 
@@ -190,6 +191,161 @@ void main() {
       expect(FootSessionsProjection.pageOf(ordered, 'a'), 0);
       expect(FootSessionsProjection.pageOf(ordered, null), 0);
       expect(FootSessionsProjection.pageOf(ordered, 'gone'), 0);
+    });
+  });
+
+  group('folders', () {
+    FootSessionEntry inFolder(String name, String? folder) =>
+        FootSessionEntry(id: name, name: name, folder: folder);
+
+    final catalogue = FootSessionCatalogue(
+      sessions: [
+        inFolder('loose', null),
+        inFolder('b1', 'Friday set'),
+        inFolder('b2', 'Friday set'),
+        inFolder('a1', '2 Rehearsal'),
+        inFolder('z1', '10 Old'),
+      ],
+      openId: 'b2',
+    );
+
+    test('are in name order, numbers as numbers, with Unfiled last', () {
+      expect(footSessionFolders(catalogue.sessions), [
+        '2 Rehearsal',
+        '10 Old',
+        'Friday set',
+        null,
+      ]);
+    });
+
+    test('with no session outside a folder there is no Unfiled', () {
+      expect(footSessionFolders([inFolder('a', 'Set')]), ['Set']);
+      expect(footSessionFolders(const []), isEmpty);
+    });
+
+    test('the face shows the sessions of the folder in view alone', () {
+      final projection = projectFootSessions(
+        catalogue,
+        const FootSessionsSelection(folder: 'Friday set'),
+      );
+      expect(projection.folder, 'Friday set');
+      expect([for (final s in projection.sessions) s.id], ['b1', 'b2']);
+      expect(projection[PedalButton.track2].lit, isTrue);
+      expect(projection[PedalButton.track3].session, isNull);
+      expect(projection.hasOtherFolders, isTrue);
+    });
+
+    test('Bank answers with one page when another folder is there', () {
+      final projection = projectFootSessions(
+        catalogue,
+        const FootSessionsSelection(folder: 'Friday set'),
+      );
+      expect(projection.pageCount, 1);
+      expect(projection[PedalButton.bank].available, isTrue);
+    });
+
+    test('a held Bank goes through the folders and wraps', () {
+      String? next(String? folder) => projectFootSessions(
+        catalogue,
+        FootSessionsSelection(folder: folder),
+      ).nextFolder;
+      expect(next('2 Rehearsal'), '10 Old');
+      expect(next('10 Old'), 'Friday set');
+      expect(next('Friday set'), isNull);
+      expect(next(null), '2 Rehearsal');
+    });
+
+    test('the face opens on the folder of the open session', () {
+      expect(footSessionsStartFolder(catalogue), 'Friday set');
+    });
+
+    test('with no open session it opens on the sessions outside a folder, or '
+        'on the first folder when there are none', () {
+      expect(
+        footSessionsStartFolder(
+          FootSessionCatalogue(sessions: catalogue.sessions),
+        ),
+        isNull,
+      );
+      expect(
+        footSessionsStartFolder(
+          FootSessionCatalogue(
+            sessions: [inFolder('b', 'Zed'), inFolder('a', 'Alpha')],
+          ),
+        ),
+        'Alpha',
+      );
+      expect(footSessionsStartFolder(const FootSessionCatalogue()), isNull);
+    });
+
+    test('a folder that is gone gives way to the first one there is', () {
+      final projection = projectFootSessions(
+        catalogue,
+        const FootSessionsSelection(folder: 'Deleted'),
+      );
+      expect(projection.folder, '2 Rehearsal');
+      expect([for (final s in projection.sessions) s.id], ['a1']);
+    });
+  });
+
+  test('the session whose Open failed is marked on its switch', () {
+    final projection = projectFootSessions(
+      _catalogue(['a', 'b', 'c'], openId: 'a'),
+      const FootSessionsSelection().opening('c', 0).settled(failed: 'c'),
+    );
+    expect(projection[PedalButton.track3].failed, isTrue);
+    expect(projection[PedalButton.track3].opening, isFalse);
+    // It can be tried again.
+    expect(projection[PedalButton.track3].available, isTrue);
+    expect(projection[PedalButton.track2].failed, isFalse);
+  });
+
+  group('what an Open would end', () {
+    LooperState rig(List<Track> tracks) => LooperState(tracks: tracks);
+    const playing = Track(state: TrackState.playing, lengthFrames: 48000);
+    const stopped = Track(state: TrackState.stopped, lengthFrames: 48000);
+    const taking = Track(channel: 1, state: TrackState.overdubbing);
+
+    test('nothing, with every track stopped or empty', () {
+      expect(
+        footSessionsInterruption(
+          rig(const [stopped, Track(channel: 1)]),
+          recording: false,
+        ),
+        FootSessionsInterruption.none,
+      );
+    });
+
+    test('playback, while a track plays', () {
+      expect(
+        footSessionsInterruption(rig(const [playing]), recording: false),
+        FootSessionsInterruption.playback,
+      );
+    });
+
+    test('the recording, over playback', () {
+      expect(
+        footSessionsInterruption(rig(const [playing]), recording: true),
+        FootSessionsInterruption.recording,
+      );
+      expect(
+        footSessionsInterruption(rig(const [stopped]), recording: true),
+        FootSessionsInterruption.recording,
+      );
+    });
+
+    test('the take, over everything else', () {
+      expect(
+        footSessionsInterruption(rig(const [playing, taking]), recording: true),
+        FootSessionsInterruption.take,
+      );
+      expect(
+        footSessionsInterruption(
+          rig(const [Track(pending: true)]),
+          recording: false,
+        ),
+        FootSessionsInterruption.take,
+      );
     });
   });
 

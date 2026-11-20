@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import 'package:looper_repository/looper_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 
 /// One saved session as the Sessions face shows it (#1910): what its card
@@ -57,12 +58,22 @@ class FootSessionCatalogue extends Equatable {
   List<Object?> get props => [sessions, openId, failureCount];
 }
 
-/// The Sessions face's transient choices while the mode is up: the page of
-/// four the track switches show, and the session an Open was asked for and
-/// has not settled. Never stored.
+/// The Sessions face's transient choices while the mode is up: the folder
+/// and the page of four the track switches show, the session an Open was
+/// asked for and has not settled, and the one whose Open failed. Never
+/// stored.
 class FootSessionsSelection extends Equatable {
   /// Creates a selection.
-  const new({this.page = 0, this.openingId, this.failuresAtOpen = 0});
+  const new({
+    this.folder,
+    this.page = 0,
+    this.openingId,
+    this.failuresAtOpen = 0,
+    this.failedId,
+  });
+
+  /// The folder in view, or null for the sessions outside any folder.
+  final String? folder;
 
   /// The page of four sessions the track switches show.
   final int page;
@@ -73,26 +84,85 @@ class FootSessionsSelection extends Equatable {
   /// [FootSessionCatalogue.failureCount] when that Open was asked.
   final int failuresAtOpen;
 
-  /// Returns a copy on [page], with any pending Open kept.
+  /// The session whose Open, asked from the face, failed. Its card says so
+  /// until another Open is asked or the face is left.
+  final String? failedId;
+
+  /// Returns a copy on [page] of the same folder.
   FootSessionsSelection onPage(int page) => FootSessionsSelection(
+    folder: folder,
     page: page,
     openingId: openingId,
     failuresAtOpen: failuresAtOpen,
+    failedId: failedId,
+  );
+
+  /// Returns a copy on the first page of [folder].
+  FootSessionsSelection inFolder(String? folder) => FootSessionsSelection(
+    folder: folder,
+    openingId: openingId,
+    failuresAtOpen: failuresAtOpen,
+    failedId: failedId,
   );
 
   /// Returns a copy that waits for [id] to open.
   FootSessionsSelection opening(String id, int failures) =>
       FootSessionsSelection(
+        folder: folder,
         page: page,
         openingId: id,
         failuresAtOpen: failures,
       );
 
-  /// Returns a copy with no pending Open.
-  FootSessionsSelection settled() => FootSessionsSelection(page: page);
+  /// Returns a copy with no pending Open, and [failed] as the session whose
+  /// Open failed, if it did.
+  FootSessionsSelection settled({String? failed}) =>
+      FootSessionsSelection(folder: folder, page: page, failedId: failed);
 
   @override
-  List<Object?> get props => [page, openingId, failuresAtOpen];
+  List<Object?> get props => [
+    folder,
+    page,
+    openingId,
+    failuresAtOpen,
+    failedId,
+  ];
+}
+
+/// What an Open asked now would end, said on every card that can be opened
+/// (#1910 D3). One line: the one that costs the player most.
+enum FootSessionsInterruption {
+  /// Nothing plays or records.
+  none,
+
+  /// A track plays: the Open stops it.
+  playback,
+
+  /// A performance recording runs: the Open finishes and saves it.
+  recording,
+
+  /// A track records, overdubs or is armed: the Open ends the take and
+  /// saves it with the session that is left.
+  take,
+}
+
+/// What an Open would end on [looper]'s rig, with a performance [recording]
+/// running or not.
+FootSessionsInterruption footSessionsInterruption(
+  LooperState looper, {
+  required bool recording,
+}) {
+  final tracks = looper.tracks;
+  if (tracks.any(
+    (t) => t.isCapturing || t.pending || t.pendingLaunch != null,
+  )) {
+    return FootSessionsInterruption.take;
+  }
+  if (recording) return FootSessionsInterruption.recording;
+  if (tracks.any((t) => t.state == TrackState.playing)) {
+    return FootSessionsInterruption.playback;
+  }
+  return FootSessionsInterruption.none;
 }
 
 /// What one switch does on the Sessions face.
@@ -106,7 +176,7 @@ enum FootSessionsRole {
   /// Starts a new loop, on a Hold (Clear).
   newLoop,
 
-  /// Shows the next four sessions (Bank).
+  /// Shows the next four sessions; a Hold shows the next folder (Bank).
   nextPage,
 
   /// Record / Play on the selected track, as on the stage.
@@ -129,6 +199,7 @@ class FootSessionsPedal extends Equatable {
     this.lit = false,
     this.available = true,
     this.opening = false,
+    this.failed = false,
   });
 
   /// The physical switch.
@@ -152,15 +223,28 @@ class FootSessionsPedal extends Equatable {
   /// Whether this switch's session is the one being opened.
   final bool opening;
 
+  /// Whether this switch's session is the one whose Open failed.
+  final bool failed;
+
   @override
-  List<Object?> get props => [button, role, session, lit, available, opening];
+  List<Object?> get props => [
+    button,
+    role,
+    session,
+    lit,
+    available,
+    opening,
+    failed,
+  ];
 }
 
-/// The Sessions face: the ordered catalogue, the page in view and the ten
-/// switches.
+/// The Sessions face: the folders, the sessions of the folder in view in
+/// order, the page in view and the ten switches.
 class FootSessionsProjection extends Equatable {
   /// Creates a complete projection.
   const new({
+    required this.folders,
+    required this.folder,
     required this.sessions,
     required this.page,
     required this.openId,
@@ -168,7 +252,22 @@ class FootSessionsProjection extends Equatable {
     required this.pedals,
   });
 
-  /// Every session, in the face's order.
+  /// The folders that hold a session, in the order a held Bank goes
+  /// through them; null is the sessions outside any folder, last.
+  final List<String?> folders;
+
+  /// The folder in view, or null for the sessions outside any folder.
+  final String? folder;
+
+  /// Whether a held Bank has another folder to show.
+  bool get hasOtherFolders => folders.length > 1;
+
+  /// The folder a held Bank shows next.
+  String? get nextFolder => folders.isEmpty
+      ? folder
+      : folders[(folders.indexOf(folder) + 1) % folders.length];
+
+  /// The sessions of [folder], in the face's order.
   final List<FootSessionEntry> sessions;
 
   /// The page of four in view, within [pageCount].
@@ -207,7 +306,15 @@ class FootSessionsProjection extends Equatable {
   }
 
   @override
-  List<Object?> get props => [sessions, page, openId, openingId, pedals];
+  List<Object?> get props => [
+    folders,
+    folder,
+    sessions,
+    page,
+    openId,
+    openingId,
+    pedals,
+  ];
 }
 
 final RegExp _digits = RegExp(r'\d+');
@@ -255,13 +362,43 @@ List<FootSessionEntry> orderedSessions(List<FootSessionEntry> sessions) =>
       return byName != 0 ? byName : a.id.compareTo(b.id);
     });
 
+/// The folders of [sessions] that a held Bank goes through: by name, with
+/// the sessions outside any folder (null) last. A folder with no session is
+/// not in the catalogue, so it is never shown.
+List<String?> footSessionFolders(List<FootSessionEntry> sessions) {
+  final named = {
+    for (final session in sessions)
+      if (session.folder != null) session.folder!,
+  }.toList()..sort(compareSessionNames);
+  return [...named, if (sessions.any((s) => s.folder == null)) null];
+}
+
+/// The folder the face opens on: the open session's, or the sessions
+/// outside any folder, or the first folder when there are none of those.
+String? footSessionsStartFolder(FootSessionCatalogue catalogue) {
+  for (final session in catalogue.sessions) {
+    if (session.id == catalogue.openId) return session.folder;
+  }
+  final folders = footSessionFolders(catalogue.sessions);
+  return folders.contains(null) || folders.isEmpty ? null : folders.first;
+}
+
 /// Projects the Sessions face from the [catalogue] and the transient
 /// [selection]. Pure.
 FootSessionsProjection projectFootSessions(
   FootSessionCatalogue catalogue,
   FootSessionsSelection selection,
 ) {
-  final sessions = orderedSessions(catalogue.sessions);
+  final folders = footSessionFolders(catalogue.sessions);
+  // A folder that is gone (its last session moved or deleted) gives way to
+  // the first one there is.
+  final folder = folders.contains(selection.folder) || folders.isEmpty
+      ? selection.folder
+      : folders.first;
+  final sessions = orderedSessions([
+    for (final session in catalogue.sessions)
+      if (session.folder == folder) session,
+  ]);
   final pageCount = FootSessionsProjection.pageCountOf(sessions.length);
   final page = selection.page.clamp(0, pageCount - 1);
   final onPage = sessions
@@ -304,7 +441,7 @@ FootSessionsProjection projectFootSessions(
           button: button,
           role: FootSessionsRole.nextPage,
           lit: page > 0,
-          available: idle && pageCount > 1,
+          available: idle && (pageCount > 1 || folders.length > 1),
         );
       case PedalButton.track1 ||
           PedalButton.track2 ||
@@ -319,11 +456,14 @@ FootSessionsProjection projectFootSessions(
           lit: session != null && session.id == catalogue.openId,
           available: idle && session != null,
           opening: session != null && session.id == openingId,
+          failed: session != null && session.id == selection.failedId,
         );
     }
   }
 
   return FootSessionsProjection(
+    folders: List.unmodifiable(folders),
+    folder: folder,
     sessions: List.unmodifiable(sessions),
     page: page,
     openId: catalogue.openId,

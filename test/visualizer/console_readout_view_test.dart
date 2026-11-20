@@ -242,6 +242,20 @@ void main() {
         tone: NoticeTone.critical,
       );
 
+      testWidgets('in Sessions the footer shows the function and its page, '
+          'not a bank (#1910)', (tester) async {
+        await pump(
+          tester,
+          readout: const PerformanceReadout(
+            selected: selected,
+            mode: 'sessions',
+            activeBank: 1,
+          ),
+        );
+        expect(find.text('Sessions · Page 2'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      });
+
       testWidgets('nothing over the top margin while the main screen says '
           'nothing', (tester) async {
         await pump(tester);

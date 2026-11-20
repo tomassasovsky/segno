@@ -7006,6 +7006,47 @@
             }
         }
     },
+    "footSessionsStopsPlayback": "Stops playback",
+    "@footSessionsStopsPlayback": {
+        "description": "Sessions face: on a card while a track plays. Opening the session stops it."
+    },
+    "footSessionsEndsTake": "Ends the take",
+    "@footSessionsEndsTake": {
+        "description": "Sessions face: on a card while a track records, overdubs or is armed. Opening the session ends the take and saves it with the session that is left."
+    },
+    "footSessionsEndsRecording": "Ends the recording",
+    "@footSessionsEndsRecording": {
+        "description": "Sessions face: on a card while a performance recording runs. Opening the session finishes and saves it."
+    },
+    "footSessionsCouldNotOpen": "Could not open",
+    "@footSessionsCouldNotOpen": {
+        "description": "Sessions face: on the card of the session whose Open, asked from the face, failed. The stage notice says why."
+    },
+    "footSessionsFolder": "Folder",
+    "@footSessionsFolder": {
+        "description": "Sessions face: what a held Bank shows next, after 'Hold · ' under its caption."
+    },
+    "sessionOpenFailed": "Could not open {name}",
+    "@sessionOpenFailed": {
+        "description": "Stage notice title when a session could not be opened, naming it: from the Sessions face the player cannot see the Library row that refused.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "readoutFunctionPage": "{function} · Page {page}",
+    "@readoutFunctionPage": {
+        "description": "The 7-inch readout's footer in a function that pages its own list (Sessions): the function and the page in view, in place of the bank.",
+        "placeholders": {
+            "function": {
+                "type": "String"
+            },
+            "page": {
+                "type": "int"
+            }
+        }
+    },
     "footSessionsOpen": "Open",
     "@footSessionsOpen": {
         "description": "Sessions face: the caption of a track switch with a session above it."

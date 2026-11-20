@@ -28,16 +28,22 @@ extension _FootSessionsControl on ControlCubit {
     _ => InteractionMode.record,
   };
 
-  /// Entering the mode: on the page that holds the open session, with the
-  /// catalogue asked for again, since the copy here is only as new as the
-  /// last session action.
+  /// Entering the mode: on the folder and the page that hold the open
+  /// session, with the catalogue asked for again, since the copy here is
+  /// only as new as the last session action.
   void _enterSessions() {
     final catalogue = state.sessionCatalogue;
+    final folder = footSessionsStartFolder(catalogue);
+    final inFolder = projectFootSessions(
+      catalogue,
+      FootSessionsSelection(folder: folder),
+    );
     emit(
       state.copyWith(
         footSessions: FootSessionsSelection(
+          folder: folder,
           page: FootSessionsProjection.pageOf(
-            orderedSessions(catalogue.sessions),
+            inFolder.sessions,
             catalogue.openId,
           ),
         ),
@@ -71,10 +77,27 @@ extension _FootSessionsControl on ControlCubit {
       );
       return;
     }
+    if (pedal.role == FootSessionsRole.nextPage &&
+        _sessionsProjection().hasOtherFolders) {
+      // With another folder to show, Bank has a Hold, so its page turn
+      // waits for the release. With one folder it turns on contact.
+      _armGesture(
+        _systemGesture(button)!,
+        cue: button,
+        onTap: () {
+          if (_sessionsEditable) _dispatchSessionsAction(pedal);
+        },
+        onHold: () {
+          if (_sessionsEditable) _showNextSessionsFolder();
+        },
+      );
+      return;
+    }
     _dispatchSessionsAction(pedal);
   }
 
-  /// The semantic activation of [button]: its press, or Clear's Hold.
+  /// The semantic activation of [button]: its press, or its Hold (Clear's
+  /// New loop, Bank's next folder).
   void _activateSessionsPedal(PedalButton button, {required bool hold}) {
     if (state.mode != InteractionMode.sessions || isClosed) return;
     final pedal = _sessionsProjection()[button];
@@ -83,9 +106,26 @@ extension _FootSessionsControl on ControlCubit {
       return;
     }
     if (!_sessionsEditable || !pedal.available) return;
-    // Clear acts on its Hold only; nothing else has one.
-    if ((pedal.role == FootSessionsRole.newLoop) != hold) return;
-    _dispatchSessionsAction(pedal);
+    if (hold) {
+      if (pedal.role == FootSessionsRole.newLoop) {
+        _dispatchSessionsAction(pedal);
+      } else if (pedal.role == FootSessionsRole.nextPage) {
+        _showNextSessionsFolder();
+      }
+      return;
+    }
+    // Clear acts on its Hold only.
+    if (pedal.role != FootSessionsRole.newLoop) _dispatchSessionsAction(pedal);
+  }
+
+  void _showNextSessionsFolder() {
+    final projection = _sessionsProjection();
+    if (!projection.hasOtherFolders) return;
+    emit(
+      state.copyWith(
+        footSessions: state.footSessions.inFolder(projection.nextFolder),
+      ),
+    );
   }
 
   void _dispatchSessionsAction(FootSessionsPedal pedal) {
@@ -115,6 +155,7 @@ extension _FootSessionsControl on ControlCubit {
         _leaveSessions();
       case FootSessionsRole.nextPage:
         final projection = _sessionsProjection();
+        if (projection.pageCount < 2) return;
         emit(
           state.copyWith(
             footSessions: state.footSessions.onPage(
@@ -139,9 +180,12 @@ extension _FootSessionsControl on ControlCubit {
     var selection = state.footSessions;
     final opening = selection.openingId;
     final opened = opening != null && catalogue.openId == opening;
-    if (opening != null &&
-        (opened || catalogue.failureCount != selection.failuresAtOpen)) {
+    if (opened) {
       selection = selection.settled();
+    } else if (opening != null &&
+        catalogue.failureCount != selection.failuresAtOpen) {
+      // The session's own notice says why; its card says which.
+      selection = selection.settled(failed: opening);
     }
     emit(state.copyWith(sessionCatalogue: catalogue, footSessions: selection));
     if (state.mode != InteractionMode.sessions) return;

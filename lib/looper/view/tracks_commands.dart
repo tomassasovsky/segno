@@ -474,9 +474,18 @@ Notice? sessionOutcomeNotice(SessionState state) {
     case SessionStatus.failure:
       final busy = state.refusedBy?.name ?? 'other';
       final details = state.errorMessage ?? '';
+      // An Open's refusal names its session: from the Sessions face the
+      // player cannot see the Library row that refused (#1910).
+      final target = state.sessions
+          .where((summary) => summary.id == state.failedSessionId)
+          .firstOrNull
+          ?.name;
+      String loadFailed(AppLocalizations l10n) => target == null
+          ? l10n.sessionLoadFailed
+          : l10n.sessionOpenFailed(target);
       return switch (state.error) {
         SessionError.sampleRateMismatch => refuse(
-          (l10n) => l10n.sessionLoadFailed,
+          loadFailed,
           body: (l10n) => l10n.sessionLoadSampleRate,
           action: NoticeAction(
             key: const Key(AppNoticeId.sessionOpenSetup),
@@ -485,11 +494,11 @@ Notice? sessionOutcomeNotice(SessionState state) {
           ),
         ),
         SessionError.unsupportedVersion => refuse(
-          (l10n) => l10n.sessionLoadFailed,
+          loadFailed,
           body: (l10n) => l10n.sessionLoadNewer,
         ),
         SessionError.unconvertible => refuse(
-          (l10n) => l10n.sessionLoadFailed,
+          loadFailed,
           body: (l10n) => l10n.sessionLoadUnconvertible,
         ),
         // The boot recovery stands as a must-act message of its own.

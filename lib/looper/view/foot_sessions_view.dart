@@ -6,10 +6,12 @@ import 'package:segno/control/control.dart';
 import 'package:segno/control/model/foot_sessions.dart';
 import 'package:segno/control/view/console_pedal_layout.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/view/foot_pedal_rows.dart';
 import 'package:segno/looper/view/foot_top_bar.dart';
 import 'package:segno/looper/view/performance_pedal.dart';
+import 'package:segno/performance/cubit/performance_recorder_cubit.dart';
 import 'package:segno/theme/theme.dart';
 
 /// The Sessions face (#1910): the ten pedals, with the four sessions of the
@@ -33,6 +35,13 @@ class FootSessionsView extends StatelessWidget {
         cubit.state.sessionCatalogue,
         cubit.state.footSessions,
       ),
+    );
+    // What an Open would end, said on every card it applies to (D3).
+    final recording = context.select<PerformanceRecorderCubit, bool>(
+      (cubit) => cubit.state is PerformanceRecorderArmed,
+    );
+    final interruption = context.select<LooperBloc, FootSessionsInterruption>(
+      (bloc) => footSessionsInterruption(bloc.state, recording: recording),
     );
     final l10n = context.l10n;
     final surface = context.surface;
@@ -66,10 +75,25 @@ class FootSessionsView extends StatelessWidget {
                           style: const TextStyle(fontSize: 40),
                         ),
                       ),
+                      // The folder in view, once there is a session to be in
+                      // one: a held Bank goes through them.
+                      if (projection.sessions.isNotEmpty)
+                        PositionedDirectional(
+                          start: 40,
+                          top: 84,
+                          width: 480,
+                          child: AppText(
+                            projection.folder ?? l10n.libraryFolderUnfiled,
+                            key: const Key('foot_sessions_folder'),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 30),
+                          ),
+                        ),
                       PositionedDirectional(
                         start: 40,
-                        top: 84,
-                        width: 760,
+                        top: projection.sessions.isEmpty ? 84 : 128,
+                        width: 480,
                         child: AppText(
                           projection.sessions.isEmpty
                               ? l10n.footSessionsNone
@@ -97,7 +121,10 @@ class FootSessionsView extends StatelessWidget {
                           top: 196,
                           width: _cardWidth,
                           height: 250,
-                          child: _SessionCard(pedal: projection[button]),
+                          child: _SessionCard(
+                            pedal: projection[button],
+                            interruption: interruption,
+                          ),
                         ),
                       Positioned.fill(
                         child: FootPedalRows(
@@ -119,12 +146,15 @@ class FootSessionsView extends StatelessWidget {
   }
 }
 
-/// One session above its switch: its name, what it holds, and whether it is
-/// the open one or the one being opened. An empty position says so.
+/// One session above its switch: its name, what it holds, and one line of
+/// state: the open one, the one being opened, the one that could not be
+/// opened, or what opening it would end. An empty position says so. A tap
+/// on the card is its switch.
 class _SessionCard extends StatelessWidget {
-  const new({required this.pedal});
+  const new({required this.pedal, required this.interruption});
 
   final FootSessionsPedal pedal;
+  final FootSessionsInterruption interruption;
 
   static String _bpm(double bpm) => bpm == bpm.roundToDouble()
       ? bpm.round().toString()
@@ -136,7 +166,26 @@ class _SessionCard extends StatelessWidget {
     final surface = context.surface;
     final session = pedal.session;
     final marked = pedal.lit || pedal.opening;
-    return DecoratedBox(
+    // One line, the most pressing first. The warnings read in the warning
+    // colour; the open and opening lines in the accent.
+    final (String? line, Color lineColor) = pedal.opening
+        ? (l10n.footSessionsOpening, surface.accent)
+        : pedal.lit
+        ? (l10n.footSessionsOpenNow, surface.accent)
+        : pedal.failed
+        ? (l10n.footSessionsCouldNotOpen, surface.warning)
+        : (
+            switch (interruption) {
+              FootSessionsInterruption.none => null,
+              FootSessionsInterruption.playback =>
+                l10n.footSessionsStopsPlayback,
+              FootSessionsInterruption.take => l10n.footSessionsEndsTake,
+              FootSessionsInterruption.recording =>
+                l10n.footSessionsEndsRecording,
+            },
+            surface.warning,
+          );
+    final card = DecoratedBox(
       key: Key('foot_sessions_card_${pedal.button.name}'),
       decoration: ShapeDecoration(
         color: surface.card,
@@ -179,16 +228,24 @@ class _SessionCard extends StatelessWidget {
                     ),
                   ),
                   const Spacer(),
-                  if (marked)
+                  if (line != null)
                     AppText(
-                      pedal.opening
-                          ? l10n.footSessionsOpening
-                          : l10n.footSessionsOpenNow,
-                      style: TextStyle(fontSize: 20, color: surface.accent),
+                      line,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 20, color: lineColor),
                     ),
                 ],
               ),
       ),
+    );
+    if (session == null || !pedal.available) return card;
+    return GestureDetector(
+      key: Key('foot_sessions_card_tap_${pedal.button.name}'),
+      behavior: HitTestBehavior.opaque,
+      onTap: () =>
+          context.read<ControlCubit>().activateFootSessionsPedal(pedal.button),
+      child: card,
     );
   }
 }
@@ -214,7 +271,11 @@ class _FootSessionsPedal extends StatelessWidget {
     );
     final l10n = context.l10n;
     final pedal = projection[button];
-    final isHold = pedal.role == FootSessionsRole.newLoop;
+    // Clear acts on its Hold alone; Bank has one while another folder is
+    // there to show.
+    final newLoop = pedal.role == FootSessionsRole.newLoop;
+    final nextFolder =
+        pedal.role == FootSessionsRole.nextPage && projection.hasOtherFolders;
     return PerformancePedal(
       keyPrefix: 'foot_sessions_pedal',
       button: button,
@@ -252,7 +313,11 @@ class _FootSessionsPedal extends StatelessWidget {
         FootSessionsRole.stop => l10n.actionScopeAllTracks,
         _ => '',
       },
-      hint: isHold ? l10n.footFxHold : '',
+      hint: newLoop
+          ? l10n.footFxHold
+          : nextFolder
+          ? l10n.footFxHoldAction(l10n.footSessionsFolder)
+          : '',
       enabled: pedal.available,
       // The selection bar mirrors the physical LED: the open session's
       // switch, Bank past the first page, and Exit.
@@ -262,7 +327,7 @@ class _FootSessionsPedal extends StatelessWidget {
       onCancelled: control.footSessionsCancelled,
       // New loop acts on its Hold alone, so a tap on it does nothing.
       onActivate: () => control.activateFootSessionsPedal(button),
-      onHold: isHold
+      onHold: newLoop || nextFolder
           ? () => control.activateFootSessionsPedal(button, hold: true)
           : null,
     );

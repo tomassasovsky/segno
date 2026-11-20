@@ -457,10 +457,19 @@ Acceptance:
   Bank goes to the next one, and the side names it.
 - The card lines of D3: `Stops playback`, `Ends the take`, `Ends the
   recording`, from the looper's and the recorder's state.
-- A failed Open keeps the face up with the reason on its card, and the
-  stage notice says `Could not open <name>`.
+- A failed Open keeps the face up. As built, its card says `Could not
+  open` and the stage notice says `Could not open <name>` with the reason:
+  the reasons are sentences, and a card is 201 px wide. The notice names
+  the session for an Open from the Library as well.
+- With no open session and no session outside a folder, the face starts on
+  the first folder, so it never starts on an empty list while sessions
+  exist.
+- Bank turns the page on contact while there is one folder. With another
+  folder to show it has a Hold, so the page turn waits for the release, as
+  every switch with a Hold does.
 - Taps on the cards (the drawn pedals take contacts since Part 2a).
-- The readout's footer for the mode (`lib/visualizer/`).
+- The readout's footer for the mode (`lib/visualizer/`): `Sessions · Page
+  N`. The readout's bank field carries the face's page in this mode.
 
 Acceptance:
 

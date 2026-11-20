@@ -278,6 +278,151 @@ void main() {
     }
   });
 
+  group('folders', () {
+    FootSessionCatalogue folders({String? openId = 'b2'}) =>
+        FootSessionCatalogue(
+          sessions: const [
+            FootSessionEntry(id: 'loose', name: 'loose'),
+            FootSessionEntry(id: 'b1', name: 'b1', folder: 'Friday set'),
+            FootSessionEntry(id: 'b2', name: 'b2', folder: 'Friday set'),
+            FootSessionEntry(id: 'a1', name: 'a1', folder: 'Archive'),
+          ],
+          openId: openId,
+        );
+
+    Future<_Rig> enterFolders({String? openId = 'b2'}) async {
+      final rig = _Rig();
+      await rig.control.load();
+      await _pump();
+      rig.control
+        ..setSessionCatalogue(folders(openId: openId))
+        ..setMode(InteractionMode.sessions);
+      await _pump();
+      rig.asked.clear();
+      return rig;
+    }
+
+    test('the face opens on the folder of the open session', () async {
+      final rig = await enterFolders();
+      try {
+        expect(rig.selection.folder, 'Friday set');
+        expect(rig.lit(PedalButton.track2), isTrue);
+        await rig.stomp(PedalButton.track1);
+        expect(rig.asked, ['open b1']);
+      } finally {
+        await rig.close();
+      }
+    });
+
+    test(
+      'with no open session it opens on the sessions outside a folder',
+      () async {
+        final rig = await enterFolders(openId: null);
+        try {
+          expect(rig.selection.folder, isNull);
+          await rig.stomp(PedalButton.track1);
+          expect(rig.asked, ['open loose']);
+        } finally {
+          await rig.close();
+        }
+      },
+    );
+
+    test(
+      'a held Bank shows the next folder and does not also turn the page',
+      () async {
+        final rig = await enterFolders();
+        try {
+          await rig.stomp(
+            PedalButton.bank,
+            hold: const Duration(milliseconds: 900),
+          );
+          // Archive, Friday set, then the sessions outside a folder.
+          expect(rig.selection.folder, isNull);
+          expect(rig.selection.page, 0);
+          expect(rig.asked, isEmpty);
+
+          // Past the last folder it wraps to the first.
+          await rig.stomp(
+            PedalButton.bank,
+            hold: const Duration(milliseconds: 900),
+          );
+          expect(rig.selection.folder, 'Archive');
+          await rig.stomp(PedalButton.track1);
+          expect(rig.asked, ['open a1']);
+        } finally {
+          await rig.close();
+        }
+      },
+    );
+
+    test(
+      'a press of Bank with one page and other folders changes nothing',
+      () async {
+        final rig = await enterFolders();
+        try {
+          await rig.stomp(PedalButton.bank);
+          expect(rig.selection.folder, 'Friday set');
+          expect(rig.selection.page, 0);
+          expect(rig.asked, isEmpty);
+        } finally {
+          await rig.close();
+        }
+      },
+    );
+  });
+
+  test(
+    'with folders, a press of Bank still turns the page, on its release',
+    () async {
+      final rig = _Rig();
+      try {
+        await rig.control.load();
+        await _pump();
+        rig.control
+          ..setSessionCatalogue(
+            FootSessionCatalogue(
+              sessions: [
+                for (final name in _six)
+                  FootSessionEntry(id: name, name: name, folder: 'Set'),
+                const FootSessionEntry(id: 'loose', name: 'loose'),
+              ],
+              openId: 'a',
+            ),
+          )
+          ..setMode(InteractionMode.sessions);
+        await _pump();
+        await rig.stomp(PedalButton.bank);
+        expect(rig.selection.folder, 'Set');
+        expect(rig.selection.page, 1);
+      } finally {
+        await rig.close();
+      }
+    },
+  );
+
+  test(
+    'a failed Open is marked on its session until another is asked',
+    () async {
+      final rig = await enter();
+      try {
+        await rig.stomp(PedalButton.track2);
+        rig.control.setSessionCatalogue(
+          _catalogue(_six, openId: 'a', failureCount: 1),
+        );
+        await _pump();
+        expect(rig.selection.failedId, 'b');
+        expect(rig.selection.openingId, isNull);
+
+        await rig.stomp(PedalButton.track3);
+        expect(rig.selection.failedId, isNull);
+        expect(rig.selection.openingId, 'c');
+      } finally {
+        await rig.close();
+      }
+    },
+  );
+
   test('Undo saves and closes the face', () async {
     final rig = await enter(from: InteractionMode.custom);
     try {
@@ -423,6 +568,29 @@ void main() {
       expect(rig.asked, isEmpty);
       rig.control.activateFootSessionsPedal(PedalButton.track2);
       expect(rig.asked, ['open b']);
+    } finally {
+      await rig.close();
+    }
+  });
+
+  test('the semantic Hold of Bank shows the next folder', () async {
+    final rig = _Rig();
+    try {
+      await rig.control.load();
+      await _pump();
+      rig.control
+        ..setSessionCatalogue(
+          const FootSessionCatalogue(
+            sessions: [
+              FootSessionEntry(id: 'a', name: 'a', folder: 'One'),
+              FootSessionEntry(id: 'b', name: 'b', folder: 'Two'),
+            ],
+            openId: 'a',
+          ),
+        )
+        ..setMode(InteractionMode.sessions)
+        ..activateFootSessionsPedal(PedalButton.bank, hold: true);
+      expect(rig.selection.folder, 'Two');
     } finally {
       await rig.close();
     }

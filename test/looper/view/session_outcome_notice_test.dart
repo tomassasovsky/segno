@@ -105,6 +105,24 @@ void main() {
       });
     }
 
+    test('an Open that fails names the session it could not open (#1910)', () {
+      expect(
+        said(
+          const SessionState(
+            status: SessionStatus.failure,
+            error: SessionError.unsupportedVersion,
+            failedSessionId: 'x',
+            sessions: [SessionSummary(id: 'x', name: 'Evening loop')],
+          ),
+        ),
+        (
+          title: 'Could not open Evening loop',
+          body: l10n.sessionLoadNewer,
+          tone: NoticeTone.warning,
+        ),
+      );
+    });
+
     test('a sample-rate mismatch offers Open setup', () {
       final notice = sessionOutcomeNotice(
         const SessionState(

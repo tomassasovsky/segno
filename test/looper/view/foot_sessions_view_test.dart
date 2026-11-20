@@ -1,6 +1,7 @@
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:looper_repository/looper_repository.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
@@ -9,12 +10,18 @@ import 'package:segno/control/model/foot_sessions.dart';
 import 'package:segno/control/view/pedal_setup/pedal_hardware_face.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/view/foot_sessions_view.dart';
+import 'package:segno/performance/cubit/performance_recorder_cubit.dart';
 
 import '../../helpers/helpers.dart';
 
 class _Control extends MockCubit<ControlState> implements ControlCubit;
 
 class _Tracks extends MockCubit<TracksState> implements TracksCubit;
+
+class _Looper extends MockBloc<LooperEvent, LooperState> implements LooperBloc;
+
+class _Recorder extends MockCubit<PerformanceRecorderState>
+    implements PerformanceRecorderCubit;
 
 const List<PedalButton> _tracks = [
   PedalButton.track1,
@@ -40,17 +47,42 @@ FootSessionCatalogue _catalogue(List<String> names, {String? openId}) =>
 void main() {
   late _Control control;
   late _Tracks tracks;
+  late _Looper looper;
+  late _Recorder recorder;
 
   setUpAll(() => registerFallbackValue(Object()));
+
+  /// The rig under the face: [tracks] on the looper, and a performance
+  /// recording [recording] or not.
+  void rig({List<Track> tracks = const [], bool recording = false}) {
+    whenListen(
+      looper,
+      const Stream<LooperState>.empty(),
+      initialState: LooperState(tracks: tracks),
+    );
+    whenListen(
+      recorder,
+      const Stream<PerformanceRecorderState>.empty(),
+      initialState: recording
+          ? const PerformanceRecorderArmed(
+              elapsed: Duration.zero,
+              overrun: false,
+            )
+          : const PerformanceRecorderIdle(),
+    );
+  }
 
   setUp(() {
     control = _Control();
     tracks = _Tracks();
+    looper = _Looper();
+    recorder = _Recorder();
     whenListen(
       tracks,
       const Stream<TracksState>.empty(),
       initialState: const TracksState(names: []),
     );
+    rig();
   });
 
   void given(
@@ -76,6 +108,8 @@ void main() {
         providers: [
           BlocProvider<ControlCubit>.value(value: control),
           BlocProvider<TracksCubit>.value(value: tracks),
+          BlocProvider<LooperBloc>.value(value: looper),
+          BlocProvider<PerformanceRecorderCubit>.value(value: recorder),
         ],
         child: const Scaffold(body: FootSessionsView()),
       ),
@@ -191,6 +225,112 @@ void main() {
 
     await tester.tap(find.byKey(const Key('foot_sessions_exit')));
     verify(() => control.activateFootSessionsPedal(PedalButton.mode)).called(1);
+  });
+
+  group('what an Open would end is said on every card it applies to', () {
+    const playing = Track(state: TrackState.playing, lengthFrames: 48000);
+
+    testWidgets('a playing track: Stops playback, but not on the open '
+        'session', (tester) async {
+      rig(tracks: const [playing]);
+      given(_catalogue(const ['a', 'b', 'c'], openId: 'a'));
+      await pump(tester);
+
+      expect(onCard(PedalButton.track2, 'Stops playback'), findsOneWidget);
+      expect(onCard(PedalButton.track3, 'Stops playback'), findsOneWidget);
+      expect(onCard(PedalButton.track1, 'Open now'), findsOneWidget);
+      expect(find.text('Stops playback'), findsNWidgets(2));
+    });
+
+    testWidgets('a take: Ends the take', (tester) async {
+      rig(
+        tracks: const [
+          playing,
+          Track(channel: 1, state: TrackState.recording),
+        ],
+      );
+      given(_catalogue(const ['a', 'b'], openId: 'a'));
+      await pump(tester);
+
+      expect(onCard(PedalButton.track2, 'Ends the take'), findsOneWidget);
+      expect(find.text('Stops playback'), findsNothing);
+    });
+
+    testWidgets('a performance recording: Ends the recording', (tester) async {
+      rig(tracks: const [playing], recording: true);
+      given(_catalogue(const ['a', 'b'], openId: 'a'));
+      await pump(tester);
+
+      expect(onCard(PedalButton.track2, 'Ends the recording'), findsOneWidget);
+    });
+
+    testWidgets('nothing, with the rig stopped', (tester) async {
+      rig(
+        tracks: const [Track(state: TrackState.stopped, lengthFrames: 48000)],
+      );
+      given(_catalogue(const ['a', 'b'], openId: 'a'));
+      await pump(tester);
+
+      expect(find.text('Stops playback'), findsNothing);
+      expect(find.text('Ends the take'), findsNothing);
+      expect(find.text('Ends the recording'), findsNothing);
+    });
+  });
+
+  testWidgets('the session whose Open failed says so on its card, over what '
+      'an Open would end', (tester) async {
+    rig(tracks: const [Track(state: TrackState.playing, lengthFrames: 48000)]);
+    given(
+      _catalogue(const ['a', 'b', 'c'], openId: 'a'),
+      selection: const FootSessionsSelection().settled(failed: 'b'),
+    );
+    await pump(tester);
+
+    expect(onCard(PedalButton.track2, 'Could not open'), findsOneWidget);
+    expect(onCard(PedalButton.track2, 'Stops playback'), findsNothing);
+    expect(onCard(PedalButton.track3, 'Stops playback'), findsOneWidget);
+  });
+
+  testWidgets('names the folder in view, and Bank says its Hold shows the '
+      'next one', (tester) async {
+    given(
+      const FootSessionCatalogue(
+        sessions: [
+          FootSessionEntry(id: 'a', name: 'a', folder: 'Friday set'),
+          FootSessionEntry(id: 'b', name: 'b'),
+        ],
+        openId: 'a',
+      ),
+      selection: const FootSessionsSelection(folder: 'Friday set'),
+    );
+    await pump(tester);
+
+    expect(find.byKey(const Key('foot_sessions_folder')), findsOneWidget);
+    expect(find.text('Friday set'), findsOneWidget);
+    expect(find.text('Page 1 of 1 · 1 session'), findsOneWidget);
+    expect(find.text('Hold · Folder'), findsOneWidget);
+  });
+
+  testWidgets('the sessions outside a folder read Unfiled, and with one '
+      'folder Bank has no Hold', (tester) async {
+    given(_catalogue(const ['a', 'b'], openId: 'a'));
+    await pump(tester);
+
+    expect(find.text('Unfiled'), findsOneWidget);
+    expect(find.text('Hold · Folder'), findsNothing);
+  });
+
+  testWidgets('a tap on a card is its switch; an empty position takes none', (
+    tester,
+  ) async {
+    given(_catalogue(const ['a', 'b'], openId: 'a'));
+    await pump(tester);
+
+    await tester.tap(card(PedalButton.track2));
+    verify(() => control.activateFootSessionsPedal(PedalButton.track2))
+        .called(1);
+    await tester.tap(card(PedalButton.track3), warnIfMissed: false);
+    verifyNever(() => control.activateFootSessionsPedal(PedalButton.track3));
   });
 
   testWidgets('a 40-character name stays inside its card', (tester) async {

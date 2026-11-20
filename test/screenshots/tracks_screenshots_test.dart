@@ -596,10 +596,22 @@ void main() {
     }, skip: !rendersScreenshots);
   }
 
-  // The Sessions face (#1910): four sessions over the four track switches.
-  // `page`: the second page, with two empty positions. `opening`: an Open
-  // asked from the face and not settled. `none`: no saved session.
-  for (final scene in ['default', 'page', 'opening', 'none', 'spanish']) {
+  // The Sessions face (#1910): four sessions over the four track switches,
+  // each saying what opening it would end while a loop plays. `page`: the
+  // second page, with two empty positions. `opening`: an Open asked from the
+  // face and not settled. `failed`: one that did not open. `folders`: a
+  // folder in view, with Bank's Hold. `stopped`: nothing playing. `none`: no
+  // saved session.
+  for (final scene in [
+    'default',
+    'page',
+    'opening',
+    'failed',
+    'folders',
+    'stopped',
+    'none',
+    'spanish',
+  ]) {
     testWidgets('Sessions face: $scene', (tester) async {
       seed(
         const LooperState(
@@ -618,6 +630,23 @@ void main() {
           ],
         ),
       );
+      if (scene == 'stopped') {
+        seed(
+          const LooperState(
+            status: EngineStatus(
+              isConnected: true,
+              devicePresent: true,
+              deviceName: 'Segno',
+              inputChannels: 2,
+              outputChannels: 2,
+            ),
+            tracks: [
+              Track(state: TrackState.stopped, lengthFrames: 48000),
+              Track(channel: 1),
+            ],
+          ),
+        );
+      }
       const sessions = [
         FootSessionEntry(id: 'a', name: 'Intro', trackCount: 2, tempoBpm: 84),
         FootSessionEntry(
@@ -636,15 +665,40 @@ void main() {
         FootSessionEntry(id: 'e', name: 'Encore', trackCount: 3, tempoBpm: 96),
         FootSessionEntry(id: 'f', name: 'Outro', trackCount: 1),
       ];
+      // Name order: Encore, Evening loop, Intro, Outro, Slow one, Stomp.
+      final catalogue = FootSessionCatalogue(
+        sessions: switch (scene) {
+          'none' => const [],
+          'folders' => [
+            for (final session in sessions.take(3))
+              FootSessionEntry(
+                id: session.id,
+                name: session.name,
+                folder: 'Friday set',
+                trackCount: session.trackCount,
+                tempoBpm: session.tempoBpm,
+              ),
+            ...sessions.skip(3),
+          ],
+          _ => sessions,
+        },
+        openId: scene == 'none' ? null : 'a',
+      );
       control
-        ..setSessionCatalogue(
-          FootSessionCatalogue(
-            sessions: scene == 'none' ? const [] : sessions,
-            // Name order: Encore, Evening loop, Intro, Outro, Slow one, Stomp.
-            openId: scene == 'none' ? null : 'a',
-          ),
-        )
+        ..setSessionCatalogue(catalogue)
         ..setMode(InteractionMode.sessions);
+      if (scene == 'failed') {
+        // Encore is asked for and the session layer reports a failure.
+        control
+          ..activateFootSessionsPedal(PedalButton.track1)
+          ..setSessionCatalogue(
+            FootSessionCatalogue(
+              sessions: catalogue.sessions,
+              openId: catalogue.openId,
+              failureCount: 1,
+            ),
+          );
+      }
       if (scene == 'page') {
         control.activateFootSessionsPedal(PedalButton.bank);
       }
