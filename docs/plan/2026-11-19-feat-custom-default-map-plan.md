@@ -237,6 +237,9 @@ connected.
   there); CI's Bloc lint step covers it.
 - The segno-design snapshot leaves out page 33, which the export returned
   with recomputed text positions and no content change.
+- The design PR (segno-design#24) was closed without merging. The Sessions
+  snapshots reached segno-design's main first, as whole-file exports taken
+  after this plan's Penpot edits, so main already held them.
 
 ## Verification
 

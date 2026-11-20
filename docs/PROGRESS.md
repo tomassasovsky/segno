@@ -96,7 +96,9 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   carries that Hold.
 - An install that already saved a setup keeps its map until the owner uses
   `Use default assignments`.
-- Design: Penpot pages 08 and 10, snapshot in segno-design#24.
+- Design: Penpot pages 08 and 10. The snapshot is on segno-design's main
+  (`c17df0c8c`): the Sessions exports were taken after these edits and
+  carry them, so segno-design#24 was closed with nothing left to merge.
 - Not checked on the console: the foot feel of each default assignment.
 - When Transpose and Speed ship (#1179), pedal 1 in bank A returns to
   Transpose, Hold Reverse and the Hold on pedal 4 to Speed. Sessions by
