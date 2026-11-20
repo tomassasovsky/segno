@@ -175,7 +175,10 @@ class _SessionCard extends StatelessWidget {
         : pedal.failed
         ? (l10n.footSessionsCouldNotOpen, surface.warning)
         : (
-            switch (interruption) {
+            // Only where a press is taken: not while an Open is in flight.
+            switch (pedal.available
+                ? interruption
+                : FootSessionsInterruption.none) {
               FootSessionsInterruption.none => null,
               FootSessionsInterruption.playback =>
                 l10n.footSessionsStopsPlayback,
@@ -276,6 +279,8 @@ class _FootSessionsPedal extends StatelessWidget {
     final newLoop = pedal.role == FootSessionsRole.newLoop;
     final nextFolder =
         pedal.role == FootSessionsRole.nextPage && projection.hasOtherFolders;
+    // With one page Bank's press does nothing, so it is named for its Hold.
+    final folderOnly = nextFolder && projection.pageCount < 2;
     return PerformancePedal(
       keyPrefix: 'foot_sessions_pedal',
       button: button,
@@ -295,17 +300,21 @@ class _FootSessionsPedal extends StatelessWidget {
           pedal.session == null ? '' : l10n.footSessionsOpen,
         FootSessionsRole.save => l10n.footSessionsSave,
         FootSessionsRole.newLoop => l10n.actionNewLoop,
-        FootSessionsRole.nextPage => l10n.footSessionsNextPage,
+        FootSessionsRole.nextPage =>
+          folderOnly ? l10n.footSessionsFolder : l10n.footSessionsNextPage,
         // The short foot name: the catalogue's wraps in Spanish.
         FootSessionsRole.recordPlay => l10n.footCustomRecordPlay,
         FootSessionsRole.stop => l10n.actionStop,
         FootSessionsRole.exit => l10n.actionModeExit,
       },
       detail: switch (pedal.role) {
-        FootSessionsRole.nextPage => l10n.footSessionsPageOf(
-          projection.page + 1,
-          projection.pageCount,
-        ),
+        FootSessionsRole.nextPage =>
+          folderOnly
+              ? ''
+              : l10n.footSessionsPageOf(
+                  projection.page + 1,
+                  projection.pageCount,
+                ),
         FootSessionsRole.recordPlay => l10n.displayTrackName(
           tracks.nameOf(cursor),
           cursor,
@@ -313,7 +322,7 @@ class _FootSessionsPedal extends StatelessWidget {
         FootSessionsRole.stop => l10n.actionScopeAllTracks,
         _ => '',
       },
-      hint: newLoop
+      hint: newLoop || folderOnly
           ? l10n.footFxHold
           : nextFolder
           ? l10n.footFxHoldAction(l10n.footSessionsFolder)

@@ -178,6 +178,39 @@ void main() {
     expect(find.text('Open'), findsNWidgets(2));
   });
 
+  testWidgets('with more than one page and another folder, Bank is Next page '
+      'with the folder on its Hold', (tester) async {
+    given(
+      FootSessionCatalogue(
+        sessions: [
+          for (final name in ['a', 'b', 'c', 'd', 'e'])
+            FootSessionEntry(id: name, name: name, folder: 'Set'),
+          const FootSessionEntry(id: 'x', name: 'x'),
+        ],
+        openId: 'a',
+      ),
+      selection: const FootSessionsSelection(folder: 'Set'),
+    );
+    await pump(tester);
+
+    expect(find.text('Next page'), findsOneWidget);
+    expect(find.text('1 / 2'), findsOneWidget);
+    expect(find.text('Hold · Folder'), findsOneWidget);
+  });
+
+  testWidgets('while an Open is in flight no card says what an Open would '
+      'end', (tester) async {
+    rig(tracks: const [Track(state: TrackState.playing, lengthFrames: 48000)]);
+    given(
+      _catalogue(const ['a', 'b', 'c'], openId: 'a'),
+      selection: const FootSessionsSelection().opening('c', 0),
+    );
+    await pump(tester);
+
+    expect(find.text('Stops playback'), findsNothing);
+    expect(onCard(PedalButton.track3, 'Opening…'), findsOneWidget);
+  });
+
   testWidgets('the session being opened says so on its card', (tester) async {
     given(
       _catalogue(const ['a', 'b', 'c'], openId: 'a'),
@@ -308,7 +341,10 @@ void main() {
     expect(find.byKey(const Key('foot_sessions_folder')), findsOneWidget);
     expect(find.text('Friday set'), findsOneWidget);
     expect(find.text('Page 1 of 1 · 1 session'), findsOneWidget);
-    expect(find.text('Hold · Folder'), findsOneWidget);
+    // One page: Bank's press does nothing, so it is named for its Hold.
+    expect(find.text('Folder'), findsOneWidget);
+    expect(find.text('Next page'), findsNothing);
+    expect(find.text('Hold'), findsNWidgets(2));
   });
 
   testWidgets('the sessions outside a folder read Unfiled, and with one '
