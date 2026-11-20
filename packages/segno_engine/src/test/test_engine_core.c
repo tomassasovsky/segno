@@ -34618,14 +34618,23 @@ static void test_fx_slot_touches_only_published_buffers(void) {
   le_fx_entry_reset(fx, 1, LE_FX_DRIVE);
   CHECK(le_fx_prepare(fx, 1, LE_FX_OCTAVER, sr) == LE_OK);
   fx->delay[1][0][7] = 0.5f;
+  fx->delay[1][0][sr - 1] = 0.5f;
   fx->oct[1][0].out[7] = 0.5f;
   le_fx_entry_reset(fx, 1, LE_FX_DRIVE);
   le_fx_entry_clear_rings(fx, 1, sr, LE_FX_DRIVE);
   CHECK(fx->delay[1][0][7] == 0.5f);
+  CHECK(fx->delay[1][0][sr - 1] == 0.5f);
   CHECK(fx->oct[1][0].out[7] == 0.5f);
   le_fx_entry_reset(fx, 1, LE_FX_OCTAVER);
   CHECK(fx->oct[1][0].out[7] == 0.0f);
   le_fx_entry_clear_rings(fx, 1, sr, LE_FX_OCTAVER);
+  /* The Octaver clears what it can read, LE_OCT_REACH behind its head
+   * (#1914), and leaves the rest of its 1 s ring: a Delay landing after it
+   * clears all of it. */
+  CHECK(fx->delay[1][0][sr - 1] == 0.0f);
+  CHECK(fx->delay[1][0][7] == 0.5f);
+  le_fx_entry_reset(fx, 1, LE_FX_DELAY);
+  le_fx_entry_clear_rings(fx, 1, sr, LE_FX_DELAY);
   CHECK(fx->delay[1][0][7] == 0.0f);
   /* A Reverb runs on its first ring alone: a second one prepared for a
    * Delay to come is left alone. */
