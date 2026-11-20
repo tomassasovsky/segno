@@ -87,17 +87,34 @@ extension _FootSessionsControl on ControlCubit {
         _previewSession(session.id);
         return;
       }
+      // One hold to open at a time. A second switch going down while one
+      // is pending is a foot across two switches: neither opens, and
+      // neither previews.
+      final pending = _openFill;
+      if (pending != null && pending.button != button) {
+        _trackHoldGestures[pending.button]?.cancel();
+        return;
+      }
       final gesture = _trackHoldGestures.putIfAbsent(button, _HoldGesture.new);
       if (gesture._active) return;
+      // The session is asked for again when the gesture ends: the catalogue
+      // can change while the switch is down (entering the face asks for a
+      // fresh one), and the switch must still stand for this session.
+      FootSessionsPedal? stillThere() {
+        if (!_sessionsEditable) return null;
+        final now = _sessionsProjection()[button];
+        return now.session?.id == session.id ? now : null;
+      }
+
       _armGesture(
         gesture,
         cue: button,
         onSettled: () => _endOpenFill(button),
         onTap: () {
-          if (_sessionsEditable) _previewSession(session.id);
+          if (stillThere()?.available ?? false) _previewSession(session.id);
         },
         onHold: () {
-          if (_sessionsEditable) _openSessionFromFace(session.id);
+          if (stillThere()?.opens ?? false) _openSessionFromFace(session.id);
         },
       );
       if (gesture._active) _startOpenFill(button);
@@ -192,26 +209,35 @@ extension _FootSessionsControl on ControlCubit {
     if (!_closing && !isClosed) _pushProjected();
   }
 
-  /// The track switch the frame draws as the hold to open: the one whose
-  /// hold is pending, with how far it has run, or the held switch of the
-  /// session being opened, lit whole (a null progress).
-  ({PedalButton button, int? progress})? _sessionsOpenHold() {
+  /// The held track switches that stand for a session. They read in the
+  /// colour of the open session's switch while they are down: it is the
+  /// colour a hold fills in, and the one the switch keeps when the hold has
+  /// fired, so nothing changes colour between the fill and the Open.
+  Set<PedalButton> _sessionsHeld() {
+    if (state.mode != InteractionMode.sessions) return const {};
+    return {
+      for (final pedal in _sessionsProjection().pedals.values)
+        if (pedal.role == FootSessionsRole.open &&
+            pedal.session != null &&
+            _pressedButtons.containsKey(pedal.button))
+          pedal.button,
+    };
+  }
+
+  /// The pending hold to open the frame draws as a fill: its switch and how
+  /// far it has run. Only while the switch is down: a release ends the fill
+  /// with it.
+  ({PedalButton button, int progress})? _sessionsOpenFill() {
     if (state.mode != InteractionMode.sessions) return null;
     final fill = _openFill;
-    // Only while the switch is down: a release ends the fill with it.
-    if (fill != null && _pressedButtons.containsKey(fill.button)) {
-      return (
-        button: fill.button,
-        progress: clearHoldProgress(
-          fill.clock.elapsed,
-          fill.fillTime,
-        ).clamp(0, 254),
-      );
-    }
-    for (final pedal in _sessionsProjection().pedals.values) {
-      if (pedal.opening) return (button: pedal.button, progress: null);
-    }
-    return null;
+    if (fill == null || !_pressedButtons.containsKey(fill.button)) return null;
+    return (
+      button: fill.button,
+      progress: clearHoldProgress(
+        fill.clock.elapsed,
+        fill.fillTime,
+      ).clamp(0, 254),
+    );
   }
 
   void _showNextSessionsFolder() {

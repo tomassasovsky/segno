@@ -445,7 +445,8 @@ void main() {
         _empty,
         overlay,
         sessionStates: const {PedalButton.track1: true},
-        openHold: (button: held, progress: 100),
+        sessionHeld: const {held},
+        openFill: (button: held, progress: 100),
         pressed: const {held},
       );
       expect(frame.queuedButton, held);
@@ -458,13 +459,13 @@ void main() {
       );
     });
 
-    test('once it has fired there is no fill, and the switch is lit whole '
-        'while it is still held', () {
+    test('with no fill, a held switch over a session is lit whole in the '
+        'same colour: the hold has fired, or cannot open anything', () {
       final frame = projectFrame(
         _empty,
         overlay,
-        sessionStates: const {PedalButton.track1: true, held: true},
-        openHold: (button: held, progress: null),
+        sessionStates: const {PedalButton.track1: true},
+        sessionHeld: const {held},
         pressed: const {held},
       );
       expect(frame.queuedButton, isNull);
@@ -480,7 +481,8 @@ void main() {
       final frame = projectFrame(
         _empty,
         const ControlState(),
-        openHold: (button: held, progress: 100),
+        sessionHeld: const {held},
+        openFill: (button: held, progress: 100),
         pressed: const {held},
       );
       expect(frame.queuedButton, isNull);
@@ -496,7 +498,8 @@ void main() {
         () => projectFrame(
           _empty,
           overlay,
-          openHold: (button: held, progress: 100),
+          sessionHeld: const {held},
+          openFill: (button: held, progress: 100),
         ),
         throwsStateError,
       );

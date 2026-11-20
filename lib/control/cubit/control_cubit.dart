@@ -4569,7 +4569,8 @@ class ControlCubit extends Cubit<ControlState> {
       physicalCustomStates: physicalCustom,
       tunerStates: _tunerStates(),
       sessionStates: _sessionsStates(),
-      openHold: _sessionsOpenHold(),
+      sessionHeld: _sessionsHeld(),
+      openFill: _sessionsOpenFill(),
       pressed: _pressedButtons.keys.toSet(),
       clearFilling: _clearFills.keys.toSet(),
     );

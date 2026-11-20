@@ -370,6 +370,70 @@ void main() {
       }
     });
 
+    test('a second switch going down while one is held opens neither and '
+        'previews neither', () async {
+      final rig = await enter();
+      try {
+        rig.asked.clear();
+        rig.link.press(PedalButton.track2, down: true);
+        await _pump(const Duration(milliseconds: 100));
+        expect(frame(rig).queuedButton, PedalButton.track2);
+        rig.link.press(PedalButton.track3, down: true);
+        await _pump(const Duration(milliseconds: 30));
+        // The first hold is over, and the second never started one.
+        expect(frame(rig).queuedButton, isNull);
+
+        await _pump(const Duration(milliseconds: 900));
+        expect(rig.asked, isEmpty);
+        rig.link.press(PedalButton.track2, down: false);
+        rig.link.press(PedalButton.track3, down: false);
+        await _pump(const Duration(milliseconds: 30));
+        expect(rig.asked, isEmpty);
+        expect(rig.selection.previewId, isNull);
+        expect(rig.selection.openingId, isNull);
+      } finally {
+        await rig.close();
+      }
+    });
+
+    test('opens nothing when the switch stands for another session by the '
+        'time the hold fires', () async {
+      final rig = await enter();
+      try {
+        rig.asked.clear();
+        rig.link.press(PedalButton.track2, down: true);
+        await _pump(const Duration(milliseconds: 200));
+        // The fresh catalogue lands during the hold: switch 2 is now `bb`.
+        rig.control.setSessionCatalogue(
+          _catalogue(const ['a', 'aa', 'bb', 'c'], openId: 'a'),
+        );
+        await _pump(const Duration(milliseconds: 800));
+        rig.link.press(PedalButton.track2, down: false);
+        await _pump(const Duration(milliseconds: 30));
+        expect(rig.asked, isEmpty);
+        expect(rig.selection.openingId, isNull);
+      } finally {
+        await rig.close();
+      }
+    });
+
+    test('a tap previews nothing when its session left the switch while it '
+        'was down', () async {
+      final rig = await enter();
+      try {
+        rig.link.press(PedalButton.track2, down: true);
+        await _pump(const Duration(milliseconds: 100));
+        rig.control.setSessionCatalogue(
+          _catalogue(const ['a', 'aa', 'bb', 'c'], openId: 'a'),
+        );
+        rig.link.press(PedalButton.track2, down: false);
+        await _pump(const Duration(milliseconds: 30));
+        expect(rig.selection.previewId, isNull);
+      } finally {
+        await rig.close();
+      }
+    });
+
     test('stops when takes lock while the hold is pending', () async {
       final rig = await enter();
       try {
