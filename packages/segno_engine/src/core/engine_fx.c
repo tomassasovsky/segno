@@ -2735,15 +2735,6 @@ static inline float fx_sanitize(float x);
 typedef void (*le_oct_tick_fn)(le_fx_state* fx, int slot, const float* p,
                                float* q);
 
-/* The octaver's kernel on its nine settings (le_fx_octaver_settings):
- * shift, tone, mix, mode, formants, the wet voice's cut (0: none), 1 for
- * the Dual Octaver (an equal-power mix, a switched shift, and a second
- * voice two octaves out) or 0, that second voice's level (0: none), and
- * the first voice's level before its trim (the Dual Octaver's low band,
- * #1467) — so a zeroed tail is the plain octaver. At rates other than
- * LE_OCT_RATE the kernel runs at it, between two resamplers (above);
- * [tick], when set, works the settings out for each kernel tick from the
- * kind's own [p]. */
 /* ---- The octaver family on a mono pair (#1914) ----
  *
  * A monitored input reaches its chain as a mono pair, and the octaver's
@@ -2765,6 +2756,19 @@ typedef void (*le_oct_tick_fn)(le_fx_state* fx, int slot, const float* p,
 
 #ifdef LE_NATIVE_TESTS
 int le_fx_test_oct_stereo;
+#endif
+
+#if LE_PROFILE_SECTIONS
+/* The section profiler's state (engine_prof.h), here because every target
+ * that runs the effects compiles this file (the engine, the benches, the
+ * VST3 plugin). */
+#include <sys/mman.h>
+__attribute__((visibility("default"), used)) le_prof le_prof_state;
+/* At load, so the callback never takes a first-touch fault on it. */
+__attribute__((constructor)) static void le_prof_lock(void) {
+  memset(&le_prof_state, 0, sizeof(le_prof_state));
+  (void)mlock(&le_prof_state, sizeof(le_prof_state));
+}
 #endif
 
 static int le_oct_bits_equal(float a, float b) {
@@ -2965,6 +2969,15 @@ static void le_oct_run_pair(le_fx_state* fx, int slot, int cap, float* l,
   LE_PROF_OCT(a_oct_stereo);
 }
 
+/* The octaver's kernel on its nine settings (le_fx_octaver_settings):
+ * shift, tone, mix, mode, formants, the wet voice's cut (0: none), 1 for
+ * the Dual Octaver (an equal-power mix, a switched shift, and a second
+ * voice two octaves out) or 0, that second voice's level (0: none), and
+ * the first voice's level before its trim (the Dual Octaver's low band,
+ * #1467) — so a zeroed tail is the plain octaver. At rates other than
+ * LE_OCT_RATE the kernel runs at it, between two resamplers (above);
+ * [tick], when set, works the settings out for each kernel tick from the
+ * kind's own [p]. */
 static void fx_octaver_run(le_fx_state* fx, int slot, int sr, int cap,
                            float* l, float* r, float* q, const float* p,
                            le_oct_tick_fn tick) {

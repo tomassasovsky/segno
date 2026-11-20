@@ -51,16 +51,6 @@
  * even at the shortest period the appliance offers (32 frames / 96 kHz =
  * 333 us; 64 frames is the default, not the floor) — and
  * -DLE_CALLBACK_TELEMETRY=0 removes even that. */
-#if LE_PROFILE_SECTIONS
-#include <sys/mman.h>
-__attribute__((visibility("default"), used)) le_prof le_prof_state;
-/* At load, so the callback never takes a first-touch fault on it. */
-__attribute__((constructor)) static void le_prof_lock(void) {
-  memset(&le_prof_state, 0, sizeof(le_prof_state));
-  (void)mlock(&le_prof_state, sizeof(le_prof_state));
-}
-#endif
-
 static void data_callback(ma_device* device, void* output, const void* input,
                           ma_uint32 frame_count) {
   le_engine* e = (le_engine*)device->pUserData;

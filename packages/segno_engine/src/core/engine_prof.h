@@ -20,7 +20,9 @@
  *
  * Writers: the callback thread for everything but the per-job and wake
  * histograms, which the workers also add to (relaxed atomic adds). Readers
- * tolerate a torn view.
+ * tolerate a torn view. One state per process, so it profiles one engine's
+ * callback: the app's and each bench's. A process running two engines'
+ * callbacks at once (some native tests) mixes their sections.
  */
 #ifndef SEGNO_ENGINE_PROF_H
 #define SEGNO_ENGINE_PROF_H
