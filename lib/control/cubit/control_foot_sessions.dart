@@ -10,8 +10,13 @@ extension _FootSessionsControl on ControlCubit {
       !_takeLocked() &&
       state.mode == InteractionMode.sessions;
 
-  FootSessionsProjection _sessionsProjection() =>
-      projectFootSessions(state.sessionCatalogue, state.footSessions);
+  FootSessionsProjection _sessionsProjection() {
+    final from = (state.sessionCatalogue, state.footSessions);
+    final cached = _sessionsProjected;
+    if (cached != null && _sessionsProjectedFrom == from) return cached;
+    _sessionsProjectedFrom = from;
+    return _sessionsProjected = projectFootSessions(from.$1, from.$2);
+  }
 
   /// The mode the face goes back to. Only the modes whose entry does
   /// nothing to the rig: coming back must not cancel an arm or end a take,
@@ -58,10 +63,10 @@ extension _FootSessionsControl on ControlCubit {
             _trackHoldGestures.putIfAbsent(button, _HoldGesture.new),
         cue: button,
         clears: () => _sessionsEditable,
+        // No confirming flash: the session layer has not accepted the New
+        // loop yet, and says so itself if it refuses.
         onHold: () {
-          if (!_sessionsEditable) return;
-          _meetClearFill(button);
-          _dispatchSessionsAction(pedal);
+          if (_sessionsEditable) _dispatchSessionsAction(pedal);
         },
       );
       return;

@@ -310,6 +310,33 @@ void main() {
     }
   });
 
+  test('a Custom switch assigned Sessions opens the face, and MODE goes '
+      'back to Custom', () async {
+    const sessions = ModeAction(InteractionMode.sessions);
+    final rig = _Rig();
+    try {
+      await rig.control.load();
+      await _pump();
+      await rig.control.setPedalSetup(
+        const PedalSetup().withCustom(
+          PedalButton.track1,
+          bank: 0,
+          pair: const ControlGesturePair(press: sessions),
+        ),
+      );
+      rig.control
+        ..setMode(InteractionMode.custom)
+        ..activateFootCustomPedal(PedalButton.track1);
+      await _pump();
+      expect(rig.control.state.mode, InteractionMode.sessions);
+
+      rig.control.activateFootSessionsPedal(PedalButton.mode);
+      expect(rig.control.state.mode, InteractionMode.custom);
+    } finally {
+      await rig.close();
+    }
+  });
+
   test('MODE goes back and asks for nothing', () async {
     final rig = await enter(from: InteractionMode.custom);
     try {

@@ -1246,6 +1246,11 @@ class ControlCubit extends Cubit<ControlState> {
   // The Sessions face returns to the mode that entered it (#1910).
   InteractionMode _sessionsReturn = InteractionMode.record;
 
+  // The face's last projection and what it was made from: the LED frame
+  // asks for it on every push, and ordering the catalogue is not free.
+  FootSessionsProjection? _sessionsProjected;
+  (FootSessionCatalogue, FootSessionsSelection)? _sessionsProjectedFrom;
+
   // Whether this install has been told that FX mode's Stop no longer sweeps
   // the track chains (#1229). Loaded with the setup; until then a first FX
   // entry cannot know, and says nothing.
@@ -3859,9 +3864,11 @@ class ControlCubit extends Cubit<ControlState> {
 
   void _enterPedalMode(InteractionMode mode) => setMode(
     state.mode == mode
-        ? mode == InteractionMode.fx
-              ? _fxReturn
-              : InteractionMode.record
+        ? switch (mode) {
+            InteractionMode.fx => _fxReturn,
+            InteractionMode.sessions => _sessionsReturn,
+            _ => InteractionMode.record,
+          }
         : mode,
   );
 

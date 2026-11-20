@@ -232,12 +232,19 @@ class TracksCommands {
       return KeyEventResult.ignored; // let OS / menu shortcuts through
     }
 
+    if (mode == InteractionMode.sessions) {
+      // The face goes back to the mode it was entered from, as MODE does.
+      if (key == LogicalKeyboardKey.escape || key == LogicalKeyboardKey.keyM) {
+        overlay.activateFootSessionsPedal(PedalButton.mode);
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
+    }
     if (mode == InteractionMode.mixer ||
         mode == InteractionMode.fade ||
         mode == InteractionMode.reverse ||
         mode == InteractionMode.peel ||
         mode == InteractionMode.tuner ||
-        mode == InteractionMode.sessions ||
         mode.isLength) {
       if (key == LogicalKeyboardKey.escape || key == LogicalKeyboardKey.keyM) {
         overlay.setMode(InteractionMode.record);
