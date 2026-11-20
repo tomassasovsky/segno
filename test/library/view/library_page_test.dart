@@ -1249,6 +1249,153 @@ void main() {
     });
   });
 
+  group("a row's options (#1921)", () {
+    setUp(() {
+      when(() => session.setShownOnFace(any(), shown: any(named: 'shown')))
+          .thenAnswer((_) async {});
+    });
+
+    SessionState withHidden(
+      Set<SessionId> hidden, {
+      SessionStatus status = SessionStatus.idle,
+    }) => SessionState(
+      status: status,
+      currentSessionId: 's-cur',
+      currentSessionName: 'Evening loop',
+      sessions: _catalog,
+      folders: const ['Gigs'],
+      hiddenFromFace: hidden,
+    );
+
+    Finder options(String id) => find.byKey(Key('library_row_options_$id'));
+
+    testWidgets('every row has a three-dot button, named for its session', (
+      tester,
+    ) async {
+      await openLibrary(tester);
+
+      for (final summary in _catalog) {
+        expect(options(summary.id), findsOneWidget, reason: summary.id);
+      }
+      expect(
+        find.descendant(
+          of: options('s-gig'),
+          matching: find.byIcon(LucideIcons.ellipsis),
+        ),
+        findsOneWidget,
+      );
+      expect(find.bySemanticsLabel('Options for Night set'), findsOneWidget);
+    });
+
+    testWidgets('it offers to hide a session that is on the pedal, and '
+        'hides it', (tester) async {
+      await openLibrary(tester);
+      await tester.tap(options('s-gig'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('fx_options_sheet')),
+          matching: find.text('Night set'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Hide from pedal'), findsOneWidget);
+      expect(find.text('Show on pedal'), findsNothing);
+      await tester.tap(find.byKey(const Key('fx_option_pedal')));
+      await tester.pumpAndSettle();
+
+      verify(() => session.setShownOnFace('s-gig', shown: false)).called(1);
+    });
+
+    testWidgets('it offers to show a hidden session, and shows it', (
+      tester,
+    ) async {
+      await openLibrary(tester, state: withHidden({'s-gig'}));
+      await tester.tap(options('s-gig'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Show on pedal'), findsOneWidget);
+      expect(find.text('Hide from pedal'), findsNothing);
+      await tester.tap(find.byKey(const Key('fx_option_pedal')));
+      await tester.pumpAndSettle();
+
+      verify(() => session.setShownOnFace('s-gig', shown: true)).called(1);
+    });
+
+    testWidgets('Cancel changes nothing', (tester) async {
+      await openLibrary(tester);
+      await tester.tap(options('s-gig'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('fx_options_cancel')));
+      await tester.pumpAndSettle();
+
+      verifyNever(
+        () => session.setShownOnFace(any(), shown: any(named: 'shown')),
+      );
+    });
+
+    testWidgets('opening the options does not select the row', (tester) async {
+      await openLibrary(tester);
+      await tester.tap(options('s-gig'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('fx_options_cancel')));
+      await tester.pumpAndSettle();
+
+      expect(
+        inPreview(find.byKey(const Key('library_preview_name'))),
+        findsOneWidget,
+      );
+      expect(
+        tester
+            .widget<AppText>(find.byKey(const Key('library_preview_name')))
+            .data,
+        'Evening loop',
+      );
+    });
+
+    testWidgets('a hidden session says so on its row, and the others do not', (
+      tester,
+    ) async {
+      await openLibrary(tester, state: withHidden({'s-gig', 's-cur'}));
+
+      expect(
+        inRow('s-gig', l10n.librarySessionMeta('7 Sep', '1 track')),
+        findsNothing,
+      );
+      expect(
+        find.descendant(
+          of: row('s-gig'),
+          matching: find.textContaining('· Hidden from pedal'),
+        ),
+        findsOneWidget,
+      );
+      // The open session can be hidden too.
+      expect(
+        inRow('s-cur', 'Current session · Hidden from pedal'),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: row('s-new'),
+          matching: find.textContaining('Hidden from pedal'),
+        ),
+        findsNothing,
+      );
+    });
+
+    testWidgets('the buttons wait while a session action runs', (tester) async {
+      await openLibrary(
+        tester,
+        state: withHidden(const {}, status: SessionStatus.working),
+      );
+      await tester.tap(options('s-gig'));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('fx_options_sheet')), findsNothing);
+    });
+  });
+
   group('after an action', () {
     late StreamController<SessionState> states;
 

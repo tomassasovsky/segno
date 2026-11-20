@@ -134,6 +134,8 @@ void main() {
         currentSessionName: _catalog.firstWhere((s) => s.id == current).name,
         sessions: _catalog,
         folders: const ['Gigs'],
+        // Sunday rehearsal is kept off the Sessions pedal function (#1921).
+        hiddenFromFace: const {'s-3'},
       ),
     );
     final repository = _MockSessionRepository();
@@ -262,6 +264,15 @@ void main() {
     await shot('manage');
   }, skip: !rendersScreenshots);
 
+  testWidgets("a row's options, for a session hidden from the pedal", (
+    tester,
+  ) async {
+    await pump(tester, current: 's-1');
+    await tester.tap(find.byKey(const Key('library_row_options_s-3')));
+    await tester.pumpAndSettle();
+    await shot('row_options');
+  }, skip: !rendersScreenshots);
+
   testWidgets('19/04 Rename on the keyboard sheet', (tester) async {
     await pump(tester, current: 's-1');
     await tester.tap(find.byKey(const Key('library_manage')));
@@ -341,6 +352,8 @@ void main() {
         currentSessionName: 'Evening loop',
         sessions: _catalog,
         folders: const ['Gigs'],
+        // Sunday rehearsal is kept off the Sessions pedal function (#1921).
+        hiddenFromFace: const {'s-3'},
       ),
     );
     await tester.pumpAndSettle();

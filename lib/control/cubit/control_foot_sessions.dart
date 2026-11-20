@@ -1,7 +1,8 @@
 part of 'control_cubit.dart';
 
-/// The Sessions face (#1910): a press on a track switch shows its session
-/// in the readout and a Hold opens it (#1921). Control owns the page, the
+/// The Sessions face (#1910): every saved session the player keeps on it,
+/// four to a page. A press on a track switch shows its session in the
+/// readout and a Hold opens it (#1921). Control owns the page, the
 /// session shown and the pending Open; the session layer owns the sessions
 /// and is reached through the injected functions.
 extension _FootSessionsControl on ControlCubit {
@@ -29,22 +30,16 @@ extension _FootSessionsControl on ControlCubit {
     _ => InteractionMode.record,
   };
 
-  /// Entering the mode: on the folder and the page that hold the open
-  /// session, with the catalogue asked for again, since the copy here is
-  /// only as new as the last session action.
+  /// Entering the mode: on the page that holds the open session, with the
+  /// catalogue asked for again, since the copy here is only as new as the
+  /// last session action.
   void _enterSessions() {
     final catalogue = state.sessionCatalogue;
-    final folder = footSessionsStartFolder(catalogue);
-    final inFolder = projectFootSessions(
-      catalogue,
-      FootSessionsSelection(folder: folder),
-    );
     emit(
       state.copyWith(
         footSessions: FootSessionsSelection(
-          folder: folder,
           page: FootSessionsProjection.pageOf(
-            inFolder.sessions,
+            footSessionsListed(catalogue),
             catalogue.openId,
           ),
         ),
@@ -62,18 +57,21 @@ extension _FootSessionsControl on ControlCubit {
       return;
     }
     if (!_sessionsEditable || !pedal.available) return;
-    if (pedal.role == FootSessionsRole.newLoop) {
-      // New loop is a Hold: Clear sits beside Bank, and a press that slips
-      // must not start one. The fill is the one every clearing Hold draws.
+    if (pedal.role == FootSessionsRole.save) {
+      // Undo saves on a press and starts a new loop on a Hold (#1921), so
+      // its press waits for the release. The fill is the one every clearing
+      // Hold draws: a new loop ends what is playing.
       _armGesture(
-        _systemGesture(button) ??
-            _trackHoldGestures.putIfAbsent(button, _HoldGesture.new),
+        _systemGesture(button)!,
         cue: button,
         clears: () => _sessionsEditable,
+        onTap: () {
+          if (_sessionsEditable) _dispatchSessionsAction(pedal);
+        },
         // No confirming flash: the session layer has not accepted the New
         // loop yet, and says so itself if it refuses.
         onHold: () {
-          if (_sessionsEditable) _dispatchSessionsAction(pedal);
+          if (_sessionsEditable) _newLoopFromFace();
         },
       );
       return;
@@ -122,27 +120,11 @@ extension _FootSessionsControl on ControlCubit {
       }
       return;
     }
-    if (pedal.role == FootSessionsRole.nextPage &&
-        _sessionsProjection().hasOtherFolders) {
-      // With another folder to show, Bank has a Hold, so its page turn
-      // waits for the release. With one folder it turns on contact.
-      _armGesture(
-        _systemGesture(button)!,
-        cue: button,
-        onTap: () {
-          if (_sessionsEditable) _dispatchSessionsAction(pedal);
-        },
-        onHold: () {
-          if (_sessionsEditable) _showNextSessionsFolder();
-        },
-      );
-      return;
-    }
     _dispatchSessionsAction(pedal);
   }
 
-  /// The semantic activation of [button]: its press, or its Hold (Clear's
-  /// New loop, Bank's next folder, a track switch's Open).
+  /// The semantic activation of [button]: its press, or its Hold (Undo's
+  /// New loop, a track switch's Open).
   void _activateSessionsPedal(PedalButton button, {required bool hold}) {
     if (state.mode != InteractionMode.sessions || isClosed) return;
     final pedal = _sessionsProjection()[button];
@@ -152,17 +134,20 @@ extension _FootSessionsControl on ControlCubit {
     }
     if (!_sessionsEditable || !pedal.available) return;
     if (hold) {
-      if (pedal.role == FootSessionsRole.newLoop) {
-        _dispatchSessionsAction(pedal);
-      } else if (pedal.role == FootSessionsRole.nextPage) {
-        _showNextSessionsFolder();
+      if (pedal.role == FootSessionsRole.save) {
+        _newLoopFromFace();
       } else if (pedal.role == FootSessionsRole.open && pedal.opens) {
         _openSessionFromFace(pedal.session!.id);
       }
       return;
     }
-    // Clear acts on its Hold only.
-    if (pedal.role != FootSessionsRole.newLoop) _dispatchSessionsAction(pedal);
+    _dispatchSessionsAction(pedal);
+  }
+
+  /// Starts a new loop and closes the face.
+  void _newLoopFromFace() {
+    _startNewLoop();
+    _leaveSessions();
   }
 
   /// Shows [id]'s preview. Opens nothing.
@@ -245,16 +230,6 @@ extension _FootSessionsControl on ControlCubit {
     );
   }
 
-  void _showNextSessionsFolder() {
-    final projection = _sessionsProjection();
-    if (!projection.hasOtherFolders) return;
-    emit(
-      state.copyWith(
-        footSessions: state.footSessions.inFolder(projection.nextFolder),
-      ),
-    );
-  }
-
   void _dispatchSessionsAction(FootSessionsPedal pedal) {
     switch (pedal.role) {
       case FootSessionsRole.open:
@@ -264,19 +239,10 @@ extension _FootSessionsControl on ControlCubit {
       case FootSessionsRole.save:
         _saveSession();
         _leaveSessions();
-      case FootSessionsRole.newLoop:
-        _startNewLoop();
-        _leaveSessions();
+      case FootSessionsRole.previousPage:
+        _turnSessionsPage(-1);
       case FootSessionsRole.nextPage:
-        final projection = _sessionsProjection();
-        if (projection.pageCount < 2) return;
-        emit(
-          state.copyWith(
-            footSessions: state.footSessions.onPage(
-              (projection.page + 1) % projection.pageCount,
-            ),
-          ),
-        );
+        _turnSessionsPage(1);
       case FootSessionsRole.recordPlay:
         _recAdvance(state.cursor);
       case FootSessionsRole.stop:
@@ -284,6 +250,19 @@ extension _FootSessionsControl on ControlCubit {
       case FootSessionsRole.exit:
         _leaveSessions();
     }
+  }
+
+  /// Shows the page [step] after the one in view, wrapping at both ends.
+  void _turnSessionsPage(int step) {
+    final projection = _sessionsProjection();
+    if (projection.pageCount < 2) return;
+    emit(
+      state.copyWith(
+        footSessions: state.footSessions.onPage(
+          (projection.page + step) % projection.pageCount,
+        ),
+      ),
+    );
   }
 
   /// Takes the catalogue the app hands over, and settles an Open asked from

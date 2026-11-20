@@ -22,6 +22,7 @@ void main() {
           ),
           SessionSummary(id: 'b', name: 'Outro'),
         ],
+        hiddenFromFace: {'b'},
       ),
     );
 
@@ -32,12 +33,13 @@ void main() {
           FootSessionEntry(
             id: 'a',
             name: 'Intro',
-            folder: 'Friday set',
             trackCount: 2,
             tempoBpm: 84,
             looperMode: LooperMode.song,
           ),
-          FootSessionEntry(id: 'b', name: 'Outro'),
+          // Hidden by the player: handed over, so the face can name the
+          // open session, and not listed.
+          FootSessionEntry(id: 'b', name: 'Outro', onFace: false),
         ],
         openId: 'b',
         failureCount: 3,

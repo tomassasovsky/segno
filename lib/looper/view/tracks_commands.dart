@@ -468,6 +468,7 @@ Notice? sessionOutcomeNotice(SessionState state) {
         case SessionOutcome.folderCreated:
         case SessionOutcome.folderRenamed:
         case SessionOutcome.folderDeleted:
+        case SessionOutcome.faceListChanged:
         case null:
           return null;
       }

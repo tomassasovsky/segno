@@ -52,6 +52,10 @@ enum SessionOutcome {
 
   /// An empty folder was deleted.
   folderDeleted,
+
+  /// A session was hidden from the Sessions face, or put back on it
+  /// (#1921).
+  faceListChanged,
 }
 
 /// A classified failure kind, so the UI can show a localized, human-readable
@@ -128,6 +132,7 @@ class SessionState extends Equatable {
     this.currentSessionName,
     this.sessions = const [],
     this.folders = const [],
+    this.hiddenFromFace = const {},
     this.bootRecoveryRequired = false,
     this.conversion,
     this.refusedBy,
@@ -169,6 +174,10 @@ class SessionState extends Equatable {
   /// Move to folder.
   final List<String> folders;
 
+  /// The sessions the player keeps off the Sessions face (#1921). The face
+  /// lists every other saved session.
+  final Set<SessionId> hiddenFromFace;
+
   /// The new rig was accepted but boot settings or bindings still need Retry.
   final bool bootRecoveryRequired;
 
@@ -204,8 +213,8 @@ class SessionState extends Equatable {
   /// [keptSessionName]) are
   /// per-transition: they default to `null` or false (cleared) unless passed,
   /// so a fresh status never carries a stale result. The **durable** fields
-  /// ([currentSessionId] / [currentSessionName] / [sessions] / [folders]) are
-  /// preserved unless overridden.
+  /// ([currentSessionId] / [currentSessionName] / [sessions] / [folders] /
+  /// [hiddenFromFace]) are preserved unless overridden.
   SessionState copyWith({
     SessionStatus? status,
     SessionOutcome? outcome,
@@ -216,6 +225,7 @@ class SessionState extends Equatable {
     String? currentSessionName,
     List<SessionSummary>? sessions,
     List<String>? folders,
+    Set<SessionId>? hiddenFromFace,
     bool? bootRecoveryRequired,
     SessionConversionNotice? conversion,
     GuardKind? refusedBy,
@@ -232,6 +242,7 @@ class SessionState extends Equatable {
     currentSessionName: currentSessionName ?? this.currentSessionName,
     sessions: sessions ?? this.sessions,
     folders: folders ?? this.folders,
+    hiddenFromFace: hiddenFromFace ?? this.hiddenFromFace,
     bootRecoveryRequired: bootRecoveryRequired ?? this.bootRecoveryRequired,
     conversion: conversion,
     refusedBy: refusedBy,
@@ -251,6 +262,7 @@ class SessionState extends Equatable {
     currentSessionName,
     sessions,
     folders,
+    hiddenFromFace,
     bootRecoveryRequired,
     conversion,
     refusedBy,

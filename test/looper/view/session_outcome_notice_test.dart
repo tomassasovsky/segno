@@ -264,6 +264,7 @@ void main() {
       SessionOutcome.folderCreated,
       SessionOutcome.folderRenamed,
       SessionOutcome.folderDeleted,
+      SessionOutcome.faceListChanged,
     ]) {
       expect(
         said(SessionState(status: SessionStatus.success, outcome: outcome)),

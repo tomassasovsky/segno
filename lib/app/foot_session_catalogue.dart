@@ -14,7 +14,7 @@ FootSessionCatalogue footSessionCatalogueOf(SessionState state) =>
           FootSessionEntry(
             id: summary.id,
             name: summary.name,
-            folder: summary.folder,
+            onFace: !state.hiddenFromFace.contains(summary.id),
             trackCount: summary.trackCount,
             tempoBpm: summary.tempoBpm,
             looperMode: summary.looperMode,

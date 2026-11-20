@@ -504,128 +504,164 @@ void main() {
     }
   });
 
-  group('folders', () {
-    FootSessionCatalogue folders({String? openId = 'b2'}) =>
-        FootSessionCatalogue(
-          sessions: const [
-            FootSessionEntry(id: 'loose', name: 'loose'),
-            FootSessionEntry(id: 'b1', name: 'b1', folder: 'Friday set'),
-            FootSessionEntry(id: 'b2', name: 'b2', folder: 'Friday set'),
-            FootSessionEntry(id: 'a1', name: 'a1', folder: 'Archive'),
-          ],
-          openId: openId,
-        );
-
-    Future<_Rig> enterFolders({String? openId = 'b2'}) async {
+  group('one list, Previous and Next page (#1921)', () {
+    Future<_Rig> enterWith(FootSessionCatalogue catalogue) async {
       final rig = _Rig();
       await rig.control.load();
       await _pump();
       rig.control
-        ..setSessionCatalogue(folders(openId: openId))
+        ..setSessionCatalogue(catalogue)
         ..setMode(InteractionMode.sessions);
       await _pump();
       rig.asked.clear();
       return rig;
     }
 
-    test('the face opens on the folder of the open session', () async {
-      final rig = await enterFolders();
+    test('Clear shows the previous page and wraps to the last', () async {
+      // Three pages: a to d, e to h, i.
+      final rig = await enterWith(
+        _catalogue(const ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i']),
+      );
       try {
-        expect(rig.selection.folder, 'Friday set');
-        expect(rig.lit(PedalButton.track2), isTrue);
+        await rig.stomp(PedalButton.clear);
+        expect(rig.selection.page, 2);
         await rig.hold(PedalButton.track1);
-        expect(rig.asked, ['open b1']);
+        expect(rig.asked, ['open i']);
       } finally {
         await rig.close();
       }
     });
 
-    test(
-      'with no open session it opens on the sessions outside a folder',
-      () async {
-        final rig = await enterFolders(openId: null);
-        try {
-          expect(rig.selection.folder, isNull);
-          await rig.hold(PedalButton.track1);
-          expect(rig.asked, ['open loose']);
-        } finally {
-          await rig.close();
-        }
-      },
-    );
-
-    test(
-      'a held Bank shows the next folder and does not also turn the page',
-      () async {
-        final rig = await enterFolders();
-        try {
-          await rig.stomp(
-            PedalButton.bank,
-            hold: const Duration(milliseconds: 900),
-          );
-          // Archive, Friday set, then the sessions outside a folder.
-          expect(rig.selection.folder, isNull);
-          expect(rig.selection.page, 0);
-          expect(rig.asked, isEmpty);
-
-          // Past the last folder it wraps to the first.
-          await rig.stomp(
-            PedalButton.bank,
-            hold: const Duration(milliseconds: 900),
-          );
-          expect(rig.selection.folder, 'Archive');
-          await rig.hold(PedalButton.track1);
-          expect(rig.asked, ['open a1']);
-        } finally {
-          await rig.close();
-        }
-      },
-    );
-
-    test(
-      'a press of Bank with one page and other folders changes nothing',
-      () async {
-        final rig = await enterFolders();
-        try {
-          await rig.stomp(PedalButton.bank);
-          expect(rig.selection.folder, 'Friday set');
-          expect(rig.selection.page, 0);
-          expect(rig.asked, isEmpty);
-        } finally {
-          await rig.close();
-        }
-      },
-    );
-  });
-
-  test(
-    'with folders, a press of Bank still turns the page, on its release',
-    () async {
-      final rig = _Rig();
+    test('Clear and Bank turn the page on contact, in opposite '
+        'directions', () async {
+      final rig = await enterWith(
+        _catalogue(const ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i']),
+      );
       try {
-        await rig.control.load();
-        await _pump();
-        rig.control
-          ..setSessionCatalogue(
-            FootSessionCatalogue(
-              sessions: [
-                for (final name in _six)
-                  FootSessionEntry(id: name, name: name, folder: 'Set'),
-                const FootSessionEntry(id: 'loose', name: 'loose'),
-              ],
-              openId: 'a',
-            ),
-          )
-          ..setMode(InteractionMode.sessions);
-        await _pump();
-        await rig.stomp(PedalButton.bank);
-        expect(rig.selection.folder, 'Set');
+        rig.link.press(PedalButton.bank, down: true);
+        await _pump(const Duration(milliseconds: 30));
+        // Before the release: neither switch has a Hold to wait for.
         expect(rig.selection.page, 1);
+        rig.link.press(PedalButton.bank, down: false);
+        await _pump(const Duration(milliseconds: 30));
+        await rig.stomp(PedalButton.bank);
+        expect(rig.selection.page, 2);
+        rig.link.press(PedalButton.clear, down: true);
+        await _pump(const Duration(milliseconds: 30));
+        expect(rig.selection.page, 1);
+        rig.link.press(PedalButton.clear, down: false);
+        await _pump(const Duration(milliseconds: 30));
+        expect(rig.selection.page, 1);
+        expect(rig.asked, isEmpty);
       } finally {
         await rig.close();
       }
-    },
-  );
+    });
+
+    test('a held Clear or Bank turns one page and starts nothing', () async {
+      final rig = await enterWith(
+        _catalogue(const ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i']),
+      );
+      try {
+        await rig.hold(PedalButton.bank);
+        expect(rig.selection.page, 1);
+        await rig.hold(PedalButton.clear);
+        expect(rig.selection.page, 0);
+        expect(rig.asked, isEmpty);
+        expect(rig.control.state.mode, InteractionMode.sessions);
+      } finally {
+        await rig.close();
+      }
+    });
+
+    test('with one page Clear and Bank do nothing', () async {
+      final rig = await enterWith(_catalogue(const ['a', 'b']));
+      try {
+        await rig.stomp(PedalButton.clear);
+        await rig.stomp(PedalButton.bank);
+        expect(rig.selection.page, 0);
+        expect(rig.asked, isEmpty);
+      } finally {
+        await rig.close();
+      }
+    });
+
+    test('turning back a page drops the session shown', () async {
+      final rig = await enterWith(_catalogue(_six, openId: 'a'));
+      try {
+        await rig.stomp(PedalButton.track2);
+        expect(rig.selection.previewId, 'b');
+        await rig.stomp(PedalButton.clear);
+        expect(rig.selection.page, 1);
+        expect(rig.selection.previewId, isNull);
+      } finally {
+        await rig.close();
+      }
+    });
+
+    test('a session the player hid is on no switch, and the face opens on '
+        'the first page when the open session is hidden', () async {
+      final rig = await enterWith(
+        FootSessionCatalogue(
+          sessions: [
+            for (final name in ['a', 'b', 'c', 'd', 'e'])
+              FootSessionEntry(id: name, name: name),
+            const FootSessionEntry(id: 'z', name: 'z', onFace: false),
+          ],
+          openId: 'z',
+        ),
+      );
+      try {
+        expect(rig.selection.page, 0);
+        for (final button in [
+          PedalButton.track1,
+          PedalButton.track2,
+          PedalButton.track3,
+          PedalButton.track4,
+        ]) {
+          expect(rig.lit(button), isFalse, reason: button.name);
+        }
+        await rig.stomp(PedalButton.bank);
+        // The second page holds `e` alone.
+        await rig.hold(PedalButton.track2);
+        expect(rig.asked, isEmpty);
+        await rig.hold(PedalButton.track1);
+        expect(rig.asked, ['open e']);
+      } finally {
+        await rig.close();
+      }
+    });
+
+    test('a session hidden while it is shown is no longer shown, and the '
+        'switch stands for the next one', () async {
+      final rig = await enterWith(_catalogue(const ['a', 'b', 'c']));
+      try {
+        await rig.stomp(PedalButton.track2);
+        expect(rig.selection.previewId, 'b');
+        rig.control.setSessionCatalogue(
+          const FootSessionCatalogue(
+            sessions: [
+              FootSessionEntry(id: 'a', name: 'a'),
+              FootSessionEntry(id: 'b', name: 'b', onFace: false),
+              FootSessionEntry(id: 'c', name: 'c'),
+            ],
+          ),
+        );
+        await _pump();
+        expect(
+          projectFootSessions(
+            rig.control.state.sessionCatalogue,
+            rig.selection,
+          ).previewId,
+          isNull,
+        );
+        await rig.hold(PedalButton.track2);
+        expect(rig.asked, ['open c']);
+      } finally {
+        await rig.close();
+      }
+    });
+  });
 
   test(
     'a failed Open is marked on its session until another is asked',
@@ -649,11 +685,16 @@ void main() {
     },
   );
 
-  test('Undo saves and closes the face', () async {
+  test('a press of Undo saves on its release and closes the face', () async {
     final rig = await enter(from: InteractionMode.custom);
     try {
       rig.asked.clear();
-      await rig.stomp(PedalButton.undo);
+      rig.link.press(PedalButton.undo, down: true);
+      await _pump(const Duration(milliseconds: 30));
+      // Undo has a Hold, so its press waits for the release.
+      expect(rig.asked, isEmpty);
+      rig.link.press(PedalButton.undo, down: false);
+      await _pump(const Duration(milliseconds: 30));
       expect(rig.asked, ['save']);
       expect(rig.control.state.mode, InteractionMode.custom);
     } finally {
@@ -661,21 +702,34 @@ void main() {
     }
   });
 
-  test('a press of Clear does nothing; a held Clear starts a new loop and '
-      'closes the face', () async {
+  test('a held Undo starts a new loop, does not also save, and closes the '
+      'face', () async {
     final rig = await enter();
     try {
       rig.asked.clear();
-      await rig.stomp(PedalButton.clear);
-      expect(rig.asked, isEmpty);
-      expect(rig.control.state.mode, InteractionMode.sessions);
-
-      await rig.stomp(
-        PedalButton.clear,
-        hold: const Duration(milliseconds: 900),
-      );
+      await rig.hold(PedalButton.undo);
       expect(rig.asked, ['new loop']);
       expect(rig.control.state.mode, InteractionMode.record);
+    } finally {
+      await rig.close();
+    }
+  });
+
+  test('the held Undo draws the clearing fill, and a release before the '
+      'threshold ends it', () async {
+    final rig = await enter();
+    try {
+      List<ClearHoldMessage> fills() =>
+          rig.link.sent.whereType<ClearHoldMessage>().toList();
+      rig.link.press(PedalButton.undo, down: true);
+      await _pump(const Duration(milliseconds: 400));
+      expect(fills().last.button, PedalButton.undo);
+      expect(fills().last.progress, inExclusiveRange(0, 255));
+      rig.link.press(PedalButton.undo, down: false);
+      await _pump(const Duration(milliseconds: 30));
+      // No switch named: the fill is over.
+      expect(fills().last, const ClearHoldMessage());
+      expect(rig.asked.where((a) => a == 'new loop'), isEmpty);
     } finally {
       await rig.close();
     }
@@ -754,11 +808,10 @@ void main() {
       await rig.hold(PedalButton.track2);
       expect(rig.selection.previewId, isNull);
       await rig.stomp(PedalButton.undo);
-      await rig.stomp(
-        PedalButton.clear,
-        hold: const Duration(milliseconds: 900),
-      );
+      await rig.hold(PedalButton.undo);
+      await rig.stomp(PedalButton.clear);
       expect(rig.asked, isEmpty);
+      expect(rig.selection.page, 0);
       expect(rig.control.state.mode, InteractionMode.sessions);
     } finally {
       await rig.close();
@@ -785,19 +838,26 @@ void main() {
     },
   );
 
-  test('the semantic activation runs the same roles: a tap previews, and '
-      'New loop and an Open take their Hold', () async {
+  test('the semantic activation runs the same roles: a tap shows a session, '
+      'and New loop and an Open take their Hold', () async {
     final rig = await enter();
     try {
       rig.asked.clear();
-      rig.control.activateFootSessionsPedal(PedalButton.clear);
-      expect(rig.asked, isEmpty);
       rig.control.activateFootSessionsPedal(PedalButton.track2);
       expect(rig.asked, isEmpty);
       expect(rig.selection.previewId, 'b');
       // The open session has nothing to open.
       rig.control.activateFootSessionsPedal(PedalButton.track1, hold: true);
       expect(rig.asked, isEmpty);
+      rig.control.activateFootSessionsPedal(PedalButton.bank);
+      expect(rig.selection.page, 1);
+      rig.control.activateFootSessionsPedal(PedalButton.clear);
+      expect(rig.selection.page, 0);
+      // A Hold on a page switch does nothing.
+      rig.control
+        ..activateFootSessionsPedal(PedalButton.bank, hold: true)
+        ..activateFootSessionsPedal(PedalButton.clear, hold: true);
+      expect(rig.selection.page, 0);
       rig.control.activateFootSessionsPedal(PedalButton.track2, hold: true);
       expect(rig.asked, ['open b']);
     } finally {
@@ -805,26 +865,25 @@ void main() {
     }
   });
 
-  test('the semantic Hold of Bank shows the next folder', () async {
-    final rig = _Rig();
+  test('the semantic press of Undo saves and its Hold starts a new '
+      'loop', () async {
+    final rig = await enter();
     try {
-      await rig.control.load();
-      await _pump();
-      rig.control
-        ..setSessionCatalogue(
-          const FootSessionCatalogue(
-            sessions: [
-              FootSessionEntry(id: 'a', name: 'a', folder: 'One'),
-              FootSessionEntry(id: 'b', name: 'b', folder: 'Two'),
-            ],
-            openId: 'a',
-          ),
-        )
-        ..setMode(InteractionMode.sessions)
-        ..activateFootSessionsPedal(PedalButton.bank, hold: true);
-      expect(rig.selection.folder, 'Two');
+      rig.asked.clear();
+      rig.control.activateFootSessionsPedal(PedalButton.undo);
+      expect(rig.asked, ['save']);
+      expect(rig.control.state.mode, InteractionMode.record);
     } finally {
       await rig.close();
+    }
+    final again = await enter();
+    try {
+      again.asked.clear();
+      again.control.activateFootSessionsPedal(PedalButton.undo, hold: true);
+      expect(again.asked, ['new loop']);
+      expect(again.control.state.mode, InteractionMode.record);
+    } finally {
+      await again.close();
     }
   });
 }

@@ -9,6 +9,13 @@ issue: 1921
 
 <!-- cspell:words Penpot writeback Unfiled -->
 
+> **The map is withdrawn (owner, 2026-11-20).** While Part 2 was being
+> built the owner asked whether sessions need to be mapped at all, and
+> chose a list: the face shows every saved session, four to a page, with
+> Previous and Next page. R1 to R3 below are kept as the record of what was
+> considered and are no longer the design. "Owner decisions on the list"
+> has what replaced them, and Part 2 is that list.
+
 Tracking: [#1921](https://github.com/tomassasovsky/segno/issues/1921),
 `autonomy:plan-gate`. It revises the Sessions face of
 [#1910](https://github.com/tomassasovsky/segno/issues/1910)
@@ -57,7 +64,59 @@ not chosen.
 5. **R5, the fill.** Left to right, in the `selected` colour of the
    Sessions LED map, with no flash.
 
+## Owner decisions on the list, 2026-11-20
+
+Part 2 was built as the map (R1 to R3) in a working tree and not
+committed. The owner then asked: "Do we need to map them? Can't we just
+have the list by default? What about Next and Previous page and show all
+sessions. We could have a reorder page if we wanted."
+
+The list was chosen over the map for three reasons:
+
+- It needs no setup. With the map a console's face starts empty and sends
+  the player to the Library.
+- It has one thing to learn, an order. The map adds positions, an assign
+  sheet, and questions about replacing and removing.
+- A reorder page gives the same result where it matters: the player puts
+  the sessions of a set first.
+
+What the list gives up: a session can change switch. Deleting one moves
+every session after it up by one, and adding one does the same while the
+order is by name.
+
+Decided:
+
+1. **One list.** Every saved session, whatever folder it is in, four to a
+   page, in name order (D1 of #1910 stands again). An order set by hand is
+   a later part, if it is wanted: then that order is kept and new sessions
+   go at the end.
+2. **Previous and Next page.** Clear shows the previous page and Bank the
+   next, both on contact, both wrapping. They sit side by side on the rear
+   row. Neither has a Hold.
+3. **New loop moves to a Hold on Undo.** A press of Undo saves and a Hold
+   starts a new loop, with the clearing Hold's fill. It does not stay on
+   the Previous page switch: a foot that rests on a page switch must not
+   start a new loop in the middle of a set. Undo's press now acts on its
+   release, as every switch with a Hold does.
+4. **A session can be hidden from the pedal.** The owner asked for "a
+   setting to disable showing a session in there", "under a 3 dot menu" in
+   the Library's list. Each row has a three-dot button; its sheet has `Hide
+   from pedal`, or `Show on pedal` for a hidden session. A hidden session
+   is on no switch, stays in the Library and opens from it as before. Its
+   row says `Hidden from pedal`.
+5. **The open session, when hidden,** is named in the readout (`Open:
+   <name>`), since no switch can be lit for it.
+
+Still open: the owner asked whether "New loop" is the right word. The
+answer given was to rename the command to "New session", because the app
+calls the saved thing a session everywhere else and uses "loop" for what
+plays inside one. It is not decided, and it is a change of its own.
+
 ## What changes on the face
+
+This table and "The face after this plan" below were written for the map.
+Read them with "Owner decisions on the list": a press and a hold are as
+written, and the rows about Bank, the map and assigning are replaced.
 
 | Switch | As built (#1910) | After this plan |
 |---|---|---|
@@ -411,29 +470,57 @@ As built, after the owner's review of the face on 2026-11-20:
   `.github/segno-design.sha` has not moved: the `design` job passes
   against the commit it names.
 
-### Part 2: the map
+### Part 2: one list, Previous and Next page, and hiding a session
 
-- `packages/session_repository`: the positions file, read and written
-  whole, and its tests (a missing file, an id with no bundle, a deleted
-  session, a moved and a renamed session keep their position).
-- `lib/session/cubit/`: the positions in `SessionState`, `assignToPedal`,
-  `removeFromPedal`, and their tests.
-- `lib/library/view/`: the `Pedal` row on the preview card, the assign
-  sheet, the position on each row, and their tests.
-- `lib/app/foot_session_catalogue.dart` and `lib/control/model/`: the
-  positions in the hand-over and the projection by position; the folder
-  code removed; Bank on contact; the empty state.
-- `lib/control/cubit/control_foot_sessions.dart`: the entry page.
-- Strings, the dispatch, projection, view and screenshot tests updated
-  (the `foot_sessions_folders` scene is removed).
-- Penpot: page 19, the Library card's `Pedal` row and the assign sheet;
-  the `Folder` board removed; a `c/` note with R1 to R3 as answered.
+Built as "Owner decisions on the list" says.
 
-### Part 3: the contract, and closing the issue
+- `lib/control/model/foot_sessions.dart`: one list of every session the
+  player did not hide (`footSessionsListed`), in name order. The folder
+  code is removed: `folder` on the entry and on the selection, `inFolder`,
+  `footSessionFolders`, `footSessionsStartFolder`, `hasOtherFolders` and
+  `nextFolder`. Clear's role is `previousPage`; `newLoop` is no longer a
+  role, since it is Undo's Hold. The projection carries the open session
+  (`open`), listed or not.
+- `lib/control/cubit/control_foot_sessions.dart`: Clear and Bank turn the
+  page on contact and wrap (`_turnSessionsPage`). Undo arms a Hold: its
+  tap saves on release, and its Hold starts a new loop with the clearing
+  fill.
+- `packages/session_repository`: `sessions-face.json` beside the bundles
+  holds the ids kept off the face (`readHiddenFromFace`,
+  `writeHiddenFromFace`). An id with no bundle is left out when it is
+  read, and a file that does not read hides nothing.
+- `lib/session/cubit/`: `hiddenFromFace` in `SessionState`, re-read
+  wherever the catalog is, and `setShownOnFace(id, shown:)`.
+- `lib/app/foot_session_catalogue.dart`: the hand-over marks each entry
+  `onFace`. A hidden session is still handed over, so the face can name
+  the open one.
+- `lib/library/view/`: the three-dot button on each row, its sheet
+  (`showLibraryRowOptions`), and `Hidden from pedal` on the row.
+- `lib/looper/view/foot_sessions_view.dart`: Clear is `Previous page`,
+  Undo is `Save` with `Hold · New loop` under it, and the readout with no
+  session shown says the page, then how many sessions there are and the
+  open session when it is hidden.
+- The app's own text says "pedal", never "face": `Hide from pedal`.
+- Tests and screenshot scenes updated: the `foot_sessions_folders` scene
+  is replaced by `foot_sessions_hidden`, and the Library has
+  `library_row_options`.
+- Not built: the map, its file, the assign sheet and the `Pedal` row.
+- Owed: the Penpot writeback of this part (page 19's boards 09 to 17 for
+  the new captions and readout, board 14 removed, a board for the row
+  options, and the `c/` notes).
+
+### Part 3: an order set by hand (not started, if it is wanted)
+
+- A reorder page in the Library. The order is stored beside the hidden
+  ids in `sessions-face.json`; a session with no place in it goes at the
+  end.
+
+### Part 4: the contract, and closing the issue
 
 - `docs/handoff/segno-app/accepted-behavior.md`: the Sessions row of §4.5
-  (tap, hold, the map), §6.1 (a hold is the confirmation), and the
-  Library's section for the `Pedal` row.
+  (a press, a hold, the list and its pages, New loop on Undo's Hold), §6.1
+  (a hold is the confirmation), and the Library's section for the row
+  options.
 - `docs/PROGRESS.md`: the status section and the Active threads row.
 - Says `Closes #1921`.
 

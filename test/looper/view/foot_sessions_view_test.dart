@@ -187,22 +187,23 @@ void main() {
     // A Hold opens every session but the open one.
     expect(find.text('Hold · Open'), findsNWidgets(3));
     expect(under(PedalButton.track2, 'Hold · Open'), findsNothing);
-    expect(find.text('Save'), findsOneWidget);
-    expect(find.text('New loop'), findsOneWidget);
-    expect(find.text('Next page'), findsOneWidget);
+    // Undo saves on a press and starts a new loop on its Hold.
+    expect(under(PedalButton.undo, 'Save'), findsOneWidget);
+    expect(under(PedalButton.undo, 'Hold · New loop'), findsOneWidget);
+    expect(under(PedalButton.clear, 'Previous page'), findsOneWidget);
+    expect(under(PedalButton.bank, 'Next page'), findsOneWidget);
     expect(find.text('1 / 2'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('with no session shown the readout names the folder and the '
-      'page, says what a press and a Hold do, and reads nothing', (
-    tester,
-  ) async {
+  testWidgets('with no session shown the readout names the page and how '
+      'many sessions there are, says what a press and a Hold do, and reads '
+      'nothing', (tester) async {
     given(_catalogue(const ['a', 'b', 'c', 'd', 'e', 'f'], openId: 'b'));
     await pump(tester);
 
-    expect(find.text('Unfiled'), findsOneWidget);
-    expect(find.text('Page 1 of 2 · 6 sessions'), findsOneWidget);
+    expect(find.text('Page 1 of 2'), findsOneWidget);
+    expect(find.text('6 sessions'), findsOneWidget);
     expect(
       find.text('Press a switch to see its session. Hold it to open.'),
       findsOneWidget,
@@ -239,7 +240,7 @@ void main() {
     expect(
       baselineOf(tester, find.byKey(const Key('foot_sessions_hint'))),
       moreOrLessEquals(
-        baselineOf(tester, under(PedalButton.clear, 'New loop')),
+        baselineOf(tester, under(PedalButton.clear, 'Previous page')),
         epsilon: 1,
       ),
     );
@@ -248,7 +249,7 @@ void main() {
       matching: find.byType(PedalHardwareFace),
     );
     expect(
-      tester.getTopLeft(find.byKey(const Key('foot_sessions_folder'))).dx,
+      tester.getTopLeft(find.byKey(const Key('foot_sessions_page'))).dx,
       moreOrLessEquals(tester.getTopLeft(face).dx, epsilon: 1),
     );
   });
@@ -262,7 +263,7 @@ void main() {
     );
     await pump(tester);
 
-    expect(find.text('Page 2 of 2 · 6 sessions'), findsOneWidget);
+    expect(find.text('Page 2 of 2'), findsOneWidget);
     expect(under(PedalButton.track1, 'e'), findsOneWidget);
     expect(under(PedalButton.track2, 'f'), findsOneWidget);
     expect(under(PedalButton.track3, 'Empty'), findsOneWidget);
@@ -270,24 +271,36 @@ void main() {
     expect(find.text('Hold · Open'), findsNWidgets(2));
   });
 
-  testWidgets('with more than one page and another folder, Bank is Next page '
-      'with the folder on its Hold', (tester) async {
+  testWidgets('a session the player hid is under no switch, and the readout '
+      'names it when it is the open one', (tester) async {
     given(
-      FootSessionCatalogue(
+      const FootSessionCatalogue(
         sessions: [
-          for (final name in ['a', 'b', 'c', 'd', 'e'])
-            FootSessionEntry(id: name, name: name, folder: 'Set'),
-          const FootSessionEntry(id: 'x', name: 'x'),
+          FootSessionEntry(id: 'a', name: 'a'),
+          FootSessionEntry(id: 'x', name: 'Scratch', onFace: false),
+          FootSessionEntry(id: 'z', name: 'z'),
         ],
-        openId: 'a',
+        openId: 'x',
       ),
-      selection: const FootSessionsSelection(folder: 'Set'),
     );
     await pump(tester);
 
-    expect(find.text('Next page'), findsOneWidget);
-    expect(find.text('1 / 2'), findsOneWidget);
-    expect(find.text('Hold · Folder'), findsOneWidget);
+    expect(under(PedalButton.track1, 'a'), findsOneWidget);
+    expect(under(PedalButton.track2, 'z'), findsOneWidget);
+    expect(under(PedalButton.track3, 'Empty'), findsOneWidget);
+    expect(find.text('Scratch'), findsNothing);
+    expect(find.text('2 sessions · Open: Scratch'), findsOneWidget);
+    expect(find.text('Open now'), findsNothing);
+  });
+
+  testWidgets('an open session the face lists is not named in the readout', (
+    tester,
+  ) async {
+    given(_catalogue(const ['a', 'b'], openId: 'a'));
+    await pump(tester);
+
+    expect(find.text('2 sessions'), findsOneWidget);
+    expect(find.textContaining('Open:'), findsNothing);
   });
 
   testWidgets('the session being opened says so under its switch and in '
@@ -306,6 +319,21 @@ void main() {
     expect(find.text('Opening a session stops playback'), findsNothing);
     // No switch offers a Hold while an Open is in flight.
     expect(find.text('Hold · Open'), findsNothing);
+  });
+
+  testWidgets('with every session hidden it says the same, and names the '
+      'open one', (tester) async {
+    given(
+      const FootSessionCatalogue(
+        sessions: [FootSessionEntry(id: 'x', name: 'Scratch', onFace: false)],
+        openId: 'x',
+      ),
+    );
+    await pump(tester);
+
+    expect(find.byKey(const Key('foot_sessions_none')), findsOneWidget);
+    expect(find.text('Open: Scratch'), findsOneWidget);
+    expect(find.text('Empty'), findsNWidgets(4));
   });
 
   testWidgets('with no saved session it says how the first one comes to be', (
@@ -398,7 +426,7 @@ void main() {
       expect(
         baselineOf(tester, find.byKey(ends)),
         moreOrLessEquals(
-          baselineOf(tester, under(PedalButton.clear, 'New loop')),
+          baselineOf(tester, under(PedalButton.clear, 'Previous page')),
           epsilon: 1,
         ),
       );
@@ -464,37 +492,43 @@ void main() {
     expect(under(PedalButton.track2, 'Hold · Open'), findsOneWidget);
   });
 
-  testWidgets('names the folder in view, and Bank says its Hold shows the '
-      'next one', (tester) async {
-    given(
-      const FootSessionCatalogue(
-        sessions: [
-          FootSessionEntry(id: 'a', name: 'a', folder: 'Friday set'),
-          FootSessionEntry(id: 'b', name: 'b'),
-        ],
-        openId: 'a',
-      ),
-      selection: const FootSessionsSelection(folder: 'Friday set'),
-    );
-    await pump(tester);
-
-    expect(find.byKey(const Key('foot_sessions_folder')), findsOneWidget);
-    expect(find.text('Friday set'), findsOneWidget);
-    expect(find.text('Page 1 of 1 · 1 session'), findsOneWidget);
-    // One page: Bank's press does nothing, so it is named for its Hold.
-    expect(find.text('Folder'), findsOneWidget);
-    expect(find.text('Next page'), findsNothing);
-    // Clear's and Bank's.
-    expect(find.text('Hold'), findsNWidgets(2));
-  });
-
-  testWidgets('the sessions outside a folder read Unfiled, and with one '
-      'folder Bank has no Hold', (tester) async {
+  testWidgets('with one page Clear and Bank are dimmed, and Undo keeps its '
+      'Hold', (tester) async {
     given(_catalogue(const ['a', 'b'], openId: 'a'));
     await pump(tester);
 
-    expect(find.text('Unfiled'), findsOneWidget);
-    expect(find.text('Hold · Folder'), findsNothing);
+    expect(find.text('Page 1 of 1'), findsOneWidget);
+    expect(find.text('Previous page'), findsOneWidget);
+    expect(find.text('Next page'), findsOneWidget);
+    expect(find.text('1 / 1'), findsOneWidget);
+    expect(find.text('Hold · New loop'), findsOneWidget);
+    // No switch has a bare Hold.
+    expect(find.text('Hold'), findsNothing);
+  });
+
+  testWidgets('while an Open is in flight Undo offers no new loop', (
+    tester,
+  ) async {
+    given(
+      _catalogue(const ['a', 'b'], openId: 'a'),
+      selection: const FootSessionsSelection().opening('b', 0),
+    );
+    await pump(tester);
+
+    expect(find.text('Hold · New loop'), findsNothing);
+  });
+
+  testWidgets("a contact on Undo's drawn pedal is the switch's, so its "
+      'press and its Hold are told apart as on the pedal', (tester) async {
+    given(_catalogue(const ['a', 'b'], openId: 'a'));
+    await pump(tester);
+
+    await tester.tap(pedal(PedalButton.undo));
+    await tester.pump();
+    verify(() => control.footSessionsPressed(PedalButton.undo, any()))
+        .called(1);
+    verify(() => control.footSessionsReleased(PedalButton.undo, any()))
+        .called(1);
   });
 
   testWidgets('a session with no recordings is not called empty', (

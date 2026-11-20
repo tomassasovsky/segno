@@ -241,6 +241,7 @@ void main() {
     registerFallbackValue(const SessionChains());
     registerFallbackValue(const SessionSettings());
     registerFallbackValue(_conversion);
+    registerFallbackValue(<SessionId>{});
   });
 
   SessionSettingsCoordinator buildCapture() => SessionSettingsCoordinator(
@@ -3114,6 +3115,136 @@ void main() {
             .having((s) => s.folders, 'folders', ['Gigs']),
       ],
     );
+
+    group('the sessions kept off the Sessions face (#1921)', () {
+      /// Stubs the repository's file with [stored], which a write replaces.
+      void stubHidden(Set<SessionId> stored) {
+        var hidden = stored;
+        when(repository.readHiddenFromFace).thenAnswer((_) async => hidden);
+        when(() => repository.writeHiddenFromFace(any()))
+            .thenAnswer((inv) async {
+              hidden = inv.positionalArguments.first as Set<SessionId>;
+            });
+      }
+
+      blocTest<SessionCubit, SessionState>(
+        'refreshSessions reads them with the catalog',
+        setUp: () {
+          stubCatalog();
+          stubHidden({'A'});
+        },
+        build: build,
+        act: (cubit) => cubit.refreshSessions(),
+        expect: () => [
+          isA<SessionState>()
+              .having((s) => s.sessions, 'sessions', summaries)
+              .having((s) => s.hiddenFromFace, 'hidden', {'A'}),
+        ],
+      );
+
+      blocTest<SessionCubit, SessionState>(
+        'a file that cannot be read keeps what is already in state',
+        setUp: () {
+          stubCatalog();
+          when(repository.readHiddenFromFace)
+              .thenThrow(const FileSystemException('denied'));
+        },
+        seed: () => const SessionState(hiddenFromFace: {'A'}),
+        build: build,
+        act: (cubit) => cubit.refreshSessions(),
+        expect: () => [
+          isA<SessionState>()
+              .having((s) => s.sessions, 'sessions', summaries)
+              .having((s) => s.hiddenFromFace, 'hidden', {'A'}),
+        ],
+      );
+
+      blocTest<SessionCubit, SessionState>(
+        'hiding a session writes it with the ones already hidden',
+        setUp: () {
+          stubCatalog();
+          stubHidden({'A'});
+        },
+        seed: () =>
+            const SessionState(sessions: summaries, hiddenFromFace: {'A'}),
+        build: build,
+        act: (cubit) => cubit.setShownOnFace('B', shown: false),
+        skip: 1,
+        expect: () => [
+          isA<SessionState>()
+              .having((s) => s.status, 'st', SessionStatus.success)
+              .having(
+                (s) => s.outcome,
+                'outcome',
+                SessionOutcome.faceListChanged,
+              )
+              .having((s) => s.hiddenFromFace, 'hidden', {'A', 'B'}),
+        ],
+      );
+
+      blocTest<SessionCubit, SessionState>(
+        'showing a session takes it out, and leaves the others hidden',
+        setUp: () {
+          stubCatalog();
+          stubHidden({'A', 'B'});
+        },
+        seed: () =>
+            const SessionState(sessions: summaries, hiddenFromFace: {'A', 'B'}),
+        build: build,
+        act: (cubit) => cubit.setShownOnFace('A', shown: true),
+        skip: 1,
+        expect: () => [
+          isA<SessionState>()
+              .having((s) => s.status, 'st', SessionStatus.success)
+              .having((s) => s.hiddenFromFace, 'hidden', {'B'}),
+        ],
+      );
+
+      blocTest<SessionCubit, SessionState>(
+        'a write that fails is a failure, and state keeps what it had',
+        setUp: () {
+          stubCatalog();
+          when(repository.readHiddenFromFace).thenAnswer((_) async => {'A'});
+          when(() => repository.writeHiddenFromFace(any()))
+              .thenThrow(const FileSystemException('read-only'));
+        },
+        seed: () =>
+            const SessionState(sessions: summaries, hiddenFromFace: {'A'}),
+        build: build,
+        act: (cubit) => cubit.setShownOnFace('B', shown: false),
+        skip: 1,
+        expect: () => [
+          isA<SessionState>()
+              .having((s) => s.status, 'st', SessionStatus.failure)
+              .having((s) => s.error, 'error', SessionError.unknown)
+              .having((s) => s.hiddenFromFace, 'hidden', {'A'}),
+        ],
+      );
+
+      blocTest<SessionCubit, SessionState>(
+        'deleting a session re-reads them, without the deleted one',
+        setUp: () {
+          stubCatalog(
+            list: const [SessionSummary(id: 'B', name: 'B')],
+          );
+          when(() => repository.deleteSession(any())).thenAnswer((_) async {});
+          stubHidden(const {});
+        },
+        seed: () => const SessionState(
+          currentSessionId: 'B',
+          sessions: summaries,
+          hiddenFromFace: {'A'},
+        ),
+        build: build,
+        act: (cubit) => cubit.deleteSession('A'),
+        skip: 1,
+        expect: () => [
+          isA<SessionState>()
+              .having((s) => s.outcome, 'outcome', SessionOutcome.deleted)
+              .having((s) => s.hiddenFromFace, 'hidden', isEmpty),
+        ],
+      );
+    });
 
     blocTest<SessionCubit, SessionState>(
       'duplicateSession copies the bundle and refreshes the catalog',

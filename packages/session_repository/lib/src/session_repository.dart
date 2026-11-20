@@ -1242,6 +1242,63 @@ class SessionRepository {
     dir.deleteSync(recursive: true);
   }
 
+  // ---- the Sessions face's list (#1921) ----
+
+  /// The file beside the bundles that holds what the player set for the
+  /// Sessions face: the sessions kept off it. The catalog lists directories
+  /// only, so it shows nowhere.
+  static const String faceListName = 'sessions-face.json';
+
+  /// Called with the written temporary file before it is renamed into
+  /// place; a test throws from it to stand for a failed rename.
+  @visibleForTesting
+  static void Function(String path)? debugOnWriteFaceList;
+
+  /// The sessions the player keeps off the Sessions face. Empty when none
+  /// was hidden yet, and when the file does not read: every session is then
+  /// on the face, and the next change writes a good file.
+  ///
+  /// An id that has no bundle any more (its session was deleted) is left
+  /// out.
+  Future<Set<SessionId>> readHiddenFromFace() async {
+    final root = await _rootPath();
+    final file = File('$root/$faceListName');
+    if (!file.existsSync()) return const {};
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(await file.readAsString());
+    } on Object {
+      return const {};
+    }
+    final raw = decoded is Map<String, dynamic> ? decoded['hidden'] : null;
+    if (raw is! List) return const {};
+    return {
+      for (final id in raw)
+        if (id is String && isValidSessionId(id) && _locate(root, id) != null)
+          id,
+    };
+  }
+
+  /// Writes [hidden] as the sessions kept off the Sessions face, through a
+  /// temporary file and a rename, so a crash leaves either the old file or
+  /// the new one.
+  Future<void> writeHiddenFromFace(Set<SessionId> hidden) async {
+    final root = await _rootPath();
+    Directory(root).createSync(recursive: true);
+    final temporary = File('$root/$faceListName.tmp');
+    try {
+      await temporary.writeAsString(
+        jsonEncode({'version': 1, 'hidden': hidden.toList()..sort()}),
+        flush: true,
+      );
+      debugOnWriteFaceList?.call(temporary.path);
+      await temporary.rename('$root/$faceListName');
+    } on Object {
+      if (temporary.existsSync()) temporary.deleteSync();
+      rethrow;
+    }
+  }
+
   /// Copies the saved bundle [id]'s `mixdown.wav` to [destinationPath]
   /// (creating its parent). Reads the saved bundle, never the live engine.
   /// Throws [StateError] when the bundle or its mixdown is missing (an empty

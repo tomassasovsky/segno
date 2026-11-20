@@ -124,12 +124,14 @@ class SessionCubit extends Cubit<SessionState> {
   Future<void> _refreshSessions() async {
     final sessions = await _repository.listSessions();
     final folders = await _listFolders();
+    final hiddenFromFace = await _readHiddenFromFace();
     if (_closing || isClosed) return;
     // A quiet re-list: the last action's result stays as it was.
     emit(
       state.copyWith(
         sessions: sessions,
         folders: folders,
+        hiddenFromFace: hiddenFromFace,
         outcome: state.outcome,
         error: state.error,
         errorMessage: state.errorMessage,
@@ -147,6 +149,17 @@ class SessionCubit extends Cubit<SessionState> {
       return await _repository.listFolders();
     } on Object {
       return state.folders;
+    }
+  }
+
+  /// The sessions kept off the Sessions face, or the ones already in state
+  /// when they cannot be read: an unreadable file must not fail the action
+  /// that re-lists.
+  Future<Set<SessionId>> _readHiddenFromFace() async {
+    try {
+      return await _repository.readHiddenFromFace();
+    } on Object {
+      return state.hiddenFromFace;
     }
   }
 
@@ -1018,6 +1031,24 @@ class SessionCubit extends Cubit<SessionState> {
     );
   });
 
+  /// Puts session [id] on the Sessions face ([shown]) or keeps it off it
+  /// (#1921). The session itself does not change: it stays in the catalog
+  /// and opens from the Library either way.
+  Future<void> setShownOnFace(SessionId id, {required bool shown}) =>
+      _run(() async {
+        final hidden = {...await _repository.readHiddenFromFace()};
+        if (shown) {
+          hidden.remove(id);
+        } else {
+          hidden.add(id);
+        }
+        await _repository.writeHiddenFromFace(hidden);
+        return _ActionResult(
+          SessionOutcome.faceListChanged,
+          sessions: await _repository.listSessions(),
+        );
+      });
+
   /// The display name [name] resolves to, or throws [ArgumentError] when it
   /// sanitizes to nothing (the same rule the repository enforces).
   String _slugOf(String name) {
@@ -1113,8 +1144,11 @@ class SessionCubit extends Cubit<SessionState> {
     emit(state.copyWith(status: SessionStatus.working));
     try {
       final result = await action();
-      // Every action that re-lists the sessions re-lists the folders too.
-      final folders = result.sessions == null ? null : await _listFolders();
+      // Every action that re-lists the sessions re-lists the folders and
+      // the sessions kept off the face too: a deleted session leaves both.
+      final relisted = result.sessions != null;
+      final folders = relisted ? await _listFolders() : null;
+      final hiddenFromFace = relisted ? await _readHiddenFromFace() : null;
       if (isClosed) return;
       emit(
         state.copyWith(
@@ -1124,6 +1158,7 @@ class SessionCubit extends Cubit<SessionState> {
           currentSessionName: result.currentName,
           sessions: result.sessions,
           folders: folders,
+          hiddenFromFace: hiddenFromFace,
           bootRecoveryRequired: false,
           conversion: result.conversion,
           trackNamesNotSaved: result.trackNamesNotSaved,

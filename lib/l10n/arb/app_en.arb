@@ -3349,6 +3349,27 @@
     "@libraryMoveToFolder": {
         "description": "Manage option that moves the session to a folder."
     },
+    "libraryRowOptions": "Options for {name}",
+    "@libraryRowOptions": {
+        "description": "Library (#1921): the accessible name of the three-dot button on a session's row, which opens that session's options.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "libraryHideFromPedal": "Hide from pedal",
+    "@libraryHideFromPedal": {
+        "description": "Library row options (#1921): keeps the session off the list the Sessions pedal function pages through. It stays in the Library."
+    },
+    "libraryShowOnPedal": "Show on pedal",
+    "@libraryShowOnPedal": {
+        "description": "Library row options (#1921): puts a hidden session back on the list the Sessions pedal function pages through."
+    },
+    "libraryHiddenFromPedal": "Hidden from pedal",
+    "@libraryHiddenFromPedal": {
+        "description": "Library (#1921): on the row of a session the player keeps off the Sessions pedal function's list, after its date and track count."
+    },
     "libraryMoveTitle": "Move to folder",
     "@libraryMoveTitle": {
         "description": "Title of the folder choice for a move."
@@ -6959,18 +6980,24 @@
     },
     "actionModeSessions": "Sessions",
     "@actionModeSessions": {
-        "description": "Sessions face (#1910): the mode's name, in pickers and on its face. The four track switches open the four sessions drawn above them."
+        "description": "Sessions face (#1910): the mode's name, in pickers and on its face. It lists the saved sessions four to a page; a press on a track switch shows its session and a Hold opens it."
     },
-    "footSessionsPage": "Page {page} of {pages} · {count, plural, =1{1 session} other{{count} sessions}}",
+    "footSessionsPage": "Page {page} of {pages}",
     "@footSessionsPage": {
-        "description": "Sessions face: which page of four sessions is in view, and how many sessions there are.",
+        "description": "Sessions face: which page of four sessions is in view, at the top of the readout while no session is shown.",
         "placeholders": {
             "page": {
                 "type": "int"
             },
             "pages": {
                 "type": "int"
-            },
+            }
+        }
+    },
+    "footSessionsCount": "{count, plural, =1{1 session} other{{count} sessions}}",
+    "@footSessionsCount": {
+        "description": "Sessions face: how many sessions the face lists, under the page in the readout.",
+        "placeholders": {
             "count": {
                 "type": "int"
             }
@@ -6978,7 +7005,20 @@
     },
     "footSessionsNone": "No sessions yet. Save or start a new loop.",
     "@footSessionsNone": {
-        "description": "Sessions face with no saved session: Undo saves and a held Clear starts a new loop."
+        "description": "Sessions face with no session to list: Undo saves, and a held Undo starts a new loop."
+    },
+    "footSessionsOpenNotListed": "Open: {name}",
+    "@footSessionsOpenNotListed": {
+        "description": "Sessions face (#1921): names the open session in the readout when the face does not list it (the player hid it), so no switch is lit for it.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "footSessionsPreviousPage": "Previous page",
+    "@footSessionsPreviousPage": {
+        "description": "Sessions face (#1921): the caption of Clear, which shows the four sessions before the ones in view."
     },
     "footSessionsOpenNow": "Open now",
     "@footSessionsOpenNow": {
@@ -7021,10 +7061,6 @@
     "footSessionsCouldNotOpen": "Could not open",
     "@footSessionsCouldNotOpen": {
         "description": "Sessions face: on the card of the session whose Open, asked from the face, failed. The stage notice says why."
-    },
-    "footSessionsFolder": "Folder",
-    "@footSessionsFolder": {
-        "description": "Sessions face: what a held Bank shows next, after 'Hold · ' under its caption."
     },
     "sessionOpenFailed": "Could not open {name}",
     "@sessionOpenFailed": {
@@ -7083,7 +7119,7 @@
     },
     "footSessionsSave": "Save",
     "@footSessionsSave": {
-        "description": "Sessions face: the caption of Undo, which saves the session."
+        "description": "Sessions face: the caption of Undo, which saves the session on a press. Its Hold starts a new loop (#1921)."
     },
     "footSessionsNextPage": "Next page",
     "@footSessionsNextPage": {

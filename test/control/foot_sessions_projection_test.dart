@@ -86,7 +86,7 @@ void main() {
       expect(projection[PedalButton.track2].lit, isTrue);
       expect(projection[PedalButton.track1].lit, isFalse);
       expect(projection[PedalButton.track3].lit, isFalse);
-      // The open session's switch still answers: its press closes the face.
+      // The open session's switch still answers: a press shows it.
       expect(projection[PedalButton.track2].available, isTrue);
     });
 
@@ -104,7 +104,7 @@ void main() {
           PedalButton.recPlay: FootSessionsRole.recordPlay,
           PedalButton.stop: FootSessionsRole.stop,
           PedalButton.undo: FootSessionsRole.save,
-          PedalButton.clear: FootSessionsRole.newLoop,
+          PedalButton.clear: FootSessionsRole.previousPage,
           PedalButton.mode: FootSessionsRole.exit,
           PedalButton.bank: FootSessionsRole.nextPage,
           PedalButton.track1: FootSessionsRole.open,
@@ -116,19 +116,22 @@ void main() {
       expect(projection[PedalButton.mode].lit, isTrue);
     });
 
-    test('Bank answers only with more than one page, and lights past the '
-        'first', () {
+    test('Clear and Bank answer only with more than one page, and Bank '
+        'lights past the first', () {
       final one = projectFootSessions(
         _catalogue(['a', 'b', 'c', 'd']),
         const FootSessionsSelection(),
       );
       expect(one[PedalButton.bank].available, isFalse);
+      expect(one[PedalButton.clear].available, isFalse);
       final two = projectFootSessions(
         _catalogue(['a', 'b', 'c', 'd', 'e']),
         const FootSessionsSelection(page: 1),
       );
       expect(two[PedalButton.bank].available, isTrue);
+      expect(two[PedalButton.clear].available, isTrue);
       expect(two[PedalButton.bank].lit, isTrue);
+      expect(two[PedalButton.clear].lit, isFalse);
     });
 
     test('keeps a page that no longer exists inside the pages there are', () {
@@ -155,9 +158,10 @@ void main() {
       ]) {
         expect(projection[button].available, isFalse, reason: button.name);
       }
-      // Save and New loop are how the first session comes to be.
+      // Save, and New loop on its Hold, are how the first session comes to
+      // be.
       expect(projection[PedalButton.undo].available, isTrue);
-      expect(projection[PedalButton.clear].available, isTrue);
+      expect(projection[PedalButton.clear].available, isFalse);
     });
 
     test('while an Open is in flight only the transport and Exit answer', () {
@@ -194,97 +198,97 @@ void main() {
     });
   });
 
-  group('folders', () {
-    FootSessionEntry inFolder(String name, String? folder) =>
-        FootSessionEntry(id: name, name: name, folder: folder);
-
-    final catalogue = FootSessionCatalogue(
-      sessions: [
-        inFolder('loose', null),
-        inFolder('b1', 'Friday set'),
-        inFolder('b2', 'Friday set'),
-        inFolder('a1', '2 Rehearsal'),
-        inFolder('z1', '10 Old'),
-      ],
-      openId: 'b2',
-    );
-
-    test('are in name order, numbers as numbers, with Unfiled last', () {
-      expect(footSessionFolders(catalogue.sessions), [
-        '2 Rehearsal',
-        '10 Old',
-        'Friday set',
-        null,
-      ]);
-    });
-
-    test('with no session outside a folder there is no Unfiled', () {
-      expect(footSessionFolders([inFolder('a', 'Set')]), ['Set']);
-      expect(footSessionFolders(const []), isEmpty);
-    });
-
-    test('the face shows the sessions of the folder in view alone', () {
+  group('one list (#1921)', () {
+    test('sessions in different folders are in one list, by name: the '
+        'control layer does not know the folders', () {
       final projection = projectFootSessions(
-        catalogue,
-        const FootSessionsSelection(folder: 'Friday set'),
+        _catalogue(['loose', 'b2', 'a1', 'b1']),
+        const FootSessionsSelection(),
       );
-      expect(projection.folder, 'Friday set');
-      expect([for (final s in projection.sessions) s.id], ['b1', 'b2']);
-      expect(projection[PedalButton.track2].lit, isTrue);
-      expect(projection[PedalButton.track3].session, isNull);
-      expect(projection.hasOtherFolders, isTrue);
-    });
-
-    test('Bank answers with one page when another folder is there', () {
-      final projection = projectFootSessions(
-        catalogue,
-        const FootSessionsSelection(folder: 'Friday set'),
+      expect(
+        [for (final s in projection.sessions) s.id],
+        ['a1', 'b1', 'b2', 'loose'],
       );
       expect(projection.pageCount, 1);
-      expect(projection[PedalButton.bank].available, isTrue);
     });
 
-    test('a held Bank goes through the folders and wraps', () {
-      String? next(String? folder) => projectFootSessions(
-        catalogue,
-        FootSessionsSelection(folder: folder),
-      ).nextFolder;
-      expect(next('2 Rehearsal'), '10 Old');
-      expect(next('10 Old'), 'Friday set');
-      expect(next('Friday set'), isNull);
-      expect(next(null), '2 Rehearsal');
-    });
-
-    test('the face opens on the folder of the open session', () {
-      expect(footSessionsStartFolder(catalogue), 'Friday set');
-    });
-
-    test('with no open session it opens on the sessions outside a folder, or '
-        'on the first folder when there are none', () {
-      expect(
-        footSessionsStartFolder(
-          FootSessionCatalogue(sessions: catalogue.sessions),
-        ),
-        isNull,
+    test('a session the player hid is not listed, and the others close up', () {
+      final catalogue = FootSessionCatalogue(
+        sessions: [
+          _session('a'),
+          const FootSessionEntry(id: 'b', name: 'b', onFace: false),
+          _session('c'),
+        ],
       );
-      expect(
-        footSessionsStartFolder(
-          FootSessionCatalogue(
-            sessions: [inFolder('b', 'Zed'), inFolder('a', 'Alpha')],
-          ),
-        ),
-        'Alpha',
-      );
-      expect(footSessionsStartFolder(const FootSessionCatalogue()), isNull);
-    });
-
-    test('a folder that is gone gives way to the first one there is', () {
       final projection = projectFootSessions(
         catalogue,
-        const FootSessionsSelection(folder: 'Deleted'),
+        const FootSessionsSelection(),
       );
-      expect(projection.folder, '2 Rehearsal');
-      expect([for (final s in projection.sessions) s.id], ['a1']);
+      expect([for (final s in projection.sessions) s.id], ['a', 'c']);
+      expect(projection[PedalButton.track2].session?.id, 'c');
+      expect(projection[PedalButton.track3].session, isNull);
+      expect([for (final s in footSessionsListed(catalogue)) s.id], ['a', 'c']);
+    });
+
+    test('hiding counts for the pages: five sessions with one hidden are one '
+        'page', () {
+      final projection = projectFootSessions(
+        FootSessionCatalogue(
+          sessions: [
+            for (final name in ['a', 'b', 'c', 'd']) _session(name),
+            const FootSessionEntry(id: 'e', name: 'e', onFace: false),
+          ],
+        ),
+        const FootSessionsSelection(),
+      );
+      expect(projection.pageCount, 1);
+      expect(projection[PedalButton.bank].available, isFalse);
+    });
+
+    test('the open session is named, listed or not, and a hidden one lights '
+        'no switch', () {
+      final hidden = projectFootSessions(
+        FootSessionCatalogue(
+          sessions: [
+            _session('a'),
+            const FootSessionEntry(id: 'b', name: 'b', onFace: false),
+          ],
+          openId: 'b',
+        ),
+        const FootSessionsSelection(),
+      );
+      expect(hidden.open?.id, 'b');
+      expect(hidden.open?.onFace, isFalse);
+      expect([
+        for (final pedal in hidden.pedals.values)
+          if (pedal.role == FootSessionsRole.open && pedal.lit) pedal.button,
+      ], isEmpty);
+      final listed = projectFootSessions(
+        _catalogue(['a', 'b'], openId: 'b'),
+        const FootSessionsSelection(),
+      );
+      expect(listed.open?.onFace, isTrue);
+      expect(listed[PedalButton.track2].lit, isTrue);
+      expect(
+        projectFootSessions(
+          _catalogue(['a']),
+          const FootSessionsSelection(),
+        ).open,
+        isNull,
+      );
+    });
+
+    test('a session hidden or shown is a changed catalogue', () {
+      expect(
+        const FootSessionCatalogue(
+          sessions: [FootSessionEntry(id: 'a', name: 'a')],
+        ),
+        isNot(
+          const FootSessionCatalogue(
+            sessions: [FootSessionEntry(id: 'a', name: 'a', onFace: false)],
+          ),
+        ),
+      );
     });
   });
 
@@ -319,7 +323,7 @@ void main() {
 
     test('a preview ends when its session is no longer on the page', () {
       const previewing = FootSessionsSelection(previewId: 'b');
-      // Deleted.
+      // Deleted, or hidden.
       final gone = projectFootSessions(
         _catalogue(['a', 'c'], openId: 'a'),
         previewing,
@@ -333,11 +337,10 @@ void main() {
       expect(elsewhere.previewId, isNull);
     });
 
-    test('a page turn and another folder drop the preview; an Open previews '
-        'what it opens and keeps it when it settles', () {
+    test('a page turn drops the preview; an Open previews what it opens and '
+        'keeps it when it settles', () {
       final previewing = const FootSessionsSelection().previewing('b');
       expect(previewing.onPage(1).previewId, isNull);
-      expect(previewing.inFolder('Set').previewId, isNull);
       final opening = previewing.opening('c', 0);
       expect(opening.previewId, 'c');
       expect(opening.settled(failed: 'c').previewId, 'c');

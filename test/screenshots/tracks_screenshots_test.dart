@@ -605,12 +605,13 @@ void main() {
     }, skip: !rendersScreenshots);
   }
 
-  // The Sessions face (#1910): four sessions over the four track switches,
-  // each saying what opening it would end while a loop plays. `page`: the
-  // second page, with two empty positions. `opening`: an Open asked from the
-  // face and not settled. `failed`: one that did not open. `folders`: a
-  // folder in view, with Bank's Hold. `stopped`: nothing playing. `none`: no
-  // saved session. A press shows a session and a Hold opens it (#1921):
+  // The Sessions face (#1910): every saved session the player did not hide,
+  // four to a page (#1921), with what opening one would end while a loop
+  // plays. `page`: the second page, with two empty positions. `opening`: an
+  // Open asked from the face and not settled. `failed`: one that did not
+  // open. `hidden`: the open session is hidden, so the readout names it.
+  // `stopped`: nothing playing. `none`: no saved session. A press shows a
+  // session and a Hold opens it:
   // `preview` shows a session with recordings, `preview_setup` one that
   // holds a setup and no recordings, `preview_unreadable` one that does not
   // read, and `hold` a Hold to open halfway through.
@@ -619,7 +620,7 @@ void main() {
     'page',
     'opening',
     'failed',
-    'folders',
+    'hidden',
     'stopped',
     'none',
     'spanish',
@@ -774,16 +775,19 @@ void main() {
       final catalogue = FootSessionCatalogue(
         sessions: switch (scene) {
           'none' => const [],
-          'folders' => [
-            for (final session in sessions.take(3))
-              FootSessionEntry(
-                id: session.id,
-                name: session.name,
-                folder: 'Friday set',
-                trackCount: session.trackCount,
-                tempoBpm: session.tempoBpm,
-              ),
-            ...sessions.skip(3),
+          'hidden' => [
+            for (final session in sessions)
+              if (session.id == 'a')
+                FootSessionEntry(
+                  id: session.id,
+                  name: session.name,
+                  onFace: false,
+                  trackCount: session.trackCount,
+                  tempoBpm: session.tempoBpm,
+                  looperMode: session.looperMode,
+                )
+              else
+                session,
           ],
           _ => sessions,
         },

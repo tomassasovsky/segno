@@ -30,7 +30,8 @@ import 'package:session_repository/session_repository.dart';
 /// it shows that session in the readout as a short labelled list, and
 /// holding it opens the session while the drawn switch's LED bar fills from
 /// the left, as the real one does (#1921). With nothing shown, the readout
-/// names the folder and the page in view.
+/// names the page in view. The face lists every saved session the player
+/// did not hide in the Library, four to a page.
 class FootSessionsView extends StatelessWidget {
   /// Creates the performance surface within the real Tracks hierarchy.
   const new({super.key});
@@ -223,7 +224,8 @@ String _setupWords(AppLocalizations l10n, FootSessionEntry session) {
 /// top of the Clear and Bank pedals' faces, and the last line sits on the
 /// baseline of their captions.
 ///
-/// With no session shown it names the folder and the page, and says what a
+/// With no session shown it names the page and how many sessions there
+/// are, the open session when the face does not list it, and says what a
 /// press and a Hold do. With one shown ([shown]) it is that session's name,
 /// a labelled list of its setup, and what opening it would end.
 class _SessionsReadout extends StatelessWidget {
@@ -288,35 +290,50 @@ class _SessionsReadout extends StatelessWidget {
     final session = pedal?.session;
     if (pedal == null || session == null) {
       final none = projection.sessions.isEmpty;
+      // Named here when no switch can be lit for it.
+      final open = projection.open;
+      final notListed = open != null && !open.onFace ? open : null;
       return Stack(
         children: [
-          if (!none)
-            _ReadoutLine(
-              _baseline(0),
-              AppText(
-                projection.folder ?? l10n.libraryFolderUnfiled,
-                key: const Key('foot_sessions_folder'),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: _nameSize),
-              ),
-            ),
           _ReadoutLine(
-            _baseline(none ? 0 : 1),
-            AppText(
-              none
-                  ? l10n.footSessionsNone
-                  : l10n.footSessionsPage(
+            _baseline(0),
+            none
+                ? AppText(
+                    l10n.footSessionsNone,
+                    key: const Key('foot_sessions_none'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 24,
+                      color: surface.textSecondary,
+                    ),
+                  )
+                : AppText(
+                    l10n.footSessionsPage(
                       projection.page + 1,
                       projection.pageCount,
-                      projection.sessions.length,
                     ),
-              key: const Key('foot_sessions_page'),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 24, color: surface.textSecondary),
-            ),
+                    key: const Key('foot_sessions_page'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: _nameSize),
+                  ),
           ),
+          if (!none || notListed != null)
+            _ReadoutLine(
+              _baseline(1),
+              AppText(
+                [
+                  if (!none) l10n.footSessionsCount(projection.sessions.length),
+                  if (notListed != null)
+                    l10n.footSessionsOpenNotListed(notListed.name),
+                ].join(' · '),
+                key: const Key('foot_sessions_count'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 24, color: surface.textSecondary),
+              ),
+            ),
           // Said before any press too: a hold gives little time to read.
           if (!none && _interruptionLine(l10n, interruption) != null)
             _ReadoutLine(
@@ -579,14 +596,10 @@ class _FootSessionsPedal extends StatelessWidget {
     );
     final l10n = context.l10n;
     final pedal = projection[button];
-    // Clear acts on its Hold alone; Bank has one while another folder is
-    // there to show; a track switch's Hold opens its session.
-    final newLoop = pedal.role == FootSessionsRole.newLoop;
+    // Undo's Hold starts a new loop; a track switch's Hold opens its
+    // session.
+    final newLoop = pedal.role == FootSessionsRole.save && pedal.available;
     final opens = pedal.role == FootSessionsRole.open && pedal.opens;
-    final nextFolder =
-        pedal.role == FootSessionsRole.nextPage && projection.hasOtherFolders;
-    // With one page Bank's press does nothing, so it is named for its Hold.
-    final folderOnly = nextFolder && projection.pageCount < 2;
     return PerformancePedal(
       keyPrefix: 'foot_sessions_pedal',
       button: button,
@@ -606,22 +619,18 @@ class _FootSessionsPedal extends StatelessWidget {
         // theirs for their track.
         FootSessionsRole.open => pedal.session?.name ?? l10n.readoutStateEmpty,
         FootSessionsRole.save => l10n.footSessionsSave,
-        FootSessionsRole.newLoop => l10n.actionNewLoop,
-        FootSessionsRole.nextPage =>
-          folderOnly ? l10n.footSessionsFolder : l10n.footSessionsNextPage,
+        FootSessionsRole.previousPage => l10n.footSessionsPreviousPage,
+        FootSessionsRole.nextPage => l10n.footSessionsNextPage,
         // The short foot name: the catalogue's wraps in Spanish.
         FootSessionsRole.recordPlay => l10n.footCustomRecordPlay,
         FootSessionsRole.stop => l10n.actionStop,
         FootSessionsRole.exit => l10n.actionModeExit,
       },
       detail: switch (pedal.role) {
-        FootSessionsRole.nextPage =>
-          folderOnly
-              ? ''
-              : l10n.footSessionsPageOf(
-                  projection.page + 1,
-                  projection.pageCount,
-                ),
+        FootSessionsRole.nextPage => l10n.footSessionsPageOf(
+          projection.page + 1,
+          projection.pageCount,
+        ),
         FootSessionsRole.recordPlay => l10n.displayTrackName(
           tracks.nameOf(cursor),
           cursor,
@@ -644,10 +653,8 @@ class _FootSessionsPedal extends StatelessWidget {
       holdFillsLed: opens,
       hint: opens
           ? l10n.footFxHoldAction(l10n.footSessionsOpen)
-          : newLoop || folderOnly
-          ? l10n.footFxHold
-          : nextFolder
-          ? l10n.footFxHoldAction(l10n.footSessionsFolder)
+          : newLoop
+          ? l10n.footFxHoldAction(l10n.actionNewLoop)
           : '',
       enabled: pedal.available,
       // The selection bar mirrors the physical LED: the open session's
@@ -656,9 +663,8 @@ class _FootSessionsPedal extends StatelessWidget {
       onPressed: control.footSessionsPressed,
       onReleased: control.footSessionsReleased,
       onCancelled: control.footSessionsCancelled,
-      // New loop acts on its Hold alone, so a tap on it does nothing.
       onActivate: () => control.activateFootSessionsPedal(button),
-      onHold: newLoop || nextFolder || opens
+      onHold: newLoop || opens
           ? () => control.activateFootSessionsPedal(button, hold: true)
           : null,
     );

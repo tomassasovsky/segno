@@ -1251,4 +1251,96 @@ void main() {
       expect(engine.peakReads, hasLength(1));
     });
   });
+
+  group('the sessions kept off the Sessions face (#1921)', () {
+    File faceFile() => File('${root.path}/${SessionRepository.faceListName}');
+
+    test('is empty before any session was hidden', () async {
+      makeBundle('s-a');
+
+      expect(await repo().readHiddenFromFace(), isEmpty);
+    });
+
+    test('reads back what was written, and the file does not list as a '
+        'session or a folder', () async {
+      makeBundle('s-a');
+      makeBundle('s-b', folder: 'Gigs');
+      makeBundle('s-c');
+      final r = repo();
+
+      await r.writeHiddenFromFace({'s-b', 's-a'});
+
+      expect(await r.readHiddenFromFace(), {'s-a', 's-b'});
+      expect((await r.listSessions()).map((s) => s.id), {'s-a', 's-b', 's-c'});
+      expect(await r.listFolders(), ['Gigs']);
+    });
+
+    test('creates the root for the first write', () async {
+      root.deleteSync(recursive: true);
+
+      await repo().writeHiddenFromFace(const {});
+
+      expect(faceFile().existsSync(), isTrue);
+    });
+
+    test('a renamed and a moved session stay hidden', () async {
+      makeBundle('s-a', name: 'One');
+      makeBundle('s-b', name: 'Two');
+      final r = repo();
+      await r.createFolder('Gigs');
+      await r.writeHiddenFromFace({'s-a', 's-b'});
+
+      await r.renameSession('s-a', 'Uno');
+      await r.moveSession('s-b', folder: 'Gigs');
+
+      expect(await r.readHiddenFromFace(), {'s-a', 's-b'});
+    });
+
+    test('a deleted session, an id with no bundle and an entry that is no '
+        'id are left out', () async {
+      makeBundle('s-a');
+      makeBundle('s-b');
+      final r = repo();
+      faceFile().writeAsStringSync(
+        jsonEncode({
+          'version': 1,
+          'hidden': ['s-ghost', 's-a', 7, '../s-a', 's-b', 's-a'],
+        }),
+      );
+
+      await r.deleteSession('s-b');
+
+      expect(await r.readHiddenFromFace(), {'s-a'});
+    });
+
+    test('a file that does not read hides nothing', () async {
+      makeBundle('s-a');
+      final r = repo();
+
+      faceFile().writeAsStringSync('not json');
+      expect(await r.readHiddenFromFace(), isEmpty);
+      faceFile().writeAsStringSync(jsonEncode(['s-a']));
+      expect(await r.readHiddenFromFace(), isEmpty);
+      faceFile().writeAsStringSync(jsonEncode({'hidden': 's-a'}));
+      expect(await r.readHiddenFromFace(), isEmpty);
+    });
+
+    test('a write that fails leaves the file as it was', () async {
+      makeBundle('s-a');
+      makeBundle('s-b');
+      final r = repo();
+      await r.writeHiddenFromFace({'s-a'});
+      SessionRepository.debugOnWriteFaceList = (_) =>
+          throw const FileSystemException('rename failed');
+      addTearDown(() => SessionRepository.debugOnWriteFaceList = null);
+
+      await expectLater(
+        r.writeHiddenFromFace({'s-a', 's-b'}),
+        throwsA(isA<FileSystemException>()),
+      );
+
+      expect(await r.readHiddenFromFace(), {'s-a'});
+      expect(File('${faceFile().path}.tmp').existsSync(), isFalse);
+    });
+  });
 }
