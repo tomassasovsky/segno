@@ -59,7 +59,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1540 | Drive pedals' aliasing at 48 kHz: four kinds oversampled (#1552); the owner's blind pairs decide whether the built-in Drive is oversampled too | build | plan-gate | `claude/drive-alias-1540` |
 | #1498 | Restart and shut down also wait for RAUC's own install, after an app restart | in-review | blocked-verify | `claude/rauc-power-gate-1498` |
 | #1755 | Every effect cheaper without changing its sound: pitch (#1764, #1770), drives (#1759), reverbs/delays/filters (#1762) and the Vinyl (#1904, part 4) bit-identical; part 5, the Degrade at 96 kHz, is next (scope on the issue) | build | auto | `claude/fx-opt-part5-1755` |
-| #1914 | The app's audio callback runs late on screen changes and take starts: it waits on memory (Ed's Racks overflow the caches). Parts 1 (#1925) and 2 (#1926) merged; part 3 in review (the oversamplers' designs made once); part 4 next (a recording take's heard lane starts on its image). Steady playback is clean on master. Open: the page transition, which gives all of the screen-change late periods (shorter and raster-drawn variants being measured, the owner decides) | in-review | plan-gate | `claude/cb-overhead-1914-p3` |
+| #1914 | The app's audio callback runs late on screen changes and take starts: it waits on memory (Ed's Racks overflow the caches). Parts 1-3 merged (#1925, #1926, #1932); part 4 in review (a recording take's heard lane starts on its image). Steady playback is clean on master. Open: the page transition, which gives all of the screen-change late periods in its first frames (variants without an offscreen layer being measured, the owner decides) | in-review | plan-gate | `claude/cb-overhead-1914-p4` |
 | #1724 | Effects budget from the app's measured headroom: 10-minute untraced in-app ladder at 48 kHz / 32 (build 279); track job 200 → 300 ns, chains on the callback charged 2.5× (`kFxSerialFactor`); 4 inputs + 7 tracks or + 1 output rack fit | in-review | auto | `claude/fx-headroom-1724-p3` |
 | #1515 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track and lane chains) is #1729 | build | plan-gate | `claude/fx-multicore-1515-p1b` |
 | #1816 | Console WiFi against an ASUS RT-AX89X with 802.11ax on: firmware already matches Pi OS; brcmfmac options aligned with Pi OS and a troubleshooting note; failure not reproduced, issue stays open until it recurs | in-review | auto | `claude/wifi-firmware-1816` |
@@ -102,6 +102,24 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   Transpose, Hold Reverse and the Hold on pedal 4 to Speed. Sessions by
   foot (#1910) are not in the default map.
 
+## November 2026 A recording take's heard lane starts on its image (#1914 part 4)
+
+- A lane that got its first heard image (#1713) faded to it over 10 ms
+  from its clean take. That ran the lane's whole rack, Pre and Post, on
+  the callback, frame by frame, from cold, in the blocks a take starts in.
+  On the console it cost 105 to 344 us in the start block and 65 to 180 us
+  in each block after.
+- Nothing of a recording track plays (its play gain is 0), so the fade
+  blended silence with the Pre run of silence. The one thing it could
+  reach the route with was a Pre-run noise kind's 10 ms through the Post
+  entries.
+- The owner chose to start such a lane on its image, as the performance
+  render's take already did (`test_heard_take_starts_on_its_image`). A
+  lane that gets an image while its track plays still fades.
+- In the app (master's app, three runs each), take-start late periods went
+  from 2, 3, 2 a run to 1, 1, 2. The callbacks over 513 us in a take's
+  window went from 963-1124 to 166-218.
+
 ## November 2026 What is left of the callback's late periods (#1914 part 3)
 
 - The bar from the engine's own counters (`le_cb_timing`, no profiler):
@@ -126,7 +144,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 - The crossfade at a take start blends silence (a recording track's play
   gain is 0) with the Pre run of silence. The owner chose to start a
   recording take's lane on its image, as the performance render already
-  does: part 4.
+  does (part 4, above).
 - Part 2's narrowed octaver clear read a ring's pointer before checking
   that the ring was readable, a race with the control thread allocating
   one for a coming retype (#1522) that TSan's workers race test caught.
