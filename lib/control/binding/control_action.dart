@@ -68,7 +68,7 @@ enum ControlActionGroup {
   /// Backing-track playback. Empty until the audio library part.
   backing,
 
-  /// Session recall and save. Empty until the session part.
+  /// Session commands: New loop and Save.
   sessions,
 }
 
@@ -249,7 +249,14 @@ enum ControlCommand {
   trackFxOn('command:track-fx-on'),
 
   /// Switch the track bank A / B.
-  nextBank('bank:next');
+  nextBank('bank:next'),
+
+  /// Save the outgoing session and start an empty loop (#1229, #1910).
+  newLoop('command:new-loop'),
+
+  /// Save the live rig to the open session, or under the next automatic
+  /// name when none is open (#1910).
+  saveSession('session:save');
 
   new(this.key);
 
@@ -414,6 +421,8 @@ final class CommandAction extends ControlAction {
     ControlCommand.nextBank => ControlActionGroup.tracks,
     ControlCommand.trackFxOff ||
     ControlCommand.trackFxOn => ControlActionGroup.fx,
+    ControlCommand.newLoop ||
+    ControlCommand.saveSession => ControlActionGroup.sessions,
     _ => ControlActionGroup.transport,
   };
 

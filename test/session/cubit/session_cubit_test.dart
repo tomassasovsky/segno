@@ -2033,6 +2033,48 @@ void main() {
         expect(cubit.state.sessions, summaries);
       });
 
+      test('asked to announce it, the outcome carries the name the changed '
+          'outgoing session was saved under, and none when nothing was saved '
+          '(#1910)', () async {
+        stubNewLoop();
+        final cubit = build();
+        addTearDown(cubit.close);
+        cubit.emit(
+          const SessionState(currentSessionId: 'A', currentSessionName: 'A'),
+        );
+        await cubit.save();
+        liveFingerprint = 'an overdub';
+
+        await cubit.newLoop(announceKept: true);
+
+        expect(cubit.state.outcome, SessionOutcome.newLoop);
+        expect(cubit.state.keptSessionName, 'A');
+
+        // The new loop is untouched: nothing is saved, nothing is said.
+        await cubit.newLoop(announceKept: true);
+
+        expect(cubit.state.outcome, SessionOutcome.newLoop);
+        expect(cubit.state.keptSessionName, isNull);
+      });
+
+      test('not asked, as from the Library sheet, the outcome carries no '
+          'name', () async {
+        stubNewLoop();
+        final cubit = build();
+        addTearDown(cubit.close);
+        cubit.emit(
+          const SessionState(currentSessionId: 'A', currentSessionName: 'A'),
+        );
+        await cubit.save();
+        liveFingerprint = 'an overdub';
+
+        await cubit.newLoop();
+
+        verifySavedTo('/root/A', name: 'A');
+        expect(cubit.state.outcome, SessionOutcome.newLoop);
+        expect(cubit.state.keptSessionName, isNull);
+      });
+
       test('a take in progress is ended and saved before the clear', () async {
         stubNewLoop();
         LooperState rig(TrackState track1) => LooperState(

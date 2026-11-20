@@ -179,6 +179,24 @@ void main() {
     expect(notice?.title, 'The console is shutting down.');
   });
 
+  test('a new loop asked by foot says which session it kept (#1910)', () {
+    expect(
+      said(
+        const SessionState(
+          status: SessionStatus.success,
+          outcome: SessionOutcome.newLoop,
+          currentSessionName: 'New loop 2',
+          keptSessionName: 'Evening loop',
+        ),
+      ),
+      (
+        title: 'Evening loop stays in your Library.',
+        body: null,
+        tone: NoticeTone.neutral,
+      ),
+    );
+  });
+
   test('a new loop, a boot recovery and the Library catalog say nothing '
       'here', () {
     expect(

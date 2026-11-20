@@ -7911,6 +7911,14 @@
     "@actionTrackFxOn": {
         "description": "Assignable FX command: turns every track chain on, chain-less tracks included; it does not restore an earlier pattern."
     },
+    "actionNewLoop": "New loop",
+    "@actionNewLoop": {
+        "description": "Assignable session command: saves the current session and starts an empty loop (pen 19/01 New loop)."
+    },
+    "actionSaveSession": "Save session",
+    "@actionSaveSession": {
+        "description": "Assignable session command: saves the live rig to the open session, or under the next automatic name when none is open."
+    },
     "footFxSlot": "FX {bank}{number}",
     "@footFxSlot": {
         "description": "FX face: an unbound track switch whose track chain is empty, named by bank and position (pen 10/03).",

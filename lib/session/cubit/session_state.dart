@@ -133,6 +133,7 @@ class SessionState extends Equatable {
     this.refusedBy,
     this.failureCount = 0,
     this.trackNamesNotSaved = false,
+    this.keptSessionName,
   });
 
   /// The current action status.
@@ -183,6 +184,12 @@ class SessionState extends Equatable {
   /// track names (#1513). A per-transition result, like [conversion].
   final bool trackNamesNotSaved;
 
+  /// The name the outgoing session was saved under by a New loop that was
+  /// asked to announce it (one asked by foot), or null: the Library's New
+  /// loop said so on its sheet, and an unchanged session was not saved. A
+  /// per-transition result, like [conversion].
+  final String? keptSessionName;
+
   /// How many actions have failed so far. Durable: a later emit that only
   /// re-lists the catalog keeps it, so a view can tell a failure it has
   /// already seen from a new one.
@@ -191,7 +198,8 @@ class SessionState extends Equatable {
   /// Returns a copy for the next emit.
   ///
   /// The **result** fields ([outcome] / [error] / [errorMessage] /
-  /// [failedSessionId] / [conversion] / [trackNamesNotSaved]) are
+  /// [failedSessionId] / [conversion] / [trackNamesNotSaved] /
+  /// [keptSessionName]) are
   /// per-transition: they default to `null` or false (cleared) unless passed,
   /// so a fresh status never carries a stale result. The **durable** fields
   /// ([currentSessionId] / [currentSessionName] / [sessions] / [folders]) are
@@ -211,6 +219,7 @@ class SessionState extends Equatable {
     GuardKind? refusedBy,
     int? failureCount,
     bool trackNamesNotSaved = false,
+    String? keptSessionName,
   }) => SessionState(
     status: status ?? this.status,
     outcome: outcome,
@@ -226,6 +235,7 @@ class SessionState extends Equatable {
     refusedBy: refusedBy,
     failureCount: failureCount ?? this.failureCount,
     trackNamesNotSaved: trackNamesNotSaved,
+    keptSessionName: keptSessionName,
   );
 
   @override
@@ -244,6 +254,7 @@ class SessionState extends Equatable {
     refusedBy,
     failureCount,
     trackNamesNotSaved,
+    keptSessionName,
   ];
 }
 

@@ -226,6 +226,11 @@ class ControlCubit extends Cubit<ControlState> {
   /// holds continuous writes (expression sweeps, External values, MIDI
   /// values) during Session transitions and disposal only; the power-off
   /// route leaves them running until its flush suspends input.
+  ///
+  /// [_startNewLoop] and [_saveSession] run the session commands a control
+  /// can be assigned (#1229, #1910). They are injected because the session
+  /// belongs to `SessionCubit` and a cubit never calls a cubit; each
+  /// defaults to doing nothing. The session's own notices say how it went.
   new({
     required LooperRepository looper,
     required this._pedal,
@@ -245,6 +250,8 @@ class ControlCubit extends Cubit<ControlState> {
     this._currentNames = _noNames,
     this._takeLocked = _neverLocked,
     this._inputLocked = _neverLocked,
+    this._startNewLoop = _noSessionCommand,
+    this._saveSession = _noSessionCommand,
     Future<int?> Function(String path)? freeSpaceBytes,
   }) : _looper = looper,
        _settings = settings,
@@ -1110,6 +1117,9 @@ class ControlCubit extends Cubit<ControlState> {
 
   static bool _neverLocked() => false;
 
+  /// The default session command: no session layer to reach.
+  static void _noSessionCommand() {}
+
   final LooperRepository _looper;
   final PedalRepository _pedal;
   final SettingsRepository _settings;
@@ -1125,6 +1135,8 @@ class ControlCubit extends Cubit<ControlState> {
   /// during Session transitions and disposal. The power-off route does not
   /// hold them: it blocks only takes, through [_takeLocked].
   final bool Function() _inputLocked;
+  final void Function() _startNewLoop;
+  final void Function() _saveSession;
   bool _haltInputSuspended = false;
   bool _inputRetired = false;
   bool get _controlInputSuspended {
@@ -3445,6 +3457,17 @@ class ControlCubit extends Cubit<ControlState> {
         return _sweepTrackChains(enabled: false);
       case ControlCommand.trackFxOn:
         return _sweepTrackChains(enabled: true);
+      // Handed to the session layer, which decides and says how it went
+      // (a take in progress, a failed save, a guard): accepted here once
+      // it is handed over, so the two never give two notices for one press.
+      case ControlCommand.newLoop:
+        if (_takeLocked()) return false;
+        _startNewLoop();
+        return true;
+      case ControlCommand.saveSession:
+        if (_takeLocked()) return false;
+        _saveSession();
+        return true;
     }
   }
 

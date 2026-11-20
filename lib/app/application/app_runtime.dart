@@ -153,6 +153,10 @@ class AppRuntime {
       midiDevices: midiDevices,
       takeLocked: () => takeLocked,
       inputLocked: () => _closing || fxPersistence.sessionTransitionActive,
+      // The session commands a control can be assigned: the methods the
+      // Library and Ctrl/Cmd+S call. `session` is read when a press arrives.
+      startNewLoop: () => unawaited(session.newLoop(announceKept: true)),
+      saveSession: () => unawaited(session.save()),
       // A pedal or MIDI arm records the same rig and names as the toolbar's.
       currentChains: currentChains,
       currentNames: currentNames,

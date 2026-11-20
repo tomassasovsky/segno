@@ -2769,6 +2769,8 @@
     "libraryRestoreFailed": "No se pudo restaurar. No se añadió nada.",
     "actionTrackFxOff": "FX de pistas apagados",
     "actionTrackFxOn": "FX de pistas encendidos",
+    "actionNewLoop": "Nuevo loop",
+    "actionSaveSession": "Guardar sesión",
     "footFxSlot": "FX {bank}{number}",
     "footFxHold": "Mantener",
     "footFxHoldAction": "Mantener · {action}",

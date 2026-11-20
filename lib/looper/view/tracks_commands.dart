@@ -438,6 +438,14 @@ Notice? sessionOutcomeNotice(SessionState state) {
         // unless a template's track names could not be written (#1513).
         case SessionOutcome.newLoop when state.trackNamesNotSaved:
           return refuse((l10n) => l10n.sessionTrackNamesNotSaved);
+        // A New loop asked by foot had no sheet to say the session stays
+        // (19/02), so the stage says it, when a session was saved.
+        case SessionOutcome.newLoop when state.keptSessionName != null:
+          final kept = state.keptSessionName!;
+          return Notice(
+            id: AppNoticeId.session,
+            title: (l10n) => l10n.libraryNewLoopStays(kept),
+          );
         // The catalog outcomes happen in the Library, which shows its own
         // result.
         case SessionOutcome.newLoop:

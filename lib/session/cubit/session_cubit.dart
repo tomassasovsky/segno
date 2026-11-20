@@ -312,7 +312,10 @@ class SessionCubit extends Cubit<SessionState> {
   /// is saved when it holds recorded audio, the part nothing else can bring
   /// back, and is otherwise left as it is: an Open that resolves a recovery
   /// notice stays possible, and an untouched rig is not saved.
-  Future<void> _preserveOutgoing() async {
+  ///
+  /// Returns the name the rig was saved under, or null when it was not
+  /// saved.
+  Future<String?> _preserveOutgoing() async {
     final revision = _looper.sessionRevision;
     final generation = _looper.mixGeneration;
     final device = _looper.state.status.deviceName;
@@ -326,22 +329,25 @@ class SessionCubit extends Cubit<SessionState> {
     }
     final known = _savedFingerprint;
     if (now == null || known == null) {
-      if (!_looper.state.tracks.any((t) => t.hasContent)) return;
+      if (!_looper.state.tracks.any((t) => t.hasContent)) return null;
     } else if (now == known) {
-      return;
+      return null;
     }
     final id = state.currentSessionId;
     if (id != null) {
+      final name = state.currentSessionName;
       _savedFingerprint = await _asSaveFailure(
         () async => await _saveCurrentRig(
           await _repository.bundlePathOf(id),
-          state.currentSessionName,
+          name,
           revision,
           generation,
           device,
         ),
       );
-      return;
+      // A bundle saved before names were metadata is named by its id, as
+      // the catalog shows it.
+      return name ?? id;
     }
     final saved = await _asSaveFailure(
       () => _writeNew(
@@ -351,7 +357,7 @@ class SessionCubit extends Cubit<SessionState> {
         device: device,
       ),
     );
-    if (isClosed) return;
+    if (isClosed) return saved.slug;
     emit(
       state.copyWith(
         status: SessionStatus.working,
@@ -360,6 +366,7 @@ class SessionCubit extends Cubit<SessionState> {
         sessions: await _repository.listSessions(),
       ),
     );
+    return saved.slug;
   }
 
   /// Ends every take in progress before an Open or New loop saves the
@@ -555,13 +562,20 @@ class SessionCubit extends Cubit<SessionState> {
   /// session already saved. Its names are written after the apply and before
   /// the first save; a failed write keeps the loop and sets
   /// [SessionState.trackNamesNotSaved] on the outcome.
-  Future<void> newLoop({NewLoopTemplate? template}) => _run(() async {
+  ///
+  /// With [announceKept] the outcome carries the name the outgoing rig was
+  /// saved under ([SessionState.keptSessionName]). A New loop asked by foot
+  /// sets it: no sheet told the player the session stays (#1229, #1910).
+  Future<void> newLoop({
+    NewLoopTemplate? template,
+    bool announceKept = false,
+  }) => _run(() async {
     SessionId? reserved;
     var applied = false;
     try {
       return await _captureSettings.runExclusive(() async {
         await _endCaptures();
-        await _preserveOutgoing();
+        final kept = await _preserveOutgoing();
         // Checked before anything on the live rig changes, on the chains
         // as they are now: ending a take can have copied an input chain
         // onto a lane since the sheet checked.
@@ -631,6 +645,7 @@ class SessionCubit extends Cubit<SessionState> {
           currentName: name,
           sessions: await _repository.listSessions(),
           trackNamesNotSaved: !namesSaved,
+          keptSessionName: announceKept ? kept : null,
         );
       });
     } on _SessionBootException {
@@ -1100,6 +1115,7 @@ class SessionCubit extends Cubit<SessionState> {
           bootRecoveryRequired: false,
           conversion: result.conversion,
           trackNamesNotSaved: result.trackNamesNotSaved,
+          keptSessionName: result.keptSessionName,
         ),
       );
     } on _SessionRefusal catch (refusal) {
@@ -1209,6 +1225,7 @@ class _ActionResult {
     this.sessions,
     this.conversion,
     this.trackNamesNotSaved = false,
+    this.keptSessionName,
   });
 
   final SessionOutcome outcome;
@@ -1217,4 +1234,5 @@ class _ActionResult {
   final List<SessionSummary>? sessions;
   final SessionConversionNotice? conversion;
   final bool trackNamesNotSaved;
+  final String? keptSessionName;
 }
