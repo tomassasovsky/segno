@@ -1809,7 +1809,7 @@ void main() {
       verifyNever(() => session.newLoop(template: any(named: 'template')));
     });
 
-    testWidgets('a loop with no name yet is the current session', (
+    testWidgets('a session with no name yet is the current session', (
       tester,
     ) async {
       await tapNewLoop(tester, state: SessionState(sessions: _catalog));

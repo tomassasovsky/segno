@@ -251,7 +251,7 @@ enum ControlCommand {
   /// Switch the track bank A / B.
   nextBank('bank:next'),
 
-  /// Save the outgoing session and start an empty loop (#1229, #1910).
+  /// Save the outgoing session and start an empty session (#1229, #1910).
   newLoop('command:new-loop'),
 
   /// Save the live rig to the open session, or under the next automatic

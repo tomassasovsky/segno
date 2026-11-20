@@ -655,7 +655,7 @@ class SessionCubit extends Cubit<SessionState> {
             _looper.state.status.deviceName,
           );
         } on Object catch (error) {
-          // Not a failed save of the outgoing loop, which is safe: the new
+          // Not a failed save of the outgoing session, which is safe: the new
           // session is started and named, and only its empty bundle is
           // missing. The first Save writes it.
           throw _SessionRefusal(

@@ -3284,7 +3284,7 @@
     },
     "libraryOpenInterruptBody": "Your current session stays in your Library.",
     "@libraryOpenInterruptBody": {
-        "description": "Under the Open confirmation: the outgoing loop is kept."
+        "description": "Under the Open confirmation: the outgoing session is kept."
     },
     "libraryOpenConfirm": "Open",
     "@libraryOpenConfirm": {
