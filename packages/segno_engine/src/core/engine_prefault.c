@@ -33,6 +33,18 @@
  * sound-triggered arm that has not fired yet keeps its job. */
 #define LE_PREFAULT_IDLE_NS 2000000000LL
 #define LE_PREFAULT_PERIOD_NS 20000000L
+/* How fast the thread faults in, at least (#1914). Faulting in zeroes every
+ * page, and at the gigabytes a second it would otherwise run it took the
+ * memory bus from the audio threads: a take's start (its follow jobs from
+ * one second ahead to four) and a spare's fill (up to a whole 60 s cap)
+ * made the callback's effects miss the cache for milliseconds. A take's
+ * follow jobs go first and at least LE_PREFAULT_FOLLOW_SPEED times their
+ * write heads' speed, so their lead still only grows; the rest waits for
+ * them. */
+#define LE_PREFAULT_BYTES_PER_S (64LL << 20)
+#define LE_PREFAULT_FOLLOW_SPEED 8
+/* A pass whose share of the rate is shorter than this does not wait. */
+#define LE_PREFAULT_MIN_WAIT_NS 200000LL
 
 /* A job faults [start, cap) in, from start up; [done] is the first frame not
  * yet in. A follow job (channel >= 0) has its end move with the capture
@@ -107,13 +119,29 @@ static int64_t le_prefault_now_ns(void) {
  * chunk is faulted with the mutex released and its buffer named in busy_buf,
  * and only if its job is still queued when its turn comes, so a buffer
  * forgotten meanwhile is never touched again (le_prefault_forget). Returns 1
- * when some job still has work. */
-static int le_prefault_pass(le_engine* e, struct le_prefaulter* p) {
+ * when some job still has work.
+ *
+ * Paced (the thread), a pass in which a follow job still has work runs the
+ * follow jobs only, and [wait_ns] is how long its chunks take at the
+ * thread's rate (LE_PREFAULT_BYTES_PER_S; more with many follow jobs, so
+ * each still goes LE_PREFAULT_FOLLOW_SPEED times its write head). Unpaced
+ * (le_prefault_tick), every job takes a chunk and [wait_ns] may be NULL. */
+static int le_prefault_pass_paced(le_engine* e, struct le_prefaulter* p,
+                                  int paced, int64_t* wait_ns) {
   le_prefault_work work[LE_PREFAULT_JOBS];
   int nwork = 0;
   int more = 0;
   const int32_t max = (int32_t)(LE_PREFAULT_CHUNK_BYTES / sizeof(float));
   const int64_t now = le_prefault_now_ns();
+  int follow_behind = 0;
+  if (paced) {
+    for (int i = 0; i < p->njobs; ++i) {
+      const le_prefault_job* j = &p->jobs[i];
+      if (j->channel >= 0 && le_follow_target(e, j) > j->done) {
+        ++follow_behind;
+      }
+    }
+  }
   for (int i = 0; i < p->njobs; ++i) {
     le_prefault_job* j = &p->jobs[i];
     int32_t target = j->cap;
@@ -126,12 +154,30 @@ static int le_prefault_pass(le_engine* e, struct le_prefaulter* p) {
       }
     }
     if (target <= j->done) continue;
+    if (follow_behind > 0 && j->channel < 0) { /* waits for the takes */
+      more = 1;
+      continue;
+    }
     int32_t frames = target - j->done;
     if (frames > max) {
       frames = max;
       more = 1;
     }
     work[nwork++] = (le_prefault_work){j->id, j->buf, j->done, frames};
+  }
+  if (wait_ns != NULL) {
+    int64_t bytes = 0;
+    for (int k = 0; k < nwork; ++k) {
+      bytes += (int64_t)work[k].frames * (int64_t)sizeof(float);
+    }
+    const int64_t rate_hz = e->sample_rate > 0 ? e->sample_rate : 48000;
+    const int64_t follow_rate = (int64_t)follow_behind * rate_hz *
+                                (int64_t)sizeof(float) *
+                                LE_PREFAULT_FOLLOW_SPEED;
+    const int64_t rate = follow_rate > LE_PREFAULT_BYTES_PER_S
+                             ? follow_rate
+                             : LE_PREFAULT_BYTES_PER_S;
+    *wait_ns = bytes * 1000000000LL / rate;
   }
   for (int k = 0; k < nwork; ++k) {
     if (le_prefault_find(p, work[k].id) == NULL) continue; /* forgotten */
@@ -161,6 +207,32 @@ static int le_prefault_pass(le_engine* e, struct le_prefaulter* p) {
   return more;
 }
 
+static int le_prefault_pass(le_engine* e, struct le_prefaulter* p) {
+  return le_prefault_pass_paced(e, p, 0, NULL);
+}
+
+/* Waits on the thread's condvar until [ns] from now: a new job or a
+ * shutdown wakes it sooner. Entered and left with the mutex held. */
+static void le_prefault_wait(struct le_prefaulter* p, int64_t ns) {
+#if defined(__APPLE__)
+  /* Darwin has no pthread_condattr_setclock; its relative wait is measured
+   * on a monotonic clock already. */
+  const struct timespec rel = {(time_t)(ns / 1000000000LL),
+                               (long)(ns % 1000000000LL)};
+  pthread_cond_timedwait_relative_np(&p->cv, &p->mu, &rel);
+#else
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts); /* the condvar's clock */
+  ts.tv_sec += (time_t)(ns / 1000000000LL);
+  ts.tv_nsec += (long)(ns % 1000000000LL);
+  if (ts.tv_nsec >= 1000000000L) {
+    ts.tv_sec += 1;
+    ts.tv_nsec -= 1000000000L;
+  }
+  pthread_cond_timedwait(&p->cv, &p->mu, &ts);
+#endif
+}
+
 static void* le_prefault_main(void* arg) {
   le_engine* e = (le_engine*)arg;
   le_platform_name_thread("segno-prefault");
@@ -168,23 +240,15 @@ static void* le_prefault_main(void* arg) {
   pthread_mutex_lock(&p->mu);
   while (!p->stop) {
     /* Woken by a new job or by shutdown, else every 20 ms: a follow job's
-     * target moves with its capture, and nothing signals that. */
-    if (p->njobs > 0 && le_prefault_pass(e, p)) continue; /* behind: again */
-#if defined(__APPLE__)
-    /* Darwin has no pthread_condattr_setclock; its relative wait is measured
-     * on a monotonic clock already. */
-    const struct timespec rel = {0, LE_PREFAULT_PERIOD_NS};
-    pthread_cond_timedwait_relative_np(&p->cv, &p->mu, &rel);
-#else
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts); /* the condvar's clock */
-    ts.tv_nsec += LE_PREFAULT_PERIOD_NS;
-    if (ts.tv_nsec >= 1000000000L) {
-      ts.tv_sec += 1;
-      ts.tv_nsec -= 1000000000L;
+     * target moves with its capture, and nothing signals that. Behind, the
+     * next pass comes when this one's chunks have taken their time at the
+     * thread's rate (le_prefault_pass_paced). */
+    int64_t wait_ns = 0;
+    if (p->njobs > 0 && le_prefault_pass_paced(e, p, 1, &wait_ns)) {
+      if (wait_ns >= LE_PREFAULT_MIN_WAIT_NS) le_prefault_wait(p, wait_ns);
+      continue;
     }
-    pthread_cond_timedwait(&p->cv, &p->mu, &ts);
-#endif
+    le_prefault_wait(p, LE_PREFAULT_PERIOD_NS);
   }
   pthread_mutex_unlock(&p->mu);
   return NULL;
@@ -307,6 +371,15 @@ void le_prefault_pass_for_test(le_engine* e) {
   pthread_mutex_lock(&e->prefaulter->mu);
   (void)le_prefault_pass(e, e->prefaulter);
   pthread_mutex_unlock(&e->prefaulter->mu);
+}
+
+int le_prefault_paced_pass_for_test(le_engine* e, int64_t* wait_ns) {
+  if (e == NULL || e->prefaulter == NULL) return 0;
+  struct le_prefaulter* p = e->prefaulter;
+  pthread_mutex_lock(&p->mu);
+  const int more = le_prefault_pass_paced(e, p, 1, wait_ns);
+  pthread_mutex_unlock(&p->mu);
+  return more;
 }
 
 void le_prefault_tick(le_engine* e) {
