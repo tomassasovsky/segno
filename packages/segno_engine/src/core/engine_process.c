@@ -29,6 +29,7 @@
 #include "engine_fx.h"       /* fx_apply_chain, le_fx_entry_reset */
 #include "engine_heard.h"    /* the heard image (#1713) */
 #include "engine_hot.h"      /* LE_AUDIO_HOT_AT (#1718) */
+#include "engine_prof.h"     /* LE_PROF_MARK, measuring builds only (#1914) */
 #include "engine_instruments.h" /* le_instruments_block / _cut (#1197) */
 #include "engine_internal.h" /* le_engine_process prototype */
 #include "engine_workers.h"  /* le_fx_jobs_run (#1515) */
@@ -11276,6 +11277,7 @@ LE_AUDIO_HOT_AT(0) void le_engine_process(le_engine* e, float* output, const flo
   const int free_or_song = looper_mode == LE_LOOPER_MODE_FREE ||
                            looper_mode == LE_LOOPER_MODE_SONG;
   le_dub_block_update(e, perf_frame_base, frames, free_or_song);
+  LE_PROF_MARK(LE_PROF_CMD);
 
   /* Global master output gain, read once per block after draining the ring so a
    * mid-block change applies from the next block (no per-frame atomic load). */
@@ -11603,6 +11605,7 @@ LE_AUDIO_HOT_AT(0) void le_engine_process(le_engine* e, float* output, const flo
    * backing, the audition) and its chains (the output buses) own their
    * state, and the click's schedule, the cursors and the transport stay in
    * the first. */
+  LE_PROF_MARK(LE_PROF_SETUP);
   for (uint32_t b0 = 0; b0 < frames; b0 += LE_FX_BLOCK) {
     const uint32_t b1 =
         frames - b0 > LE_FX_BLOCK ? b0 + LE_FX_BLOCK : frames;
@@ -11736,6 +11739,7 @@ LE_AUDIO_HOT_AT(0) void le_engine_process(le_engine* e, float* output, const flo
 
     /* The monitor chains over the block: on the workers and the callback,
      * or on the callback alone (le_fx_jobs_run). */
+    LE_PROF_MARK(LE_PROF_LOOP1);
     if (par->jobs > 0) le_fx_jobs_run(e);
     /* The tracks onto the outputs, now that their chains have run. */
     if (e->trk_jobs_live) {
@@ -11750,6 +11754,7 @@ LE_AUDIO_HOT_AT(0) void le_engine_process(le_engine* e, float* output, const flo
     /* The output buses' chains run here, at the frame each one processes:
      * their clock and tempo follow the block as a lane's did in the first
      * loop (le_fx_time). */
+    LE_PROF_MARK(LE_PROF_POSTJOBS);
     le_fx_time* const ot = &e->obus_time;
     ot->tempo = par->tempo0;
     int32_t tev = 0;
@@ -11819,6 +11824,7 @@ LE_AUDIO_HOT_AT(0) void le_engine_process(le_engine* e, float* output, const flo
       viz_tap_frame(e, par->viz[i], frame_out_peak);
     }
     while (tev < par->tev_n) ot->tempo = par->tev[tev++];
+    LE_PROF_MARK(LE_PROF_LOOP2);
     atomic_store_explicit(&ot->a_frame, par->clock + par->n,
                           memory_order_relaxed);
   }
@@ -11913,6 +11919,7 @@ LE_AUDIO_HOT_AT(0) void le_engine_process(le_engine* e, float* output, const flo
                           frames, perf_frame_base + frames);
     }
   }
+  LE_PROF_MARK(LE_PROF_METERS);
   store_i32(&e->a_master_pos, e->clock.position);
   le_song_publish(e);
   atomic_fetch_add_explicit(&e->a_frames, (uint64_t)frames,
