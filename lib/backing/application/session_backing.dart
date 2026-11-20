@@ -5,7 +5,7 @@ import 'package:session_repository/session_repository.dart';
 
 /// The backing's share of a Session (#1200 Part 5, plan D9), as the Session
 /// coordinator sees it: what Save captures, what Open installs, and the
-/// stop Open and New Loop make.
+/// stop Open and New session make.
 class SessionBackingPort {
   /// Joins the [_player] (prepared order and loaded item) and the [_settings]
   /// owners (mix, End and click pan).
@@ -20,7 +20,7 @@ class SessionBackingPort {
   /// The durable click pan a Save writes.
   double get clickPan => _settings.clickPan;
 
-  /// Stops the backing (Open and New Loop: plan D9, "prepared backing
+  /// Stops the backing (Open and New session: plan D9, "prepared backing
   /// remains stopped").
   void stop() => _player.stop();
 

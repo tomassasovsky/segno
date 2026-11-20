@@ -307,7 +307,8 @@ class PerformanceReadout extends Equatable {
   final String mode;
 
   /// `ControlState.activeBank` — which A/B pedal bank the footswitches
-  /// address, shown beside the function.
+  /// address, shown beside the function. In Sessions, which pages its own
+  /// list, the page of the face in view (#1910).
   final int activeBank;
 
   /// The main screen's message, shown in a band over the readout's top

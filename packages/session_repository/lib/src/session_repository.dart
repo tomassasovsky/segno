@@ -595,7 +595,17 @@ class SessionRepository {
       tsNum: _intOf(json['tsNum'], 4),
       tsDen: _intOf(json['tsDen'], 4),
       fxCount: _fxCountOf(json),
+      looperMode: _looperModeOf(json['looperMode']),
     );
+  }
+
+  /// The looper mode a manifest names, or null for a name this build does
+  /// not know: the row then says nothing about the mode.
+  static LooperMode? _looperModeOf(Object? raw) {
+    for (final mode in LooperMode.values) {
+      if (mode.name == raw) return mode;
+    }
+    return null;
   }
 
   static String _displayName(Object? raw, String fallback) {
@@ -674,8 +684,9 @@ class SessionRepository {
     }
   }
 
-  /// The decoded manifest and derived facts for the Library's preview panel
-  /// — populated tracks, bars, layers, mutes, effect counts — with no audio
+  /// The decoded manifest and derived facts for a preview panel — the
+  /// setup (looper mode, loop length, the stored chains by place) and the
+  /// populated tracks, bars, layers, mutes, effect counts — with no audio
   /// read. Throws the typed [SessionException]s a load would, and
   /// [StateError] for an id with no bundle.
   Future<SessionPreview> readPreview(SessionId id) async {
@@ -731,6 +742,34 @@ class SessionRepository {
       fxCount: summary.fxCount,
       sampleRate: session.sampleRate,
       hasMixdown: File('$path/$mixdownName').existsSync(),
+      looperMode: session.looperMode,
+      loopBars: session.loopBars,
+      inputChains: [
+        for (final monitor in [
+          ...session.monitors,
+        ]..sort((a, b) => a.input.compareTo(b.input)))
+          if (monitor.encoded.isNotEmpty) monitor.encoded,
+      ],
+      trackChains: [
+        for (final chain
+            in [...session.laneChains]..sort(
+              (a, b) => a.channel != b.channel
+                  ? a.channel.compareTo(b.channel)
+                  : a.lane.compareTo(b.lane),
+            ))
+          if (chain.encoded.isNotEmpty) chain.encoded,
+        for (final chain in [
+          ...session.trackChains,
+        ]..sort((a, b) => a.channel.compareTo(b.channel)))
+          if (chain.encoded.isNotEmpty) chain.encoded,
+      ],
+      allTracksChain: session.allTracksChain,
+      outputChains: [
+        for (final chain in [
+          ...session.outputChains,
+        ]..sort((a, b) => a.bus.compareTo(b.bus)))
+          if (chain.encoded.isNotEmpty) chain.encoded,
+      ],
     );
   }
 
@@ -1201,6 +1240,88 @@ class SessionRepository {
       }
     }
     dir.deleteSync(recursive: true);
+  }
+
+  // ---- the Sessions face's list (#1921) ----
+
+  /// The file beside the bundles that holds what the player set for the
+  /// Sessions face: the sessions kept off it. The catalog lists directories
+  /// only, so it shows nowhere.
+  static const String faceListName = 'sessions-face.json';
+
+  /// Called with the written temporary file before it is renamed into
+  /// place; a test throws from it to stand for a failed rename.
+  @visibleForTesting
+  static void Function(String path)? debugOnWriteFaceList;
+
+  /// The sessions the player keeps off the Sessions face. Empty when none
+  /// was hidden yet, and when the file does not read: every session is then
+  /// on the face, and the next change writes a good file.
+  ///
+  /// An id that has no bundle any more (its session was deleted) is left
+  /// out.
+  Future<Set<SessionId>> readHiddenFromFace() async {
+    final root = await _rootPath();
+    final file = File('$root/$faceListName');
+    if (!file.existsSync()) return const {};
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(await file.readAsString());
+    } on Object {
+      return const {};
+    }
+    final raw = decoded is Map<String, dynamic> ? decoded['hidden'] : null;
+    if (raw is! List || raw.isEmpty) return const {};
+    final saved = _bundleIds(root);
+    return {
+      for (final id in raw)
+        if (id is String && saved.contains(id)) id,
+    };
+  }
+
+  /// The id of every bundle under [root] and one folder down, from one pass
+  /// over the directories, without reading a manifest.
+  static Set<SessionId> _bundleIds(String root) {
+    final dir = Directory(root);
+    if (!dir.existsSync()) return const {};
+    final ids = <SessionId>{};
+    for (final entity in dir.listSync()) {
+      if (entity is! Directory || _isTransient(_basename(entity.path))) {
+        continue;
+      }
+      if (_isBundle(entity.path)) {
+        ids.add(_basename(entity.path));
+        continue;
+      }
+      for (final child in entity.listSync()) {
+        if (child is Directory &&
+            !_isTransient(_basename(child.path)) &&
+            _isBundle(child.path)) {
+          ids.add(_basename(child.path));
+        }
+      }
+    }
+    return ids;
+  }
+
+  /// Writes [hidden] as the sessions kept off the Sessions face, through a
+  /// temporary file and a rename, so a crash leaves either the old file or
+  /// the new one.
+  Future<void> writeHiddenFromFace(Set<SessionId> hidden) async {
+    final root = await _rootPath();
+    Directory(root).createSync(recursive: true);
+    final temporary = File('$root/$faceListName.tmp');
+    try {
+      await temporary.writeAsString(
+        jsonEncode({'version': 1, 'hidden': hidden.toList()..sort()}),
+        flush: true,
+      );
+      debugOnWriteFaceList?.call(temporary.path);
+      await temporary.rename('$root/$faceListName');
+    } on Object {
+      if (temporary.existsSync()) temporary.deleteSync();
+      rethrow;
+    }
   }
 
   /// Copies the saved bundle [id]'s `mixdown.wav` to [destinationPath]
@@ -1806,7 +1927,7 @@ class SessionRepository {
 
   /// The manifest [save] would build from [settings], [chains] and
   /// [pedalBindings], without its tracks, audio or name, and with no file
-  /// touched: the settings half of the live rig, for `New loop` to start
+  /// touched: the settings half of the live rig, for `New session` to start
   /// from (plan D9, through [Session.forNewLoop]).
   Session liveSession({
     required SessionSettings settings,

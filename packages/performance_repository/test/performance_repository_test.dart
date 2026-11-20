@@ -1845,6 +1845,32 @@ void main() {
       expect(manifest['finalized'], isTrue);
     });
 
+    test('disarmForSessionChange finalizes the take and says a session change '
+        'ended it, until the next take is finalized', () async {
+      expect(repo.endedBySessionChange, isFalse);
+      await armAndSeedNative(engine, repo);
+      final dir = repo.armedDirectory!;
+
+      expect(await repo.disarmForSessionChange(), EngineResult.ok);
+
+      final manifest = jsonDecode(
+        File('$dir/performance.json').readAsStringSync(),
+      ) as Map<String, dynamic>;
+      expect(manifest['finalized'], isTrue);
+      expect(repo.endedBySessionChange, isTrue);
+
+      // The next take, ended by the recorder, is not a session change's.
+      await armAndSeedNative(engine, repo);
+      await repo.disarmAndFinalize();
+      expect(repo.endedBySessionChange, isFalse);
+    });
+
+    test('disarmForSessionChange with nothing armed is a success that changes '
+        'nothing', () async {
+      expect(await repo.disarmForSessionChange(), EngineResult.ok);
+      expect(repo.endedBySessionChange, isFalse);
+    });
+
     test('starts the offline dry-stem render (part 7) once finalized, exposed '
         'via renderProgress/renderTrackStatuses', () async {
       await armAndSeedNative(engine, repo);

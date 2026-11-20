@@ -96,7 +96,7 @@ class SessionCubit extends Cubit<SessionState> {
   /// What a refusal names a session apply by.
   static const String applyPurpose = 'opening a session';
 
-  /// How long an Open or New loop waits for a take it ended to finish: the
+  /// How long an Open or New session waits for a take it ended to finish: the
   /// take ends at its Record timing, which can be the next bar or loop top.
   final Duration _captureEndTimeout;
   String? _pendingLoadedBindings;
@@ -124,12 +124,14 @@ class SessionCubit extends Cubit<SessionState> {
   Future<void> _refreshSessions() async {
     final sessions = await _repository.listSessions();
     final folders = await _listFolders();
+    final hiddenFromFace = await _readHiddenFromFace();
     if (_closing || isClosed) return;
     // A quiet re-list: the last action's result stays as it was.
     emit(
       state.copyWith(
         sessions: sessions,
         folders: folders,
+        hiddenFromFace: hiddenFromFace,
         outcome: state.outcome,
         error: state.error,
         errorMessage: state.errorMessage,
@@ -150,10 +152,21 @@ class SessionCubit extends Cubit<SessionState> {
     }
   }
 
-  /// The name a save with no identity takes: `New loop N`, the smallest N no
+  /// The sessions kept off the Sessions face, or the ones already in state
+  /// when they cannot be read: an unreadable file must not fail the action
+  /// that re-lists.
+  Future<Set<SessionId>> _readHiddenFromFace() async {
+    try {
+      return await _repository.readHiddenFromFace();
+    } on Object {
+      return state.hiddenFromFace;
+    }
+  }
+
+  /// The name a save with no identity takes: `New session N`, the smallest N no
   /// catalog name carries (plan D4). A name is the session's data, not UI
   /// copy, so it is the same in every language.
-  static const String automaticNamePrefix = 'New loop';
+  static const String automaticNamePrefix = 'New session';
 
   /// Saves the live rig as a NEW session under a fresh id, named [name], and
   /// makes it current. Rejects a name another session carries exactly
@@ -312,7 +325,10 @@ class SessionCubit extends Cubit<SessionState> {
   /// is saved when it holds recorded audio, the part nothing else can bring
   /// back, and is otherwise left as it is: an Open that resolves a recovery
   /// notice stays possible, and an untouched rig is not saved.
-  Future<void> _preserveOutgoing() async {
+  ///
+  /// Returns the name the rig was saved under, or null when it was not
+  /// saved.
+  Future<String?> _preserveOutgoing() async {
     final revision = _looper.sessionRevision;
     final generation = _looper.mixGeneration;
     final device = _looper.state.status.deviceName;
@@ -326,22 +342,25 @@ class SessionCubit extends Cubit<SessionState> {
     }
     final known = _savedFingerprint;
     if (now == null || known == null) {
-      if (!_looper.state.tracks.any((t) => t.hasContent)) return;
+      if (!_looper.state.tracks.any((t) => t.hasContent)) return null;
     } else if (now == known) {
-      return;
+      return null;
     }
     final id = state.currentSessionId;
     if (id != null) {
+      final name = state.currentSessionName;
       _savedFingerprint = await _asSaveFailure(
         () async => await _saveCurrentRig(
           await _repository.bundlePathOf(id),
-          state.currentSessionName,
+          name,
           revision,
           generation,
           device,
         ),
       );
-      return;
+      // A bundle saved before names were metadata is named by its id, as
+      // the catalog shows it.
+      return name ?? id;
     }
     final saved = await _asSaveFailure(
       () => _writeNew(
@@ -351,7 +370,7 @@ class SessionCubit extends Cubit<SessionState> {
         device: device,
       ),
     );
-    if (isClosed) return;
+    if (isClosed) return saved.slug;
     emit(
       state.copyWith(
         status: SessionStatus.working,
@@ -360,9 +379,16 @@ class SessionCubit extends Cubit<SessionState> {
         sessions: await _repository.listSessions(),
       ),
     );
+    return saved.slug;
   }
 
-  /// Ends every take in progress before an Open or New loop saves the
+  /// Ends a Library Listen preview before an Open or a New session changes
+  /// the rig (plan D10), whoever asked: the Library's buttons stop it
+  /// themselves, and a control assigned New session has no Library to do it
+  /// (#1910). The Library sees its preview has ended on its next poll.
+  void _endListen() => _repository.stopAudition();
+
+  /// Ends every take in progress before an Open or New session saves the
   /// outgoing rig, as the record control's Stop would (plan D8: the dialog
   /// promises the loop stays), and waits until none is capturing, so the
   /// take is saved with the rest. A take still capturing after
@@ -410,7 +436,7 @@ class SessionCubit extends Cubit<SessionState> {
 
   /// Runs a save's write and reports any failure that is not a typed
   /// session refusal as [SessionError.saveFailed], the 19/05 banner's
-  /// "Could not save your current loop. Nothing was changed."
+  /// "Could not save your current session. Nothing was changed."
   static Future<T> _asSaveFailure<T>(Future<T> Function() write) async {
     try {
       return await write();
@@ -496,6 +522,7 @@ class SessionCubit extends Cubit<SessionState> {
           path,
           liveSettings: _captureSettings.current,
         );
+        _endListen();
         await _endCaptures();
         await _preserveOutgoing();
         // The header shows the manifest's name; a bundle saved before names
@@ -534,7 +561,7 @@ class SessionCubit extends Cubit<SessionState> {
     }
   }, reserveSessionLoad: true);
 
-  /// Starts a new loop (plan D9): saves the outgoing rig first when it has
+  /// Starts a new session (plan D9): saves the outgoing rig first when it has
   /// changed (plan D7), clears every track and its history, keeps the
   /// sound, tempo and pedal setup, and saves the empty rig at once under
   /// the next automatic name, which becomes current.
@@ -542,7 +569,7 @@ class SessionCubit extends Cubit<SessionState> {
   /// The empty rig is [rigForNewLoop] of the live settings and chains,
   /// applied through the one apply path an Open uses; the transforms reset
   /// with the clear inside it. A failed preservation applies nothing. When
-  /// the empty rig cannot be written after it is applied, the new loop is
+  /// the empty rig cannot be written after it is applied, the new session is
   /// started and current under its new name, the failure is
   /// [SessionError.newLoopNotSaved], and the first Save writes it. A take in
   /// progress is ended first and saved with the outgoing rig, as for Open.
@@ -555,13 +582,21 @@ class SessionCubit extends Cubit<SessionState> {
   /// session already saved. Its names are written after the apply and before
   /// the first save; a failed write keeps the loop and sets
   /// [SessionState.trackNamesNotSaved] on the outcome.
-  Future<void> newLoop({NewLoopTemplate? template}) => _run(() async {
+  ///
+  /// With [announceKept] the outcome carries the name the outgoing rig was
+  /// saved under ([SessionState.keptSessionName]). A New session asked by foot
+  /// sets it: no sheet told the player the session stays (#1229, #1910).
+  Future<void> newLoop({
+    NewLoopTemplate? template,
+    bool announceKept = false,
+  }) => _run(() async {
     SessionId? reserved;
     var applied = false;
     try {
       return await _captureSettings.runExclusive(() async {
+        _endListen();
         await _endCaptures();
-        await _preserveOutgoing();
+        final kept = await _preserveOutgoing();
         // Checked before anything on the live rig changes, on the chains
         // as they are now: ending a take can have copied an input chain
         // onto a lane since the sheet checked.
@@ -569,7 +604,7 @@ class SessionCubit extends Cubit<SessionState> {
           throw const _SessionRefusal(SessionError.templateDoesNotFit);
         }
         // A held momentary belongs to the outgoing rig, not to the chains
-        // the new loop keeps.
+        // the new session keeps.
         _releaseHeldBindings();
         final revision = _looper.sessionRevision;
         final generation = _looper.mixGeneration;
@@ -605,7 +640,7 @@ class SessionCubit extends Cubit<SessionState> {
             await _renameTracks(template.names);
           } on Object catch (error) {
             // The loop is started; only the names are missing.
-            AppLog.warn('new loop track names not saved: $error');
+            AppLog.warn('new session track names not saved: $error');
             namesSaved = false;
           }
         }
@@ -620,10 +655,14 @@ class SessionCubit extends Cubit<SessionState> {
             _looper.state.status.deviceName,
           );
         } on Object catch (error) {
-          // Not a failed save of the outgoing loop, which is safe: the new
-          // loop is started and named, and only its empty bundle is
+          // Not a failed save of the outgoing session, which is safe: the new
+          // session is started and named, and only its empty bundle is
           // missing. The first Save writes it.
-          throw _SessionRefusal(SessionError.newLoopNotSaved, error);
+          throw _SessionRefusal(
+            SessionError.newLoopNotSaved,
+            error,
+            announceKept ? kept : null,
+          );
         }
         return _ActionResult(
           SessionOutcome.newLoop,
@@ -631,6 +670,7 @@ class SessionCubit extends Cubit<SessionState> {
           currentName: name,
           sessions: await _repository.listSessions(),
           trackNamesNotSaved: !namesSaved,
+          keptSessionName: announceKept ? kept : null,
         );
       });
     } on _SessionBootException {
@@ -646,7 +686,7 @@ class SessionCubit extends Cubit<SessionState> {
   }, reserveSessionLoad: true);
 
   /// Applies [rig] as the session [id] named [name] through the looper
-  /// repository, the one apply path Open and New loop share, and makes it
+  /// repository, the one apply path Open and New session share, and makes it
   /// current. Once the rig is applied, an Open's [conversion] is written
   /// back to the bundle at [path] (#1211). Returns the catalog read before
   /// the apply and the conversion notice. Runs inside `runExclusive`.
@@ -685,7 +725,7 @@ class SessionCubit extends Cubit<SessionState> {
         const GuardScope.internal(),
         purpose: applyPurpose,
       );
-      final disarmed = await _performance.disarmAndFinalize();
+      final disarmed = await _performance.disarmForSessionChange();
       if (!disarmed.isOk) {
         throw StateError(
           'performance capture did not stop before session load',
@@ -820,7 +860,7 @@ class SessionCubit extends Cubit<SessionState> {
   }
 
   /// Installs an Open's recalled backing setup and click pan (#1200 D9),
-  /// loaded again stopped at 0; a New loop has none and only stops the
+  /// loaded again stopped at 0; a New session has none and only stops the
   /// backing, keeping its prepared setup.
   Future<void> _installBacking(
     ({SessionBacking backing, double clickPan})? backing,
@@ -991,6 +1031,24 @@ class SessionCubit extends Cubit<SessionState> {
     );
   });
 
+  /// Puts session [id] on the Sessions face ([shown]) or keeps it off it
+  /// (#1921). The session itself does not change: it stays in the catalog
+  /// and opens from the Library either way.
+  Future<void> setShownOnFace(SessionId id, {required bool shown}) =>
+      _run(() async {
+        final hidden = {...await _repository.readHiddenFromFace()};
+        if (shown) {
+          hidden.remove(id);
+        } else {
+          hidden.add(id);
+        }
+        await _repository.writeHiddenFromFace(hidden);
+        return _ActionResult(
+          SessionOutcome.faceListChanged,
+          sessions: await _repository.listSessions(),
+        );
+      });
+
   /// The display name [name] resolves to, or throws [ArgumentError] when it
   /// sanitizes to nothing (the same rule the repository enforces).
   String _slugOf(String name) {
@@ -1086,8 +1144,11 @@ class SessionCubit extends Cubit<SessionState> {
     emit(state.copyWith(status: SessionStatus.working));
     try {
       final result = await action();
-      // Every action that re-lists the sessions re-lists the folders too.
-      final folders = result.sessions == null ? null : await _listFolders();
+      // Every action that re-lists the sessions re-lists the folders and
+      // the sessions kept off the face too: a deleted session leaves both.
+      final relisted = result.sessions != null;
+      final folders = relisted ? await _listFolders() : null;
+      final hiddenFromFace = relisted ? await _readHiddenFromFace() : null;
       if (isClosed) return;
       emit(
         state.copyWith(
@@ -1097,9 +1158,11 @@ class SessionCubit extends Cubit<SessionState> {
           currentSessionName: result.currentName,
           sessions: result.sessions,
           folders: folders,
+          hiddenFromFace: hiddenFromFace,
           bootRecoveryRequired: false,
           conversion: result.conversion,
           trackNamesNotSaved: result.trackNamesNotSaved,
+          keptSessionName: result.keptSessionName,
         ),
       );
     } on _SessionRefusal catch (refusal) {
@@ -1110,6 +1173,7 @@ class SessionCubit extends Cubit<SessionState> {
           failureCount: state.failureCount + 1,
           error: refusal.error,
           errorMessage: '${refusal.cause ?? refusal.error.name}',
+          keptSessionName: refusal.keptSessionName,
         ),
       );
     } on _SessionBootException catch (error) {
@@ -1187,10 +1251,14 @@ class SessionCubit extends Cubit<SessionState> {
 /// A refusal the cubit itself decides ([SessionError.currentSessionProtected])
 /// or classifies ([SessionError.saveFailed], with the write's own [cause]).
 class _SessionRefusal implements Exception {
-  const new(this.error, [this.cause]);
+  const new(this.error, [this.cause, this.keptSessionName]);
 
   final SessionError error;
   final Object? cause;
+
+  /// For [SessionError.newLoopNotSaved]: the name the outgoing session was
+  /// saved under, when the New session was asked to announce it.
+  final String? keptSessionName;
 }
 
 class _SessionBootException implements Exception {
@@ -1209,6 +1277,7 @@ class _ActionResult {
     this.sessions,
     this.conversion,
     this.trackNamesNotSaved = false,
+    this.keptSessionName,
   });
 
   final SessionOutcome outcome;
@@ -1217,4 +1286,5 @@ class _ActionResult {
   final List<SessionSummary>? sessions;
   final SessionConversionNotice? conversion;
   final bool trackNamesNotSaved;
+  final String? keptSessionName;
 }

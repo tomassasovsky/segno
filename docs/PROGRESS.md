@@ -59,7 +59,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1540 | Drive pedals' aliasing at 48 kHz: four kinds oversampled (#1552); the owner's blind pairs decide whether the built-in Drive is oversampled too | build | plan-gate | `claude/drive-alias-1540` |
 | #1498 | Restart and shut down also wait for RAUC's own install, after an app restart | in-review | blocked-verify | `claude/rauc-power-gate-1498` |
 | #1755 | Every effect cheaper without changing its sound: pitch (#1764, #1770), drives (#1759), reverbs/delays/filters (#1762) and the Vinyl (#1904, part 4) bit-identical; part 5, the Degrade at 96 kHz, is next (scope on the issue) | build | auto | `claude/fx-opt-part5-1755` |
-| #1914 | The app's audio callback runs late on screen changes and take starts: it waits on memory (Ed's Racks overflow the caches). Part 1 merged (#1925, the octaver on a mono pair, a callback profiler); part 2 in review: the prefaulter paced, the octaver clears only what it reads. Open: the screen-change bursts (the UI's), the lane racks' cold start at a take | in-review | auto | `claude/cb-overhead-1914-p2` |
+| #1914 | The app's audio callback runs late on screen changes and take starts: it waits on memory (Ed's Racks overflow the caches). Parts 1 (#1925, the octaver on a mono pair, a callback profiler) and 2 (#1926, the prefaulter paced, the octaver clears only what it reads) merged. Open: the screen-change bursts, which are the UI's and need the owner's call on page transitions; the lane racks' cold start at a take | build | plan-gate | none |
 | #1724 | Effects budget from the app's measured headroom: 10-minute untraced in-app ladder at 48 kHz / 32 (build 279); track job 200 → 300 ns, chains on the callback charged 2.5× (`kFxSerialFactor`); 4 inputs + 7 tracks or + 1 output rack fit | in-review | auto | `claude/fx-headroom-1724-p3` |
 | #1515 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track and lane chains) is #1729 | build | plan-gate | `claude/fx-multicore-1515-p1b` |
 | #1816 | Console WiFi against an ASUS RT-AX89X with 802.11ax on: firmware already matches Pi OS; brcmfmac options aligned with Pi OS and a troubleshooting note; failure not reproduced, issue stays open until it recurs | in-review | auto | `claude/wifi-firmware-1816` |
@@ -101,6 +101,75 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 - When Transpose and Speed ship (#1179), pedal 1 in bank A returns to
   Transpose, Hold Reverse and the Hold on pedal 4 to Speed. Sessions by
   foot (#1910) are not in the default map.
+
+## November 2026 Sessions by foot (#1910, #1921)
+
+- **Sessions** is a performance function (`InteractionMode.sessions`,
+  `mode:sessions`), assignable to a Custom switch, an external pedal or a
+  MIDI control. The owner chose it over `Load previous session` and `Load
+  next session`, which are not built (plan
+  `docs/plan/2026-11-19-feat-foot-session-actions-plan.md`).
+- **The face lists every saved session** the player did not hide, whatever
+  folder it is in, four to a page, in name order: ignoring case, with
+  digits compared as numbers (`compareSessionNames`, `footSessionsListed`,
+  `lib/control/model/foot_sessions.dart`). The Library still lists newest
+  first: that order moves each time an Open saves the session it leaves.
+  The owner chose this list over a map of sessions to switches, which was
+  built and withdrawn before it was committed (plan
+  `docs/plan/2026-11-20-feat-sessions-face-map-preview-hold-plan.md`,
+  "Owner decisions on the list"). An order set by hand is not built.
+- **A press shows a session and a Hold opens it** (#1921). The press shows
+  it at once in a readout above the track switches, drawn like the Mixer's:
+  its loop mode, tempo, loop length, recorded tracks and effects, read from
+  the manifest by `SessionPreviewCubit` with no audio. The Hold fills the
+  switch's LED left to right in the `selected` colour, through the `STATE`
+  frame's `queuedButton` and `queuedProgress`, so the firmware and the link
+  did not change. One Hold at a time. The open session's switch shows it
+  and has no Hold.
+- **The other switches.** Clear is Previous page and Bank is Next page,
+  both on contact, both wrapping. Undo saves on its release and starts a
+  new session on a Hold, with the clearing Hold's fill. Rec/Play and Stop
+  keep the transport. MODE goes back to the mode the face was entered
+  from.
+- The face says what an Open would end (`Opening a session stops
+  playback`, `... ends the take`, `... ends the recording`) before any
+  press. There is no second press: the Hold is the confirmation. A failed
+  Open keeps the face, marks its switch and is named in the stage notice.
+- **A session can be hidden from the pedal.** Each row of the Library's
+  list has a three-dot button; its sheet says `Hide from pedal` or `Show on
+  pedal`. The ids are in `sessions-face.json` beside the bundles
+  (`SessionRepository.readHiddenFromFace`), in `SessionState.hiddenFromFace`
+  and set with `SessionCubit.setShownOnFace`. A hidden session is on no
+  switch; when it is the open one the face's readout names it.
+- `New session` (`command:new-loop`, #1229 Part 7; renamed from `New loop`
+  in #1927) and `Save session` (`session:save`) are commands in the
+  Sessions group of the catalogue.
+- `ControlCubit` owns the face and never reads `SessionCubit`. Four
+  injected functions reach the session layer (`startNewLoop`,
+  `saveSession`, `openSession`, `refreshSessions`, wired in `AppRuntime`),
+  and the catalogue comes back through `ControlCubit.setSessionCatalogue`,
+  which a listener in `app.dart` calls on every session state change. A
+  hidden session is handed over too, marked `onFace: false`.
+- A performance recording that an Open or a New session ends is finalized
+  through `PerformanceRepository.disarmForSessionChange()`. The stage says
+  `Recording saved` and opens no completion sheet over the new session; a
+  take that did not come out whole, or dropped frames, still opens it.
+- An Open and a New session end a Library Listen preview themselves,
+  whoever asked (`SessionCubit._endListen`).
+- The stage notices name the session: `<name> opened`, and `Could not open
+  <name>` with the reason.
+- The mode is `PedalMode.custom` on the pedal link, like the Tuner, so the
+  firmware did not change. It is not stored, so it is never a boot mode.
+- Adding an `InteractionMode` member needs a case in about twenty
+  switches; the analyzer lists them.
+- `bloc lint` finds no files when run inside `.claude/worktrees/`: run it
+  on a copy outside a hidden folder.
+- The design is Penpot page `19 Sessions · New session & recall`
+  (tomassasovsky/segno-design#25, #26 and #27 there).
+- Owed: the console checks (#1918): how long an Open takes, how long the
+  readout's list takes to appear after a press, whether the fill reads from
+  standing height, and the missing end-to-end test of an Open from the
+  face.
 
 ## November 2026 Take starts lighter on the memory bus (#1914 part 2)
 

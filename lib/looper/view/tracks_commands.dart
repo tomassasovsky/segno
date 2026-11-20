@@ -129,6 +129,7 @@ class TracksCommands {
       InteractionMode.tuner => l10n.actionModeTuner,
       InteractionMode.multiply => l10n.actionModeMultiply,
       InteractionMode.divide => l10n.actionModeDivide,
+      InteractionMode.sessions => l10n.actionModeSessions,
     });
   }
 
@@ -223,7 +224,7 @@ class TracksCommands {
         return KeyEventResult.handled;
       }
       // Cmd/Ctrl+S writes back to the open session, or saves a rig that has
-      // none as the next New loop (plan D4).
+      // none as the next New session (plan D4).
       if (key == LogicalKeyboardKey.keyS) {
         unawaited(context.read<SessionCubit>().save());
         return KeyEventResult.handled;
@@ -231,6 +232,14 @@ class TracksCommands {
       return KeyEventResult.ignored; // let OS / menu shortcuts through
     }
 
+    if (mode == InteractionMode.sessions) {
+      // The face goes back to the mode it was entered from, as MODE does.
+      if (key == LogicalKeyboardKey.escape || key == LogicalKeyboardKey.keyM) {
+        overlay.activateFootSessionsPedal(PedalButton.mode);
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
+    }
     if (mode == InteractionMode.mixer ||
         mode == InteractionMode.fade ||
         mode == InteractionMode.reverse ||
@@ -337,6 +346,7 @@ class TracksCommands {
           case InteractionMode.tuner:
           case InteractionMode.multiply:
           case InteractionMode.divide:
+          case InteractionMode.sessions:
             break;
           case InteractionMode.custom:
             // Selection only: what a control does in Custom controls is
@@ -427,17 +437,27 @@ Notice? sessionOutcomeNotice(SessionState state) {
           return confirm((l10n) => l10n.sessionSavedAs(name));
         case SessionOutcome.loaded:
           final conversion = state.conversion;
-          if (conversion == null) return confirm((l10n) => l10n.sessionLoaded);
+          if (conversion == null) {
+            return confirm((l10n) => l10n.sessionOpened(name));
+          }
           return confirm(
             (l10n) => conversion.written
                 ? l10n.sessionLoadedConverted
                 : l10n.sessionLoadedConvertedUnsaved,
             body: (l10n) => sessionConversionDetail(l10n, conversion),
           );
-        // The stage's header names the new loop (19/06); nothing over it,
+        // The stage's header names the new session (19/06); nothing over it,
         // unless a template's track names could not be written (#1513).
         case SessionOutcome.newLoop when state.trackNamesNotSaved:
           return refuse((l10n) => l10n.sessionTrackNamesNotSaved);
+        // A New session asked by foot had no sheet to say the session stays
+        // (19/02), so the stage says it, when a session was saved.
+        case SessionOutcome.newLoop when state.keptSessionName != null:
+          final kept = state.keptSessionName!;
+          return Notice(
+            id: AppNoticeId.session,
+            title: (l10n) => l10n.libraryNewLoopStays(kept),
+          );
         // The catalog outcomes happen in the Library, which shows its own
         // result.
         case SessionOutcome.newLoop:
@@ -448,15 +468,25 @@ Notice? sessionOutcomeNotice(SessionState state) {
         case SessionOutcome.folderCreated:
         case SessionOutcome.folderRenamed:
         case SessionOutcome.folderDeleted:
+        case SessionOutcome.faceListChanged:
         case null:
           return null;
       }
     case SessionStatus.failure:
       final busy = state.refusedBy?.name ?? 'other';
       final details = state.errorMessage ?? '';
+      // An Open's refusal names its session: from the Sessions face the
+      // player cannot see the Library row that refused (#1910).
+      final target = state.sessions
+          .where((summary) => summary.id == state.failedSessionId)
+          .firstOrNull
+          ?.name;
+      String loadFailed(AppLocalizations l10n) => target == null
+          ? l10n.sessionLoadFailed
+          : l10n.sessionOpenFailed(target);
       return switch (state.error) {
         SessionError.sampleRateMismatch => refuse(
-          (l10n) => l10n.sessionLoadFailed,
+          loadFailed,
           body: (l10n) => l10n.sessionLoadSampleRate,
           action: NoticeAction(
             key: const Key(AppNoticeId.sessionOpenSetup),
@@ -465,11 +495,11 @@ Notice? sessionOutcomeNotice(SessionState state) {
           ),
         ),
         SessionError.unsupportedVersion => refuse(
-          (l10n) => l10n.sessionLoadFailed,
+          loadFailed,
           body: (l10n) => l10n.sessionLoadNewer,
         ),
         SessionError.unconvertible => refuse(
-          (l10n) => l10n.sessionLoadFailed,
+          loadFailed,
           body: (l10n) => l10n.sessionLoadUnconvertible,
         ),
         // The boot recovery stands as a must-act message of its own.
@@ -488,8 +518,14 @@ Notice? sessionOutcomeNotice(SessionState state) {
         SessionError.templateDoesNotFit => refuse(
           (l10n) => l10n.sessionTemplateDoesNotFit,
         ),
+        // The new session started all the same, so a foot's New session still
+        // says which session it kept.
         SessionError.newLoopNotSaved => refuse(
           (l10n) => l10n.sessionNewLoopNotSaved(name),
+          body: switch (state.keptSessionName) {
+            final kept? => (l10n) => l10n.libraryNewLoopStays(kept),
+            null => null,
+          },
         ),
         // nameCollision is answered inside the Library's name sheet; here it
         // falls back to the generic error. corruptLayers is a rare
@@ -635,8 +671,12 @@ void onPerformanceRecorderState(
   // A take that stopped on its own (#1767) stopped with nobody there: no
   // dialog waits for them; PerformanceAutoStopNotice tells them when they
   // come back.
+  // A take an Open or a New session ended (#1229, #1910) is not drawn over the
+  // new session either: the stage says it was saved once it is delivered.
+  // One that did not come out whole, or that dropped frames, still opens
+  // the dialog, which is where the player reads what is wrong with it.
   if (state is PerformanceRecorderRendering) {
-    if (!state.stoppedOnItsOwn) {
+    if (!state.stoppedOnItsOwn && !state.endedBySessionChange) {
       unawaited(showPerformanceCompletionSheet(context));
     }
     return;
@@ -644,6 +684,20 @@ void onPerformanceRecorderState(
   if (state is PerformanceRecorderCompleted) {
     if (state.discarded) {
       say((l10n) => l10n.perfDiscarded, tone: NoticeTone.neutral);
+    } else if (state.endedBySessionChange &&
+        state.result is PerformanceRecordDone &&
+        !state.hadGlitch) {
+      context.read<NoticesCubit>().show(
+        Notice(
+          id: AppNoticeId.performance,
+          tone: NoticeTone.success,
+          title: (l10n) => l10n.perfSavedBySessionChange,
+          body: (l10n) => l10n.perfSavedFindInLibrary,
+          // Kept: the session's own notice arrives around the same time
+          // and would otherwise replace it unread.
+          detailed: true,
+        ),
+      );
     } else if (!perfStoppedOnItsOwn(state.result)) {
       unawaited(showPerformanceCompletionSheet(context));
     }

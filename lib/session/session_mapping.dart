@@ -361,7 +361,7 @@ SessionRig rigFromBundle(SessionBundle bundle) => SessionRig(
   outputSetup: outputSetupFromSession(bundle.session.outputSetup),
 );
 
-/// The rig `New loop` applies (plan D9): [live]'s settings and chains with
+/// The rig `New session` applies (plan D9): [live]'s settings and chains with
 /// no tracks, no grid and no crown ([Session.forNewLoop]), mapped by the same
 /// [rigFromBundle] an Open uses, so the two cannot disagree about a setting.
 ///

@@ -1,4 +1,5 @@
 import 'package:meta/meta.dart';
+import 'package:segno_engine/segno_engine.dart';
 
 /// A session's identity: its bundle directory's name under the sessions root
 /// (or under one folder of it). Stable for the bundle's whole life; a rename
@@ -25,6 +26,7 @@ class SessionSummary {
     this.tsNum = 4,
     this.tsDen = 4,
     this.fxCount = 0,
+    this.looperMode,
     this.unreadable = false,
   });
 
@@ -61,6 +63,11 @@ class SessionSummary {
 
   /// Effect entries across every chain stage the manifest carries.
   final int fxCount;
+
+  /// The looper mode the session was saved in, or null when the manifest
+  /// names none this build knows. A session can be a setup with nothing
+  /// recorded, and the mode is part of what a row says about it (#1921).
+  final LooperMode? looperMode;
 
   /// Whether the manifest could not be decoded as JSON at listing time. The
   /// row still lists (by directory name) so the session is never hidden; the

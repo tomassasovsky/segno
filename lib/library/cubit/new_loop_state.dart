@@ -1,8 +1,8 @@
 part of 'new_loop_cubit.dart';
 
-/// What a new loop starts with.
+/// What a new session starts with.
 enum NewLoopStart {
-  /// Empty tracks: today's New loop.
+  /// Empty tracks: today's New session.
   emptyTracks,
 
   /// Ed's setup: tracks 1 to 4 named and each given an Ed's Rack sound.
@@ -45,14 +45,14 @@ class NewLoopState extends Equatable {
   /// Ed's setup, once read.
   final NewLoopTemplate? template;
 
-  /// The template Start new loop applies: Ed's setup when it is chosen and
+  /// The template Start new session applies: Ed's setup when it is chosen and
   /// ready, else none.
   NewLoopTemplate? get chosenTemplate =>
       start == NewLoopStart.edsSetup && eds == EdsSetupStatus.ready
       ? template
       : null;
 
-  /// Whether Start new loop can run.
+  /// Whether Start new session can run.
   bool get canStart =>
       start == NewLoopStart.emptyTracks || chosenTemplate != null;
 

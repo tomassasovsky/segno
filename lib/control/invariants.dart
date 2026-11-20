@@ -179,7 +179,9 @@ final List<ControlInvariant> controlInvariants = [
       InteractionMode.reverse ||
       InteractionMode.peel ||
       InteractionMode.tuner => PedalMode.custom,
-      InteractionMode.multiply || InteractionMode.divide => PedalMode.custom,
+      InteractionMode.multiply ||
+      InteractionMode.divide ||
+      InteractionMode.sessions => PedalMode.custom,
     };
     if (c.frame.mode != want) {
       return 'frame mode ${c.frame.mode} != overlay mode ${c.overlay.mode}';
@@ -269,6 +271,9 @@ final List<ControlInvariant> controlInvariants = [
   // the engine's own progress, and nothing waits on the plate that the
   // engine is not holding.
   ControlInvariant('song-queue-mirrors-engine', (c) {
+    // On the Sessions face the frame's one fill is a hold to open's
+    // ([sessions-fill-is-a-held-switch]); no waiting section is drawn there.
+    if (c.overlay.mode == InteractionMode.sessions) return null;
     final queued = _queuedSong(c);
     const perBank = ControlState.tracksPerBank;
     final base = c.overlay.activeBank * perBank;
@@ -294,6 +299,21 @@ final List<ControlInvariant> controlInvariants = [
     if (button != null && !c.frame.isLit(button)) {
       return 'queued pill $button is dark';
     }
+    return null;
+  }),
+  // The Sessions face's fill is a hold to open (#1921): a held track switch,
+  // lit, so the board has a colour to fill it in.
+  ControlInvariant('sessions-fill-is-a-held-switch', (c) {
+    if (c.overlay.mode != InteractionMode.sessions) return null;
+    final button = c.frame.queuedButton;
+    if (button == null) return null;
+    if (!kTrackSwitches.contains(button)) {
+      return 'sessions fill on ${button.name}, which opens nothing';
+    }
+    if (!c.pressed.contains(button)) {
+      return 'sessions fill on ${button.name}, which is not held';
+    }
+    if (!c.frame.isLit(button)) return 'sessions fill ${button.name} is dark';
     return null;
   }),
   ControlInvariant('muted-dark-in-mute', (c) {

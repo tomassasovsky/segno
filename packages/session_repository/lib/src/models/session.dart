@@ -1340,22 +1340,22 @@ class Session {
   /// Active lane counts, including tracks without recorded audio.
   final Map<int, int> laneCounts;
 
-  /// The session `New loop` starts from this one (plan D9): every recorded
+  /// The session `New session` starts from this one (plan D9): every recorded
   /// thing goes and every setting stays.
   ///
   /// No [tracks], so no lane mix or history; [baseLengthFrames] and
   /// [loopBars] 0, because an empty rig that kept a grid would lock the next
   /// take's length; [primaryTrack] -1, because the crown goes with the
-  /// content; no [name], because the new loop takes its own. Every other
+  /// content; no [name], because the new session takes its own. Every other
   /// field is copied as it is (the recorded tempo and length go with the
   /// takes): tempo, signature, mode, defaults and their
   /// per-track overrides, click, count-in, Fade durations, levels, pans,
   /// lane routing, input and output setup, all four chain stages, the
-  /// pedal remap, and the backing setup and click pan (#1200; New loop only
+  /// pedal remap, and the backing setup and click pan (#1200; New session only
   /// stops the backing, plan D9).
   ///
   /// Each field is named here on purpose, with no copy helper: a field added
-  /// to [Session] later reads its default until its New loop fate is written
+  /// to [Session] later reads its default until its New session fate is written
   /// into this constructor call, and the field-table test fails until it is.
   ///
   /// A loop template (#1513) passes its own [trackChains] and [laneChains]
@@ -1407,7 +1407,7 @@ class Session {
     outputSetup: outputSetup,
     backing: backing,
     clickPan: clickPan,
-    // The recorded pair describes the takes, which New loop drops; Follow
+    // The recorded pair describes the takes, which New session drops; Follow
     // tempo and Pitch are settings and stay.
     defaultFollowTempo: defaultFollowTempo,
     trackFollowTempoOverrides: trackFollowTempoOverrides,

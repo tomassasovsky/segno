@@ -34,8 +34,30 @@ class PerformancePedal extends StatefulWidget {
     this.titleMaxLines = 1,
     this.holdPending = false,
     this.holdThreshold = const Duration(milliseconds: 800),
+    this.holdFillsLed = false,
     super.key,
   });
+
+  /// Whether a pending Hold fills the LED bar above the face from the left,
+  /// as the switch's own LEDs do for that Hold (the Sessions face's Hold to
+  /// open, #1921), in place of the bar under the face.
+  final bool holdFillsLed;
+
+  /// The LED bar's height, at the pedal's top.
+  static const double ledHeight = 12;
+
+  /// The gap between the LED bar and the face.
+  static const double ledGap = 20;
+
+  /// The drawn face's width.
+  static const double faceWidth = 156;
+
+  /// The gap between the face and the caption, which holds the Pending
+  /// Hold bar.
+  static const double captionGap = 16;
+
+  /// The caption's font size.
+  static const double captionSize = 24;
 
   /// Key prefix for the contact target, followed by the button name.
   final String keyPrefix;
@@ -221,19 +243,18 @@ class _PerformancePedalState extends State<PerformancePedal>
                 opacity: widget.enabled ? 1 : surface.disabledOpacity,
                 child: Column(
                   children: [
-                    Container(
-                      width: 112,
-                      height: 12,
-                      decoration: BoxDecoration(
-                        color: widget.selected
-                            ? surface.textPrimary
-                            : surface.controlStrong,
-                        borderRadius: BorderRadius.circular(8),
+                    _LedBar(
+                      lit: widget.selected,
+                      fill: widget.holdFillsLed && widget.holdPending
+                          ? _hold
+                          : null,
+                      fillKey: Key(
+                        '${widget.keyPrefix}_${widget.button.name}_led_fill',
                       ),
                     ),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: PerformancePedal.ledGap),
                     SizedBox(
-                      width: 156,
+                      width: PerformancePedal.faceWidth,
                       child: PedalHardwareFace(
                         label: widget.label,
                         selected: false,
@@ -247,7 +268,7 @@ class _PerformancePedalState extends State<PerformancePedal>
                       key: Key(
                         '${widget.keyPrefix}_${widget.button.name}_hold',
                       ),
-                      pending: widget.holdPending,
+                      pending: widget.holdPending && !widget.holdFillsLed,
                       progress: _hold,
                     ),
                     const SizedBox(height: 8),
@@ -261,7 +282,7 @@ class _PerformancePedalState extends State<PerformancePedal>
                           ? TextAlign.center
                           : null,
                       style: TextStyle(
-                        fontSize: 24,
+                        fontSize: PerformancePedal.captionSize,
                         color: widget.titleMuted ? surface.textMuted : null,
                       ),
                     ),
@@ -313,6 +334,60 @@ class _PerformancePedalState extends State<PerformancePedal>
                     ],
                   ],
                 ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The LED bar above a pedal's face: lit, dark, or filling from the left
+/// with a pending Hold ([fill]). The fill runs physical left to right, as
+/// the pedal's own LEDs do, whatever the text direction.
+class _LedBar extends StatelessWidget {
+  const new({required this.lit, required this.fill, required this.fillKey});
+
+  static const double _width = 112;
+
+  final bool lit;
+
+  /// How far the pending Hold has run, or null when none fills the bar.
+  final Animation<double>? fill;
+  final Key fillKey;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    final fill = this.fill;
+    final color = lit ? surface.textPrimary : surface.controlStrong;
+    if (fill == null) {
+      return Container(
+        width: _width,
+        height: PerformancePedal.ledHeight,
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(8),
+        ),
+      );
+    }
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: SizedBox(
+        width: _width,
+        height: PerformancePedal.ledHeight,
+        child: ColoredBox(
+          color: color,
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: AnimatedBuilder(
+              animation: fill,
+              builder: (context, _) => FractionallySizedBox(
+                key: fillKey,
+                widthFactor: fill.value,
+                heightFactor: 1,
+                child: ColoredBox(color: surface.textPrimary),
               ),
             ),
           ),

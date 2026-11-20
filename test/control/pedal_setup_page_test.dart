@@ -400,6 +400,51 @@ void main() {
   }
 
   group('Custom controls', () {
+    testWidgets('the Sessions tab offers New session and Save session, and one '
+        'is assigned from it (#1910)', (tester) async {
+      await pump(tester);
+      await openCustom(tester);
+      await tester.tap(find.byKey(press));
+      await tester.pumpAndSettle();
+      // The tab strip scrolls sideways, and Sessions is past its edge.
+      final tab = find.byKey(const Key('pedal_choice_group_sessions'));
+      await tester.scrollUntilVisible(
+        tab,
+        300,
+        scrollable: find
+            .descendant(
+              of: find.byKey(const Key('pedal_choice_picker')),
+              matching: find.byWidgetPredicate(
+                (widget) =>
+                    widget is Scrollable &&
+                    widget.axisDirection == AxisDirection.right,
+              ),
+            )
+            .first,
+      );
+      await tester.tap(tab);
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('pedal_choice_command:new-loop')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('pedal_choice_session:save')),
+        findsOneWidget,
+      );
+      expect(find.text('New session'), findsOneWidget);
+      expect(find.text('Save session'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('pedal_choice_session:save')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(save));
+      await tester.pumpAndSettle();
+      expect(
+        control.state.pedalSetup.customFor(PedalButton.track1, bank: 0).press,
+        const CommandAction(ControlCommand.saveSession),
+      );
+    });
+
     testWidgets('assigns a press from the shared catalogue', (tester) async {
       await pump(tester);
       await openCustom(tester);

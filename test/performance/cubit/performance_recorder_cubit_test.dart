@@ -983,6 +983,36 @@ void main() {
       expect(states.any((s) => s is PerformanceRecorderFinalizing), isTrue);
       expect(states.any((s) => s is PerformanceRecorderRendering), isTrue);
       expect(states.last, isA<PerformanceRecorderCompleted>());
+      expect(
+        (states.last as PerformanceRecorderCompleted).endedBySessionChange,
+        isFalse,
+      );
+    });
+
+    test('a take a session change ended is delivered as one, while it renders '
+        'and once it is done (#1229, #1910)', () async {
+      engine.renderStatuses = const [
+        PerformanceRenderTrackStatus(channel: 0, succeeded: true),
+      ];
+      final cubit = build();
+      addTearDown(cubit.close);
+      await armWithLog(performance);
+      await pumpEventQueue();
+      clock = clock.add(const Duration(seconds: 5));
+
+      final states = <PerformanceRecorderState>[];
+      final sub = cubit.stream.listen(states.add);
+
+      await performance.disarmForSessionChange();
+      await waitForCompleted(cubit);
+      await sub.cancel();
+
+      final rendering = states.whereType<PerformanceRecorderRendering>();
+      expect(rendering, isNotEmpty);
+      expect(rendering.every((s) => s.endedBySessionChange), isTrue);
+      final completed = states.last as PerformanceRecorderCompleted;
+      expect(completed.result, isA<PerformanceRecordDone>());
+      expect(completed.endedBySessionChange, isTrue);
     });
   });
 

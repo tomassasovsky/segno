@@ -17,7 +17,10 @@ import 'package:segno/app/application/app_runtime.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/appliance/power_off/power_cubit.dart';
 import 'package:segno/appliance/power_off/power_gate.dart';
+import 'package:segno/control/control.dart';
+import 'package:segno/control/model/foot_sessions.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/looper/model/owned_setting.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno_engine/segno_engine.dart'
@@ -126,6 +129,7 @@ void main() {
     when(() => sessions.bundlePathOf(any())).thenAnswer((_) async => '/test');
     when(sessions.listSessions).thenAnswer((_) async => []);
     when(sessions.newSessionId).thenAnswer((_) async => 'new');
+    when(sessions.stopAudition).thenReturn(EngineResult.ok);
     registerFallbackValue(const SessionChains());
     registerFallbackValue(const SessionSettings());
     when(
@@ -233,6 +237,73 @@ void main() {
     await performance.disarm();
   });
 
+  test('a control assigned Save session or New session reaches the session '
+      'cubit: Save saves, New session starts a new session (#1910)', () async {
+    await runtime.start();
+    when(() => sessions.nextAutomaticName(any()))
+        .thenAnswer((_) async => 'New session 1');
+    await runtime.control.setPedalSetup(
+      const PedalSetup()
+          .withCustom(
+            PedalButton.track1,
+            bank: 0,
+            pair: const ControlGesturePair(
+              press: CommandAction(ControlCommand.saveSession),
+            ),
+          )
+          .withCustom(
+            PedalButton.track2,
+            bank: 0,
+            pair: const ControlGesturePair(
+              press: CommandAction(ControlCommand.newLoop),
+            ),
+          ),
+    );
+    runtime.control.setMode(InteractionMode.custom);
+    await pumpEventQueue();
+
+    // Save, with no open session: the next automatic name is asked for,
+    // and nothing a New session does first happens.
+    runtime.control.activateFootCustomPedal(PedalButton.track1);
+    await pumpEventQueue();
+    verify(() => sessions.nextAutomaticName(any())).called(1);
+    verifyNever(sessions.stopAudition);
+
+    // New session: its first step, ending a Library preview.
+    runtime.control.activateFootCustomPedal(PedalButton.track2);
+    await pumpEventQueue();
+    verify(sessions.stopAudition).called(1);
+  });
+
+  test('the Sessions face reaches the session cubit: entering re-lists the '
+      'catalogue, a tap on a track switch opens nothing, and its Hold opens '
+      'its session (#1910, #1921)', () async {
+    await runtime.start();
+    clearInteractions(sessions);
+    runtime.control
+      ..setSessionCatalogue(
+        const FootSessionCatalogue(
+          sessions: [
+            FootSessionEntry(id: 'a', name: 'A'),
+            FootSessionEntry(id: 'b', name: 'B'),
+          ],
+        ),
+      )
+      ..setMode(InteractionMode.sessions);
+    await pumpEventQueue();
+    verify(sessions.listSessions).called(1);
+
+    // A tap previews: the session layer is not asked for anything.
+    runtime.control.activateFootSessionsPedal(PedalButton.track2);
+    await pumpEventQueue();
+    verifyNever(() => sessions.bundlePathOf(any()));
+
+    runtime.control.activateFootSessionsPedal(PedalButton.track2, hold: true);
+    await pumpEventQueue();
+    // An Open's first step: it reads the target's bundle.
+    verify(() => sessions.bundlePathOf('b')).called(1);
+  });
+
   test('start takes the session baseline, so a fresh rig edited later is '
       'kept on Open', () async {
     await runtime.start();
@@ -245,7 +316,7 @@ void main() {
       ),
     ).thenReturn('edited');
     when(() => sessions.nextAutomaticName(any()))
-        .thenAnswer((_) async => 'New loop 1');
+        .thenAnswer((_) async => 'New session 1');
     when(() => sessions.releaseSessionId(any())).thenAnswer((_) async {});
     when(
       () => sessions.save(
@@ -291,7 +362,7 @@ void main() {
         chains: any(named: 'chains'),
         settings: any(named: 'settings'),
         pedalBindings: any(named: 'pedalBindings'),
-        name: 'New loop 1',
+        name: 'New session 1',
         captureStillValid: any(named: 'captureStillValid'),
       ),
     ).called(1);

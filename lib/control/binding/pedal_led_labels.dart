@@ -56,4 +56,5 @@ String pedalLedModeLabel(AppLocalizations l10n, InteractionMode mode) =>
       InteractionMode.tuner => l10n.actionModeTuner,
       InteractionMode.multiply => l10n.actionModeMultiply,
       InteractionMode.divide => l10n.actionModeDivide,
+      InteractionMode.sessions => l10n.actionModeSessions,
     };

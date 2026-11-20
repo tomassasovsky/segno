@@ -380,6 +380,10 @@ class LibrarySessionRows extends StatelessWidget {
           summary: summary,
           current: summary.id == session.currentSessionId,
           selected: summary.id == library.selectedId,
+          hiddenFromPedal: session.hiddenFromFace.contains(summary.id),
+          onOptions: session.status == SessionStatus.working
+              ? null
+              : () => unawaited(showLibraryRowOptions(context, summary)),
           onTap: () => unawaited(cubit.select(summary.id)),
         );
       },
@@ -388,8 +392,10 @@ class LibrarySessionRows extends StatelessWidget {
 }
 
 /// One saved session's 148-tall row: its name, a meta line (`Current
-/// session`, or the saved date and track count) and the eight-slot track
-/// strip. A tap selects it for the preview; it never opens it.
+/// session`, or the saved date and track count, then `Hidden from pedal`
+/// when the player keeps it off the Sessions pedal function) and the
+/// eight-slot track strip. A tap selects it for the preview; it never opens
+/// it. The three-dot button at its end opens the row's options.
 class LibrarySessionRow extends StatelessWidget {
   /// Creates a [LibrarySessionRow].
   const new({
@@ -397,11 +403,21 @@ class LibrarySessionRow extends StatelessWidget {
     required this.current,
     required this.selected,
     required this.onTap,
+    this.hiddenFromPedal = false,
+    this.onOptions,
     super.key,
   });
 
   /// The catalog entry.
   final SessionSummary summary;
+
+  /// Whether the player keeps it off the Sessions pedal function's list
+  /// (#1921).
+  final bool hiddenFromPedal;
+
+  /// Opens the row's options (the three-dot button), or null while they
+  /// cannot be opened.
+  final VoidCallback? onOptions;
 
   /// Whether it is the session open on the stage.
   final bool current;
@@ -418,11 +434,14 @@ class LibrarySessionRow extends StatelessWidget {
     final l10n = context.l10n;
     final tracks = l10n.libraryTrackCount(summary.trackCount);
     final date = savedDateLabel(context, summary.modifiedAt);
-    final meta = current
+    final facts = current
         ? l10n.libraryCurrentSession
         : date.isEmpty
         ? tracks
         : l10n.librarySessionMeta(date, tracks);
+    final meta = hiddenFromPedal
+        ? '$facts · ${l10n.libraryHiddenFromPedal}'
+        : facts;
     return Semantics(
       button: true,
       selected: selected,
@@ -439,46 +458,69 @@ class LibrarySessionRow extends StatelessWidget {
             ),
           ),
           clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            canRequestFocus: false,
-            onTap: onTap,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(25, 25, 25, 0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SizedBox(
-                    height: 34,
-                    child: AppText(
-                      summary.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: surface.textPrimary,
-                        fontSize: 28,
-                        height: 1.2,
-                      ),
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: InkWell(
+                  canRequestFocus: false,
+                  onTap: onTap,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(25, 25, 25, 0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SizedBox(
+                          height: 34,
+                          // The three-dot button sits over the row's end.
+                          child: Padding(
+                            padding: const EdgeInsetsDirectional.only(end: 48),
+                            child: AppText(
+                              summary.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: surface.textPrimary,
+                                fontSize: 28,
+                                height: 1.2,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          height: 23,
+                          child: AppText(
+                            meta,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: surface.textSecondary,
+                              fontSize: 20,
+                              height: 1.15,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        LibraryTrackStrip(channels: summary.populatedChannels),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    height: 23,
-                    child: AppText(
-                      meta,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: surface.textSecondary,
-                        fontSize: 20,
-                        height: 1.15,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  LibraryTrackStrip(channels: summary.populatedChannels),
-                ],
+                ),
               ),
-            ),
+              PositionedDirectional(
+                top: 12,
+                end: 12,
+                child: LoopOutlinedButton(
+                  key: Key('library_row_options_${summary.id}'),
+                  width: 56,
+                  height: 56,
+                  icon: LucideIcons.ellipsis,
+                  borderColor: Colors.transparent,
+                  semanticLabel: l10n.libraryRowOptions(summary.name),
+                  onTap: onOptions,
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -491,7 +533,7 @@ enum LibraryTrackStripSize {
   /// A session row's strip (19/01): 340 x 13.
   row(width: 340, height: 13, slotWidth: 37),
 
-  /// The New loop sheet's before and after strips (19/02): 346 x 36.
+  /// The New session sheet's before and after strips (19/02): 346 x 36.
   sheet(width: 346, height: 36, slotWidth: 38);
 
   new({required this.width, required this.height, required this.slotWidth});
