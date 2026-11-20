@@ -779,6 +779,20 @@ static void test_prefaulter_paces_and_follows_first(void) {
   rt_run_paced(&a, 3 * sec_blocks, 0.25f, rate); /* the real thread only */
   CHECK(rt_resident_pages(fill, chunk) == rt_pages(fill, chunk)); /* after */
   CHECK(le_engine_record(e, 1) == LE_OK);
+  /* A fresh take on track 2 moves its follow job's target every pass; once
+   * the job is half its lead ahead, a fill (a spare's, here) still runs. */
+  CHECK(le_engine_record(e, 2) == LE_OK);
+  const size_t spare_bytes = (size_t)rate * 4 * sizeof(float);
+  float* spare = (float*)le_rt_alloc(spare_bytes);
+  CHECK(spare != NULL);
+  _Atomic int32_t spare_ready = 0;
+  le_prefault_buffer(e, spare, (int32_t)(spare_bytes / sizeof(float)),
+                     &spare_ready);
+  rt_run_paced(&a, 2 * sec_blocks, 0.25f, rate); /* recording all along */
+  CHECK(atomic_load(&spare_ready) == 1);
+  CHECK(le_engine_record(e, 2) == LE_OK);
+  le_prefault_forget(e, spare);
+  le_rt_free(spare);
   rt_run(&a, sec_blocks, 0.0f);
   rt_audio_stop(&a);
   printf("  %ld blocks: %ld faults on the audio thread (worst block %ld)\n",

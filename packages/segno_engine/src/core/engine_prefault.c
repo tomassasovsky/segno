@@ -38,9 +38,10 @@
  * memory bus from the audio threads: a take's start (its follow jobs from
  * one second ahead to four) and a spare's fill (up to a whole 60 s cap)
  * made the callback's effects miss the cache for milliseconds. A take's
- * follow jobs go first and at least LE_PREFAULT_FOLLOW_SPEED times their
- * write heads' speed, so their lead still only grows; the rest waits for
- * them. */
+ * follow job less than half its lead (LE_PREFAULT_AHEAD_SECONDS) ahead of
+ * its write head goes first, at LE_PREFAULT_FOLLOW_SPEED times its write
+ * head's speed or more, and the rest waits for it; further ahead, it shares
+ * the passes with the rest. */
 #define LE_PREFAULT_BYTES_PER_S (64LL << 20)
 #define LE_PREFAULT_FOLLOW_SPEED 8
 /* A pass whose share of the rate is shorter than this does not wait. */
@@ -121,11 +122,15 @@ static int64_t le_prefault_now_ns(void) {
  * forgotten meanwhile is never touched again (le_prefault_forget). Returns 1
  * when some job still has work.
  *
- * Paced (the thread), a pass in which a follow job still has work runs the
- * follow jobs only, and [wait_ns] is how long its chunks take at the
- * thread's rate (LE_PREFAULT_BYTES_PER_S; more with many follow jobs, so
- * each still goes LE_PREFAULT_FOLLOW_SPEED times its write head). Unpaced
- * (le_prefault_tick), every job takes a chunk and [wait_ns] may be NULL. */
+ * Paced (the thread), a pass in which a follow job is less than half its
+ * lead ahead of its write head runs the follow jobs only, and [wait_ns] is
+ * how long the pass's chunks take at the thread's rate
+ * (LE_PREFAULT_BYTES_PER_S; more with many such jobs, so each still goes
+ * LE_PREFAULT_FOLLOW_SPEED times its write head). A follow job further
+ * ahead holds nothing back: a recording take's target moves every pass,
+ * and another take's fill may lie where that take's write head will be.
+ * Unpaced (le_prefault_tick), every job takes a chunk and [wait_ns] may be
+ * NULL. */
 static int le_prefault_pass_paced(le_engine* e, struct le_prefaulter* p,
                                   int paced, int64_t* wait_ns) {
   le_prefault_work work[LE_PREFAULT_JOBS];
@@ -133,20 +138,24 @@ static int le_prefault_pass_paced(le_engine* e, struct le_prefaulter* p,
   int more = 0;
   const int32_t max = (int32_t)(LE_PREFAULT_CHUNK_BYTES / sizeof(float));
   const int64_t now = le_prefault_now_ns();
+  const int64_t rate_hz = e->sample_rate > 0 ? e->sample_rate : 48000;
+  /* A follow job this far short of its target is under half its lead. */
+  const int64_t urgent =
+      rate_hz * (LE_PREFAULT_AHEAD_SECONDS - LE_PREFAULT_AHEAD_SECONDS / 2);
+  int32_t targets[LE_PREFAULT_JOBS];
   int follow_behind = 0;
-  if (paced) {
-    for (int i = 0; i < p->njobs; ++i) {
-      const le_prefault_job* j = &p->jobs[i];
-      if (j->channel >= 0 && le_follow_target(e, j) > j->done) {
-        ++follow_behind;
-      }
+  for (int i = 0; i < p->njobs; ++i) {
+    const le_prefault_job* j = &p->jobs[i];
+    targets[i] = j->channel >= 0 ? le_follow_target(e, j) : j->cap;
+    if (paced && j->channel >= 0 &&
+        (int64_t)targets[i] - j->done > urgent) {
+      ++follow_behind;
     }
   }
   for (int i = 0; i < p->njobs; ++i) {
     le_prefault_job* j = &p->jobs[i];
-    int32_t target = j->cap;
+    const int32_t target = targets[i];
     if (j->channel >= 0) {
-      target = le_follow_target(e, j);
       if (le_track_capturing(&e->tracks[j->channel])) {
         j->idle_since = 0;
       } else if (j->idle_since == 0) {
@@ -165,22 +174,10 @@ static int le_prefault_pass_paced(le_engine* e, struct le_prefaulter* p,
     }
     work[nwork++] = (le_prefault_work){j->id, j->buf, j->done, frames};
   }
-  if (wait_ns != NULL) {
-    int64_t bytes = 0;
-    for (int k = 0; k < nwork; ++k) {
-      bytes += (int64_t)work[k].frames * (int64_t)sizeof(float);
-    }
-    const int64_t rate_hz = e->sample_rate > 0 ? e->sample_rate : 48000;
-    const int64_t follow_rate = (int64_t)follow_behind * rate_hz *
-                                (int64_t)sizeof(float) *
-                                LE_PREFAULT_FOLLOW_SPEED;
-    const int64_t rate = follow_rate > LE_PREFAULT_BYTES_PER_S
-                             ? follow_rate
-                             : LE_PREFAULT_BYTES_PER_S;
-    *wait_ns = bytes * 1000000000LL / rate;
-  }
+  int64_t bytes = 0; /* what this pass faulted in */
   for (int k = 0; k < nwork; ++k) {
     if (le_prefault_find(p, work[k].id) == NULL) continue; /* forgotten */
+    bytes += (int64_t)work[k].frames * (int64_t)sizeof(float);
     p->busy_buf = work[k].buf;
     pthread_mutex_unlock(&p->mu);
     le_rt_prefault(work[k].buf + work[k].from,
@@ -190,6 +187,15 @@ static int le_prefault_pass_paced(le_engine* e, struct le_prefaulter* p,
     pthread_cond_broadcast(&p->idle_cv);
     le_prefault_job* j = le_prefault_find(p, work[k].id);
     if (j != NULL && j->done == work[k].from) j->done += work[k].frames;
+  }
+  if (wait_ns != NULL) {
+    const int64_t follow_rate = (int64_t)follow_behind * rate_hz *
+                                (int64_t)sizeof(float) *
+                                LE_PREFAULT_FOLLOW_SPEED;
+    const int64_t rate = follow_rate > LE_PREFAULT_BYTES_PER_S
+                             ? follow_rate
+                             : LE_PREFAULT_BYTES_PER_S;
+    *wait_ns = bytes * 1000000000LL / rate;
   }
   for (int i = 0; i < p->njobs;) {
     le_prefault_job* j = &p->jobs[i];
