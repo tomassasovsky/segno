@@ -258,6 +258,7 @@ void main() {
   setUp(() async {
     liveFingerprint = 'fp';
     repository = _MockSessionRepository();
+    when(repository.stopAudition).thenReturn(EngineResult.ok);
     when(repository.newSessionId).thenAnswer((_) async => 'new');
     when(repository.listFolders).thenAnswer((_) async => const []);
     when(
@@ -2055,6 +2056,49 @@ void main() {
 
         expect(cubit.state.outcome, SessionOutcome.newLoop);
         expect(cubit.state.keptSessionName, isNull);
+      });
+
+      test('ends a Library Listen preview before anything else, whoever '
+          'asked (#1910)', () async {
+        stubNewLoop();
+        final cubit = build();
+        addTearDown(cubit.close);
+        await cubit.recordBaseline();
+
+        await cubit.newLoop(announceKept: true);
+
+        verifyInOrder([
+          repository.stopAudition,
+          () => looper.applySession(any()),
+        ]);
+      });
+
+      test('asked to announce it, a new loop that started but could not be '
+          'saved still carries the name it kept (#1910)', () async {
+        stubNewLoop();
+        final cubit = build();
+        addTearDown(cubit.close);
+        cubit.emit(
+          const SessionState(currentSessionId: 'A', currentSessionName: 'A'),
+        );
+        await cubit.save();
+        liveFingerprint = 'an overdub';
+        when(
+          () => repository.save(
+            '/root/new',
+            chains: any(named: 'chains'),
+            settings: any(named: 'settings'),
+            pedalBindings: any(named: 'pedalBindings'),
+            name: any(named: 'name'),
+            captureStillValid: any(named: 'captureStillValid'),
+          ),
+        ).thenThrow(const FileSystemException('disk full'));
+
+        await cubit.newLoop(announceKept: true);
+
+        expect(cubit.state.error, SessionError.newLoopNotSaved);
+        expect(cubit.state.currentSessionName, 'New loop 3');
+        expect(cubit.state.keptSessionName, 'A');
       });
 
       test('not asked, as from the Library sheet, the outcome carries no '

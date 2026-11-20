@@ -496,8 +496,14 @@ Notice? sessionOutcomeNotice(SessionState state) {
         SessionError.templateDoesNotFit => refuse(
           (l10n) => l10n.sessionTemplateDoesNotFit,
         ),
+        // The new loop started all the same, so a foot's New loop still
+        // says which session it kept.
         SessionError.newLoopNotSaved => refuse(
           (l10n) => l10n.sessionNewLoopNotSaved(name),
+          body: switch (state.keptSessionName) {
+            final kept? => (l10n) => l10n.libraryNewLoopStays(kept),
+            null => null,
+          },
         ),
         // nameCollision is answered inside the Library's name sheet; here it
         // falls back to the generic error. corruptLayers is a rare

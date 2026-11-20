@@ -186,8 +186,10 @@ class SessionState extends Equatable {
 
   /// The name the outgoing session was saved under by a New loop that was
   /// asked to announce it (one asked by foot), or null: the Library's New
-  /// loop said so on its sheet, and an unchanged session was not saved. A
-  /// per-transition result, like [conversion].
+  /// loop said so on its sheet, and an unchanged session was not saved. Set
+  /// on the New loop's outcome, and on [SessionError.newLoopNotSaved], where
+  /// the new loop started all the same. A per-transition result, like
+  /// [conversion].
   final String? keptSessionName;
 
   /// How many actions have failed so far. Durable: a later emit that only

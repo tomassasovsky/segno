@@ -17,7 +17,9 @@ import 'package:segno/app/application/app_runtime.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/appliance/power_off/power_cubit.dart';
 import 'package:segno/appliance/power_off/power_gate.dart';
+import 'package:segno/control/control.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/looper/model/owned_setting.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno_engine/segno_engine.dart'
@@ -126,6 +128,7 @@ void main() {
     when(() => sessions.bundlePathOf(any())).thenAnswer((_) async => '/test');
     when(sessions.listSessions).thenAnswer((_) async => []);
     when(sessions.newSessionId).thenAnswer((_) async => 'new');
+    when(sessions.stopAudition).thenReturn(EngineResult.ok);
     registerFallbackValue(const SessionChains());
     registerFallbackValue(const SessionSettings());
     when(
@@ -231,6 +234,44 @@ void main() {
     // Input names come from `runtime.inputs` the same way; they key off an
     // open device this harness never reports (performance_names_test).
     await performance.disarm();
+  });
+
+  test('a control assigned Save session or New loop reaches the session '
+      'cubit: Save saves, New loop starts a new loop (#1910)', () async {
+    await runtime.start();
+    when(() => sessions.nextAutomaticName(any()))
+        .thenAnswer((_) async => 'New loop 1');
+    await runtime.control.setPedalSetup(
+      const PedalSetup()
+          .withCustom(
+            PedalButton.track1,
+            bank: 0,
+            pair: const ControlGesturePair(
+              press: CommandAction(ControlCommand.saveSession),
+            ),
+          )
+          .withCustom(
+            PedalButton.track2,
+            bank: 0,
+            pair: const ControlGesturePair(
+              press: CommandAction(ControlCommand.newLoop),
+            ),
+          ),
+    );
+    runtime.control.setMode(InteractionMode.custom);
+    await pumpEventQueue();
+
+    // Save, with no open session: the next automatic name is asked for,
+    // and nothing a New loop does first happens.
+    runtime.control.activateFootCustomPedal(PedalButton.track1);
+    await pumpEventQueue();
+    verify(() => sessions.nextAutomaticName(any())).called(1);
+    verifyNever(sessions.stopAudition);
+
+    // New loop: its first step, ending a Library preview.
+    runtime.control.activateFootCustomPedal(PedalButton.track2);
+    await pumpEventQueue();
+    verify(sessions.stopAudition).called(1);
   });
 
   test('start takes the session baseline, so a fresh rig edited later is '

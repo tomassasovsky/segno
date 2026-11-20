@@ -197,6 +197,25 @@ void main() {
     );
   });
 
+  test('a new loop asked by foot that could not be saved still says which '
+      'session it kept (#1910)', () {
+    expect(
+      said(
+        const SessionState(
+          status: SessionStatus.failure,
+          error: SessionError.newLoopNotSaved,
+          currentSessionName: 'New loop 2',
+          keptSessionName: 'Evening loop',
+        ),
+      ),
+      (
+        title: l10n.sessionNewLoopNotSaved('New loop 2'),
+        body: 'Evening loop stays in your Library.',
+        tone: NoticeTone.warning,
+      ),
+    );
+  });
+
   test('a new loop, a boot recovery and the Library catalog say nothing '
       'here', () {
     expect(

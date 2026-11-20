@@ -369,6 +369,12 @@ class SessionCubit extends Cubit<SessionState> {
     return saved.slug;
   }
 
+  /// Ends a Library Listen preview before an Open or a New loop changes
+  /// the rig (plan D10), whoever asked: the Library's buttons stop it
+  /// themselves, and a control assigned New loop has no Library to do it
+  /// (#1910). The Library sees its preview has ended on its next poll.
+  void _endListen() => _repository.stopAudition();
+
   /// Ends every take in progress before an Open or New loop saves the
   /// outgoing rig, as the record control's Stop would (plan D8: the dialog
   /// promises the loop stays), and waits until none is capturing, so the
@@ -503,6 +509,7 @@ class SessionCubit extends Cubit<SessionState> {
           path,
           liveSettings: _captureSettings.current,
         );
+        _endListen();
         await _endCaptures();
         await _preserveOutgoing();
         // The header shows the manifest's name; a bundle saved before names
@@ -574,6 +581,7 @@ class SessionCubit extends Cubit<SessionState> {
     var applied = false;
     try {
       return await _captureSettings.runExclusive(() async {
+        _endListen();
         await _endCaptures();
         final kept = await _preserveOutgoing();
         // Checked before anything on the live rig changes, on the chains
@@ -637,7 +645,11 @@ class SessionCubit extends Cubit<SessionState> {
           // Not a failed save of the outgoing loop, which is safe: the new
           // loop is started and named, and only its empty bundle is
           // missing. The first Save writes it.
-          throw _SessionRefusal(SessionError.newLoopNotSaved, error);
+          throw _SessionRefusal(
+            SessionError.newLoopNotSaved,
+            error,
+            announceKept ? kept : null,
+          );
         }
         return _ActionResult(
           SessionOutcome.newLoop,
@@ -1126,6 +1138,7 @@ class SessionCubit extends Cubit<SessionState> {
           failureCount: state.failureCount + 1,
           error: refusal.error,
           errorMessage: '${refusal.cause ?? refusal.error.name}',
+          keptSessionName: refusal.keptSessionName,
         ),
       );
     } on _SessionBootException catch (error) {
@@ -1203,10 +1216,14 @@ class SessionCubit extends Cubit<SessionState> {
 /// A refusal the cubit itself decides ([SessionError.currentSessionProtected])
 /// or classifies ([SessionError.saveFailed], with the write's own [cause]).
 class _SessionRefusal implements Exception {
-  const new(this.error, [this.cause]);
+  const new(this.error, [this.cause, this.keptSessionName]);
 
   final SessionError error;
   final Object? cause;
+
+  /// For [SessionError.newLoopNotSaved]: the name the outgoing session was
+  /// saved under, when the New loop was asked to announce it.
+  final String? keptSessionName;
 }
 
 class _SessionBootException implements Exception {
