@@ -492,6 +492,11 @@ Acceptance:
 
 ### Part 3: the contract, and closing the issue
 
+As built, the work this issue leaves owed has issues of its own, as #1654
+did: #1917 for the Penpot writeback of every part and the design
+catalogue in segno-design, and #1918 for the console checks and the
+missing end-to-end test of an Open from the face.
+
 - `docs/handoff/segno-app/accepted-behavior.md`: §4.5 gains a Sessions row
   in the function table, and §6.1 says that by foot the face's card is the
   confirmation of an interruption.

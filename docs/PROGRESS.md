@@ -60,9 +60,53 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1498 | Restart and shut down also wait for RAUC's own install, after an app restart | in-review | blocked-verify | `claude/rauc-power-gate-1498` |
 | #1755 | Every effect cheaper without changing its sound: pitch (#1764, #1770), drives (#1759), reverbs/delays/filters (#1762) and the Vinyl (#1904, part 4) bit-identical; part 5, the Degrade at 96 kHz, is next (scope on the issue) | build | auto | `claude/fx-opt-part5-1755` |
 | #1724 | Effects budget from the console's measured headroom: the track-job charge re-measured without the sampling script's perturbation (500 to 200 ns a frame); Ed's Racks on all four inputs and all eight tracks now fit at 48 kHz / 32 | in-review | auto | `claude/fx-headroom-1724-p2` |
-| #1910 | Sessions by foot: a Sessions face where the four track switches open the four sessions shown above them (the owner's choice over previous and next, decisions answered 2026-11-19). In review: Part 1a (a recording a session change ends says it was saved), Part 1b (New loop, from #1229 Part 7, and Save session as assignable commands), Part 2a (the face) and Part 2b (folders on a held Bank, what an Open ends on each card, a failed Open, card taps, the readout's page). Part 3 (the accepted-behaviour text and closing) is next. The Penpot writeback for pages 08, 10, 19, 20 and 25 and the design catalogue are owed | build | plan-gate | `claude/foot-sessions-1910-p*` |
+| #1917 | Penpot writeback for the Sessions face and the session commands (#1910): pages 08, 10, 19, 20, 24, 25 and 26, and `pedal-action-catalogue.js` in segno-design. Owed: not written while other sessions held the one Penpot tab | build | merge-gate | none |
 | #1515 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track and lane chains) is #1729 | build | plan-gate | `claude/fx-multicore-1515-p1b` |
 | #1816 | Console WiFi against an ASUS RT-AX89X with 802.11ax on: firmware already matches Pi OS; brcmfmac options aligned with Pi OS and a troubleshooting note; failure not reproduced, issue stays open until it recurs | in-review | auto | `claude/wifi-firmware-1816` |
+
+---
+
+## November 2026 Sessions by foot (#1910)
+
+- **Sessions** is a performance function (`InteractionMode.sessions`,
+  `mode:sessions`), assignable to a Custom switch, an external pedal or a
+  MIDI control. On its face the four track switches open the four sessions
+  drawn above them; Bank shows the next four and, held, the next folder;
+  Undo saves; a held Clear starts a new loop; Rec/Play and Stop keep the
+  transport; MODE goes back to the mode it was entered from. The owner
+  chose it over `Load previous session` and `Load next session`, which are
+  not built (plan `docs/plan/2026-11-19-feat-foot-session-actions-plan.md`,
+  Owner direction and decisions D1 to D6).
+- Sessions are in name order inside one folder, ignoring case, with digits
+  compared as numbers (`compareSessionNames`,
+  `lib/control/model/foot_sessions.dart`). The Library still lists newest
+  first: that order moves each time an Open saves the session it leaves.
+- Each card says what opening it would end (`Stops playback`, `Ends the
+  take`, `Ends the recording`). There is no second press. A failed Open
+  keeps the face, marks its card and is named in the stage notice.
+- `New loop` (`command:new-loop`, #1229 Part 7) and `Save session`
+  (`session:save`) are commands in the Sessions group of the catalogue.
+- `ControlCubit` owns the face and never reads `SessionCubit`. Four
+  injected functions reach the session layer (`startNewLoop`,
+  `saveSession`, `openSession`, `refreshSessions`, wired in `AppRuntime`),
+  and the catalogue comes back through `ControlCubit.setSessionCatalogue`,
+  which a listener in `app.dart` calls on every session state change.
+- A performance recording that an Open or a New loop ends is finalized
+  through `PerformanceRepository.disarmForSessionChange()`. The stage says
+  `Recording saved` and opens no completion sheet over the new session; a
+  take that did not come out whole, or dropped frames, still opens it.
+- An Open and a New loop end a Library Listen preview themselves, whoever
+  asked (`SessionCubit._endListen`).
+- The stage notices name the session: `<name> opened`, and `Could not open
+  <name>` with the reason.
+- The mode is `PedalMode.custom` on the pedal link, like the Tuner, so the
+  firmware did not change. It is not stored, so it is never a boot mode.
+- Adding an `InteractionMode` member needs a case in about twenty
+  switches; the analyzer lists them.
+- `bloc lint` finds no files when run inside `.claude/worktrees/`: run it
+  on a copy outside a hidden folder.
+- Owed: the Penpot writeback (#1917) and the console checks (#1918), which
+  also records the missing end-to-end test of an Open from the face.
 
 ---
 
