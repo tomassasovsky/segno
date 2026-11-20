@@ -41,15 +41,16 @@ void main() {
     );
   });
 
-  test('a loaded session is a confirmation', () {
+  test('an opened session is a confirmation that names it (#1910)', () {
     expect(
       said(
         const SessionState(
           status: SessionStatus.success,
           outcome: SessionOutcome.loaded,
+          currentSessionName: 'Evening loop',
         ),
       )?.title,
-      l10n.sessionLoaded,
+      'Evening loop opened',
     );
   });
 

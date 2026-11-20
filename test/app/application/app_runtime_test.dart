@@ -18,6 +18,7 @@ import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/appliance/power_off/power_cubit.dart';
 import 'package:segno/appliance/power_off/power_gate.dart';
 import 'package:segno/control/control.dart';
+import 'package:segno/control/model/foot_sessions.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/looper/model/owned_setting.dart';
@@ -272,6 +273,29 @@ void main() {
     runtime.control.activateFootCustomPedal(PedalButton.track2);
     await pumpEventQueue();
     verify(sessions.stopAudition).called(1);
+  });
+
+  test('the Sessions face reaches the session cubit: entering re-lists the '
+      'catalogue, and a track switch opens its session (#1910)', () async {
+    await runtime.start();
+    clearInteractions(sessions);
+    runtime.control
+      ..setSessionCatalogue(
+        const FootSessionCatalogue(
+          sessions: [
+            FootSessionEntry(id: 'a', name: 'A'),
+            FootSessionEntry(id: 'b', name: 'B'),
+          ],
+        ),
+      )
+      ..setMode(InteractionMode.sessions);
+    await pumpEventQueue();
+    verify(sessions.listSessions).called(1);
+
+    runtime.control.activateFootSessionsPedal(PedalButton.track2);
+    await pumpEventQueue();
+    // An Open's first step: it reads the target's bundle.
+    verify(() => sessions.bundlePathOf('b')).called(1);
   });
 
   test('start takes the session baseline, so a fresh rig edited later is '

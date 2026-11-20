@@ -112,7 +112,15 @@
     "sessionMenuTooltip": "Session",
     "a11ySessionMenu": "Session menu",
     "sessionSaved": "Session saved",
-    "sessionLoaded": "Session loaded",
+    "sessionOpened": "{name} opened",
+    "@sessionOpened": {
+        "description": "Stage notice when a session has opened, from the Library or the Sessions face: it names the session, since by foot the name is the confirmation that the right one opened.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
     "sessionLoadedConverted": "Session converted from an older Segno",
     "sessionLoadedConvertedUnsaved": "Session converted for now",
     "sessionConvertedKept": "The original was kept beside it.",
@@ -6948,6 +6956,79 @@
     "actionModeTuner": "Tuner",
     "@actionModeTuner": {
         "description": "Foot Tuner: the mode's name, in pickers and on its face (#1229)."
+    },
+    "actionModeSessions": "Sessions",
+    "@actionModeSessions": {
+        "description": "Sessions face (#1910): the mode's name, in pickers and on its face. The four track switches open the four sessions drawn above them."
+    },
+    "footSessionsPage": "Page {page} of {pages} · {count, plural, =1{1 session} other{{count} sessions}}",
+    "@footSessionsPage": {
+        "description": "Sessions face: which page of four sessions is in view, and how many sessions there are.",
+        "placeholders": {
+            "page": {
+                "type": "int"
+            },
+            "pages": {
+                "type": "int"
+            },
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "footSessionsNone": "No sessions yet. Save or start a new loop.",
+    "@footSessionsNone": {
+        "description": "Sessions face with no saved session: Undo saves and a held Clear starts a new loop."
+    },
+    "footSessionsOpenNow": "Open now",
+    "@footSessionsOpenNow": {
+        "description": "Sessions face: the card of the session that is open."
+    },
+    "footSessionsOpening": "Opening…",
+    "@footSessionsOpening": {
+        "description": "Sessions face: the card of the session an Open was asked for, until it has opened."
+    },
+    "footSessionsTracks": "{count, plural, =0{No tracks} =1{1 track} other{{count} tracks}}",
+    "@footSessionsTracks": {
+        "description": "Sessions face: how many recorded tracks a session's card shows.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "footSessionsTempo": "{bpm} BPM",
+    "@footSessionsTempo": {
+        "description": "Sessions face: a session's tempo on its card, after the track count.",
+        "placeholders": {
+            "bpm": {
+                "type": "String"
+            }
+        }
+    },
+    "footSessionsOpen": "Open",
+    "@footSessionsOpen": {
+        "description": "Sessions face: the caption of a track switch with a session above it."
+    },
+    "footSessionsSave": "Save",
+    "@footSessionsSave": {
+        "description": "Sessions face: the caption of Undo, which saves the session."
+    },
+    "footSessionsNextPage": "Next page",
+    "@footSessionsNextPage": {
+        "description": "Sessions face: the caption of Bank, which shows the next four sessions."
+    },
+    "footSessionsPageOf": "{page} / {pages}",
+    "@footSessionsPageOf": {
+        "description": "Sessions face: the page in view under Bank's caption.",
+        "placeholders": {
+            "page": {
+                "type": "int"
+            },
+            "pages": {
+                "type": "int"
+            }
+        }
     },
     "footTunerReference": "A4 reference",
     "@footTunerReference": {

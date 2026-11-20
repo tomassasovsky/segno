@@ -22,6 +22,7 @@ import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/control/model/foot_mixer.dart';
+import 'package:segno/control/model/foot_sessions.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/application/fade_settings.dart';
 import 'package:segno/looper/looper.dart';
@@ -591,6 +592,73 @@ void main() {
       await expectLater(
         find.byType(TracksView),
         matchesGoldenFile('goldens/foot_peel_$scene.png'),
+      );
+    }, skip: !rendersScreenshots);
+  }
+
+  // The Sessions face (#1910): four sessions over the four track switches.
+  // `page`: the second page, with two empty positions. `opening`: an Open
+  // asked from the face and not settled. `none`: no saved session.
+  for (final scene in ['default', 'page', 'opening', 'none', 'spanish']) {
+    testWidgets('Sessions face: $scene', (tester) async {
+      seed(
+        const LooperState(
+          status: EngineStatus(
+            isConnected: true,
+            devicePresent: true,
+            deviceName: 'Segno',
+            inputChannels: 2,
+            outputChannels: 2,
+          ),
+          tracks: [
+            Track(state: TrackState.playing, lengthFrames: 48000),
+            Track(channel: 1, state: TrackState.stopped, lengthFrames: 48000),
+            Track(channel: 2),
+            Track(channel: 3),
+          ],
+        ),
+      );
+      const sessions = [
+        FootSessionEntry(id: 'a', name: 'Intro', trackCount: 2, tempoBpm: 84),
+        FootSessionEntry(
+          id: 'b',
+          name: 'Evening loop',
+          trackCount: 3,
+          tempoBpm: 84,
+        ),
+        FootSessionEntry(
+          id: 'c',
+          name: 'Slow one',
+          trackCount: 2,
+          tempoBpm: 72,
+        ),
+        FootSessionEntry(id: 'd', name: 'Stomp', trackCount: 4, tempoBpm: 120),
+        FootSessionEntry(id: 'e', name: 'Encore', trackCount: 3, tempoBpm: 96),
+        FootSessionEntry(id: 'f', name: 'Outro', trackCount: 1),
+      ];
+      control
+        ..setSessionCatalogue(
+          FootSessionCatalogue(
+            sessions: scene == 'none' ? const [] : sessions,
+            // Name order: Encore, Evening loop, Intro, Outro, Slow one, Stomp.
+            openId: scene == 'none' ? null : 'a',
+          ),
+        )
+        ..setMode(InteractionMode.sessions);
+      if (scene == 'page') {
+        control.activateFootSessionsPedal(PedalButton.bank);
+      }
+      if (scene == 'opening') {
+        control.activateFootSessionsPedal(PedalButton.track1);
+      }
+      await pump(
+        tester,
+        locale: scene == 'spanish' ? const Locale('es') : null,
+      );
+      expect(tester.takeException(), isNull);
+      await expectLater(
+        find.byType(TracksView),
+        matchesGoldenFile('goldens/foot_sessions_$scene.png'),
       );
     }, skip: !rendersScreenshots);
   }

@@ -401,11 +401,19 @@ mode they came from.
   and the four cards.
 - The cubit part: `lib/control/cubit/control_foot_sessions.dart`. Entering
   and leaving, the presses and Clear's Hold, the injected `openSession`
-  and `refreshSessions`, and the mode the face returns to.
+  and `refreshSessions`, and the mode the face returns to. As built, it
+  returns to Tracks, Mute or Custom when entered from one of them, and to
+  Tracks from any other mode: coming back must not run a mode's entry work,
+  and entering FX cancels arms and ends takes.
+- An Open asked from the face settles when the catalogue comes back: the
+  face closes when its session is the open one, and gives its switches
+  back when the session layer's failure count has gone up.
 - The catalogue into `ControlState`: `lib/control/cubit/control_state.dart`
   and the listener in `lib/app/view/app.dart`.
 - The view: `lib/looper/view/foot_sessions_view.dart`, with
-  `FootPedalRows` and `FootTopBar`.
+  `FootPedalRows` and `FootTopBar`. The drawn pedals take screen contacts
+  here already, because the shared pedal widget needs them; Part 2b adds
+  taps on the cards.
 - The LED map for the mode, and its entry on Pedals > LED colors.
 - `<name> opened` in place of `Session loaded`, in `sessionOutcomeNotice`
   (`lib/looper/view/tracks_commands.dart`), and the captions, in English
@@ -451,7 +459,7 @@ Acceptance:
   recording`, from the looper's and the recorder's state.
 - A failed Open keeps the face up with the reason on its card, and the
   stage notice says `Could not open <name>`.
-- Taps on the drawn pedals and on the cards.
+- Taps on the cards (the drawn pedals take contacts since Part 2a).
 - The readout's footer for the mode (`lib/visualizer/`).
 
 Acceptance:
@@ -463,7 +471,7 @@ Acceptance:
 - Dispatch: a held Bank changes folder and does not also page.
 - Against a real `SessionCubit`: a failed Open keeps the face up and the
   open session unchanged.
-- The view: a tap on a drawn pedal or on a card acts as the switch does.
+- The view: a tap on a card acts as its switch does.
 - Screenshots: a loop playing, a failed Open and no sessions.
 - Penpot, page 19: `10 / Foot / Sessions / Playing`,
   `12 / Foot / Sessions / Could not open` and

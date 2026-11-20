@@ -157,6 +157,9 @@ class AppRuntime {
       // Library and Ctrl/Cmd+S call. `session` is read when a press arrives.
       startNewLoop: () => unawaited(session.newLoop(announceKept: true)),
       saveSession: () => unawaited(session.save()),
+      // The Sessions face: the Library's Open, and its re-list.
+      openSession: (id) => unawaited(session.open(id)),
+      refreshSessions: () => unawaited(session.refreshSessions()),
       // A pedal or MIDI arm records the same rig and names as the toolbar's.
       currentChains: currentChains,
       currentNames: currentNames,

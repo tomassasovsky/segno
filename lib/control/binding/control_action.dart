@@ -393,6 +393,7 @@ final class ModeAction extends ControlAction {
     InteractionMode.tuner => 'tuner',
     InteractionMode.multiply => 'multiply',
     InteractionMode.divide => 'divide',
+    InteractionMode.sessions => 'sessions',
   };
 
   @override

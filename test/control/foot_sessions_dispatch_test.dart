@@ -1,0 +1,403 @@
+import 'dart:async';
+import 'dart:io';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:looper_repository/looper_repository.dart';
+import 'package:operation_guards/operation_guards.dart';
+import 'package:pedal_repository/pedal_repository.dart';
+import 'package:pedal_repository/testing.dart';
+import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/app/application/owned_value_port.dart';
+import 'package:segno/app/fx_chain_persistence.dart';
+import 'package:segno/app/mix_settings_coordinator.dart';
+import 'package:segno/control/control.dart';
+import 'package:segno/control/model/foot_sessions.dart';
+import 'package:segno/looper/application/fade_settings.dart';
+import 'package:segno/looper/model/interaction_mode.dart';
+import 'package:settings_repository/settings_repository.dart';
+
+import '../helpers/helpers.dart';
+
+class _Rig {
+  new() {
+    looper = LooperRepository(engine: engine, ticker: ticks.stream)
+      ..startEngine(const EngineConfig());
+    settings = SettingsRepository(store: store);
+    mix = testMixSettings(looper, settings: settings);
+    persistence = FxChainPersistence(looper: looper);
+    pedal = PedalRepository(link);
+    performance = PerformanceRepository(
+      guards: GuardRegistry(),
+      engine: engine,
+      exportsRoot: () async => Directory.systemTemp.path,
+    );
+    fade = FadeSettings(
+      repository: looper,
+      settings: settings,
+      blocked: () => false,
+      sessionBlocked: () => false,
+    );
+    control = ControlCubit(
+      looper: looper,
+      pedal: pedal,
+      settings: settings,
+      performance: performance,
+      mixSettings: mix,
+      fxPersistence: persistence,
+      fadeSettings: fade,
+      ownedValues: OwnedValuePort(
+        looper: looper,
+        clickVolume: FakeClickVolumeControl(),
+        clickMode: FakeClickModeControl(),
+        recordStart: FakeRecordStartControl(),
+        decay: FakeDecayControl(),
+        oneShot: FakeOneShotControl(),
+        recordLength: FakeRecordLengthControl(),
+        recordTiming: FakeRecordTimingControl(),
+        fade: fade,
+      ),
+      takeLocked: () => locked,
+      startNewLoop: () => asked.add('new loop'),
+      saveSession: () => asked.add('save'),
+      openSession: (id) => asked.add('open $id'),
+      refreshSessions: () => asked.add('refresh'),
+    );
+    link.hello();
+  }
+
+  final engine = FakeAudioEngine();
+  final store = FakeKeyValueStore();
+  final ticks = StreamController<void>.broadcast();
+  final link = FakePedalLink();
+  late final LooperRepository looper;
+  late final SettingsRepository settings;
+  late final MixSettingsCoordinator mix;
+  late final FxChainPersistence persistence;
+  late final PedalRepository pedal;
+  late final PerformanceRepository performance;
+  late final FadeSettings fade;
+  late final ControlCubit control;
+
+  /// Takes are locked: a session is opening, or the power dialog is up.
+  bool locked = false;
+
+  /// What the session layer was asked for, in order.
+  final asked = <String>[];
+
+  FootSessionsSelection get selection => control.state.footSessions;
+
+  Future<void> stomp(
+    PedalButton button, {
+    Duration hold = Duration.zero,
+  }) async {
+    link.press(button, down: true);
+    await _pump(const Duration(milliseconds: 30) + hold);
+    link.press(button, down: false);
+    await _pump(const Duration(milliseconds: 30));
+  }
+
+  bool lit(PedalButton button) =>
+      link.lastFrame!.activeButtonMask & (1 << button.index) != 0;
+
+  Future<void> close() async {
+    await control.close();
+    await fade.close();
+    await persistence.close();
+    await mix.close();
+    await pedal.dispose();
+    performance.dispose();
+    await looper.dispose();
+    await ticks.close();
+  }
+}
+
+Future<void> _pump([Duration duration = Duration.zero]) =>
+    Future<void>.delayed(duration);
+
+FootSessionCatalogue _catalogue(
+  List<String> names, {
+  String? openId,
+  int failureCount = 0,
+}) => FootSessionCatalogue(
+  sessions: [for (final name in names) FootSessionEntry(id: name, name: name)],
+  openId: openId,
+  failureCount: failureCount,
+);
+
+const _six = ['a', 'b', 'c', 'd', 'e', 'f'];
+
+void main() {
+  /// A rig on the Sessions face, entered from [from], with [names] saved and
+  /// [openId] open.
+  Future<_Rig> enter({
+    List<String> names = _six,
+    String? openId = 'a',
+    InteractionMode from = InteractionMode.record,
+  }) async {
+    final rig = _Rig();
+    await rig.control.load();
+    await _pump();
+    rig.control.setSessionCatalogue(_catalogue(names, openId: openId));
+    if (from != InteractionMode.record) rig.control.setMode(from);
+    rig.control.setMode(InteractionMode.sessions);
+    await _pump();
+    return rig;
+  }
+
+  test('entering asks for the catalogue again and starts on the page of the '
+      'open session', () async {
+    final rig = await enter(openId: 'f');
+    try {
+      expect(rig.asked, ['refresh']);
+      expect(rig.selection.page, 1);
+      // f is the second session of the second page.
+      expect(rig.lit(PedalButton.track2), isTrue);
+      expect(rig.lit(PedalButton.track1), isFalse);
+      expect(rig.lit(PedalButton.bank), isTrue);
+      expect(rig.lit(PedalButton.mode), isTrue);
+    } finally {
+      await rig.close();
+    }
+  });
+
+  test('a track switch asks to open the session in its position, once, and '
+      'waits for it', () async {
+    final rig = await enter();
+    try {
+      rig.asked.clear();
+      await rig.stomp(PedalButton.track3);
+      expect(rig.asked, ['open c']);
+      expect(rig.selection.openingId, 'c');
+      expect(rig.control.state.mode, InteractionMode.sessions);
+
+      // Nothing else is asked while that Open is in flight.
+      await rig.stomp(PedalButton.track2);
+      await rig.stomp(PedalButton.undo);
+      await rig.stomp(PedalButton.bank);
+      await rig.stomp(
+        PedalButton.clear,
+        hold: const Duration(milliseconds: 900),
+      );
+      expect(rig.asked, ['open c']);
+      expect(rig.selection.page, 0);
+    } finally {
+      await rig.close();
+    }
+  });
+
+  test('the face closes when the session it asked for is the open one, and '
+      'goes back to the mode it was entered from', () async {
+    final rig = await enter(from: InteractionMode.custom);
+    try {
+      await rig.stomp(PedalButton.track2);
+      expect(rig.selection.openingId, 'b');
+      // The session layer reports its progress: still the old session.
+      rig.control.setSessionCatalogue(_catalogue(_six, openId: 'a'));
+      await _pump();
+      expect(rig.control.state.mode, InteractionMode.sessions);
+
+      rig.control.setSessionCatalogue(_catalogue(_six, openId: 'b'));
+      await _pump();
+      expect(rig.control.state.mode, InteractionMode.custom);
+      expect(rig.selection.openingId, isNull);
+    } finally {
+      await rig.close();
+    }
+  });
+
+  test(
+    'an Open that fails gives the switches back and keeps the face up',
+    () async {
+      final rig = await enter();
+      try {
+        rig.asked.clear();
+        await rig.stomp(PedalButton.track2);
+        rig.control.setSessionCatalogue(
+          _catalogue(_six, openId: 'a', failureCount: 1),
+        );
+        await _pump();
+        expect(rig.control.state.mode, InteractionMode.sessions);
+        expect(rig.selection.openingId, isNull);
+
+        await rig.stomp(PedalButton.track4);
+        expect(rig.asked, ['open b', 'open d']);
+      } finally {
+        await rig.close();
+      }
+    },
+  );
+
+  test('the switch under the open session closes the face and asks for '
+      'nothing', () async {
+    final rig = await enter(from: InteractionMode.mute);
+    try {
+      rig.asked.clear();
+      await rig.stomp(PedalButton.track1);
+      expect(rig.asked, isEmpty);
+      expect(rig.control.state.mode, InteractionMode.mute);
+    } finally {
+      await rig.close();
+    }
+  });
+
+  test('an empty position does nothing', () async {
+    final rig = await enter(names: const ['a', 'b']);
+    try {
+      rig.asked.clear();
+      await rig.stomp(PedalButton.track3);
+      await rig.stomp(PedalButton.bank);
+      expect(rig.asked, isEmpty);
+      expect(rig.control.state.mode, InteractionMode.sessions);
+      expect(rig.selection.page, 0);
+    } finally {
+      await rig.close();
+    }
+  });
+
+  test('Bank shows the next four and wraps to the first', () async {
+    final rig = await enter();
+    try {
+      rig.asked.clear();
+      await rig.stomp(PedalButton.bank);
+      expect(rig.selection.page, 1);
+      expect(rig.lit(PedalButton.bank), isTrue);
+      await rig.stomp(PedalButton.track1);
+      expect(rig.asked, ['open e']);
+
+      final again = await enter();
+      try {
+        await again.stomp(PedalButton.bank);
+        await again.stomp(PedalButton.bank);
+        expect(again.selection.page, 0);
+        expect(again.lit(PedalButton.bank), isFalse);
+      } finally {
+        await again.close();
+      }
+    } finally {
+      await rig.close();
+    }
+  });
+
+  test('Undo saves and closes the face', () async {
+    final rig = await enter(from: InteractionMode.custom);
+    try {
+      rig.asked.clear();
+      await rig.stomp(PedalButton.undo);
+      expect(rig.asked, ['save']);
+      expect(rig.control.state.mode, InteractionMode.custom);
+    } finally {
+      await rig.close();
+    }
+  });
+
+  test('a press of Clear does nothing; a held Clear starts a new loop and '
+      'closes the face', () async {
+    final rig = await enter();
+    try {
+      rig.asked.clear();
+      await rig.stomp(PedalButton.clear);
+      expect(rig.asked, isEmpty);
+      expect(rig.control.state.mode, InteractionMode.sessions);
+
+      await rig.stomp(
+        PedalButton.clear,
+        hold: const Duration(milliseconds: 900),
+      );
+      expect(rig.asked, ['new loop']);
+      expect(rig.control.state.mode, InteractionMode.record);
+    } finally {
+      await rig.close();
+    }
+  });
+
+  test('MODE goes back and asks for nothing', () async {
+    final rig = await enter(from: InteractionMode.custom);
+    try {
+      rig.asked.clear();
+      await rig.stomp(PedalButton.mode);
+      expect(rig.asked, isEmpty);
+      expect(rig.control.state.mode, InteractionMode.custom);
+    } finally {
+      await rig.close();
+    }
+  });
+
+  test('entered from a mode whose entry changes the rig, the face goes back '
+      'to Tracks', () async {
+    final rig = await enter(from: InteractionMode.fx);
+    try {
+      await rig.stomp(PedalButton.mode);
+      expect(rig.control.state.mode, InteractionMode.record);
+    } finally {
+      await rig.close();
+    }
+  });
+
+  test('Rec / Play and Stop keep the transport', () async {
+    final rig = await enter();
+    try {
+      rig.asked.clear();
+      final before = rig.engine.recordCalls;
+      await rig.stomp(PedalButton.recPlay);
+      expect(rig.engine.recordCalls, before + 1);
+      expect(rig.asked, isEmpty);
+      expect(rig.control.state.mode, InteractionMode.sessions);
+    } finally {
+      await rig.close();
+    }
+  });
+
+  test('nothing is asked while takes are locked', () async {
+    final rig = await enter();
+    try {
+      rig.asked.clear();
+      rig.locked = true;
+      await rig.stomp(PedalButton.track2);
+      await rig.stomp(PedalButton.undo);
+      await rig.stomp(
+        PedalButton.clear,
+        hold: const Duration(milliseconds: 900),
+      );
+      expect(rig.asked, isEmpty);
+      expect(rig.control.state.mode, InteractionMode.sessions);
+    } finally {
+      await rig.close();
+    }
+  });
+
+  test(
+    'a catalogue handed over off the face is kept for the next entry',
+    () async {
+      final rig = _Rig();
+      try {
+        await rig.control.load();
+        await _pump();
+        rig.control.setSessionCatalogue(
+          _catalogue(const ['x', 'y'], openId: 'y'),
+        );
+        expect(rig.control.state.mode, InteractionMode.record);
+        rig.control.setMode(InteractionMode.sessions);
+        await _pump();
+        expect(rig.lit(PedalButton.track2), isTrue);
+      } finally {
+        await rig.close();
+      }
+    },
+  );
+
+  test('the semantic activation runs the same roles: a tap for everything '
+      'but New loop, which takes its Hold', () async {
+    final rig = await enter();
+    try {
+      rig.asked.clear();
+      rig.control.activateFootSessionsPedal(PedalButton.clear);
+      expect(rig.asked, isEmpty);
+      rig.control.activateFootSessionsPedal(PedalButton.track2, hold: true);
+      expect(rig.asked, isEmpty);
+      rig.control.activateFootSessionsPedal(PedalButton.track2);
+      expect(rig.asked, ['open b']);
+    } finally {
+      await rig.close();
+    }
+  });
+}

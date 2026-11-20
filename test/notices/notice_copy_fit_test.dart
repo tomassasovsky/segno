@@ -243,7 +243,11 @@ final _messages = <_Copy>[
     (l) => l.sessionSavedAs('Night set, second half'),
     tone: NoticeTone.success,
   ),
-  _copy('session loaded', (l) => l.sessionLoaded, tone: NoticeTone.success),
+  _copy(
+    'session opened',
+    (l) => l.sessionOpened('Night set, second half'),
+    tone: NoticeTone.success,
+  ),
   _copy(
     'session converted',
     (l) => l.sessionLoadedConverted,

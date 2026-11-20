@@ -287,6 +287,8 @@ class PedalLedMap extends Equatable {
       InteractionMode.reverse => track(PedalLedState.reversed, ledBlue),
       InteractionMode.peel => track(PedalLedState.peelable, ledBlue),
       InteractionMode.tuner => track(PedalLedState.tuned, ledWhite),
+      // The switch under the open session.
+      InteractionMode.sessions => track(PedalLedState.selected, ledWhite),
       InteractionMode.multiply ||
       InteractionMode.divide => track(PedalLedState.selected, ledRed),
       InteractionMode.custom => throw StateError('unreachable'),

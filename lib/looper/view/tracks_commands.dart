@@ -129,6 +129,7 @@ class TracksCommands {
       InteractionMode.tuner => l10n.actionModeTuner,
       InteractionMode.multiply => l10n.actionModeMultiply,
       InteractionMode.divide => l10n.actionModeDivide,
+      InteractionMode.sessions => l10n.actionModeSessions,
     });
   }
 
@@ -236,6 +237,7 @@ class TracksCommands {
         mode == InteractionMode.reverse ||
         mode == InteractionMode.peel ||
         mode == InteractionMode.tuner ||
+        mode == InteractionMode.sessions ||
         mode.isLength) {
       if (key == LogicalKeyboardKey.escape || key == LogicalKeyboardKey.keyM) {
         overlay.setMode(InteractionMode.record);
@@ -337,6 +339,7 @@ class TracksCommands {
           case InteractionMode.tuner:
           case InteractionMode.multiply:
           case InteractionMode.divide:
+          case InteractionMode.sessions:
             break;
           case InteractionMode.custom:
             // Selection only: what a control does in Custom controls is
@@ -427,7 +430,9 @@ Notice? sessionOutcomeNotice(SessionState state) {
           return confirm((l10n) => l10n.sessionSavedAs(name));
         case SessionOutcome.loaded:
           final conversion = state.conversion;
-          if (conversion == null) return confirm((l10n) => l10n.sessionLoaded);
+          if (conversion == null) {
+            return confirm((l10n) => l10n.sessionOpened(name));
+          }
           return confirm(
             (l10n) => conversion.written
                 ? l10n.sessionLoadedConverted

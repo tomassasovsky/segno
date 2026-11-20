@@ -1762,6 +1762,28 @@ void main() {
       );
     }
 
+    testWidgets('the app hands the session catalogue to the Sessions face, '
+        'which asks for it on entry (#1910)', (tester) async {
+      final bundles = _NoticeSessionRepository();
+      bundles.readRelease.complete();
+      sessionRepository = bundles;
+      repository.startEngine(const EngineConfig());
+      await pumpApp(tester, NoopWaveformWindowService());
+      final context = tester.element(find.byType(TracksView));
+      final control = context.read<ControlCubit>();
+      expect(control.state.sessionCatalogue.sessions, isEmpty);
+
+      control.setMode(InteractionMode.sessions);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('foot_sessions_view')), findsOneWidget);
+      expect(
+        [for (final s in control.state.sessionCatalogue.sessions) s.id],
+        ['Replacement'],
+      );
+      expect(find.text('Replacement'), findsOneWidget);
+    });
+
     testWidgets('a Record press on a reversed track says overdub is '
         'unavailable', (tester) async {
       engine = _ReversedEngine();

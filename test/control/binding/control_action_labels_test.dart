@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:segno/control/binding/control_action.dart';
 import 'package:segno/control/binding/control_action_labels.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/model/interaction_mode.dart';
 
 void main() {
   group('the session commands', () {
@@ -21,6 +22,14 @@ void main() {
 
     test('are named in Spanish', () async {
       expect(await labels('es'), ['Nuevo loop', 'Guardar sesión']);
+    });
+
+    test('the Sessions face is named in both languages', () async {
+      const action = ModeAction(InteractionMode.sessions);
+      final en = await AppLocalizations.delegate.load(const Locale('en'));
+      final es = await AppLocalizations.delegate.load(const Locale('es'));
+      expect(controlActionLabel(en, const [], action), 'Sessions');
+      expect(controlActionLabel(es, const [], action), 'Sesiones');
     });
 
     test('sit under the Sessions heading', () async {

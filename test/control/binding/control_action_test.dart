@@ -133,6 +133,14 @@ void main() {
       ]);
     });
 
+    test('the Sessions face is a mode a control can be assigned (#1910)', () {
+      const sessions = ModeAction(InteractionMode.sessions);
+      expect(sessions.key, 'mode:sessions');
+      expect(ControlAction.tryParse('mode:sessions'), sessions);
+      expect(sessions.group, ControlActionGroup.functions);
+      expect(controlActionCatalogue(), contains(sessions));
+    });
+
     test('the session commands keep the keys of the accepted catalogue', () {
       expect(
         const CommandAction(ControlCommand.newLoop).key,

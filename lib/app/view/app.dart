@@ -19,6 +19,7 @@ import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/app_notices.dart';
 import 'package:segno/app/application/app_runtime.dart';
+import 'package:segno/app/foot_session_catalogue.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/app/segno_navigator.dart';
@@ -1614,6 +1615,13 @@ class _AppViewState extends State<_AppView> {
       listeners: [
         BlocListener<SessionCubit, SessionState>(
           listener: (_, _) => _reconcileRestoreNotices(),
+        ),
+        // The Sessions face draws the session layer's catalogue, and a
+        // cubit never reads a cubit: the app hands each change over (#1910).
+        BlocListener<SessionCubit, SessionState>(
+          listener: (context, state) => context
+              .read<ControlCubit>()
+              .setSessionCatalogue(footSessionCatalogueOf(state)),
         ),
         BlocListener<MonitorCubit, MonitorState>(
           listenWhen: (previous, current) =>

@@ -196,6 +196,10 @@ PedalTrackLed projectTrackLed(
       // The track switches pick inputs here, not tracks: their light is the
       // switch light alone (`tunerStates`).
       return PedalTrackLed.off;
+    case InteractionMode.sessions:
+      // The track switches pick sessions here: their light is the switch
+      // light alone (`sessionStates`).
+      return PedalTrackLed.off;
     case InteractionMode.multiply:
     case InteractionMode.divide:
       // Red on the selected recorded track, the one every edit acts on (the
@@ -240,6 +244,7 @@ PedalStateFrame projectFrame(
   Map<int, bool> customFunctions = const {},
   Map<PedalButton, bool> physicalCustomStates = const {},
   Map<PedalButton, bool> tunerStates = const {},
+  Map<PedalButton, bool> sessionStates = const {},
   Set<PedalButton> pressed = const {},
   Set<PedalButton> clearFilling = const {},
 }) {
@@ -282,6 +287,7 @@ PedalStateFrame projectFrame(
     performanceArmed: performanceArmed,
     physicalCustomStates: physicalCustomStates,
     tunerStates: tunerStates,
+    sessionStates: sessionStates,
     boundSwitches: boundSwitches,
     pressed: pressed,
     clearFilling: clearFilling,
@@ -319,7 +325,9 @@ PedalStateFrame projectFrame(
       InteractionMode.reverse ||
       InteractionMode.peel ||
       InteractionMode.tuner => PedalMode.custom,
-      InteractionMode.multiply || InteractionMode.divide => PedalMode.custom,
+      InteractionMode.multiply ||
+      InteractionMode.divide ||
+      InteractionMode.sessions => PedalMode.custom,
     },
     loopLengthMicros: lengthMicros.clamp(
       0,
@@ -380,6 +388,7 @@ List<PedalLedState?> projectPedalLights(
   bool performanceArmed = false,
   Map<PedalButton, bool> physicalCustomStates = const {},
   Map<PedalButton, bool> tunerStates = const {},
+  Map<PedalButton, bool> sessionStates = const {},
   Map<PedalButton, FxSwitchReading> boundSwitches = const {},
   Set<PedalButton> pressed = const {},
   Set<PedalButton> clearFilling = const {},
@@ -422,7 +431,8 @@ List<PedalLedState?> projectPedalLights(
       InteractionMode.peel => PedalLedState.peelable,
       InteractionMode.multiply ||
       InteractionMode.divide ||
-      InteractionMode.mixer => PedalLedState.selected,
+      InteractionMode.mixer ||
+      InteractionMode.sessions => PedalLedState.selected,
       InteractionMode.tuner => PedalLedState.tuned,
       InteractionMode.custom => PedalLedState.lit,
     };
@@ -440,6 +450,14 @@ List<PedalLedState?> projectPedalLights(
               PedalButton.bank => PedalLedState.laterBank,
               _ => PedalLedState.tuned,
             }
+          : null,
+    // The Sessions face's own lights: the open session's switch, and Bank
+    // past the first page. The rest light only while held.
+    _ when mode == InteractionMode.sessions =>
+      (sessionStates[button] ?? false)
+          ? (button == PedalButton.bank
+                ? PedalLedState.laterBank
+                : PedalLedState.selected)
           : null,
     _ when mode == InteractionMode.mixer =>
       FootMixerProjection.pedalRoles[button]!.slot != null &&
