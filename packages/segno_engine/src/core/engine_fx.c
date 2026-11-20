@@ -2427,8 +2427,11 @@ void le_fx_entry_clear_rings(le_fx_state* fx, int slot, int cap,
    * the rings it reads, whole, as it lands. */
   const int reach = le_fx_type_hops(type) && cap > LE_OCT_REACH;
   for (int chan = 0; chan < 2; ++chan) {
-    float* const ring = fx->delay[slot][chan];
-    if (!le_fx_ring_readable(fx, slot, chan, rings) || ring == NULL) {
+    /* A ring this thread does not know yet may be the control thread's to
+     * write (#1522): its pointer is read only once it is readable. */
+    float* const ring =
+        le_fx_ring_readable(fx, slot, chan, rings) ? fx->delay[slot][chan] : NULL;
+    if (ring == NULL) {
       /* nothing to clear */
     } else if (reach) {
       const int head = fx->delay_pos[slot][chan];

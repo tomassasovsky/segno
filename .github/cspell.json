@@ -1513,7 +1513,8 @@
     "msaa",
     "unwarped",
     "oversampler",
-    "oversamplers"
+    "oversamplers",
+    "coefs"
   ],
   "overrides": [
     {
