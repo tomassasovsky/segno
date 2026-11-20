@@ -16,6 +16,13 @@ Tracking: [#1910](https://github.com/tomassasovsky/segno/issues/1910),
 The default Custom map is
 [#1908](https://github.com/tomassasovsky/segno/issues/1908).
 
+**Revised on 2026-11-20.** After the face was built the owner asked for
+sessions assigned to switches, a tap that previews and a hold that opens.
+[#1921](https://github.com/tomassasovsky/segno/issues/1921) and
+[`2026-11-20-feat-sessions-face-map-preview-hold-plan.md`](2026-11-20-feat-sessions-face-map-preview-hold-plan.md)
+plan that on top of this stack. They replace D1 and D5 below, part of D4,
+and Part 4.
+
 ## Owner direction, 2026-11-19
 
 The first version of this plan made `Load previous session` and `Load next
@@ -510,6 +517,8 @@ missing end-to-end test of an Open from the face.
   (`lib/library/view/`). The face reads that order.
 - D1 was answered with name order. This part is kept as a record of the
   alternative, for a later issue if names turn out not to be enough.
+- Superseded on 2026-11-20 by the map of #1921, which gives each session
+  a page and a switch.
 
 ## Design writeback
 
