@@ -279,7 +279,7 @@ void main() {
       },
     );
 
-    test('New loop from a session that was only played and stopped saves '
+    test('New session from a session that was only played and stopped saves '
         'nothing of it and empties every track', () async {
       await session.saveAs('Played');
       final played = await sessions.bundlePathOf(await idOf('Played'));
@@ -292,7 +292,7 @@ void main() {
       await session.newLoop();
 
       expect(session.state.status, SessionStatus.success);
-      expect(session.state.currentSessionName, 'New loop 1');
+      expect(session.state.currentSessionName, 'New session 1');
       expect(
         writes.where(
           (path) =>
@@ -307,7 +307,7 @@ void main() {
       }
     });
 
-    test('New loop while a take records keeps the take', () async {
+    test('New session while a take records keeps the take', () async {
       await session.saveAs('Recording');
       expect(looper.record(channel: 1), EngineResult.ok);
       engine

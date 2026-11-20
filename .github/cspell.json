@@ -76,6 +76,10 @@
     "MADV",
     "DONTFORK",
     "prefaulted",
+    "prefaults",
+    "prefaulter",
+    "proftel",
+    "profan",
     "Nexperia",
     "PESD",
     "crossfades",
@@ -1507,7 +1511,10 @@
     "SIGUSR",
     "scanout",
     "msaa",
-    "unwarped"
+    "unwarped",
+    "oversampler",
+    "oversamplers",
+    "coefs"
   ],
   "overrides": [
     {

@@ -44,6 +44,7 @@
 #include "engine_fx.h"          /* fx_apply_chain, le_flush_denormals */
 #include "engine_instruments.h" /* le_instrument_source_sample */
 #include "engine_platform.h"    /* the worker setup, wait and wake */
+#include "engine_prof.h"        /* measuring builds only (#1914) */
 
 /* One worker thread. Control-thread memory: the worker reads it only while
  * it starts. */
@@ -168,10 +169,17 @@ static uint32_t le_fx_claim(le_engine* e, uint32_t epoch, le_fx_worker_tm* tm) {
                                                memory_order_acquire)) {
       continue;
     }
+#if LE_PROFILE_SECTIONS
+    const uint64_t pt0 = LE_PROF_NOW();
+#endif
 #if LE_CALLBACK_TELEMETRY
     const uint64_t t0 = tm != NULL ? le_now_ns() : 0u;
 #endif
     le_fx_job(e, next);
+#if LE_PROFILE_SECTIONS
+    LE_PROF_COUNT(tm != NULL ? LE_PROF_WK_JOB : LE_PROF_CB_JOB,
+                  LE_PROF_NOW() - pt0);
+#endif
 #if LE_CALLBACK_TELEMETRY
     if (tm != NULL) {
       const uint64_t dt = le_now_ns() - t0;
@@ -197,6 +205,7 @@ void le_fx_jobs_run(le_engine* e) {
    * instead of running it. */
   if (workers <= 0 || jobs < 2u) {
     for (uint32_t k = 0; k < jobs; ++k) le_fx_job(e, k);
+    LE_PROF_MARK(LE_PROF_JOBS_CB);
     return;
   }
   /* The callback is the only writer of a_gen while it runs (the pool's start
@@ -214,6 +223,7 @@ void le_fx_jobs_run(le_engine* e) {
                                                       : (uint32_t)workers;
   le_platform_fx_wake(&p->a_gen, (int)wake);
   const uint32_t ran = le_fx_claim(e, epoch, NULL);
+  LE_PROF_MARK(LE_PROF_JOBS_CB);
   /* The join: a spin, no syscall. Every job left is one a worker started. */
   le_fx_round_tm* rt = &e->fx_round_tm;
   if (atomic_load_explicit(&p->a_done, memory_order_acquire) < jobs) {
@@ -230,6 +240,7 @@ void le_fx_jobs_run(le_engine* e) {
     le_fx_max_u32(&rt->a_join_ns_max, dt);
 #endif
   }
+  LE_PROF_MARK(LE_PROF_JOIN);
   atomic_fetch_add_explicit(&rt->a_rounds, 1u, memory_order_relaxed);
   atomic_fetch_add_explicit(&rt->a_callback_jobs, ran, memory_order_relaxed);
 }
@@ -275,6 +286,7 @@ static void* le_fx_worker_main(void* arg) {
                                 memory_order_relaxed);
       le_fx_max_u32(&tm->a_wake_ns_max, dt);
       atomic_fetch_add_explicit(&tm->a_wake_hist[b], 1u, memory_order_relaxed);
+      LE_PROF_COUNT(LE_PROF_WK_WAKE, dt);
     }
 #endif
     /* The test hook (le_engine_hold_fx_worker_for_test): a worker that does

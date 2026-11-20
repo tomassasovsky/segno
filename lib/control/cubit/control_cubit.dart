@@ -42,6 +42,7 @@ import 'package:segno/control/model/foot_length.dart';
 import 'package:segno/control/model/foot_mixer.dart';
 import 'package:segno/control/model/foot_peel.dart';
 import 'package:segno/control/model/foot_reverse.dart';
+import 'package:segno/control/model/foot_sessions.dart';
 import 'package:segno/control/model/foot_tuner.dart';
 import 'package:segno/logging/app_log.dart';
 import 'package:segno/looper/application/fade_settings.dart';
@@ -52,6 +53,7 @@ import 'package:settings_repository/settings_repository.dart';
 
 part 'control_foot_fade.dart';
 part 'control_foot_reverse.dart';
+part 'control_foot_sessions.dart';
 part 'control_foot_length.dart';
 part 'control_foot_mixer.dart';
 part 'control_foot_peel.dart';
@@ -175,6 +177,17 @@ class _ClearFill {
   final bool Function() stillValid;
 }
 
+/// A pending Hold to open on the Sessions face, as its fill tracks it
+/// (#1921): the switch, its own clock from the press, and the time the
+/// fill runs.
+class _OpenFill {
+  new({required this.button, required this.fillTime});
+
+  final PedalButton button;
+  final Stopwatch clock = Stopwatch()..start();
+  final Duration fillTime;
+}
+
 /// The ONE control-surface interpreter and the ONE owner of stored user
 /// intent ([ControlState]) — a single business-logic-layer unit, per the
 /// layered architecture: repositories are composed at the bloc level, so
@@ -226,6 +239,13 @@ class ControlCubit extends Cubit<ControlState> {
   /// holds continuous writes (expression sweeps, External values, MIDI
   /// values) during Session transitions and disposal only; the power-off
   /// route leaves them running until its flush suspends input.
+  ///
+  /// [_startNewLoop] and [_saveSession] run the session commands a control
+  /// can be assigned (#1229, #1910), and [_openSession] and
+  /// [_refreshSessions] serve the Sessions face. They are injected because
+  /// the session belongs to `SessionCubit` and a cubit never calls a cubit;
+  /// each defaults to doing nothing. The session's own notices say how it
+  /// went, and the catalogue comes back through [setSessionCatalogue].
   new({
     required LooperRepository looper,
     required this._pedal,
@@ -236,7 +256,6 @@ class ControlCubit extends Cubit<ControlState> {
     required OwnedValueControl ownedValues,
     required FadeSettings fadeSettings,
     TunerSettings? tunerSettings,
-    bool seedTunerDefault = false,
     ControllerRepository? controller,
     MidiDeviceRepository? midiDevices,
     this._midiClock,
@@ -245,6 +264,10 @@ class ControlCubit extends Cubit<ControlState> {
     this._currentNames = _noNames,
     this._takeLocked = _neverLocked,
     this._inputLocked = _neverLocked,
+    this._startNewLoop = _noSessionCommand,
+    this._saveSession = _noSessionCommand,
+    this._openSession = _noSessionOpen,
+    this._refreshSessions = _noSessionCommand,
     Future<int?> Function(String path)? freeSpaceBytes,
   }) : _looper = looper,
        _settings = settings,
@@ -253,7 +276,6 @@ class ControlCubit extends Cubit<ControlState> {
        _footReverseActions = FootReverseActions(repository: looper),
        _footPeelActions = FootPeelActions(repository: looper),
        _ownsTunerSettings = tunerSettings == null,
-       _seedsTunerDefault = seedTunerDefault,
        _tunerSettings = tunerSettings ?? TunerSettings(settings: settings),
        _footLengthActions = FootLengthActions(repository: looper),
        _footFadeActions = FootFadeActions(
@@ -1110,6 +1132,12 @@ class ControlCubit extends Cubit<ControlState> {
 
   static bool _neverLocked() => false;
 
+  /// The default session command: no session layer to reach.
+  static void _noSessionCommand() {}
+
+  /// The default session Open: no session layer to reach.
+  static void _noSessionOpen(String _) {}
+
   final LooperRepository _looper;
   final PedalRepository _pedal;
   final SettingsRepository _settings;
@@ -1125,6 +1153,10 @@ class ControlCubit extends Cubit<ControlState> {
   /// during Session transitions and disposal. The power-off route does not
   /// hold them: it blocks only takes, through [_takeLocked].
   final bool Function() _inputLocked;
+  final void Function() _startNewLoop;
+  final void Function() _saveSession;
+  final void Function(String id) _openSession;
+  final void Function() _refreshSessions;
   bool _haltInputSuspended = false;
   bool _inputRetired = false;
   bool get _controlInputSuspended {
@@ -1159,10 +1191,6 @@ class ControlCubit extends Cubit<ControlState> {
   // app supplies them; a cubit built without them owns a private copy.
   final TunerSettings _tunerSettings;
   final bool _ownsTunerSettings;
-
-  // Whether boot adds the one-shot `Hold · Tuner` default (the app does;
-  // a cubit built for a narrower purpose leaves the setup alone).
-  final bool _seedsTunerDefault;
   late final FootTunerActions _footTunerActions = FootTunerActions(
     repository: _looper,
     settings: _tunerSettings,
@@ -1220,15 +1248,32 @@ class ControlCubit extends Cubit<ControlState> {
   // through setMode updates this latch.
   InteractionMode _fxReturn = InteractionMode.record;
 
+  // The Sessions face returns to the mode that entered it (#1910).
+  InteractionMode _sessionsReturn = InteractionMode.record;
+
+  // The face's last projection and what it was made from: the LED frame
+  // asks for it on every push, and ordering the catalogue is not free.
+  /// The pending Hold to open on the Sessions face, and the ticker that
+  /// pushes its fill (#1921).
+  _OpenFill? _openFill;
+  Timer? _openFillTicker;
+
+  /// How often the fill's frame goes out. A `STATE` frame takes about 5 ms
+  /// on the link, and the board blends the leading LED, so 30 ms is smooth.
+  static const _openFillInterval = Duration(milliseconds: 30);
+
+  FootSessionsProjection? _sessionsProjected;
+  (FootSessionCatalogue, FootSessionsSelection)? _sessionsProjectedFrom;
+
   // Whether this install has been told that FX mode's Stop no longer sweeps
   // the track chains (#1229). Loaded with the setup; until then a first FX
   // entry cannot know, and says nothing.
   bool _fxStopNoticeShown = true;
 
   // Whether [_fxStopNoticeShown] is already stored. A fresh install decides
-  // it is told in memory at boot and stores that before anything could make
-  // a later boot read it as an upgrade: its first FX entry, pedal setup or
-  // bindings save. Boot itself writes nothing.
+  // at boot that it is told, and stores that just before the default pedal
+  // setup (#1908), which would otherwise make a later boot read it as an
+  // upgrade. An upgraded install stores it at its first FX entry.
   bool _fxStopNoticeStored = true;
 
   // Stop's own press/hold gesture on the performance surfaces that give it a
@@ -1346,14 +1391,31 @@ class ControlCubit extends Cubit<ControlState> {
       fxStopNoticeShown = true;
     }
     _fxStopNoticeShown = fxStopNoticeShown;
-    try {
-      setup = encodedSetup == null
-          ? const PedalSetup()
-          : PedalSetup.decode(encodedSetup);
-    } on FormatException catch (error, stackTrace) {
-      // A corrupt explicit action must not become a default live command.
-      setupUnavailable = true;
-      addError(error, stackTrace);
+    var setupUncertain = false;
+    if (encodedSetup == null) {
+      // A console that never saved a setup starts with the default Custom
+      // map and stores it at once (#1908), so a later build with another
+      // default does not change the map this console already plays.
+      setup = PedalSetup.fresh;
+      // First, so a later boot cannot read the stored setup as an upgrade.
+      _storeFxStopNotice();
+      try {
+        await _settings.savePedalSetup(setup.encode());
+      } on PedalSetupSaveException catch (error, stackTrace) {
+        // The default is live either way. With nothing stored, the next
+        // boot stores it.
+        setupUncertain = !error.checkpointRestored;
+        addError(error, stackTrace);
+      }
+    } else {
+      try {
+        // A stored setup is taken as it is, an empty map included.
+        setup = PedalSetup.decode(encodedSetup);
+      } on FormatException catch (error, stackTrace) {
+        // A corrupt explicit action must not become a default live command.
+        setupUnavailable = true;
+        addError(error, stackTrace);
+      }
     }
     if (_inputRetired || _closing || isClosed) return;
     emit(
@@ -1362,45 +1424,13 @@ class ControlCubit extends Cubit<ControlState> {
         holdThreshold: _longPress,
         pedalSetup: setup,
         pedalSetupUnavailable: setupUnavailable,
+        pedalSetupPersistenceUncertain: setupUncertain,
         globalBindings: storedBindings,
       ),
     );
     await _loadMidiConfiguration();
     if (_inputRetired || _closing || isClosed) return;
     setMode(InteractionMode.record);
-    // After the restore completes: the seeding saves through setPedalSetup,
-    // which waits for this load.
-    if (_seedsTunerDefault) unawaited(_seedTunerDefault());
-  }
-
-  /// Gives a default install a way to the Tuner (#1229, D11): `Hold ·
-  /// Tuner` on Custom pedal 2, bank A, where the pedal study and pen 10
-  /// `uEukr` put it. One-shot: the flag is written at the first attempt,
-  /// whatever its outcome, and a Hold already assigned there is kept. A
-  /// malformed or uncertain stored setup is never overwritten; the flag stays
-  /// unset for a later boot.
-  Future<void> _seedTunerDefault() async {
-    try {
-      if (await _settings.loadTunerDefaultSeeded()) return;
-      if (isClosed ||
-          state.pedalSetupUnavailable ||
-          state.pedalSetupPersistenceUncertain) {
-        return;
-      }
-      await _settings.saveTunerDefaultSeeded();
-      final pair = state.pedalSetup.customFor(PedalButton.track2, bank: 0);
-      if (pair.hold != null || isClosed) return;
-      await setPedalSetup(
-        state.pedalSetup.withCustom(
-          PedalButton.track2,
-          bank: 0,
-          pair: pair.withHold(const ModeAction(InteractionMode.tuner)),
-        ),
-      );
-      if (!isClosed) emit(state.copyWith(tunerDefaultSeeded: true));
-    } on Object catch (error, stackTrace) {
-      addError(error, stackTrace);
-    }
   }
 
   // ---------------------------------------------------------------------------
@@ -1509,7 +1539,8 @@ class ControlCubit extends Cubit<ControlState> {
     InteractionMode.peel ||
     InteractionMode.tuner => InteractionMode.record,
     InteractionMode.multiply ||
-    InteractionMode.divide => InteractionMode.record,
+    InteractionMode.divide ||
+    InteractionMode.sessions => InteractionMode.record,
   });
 
   /// Saves the built-in pedal setup before making it live. A storage refusal
@@ -1567,7 +1598,6 @@ class ControlCubit extends Cubit<ControlState> {
 
   /// Saves [setup] and makes it live.
   Future<void> _commitPedalSetup(PedalSetup setup) async {
-    _storeFxStopNotice();
     try {
       await _settings.savePedalSetup(setup.encode());
     } on PedalSetupSaveException catch (error) {
@@ -1693,6 +1723,16 @@ class ControlCubit extends Cubit<ControlState> {
           ),
         );
         _enterTuner();
+      case InteractionMode.sessions:
+        _sessionsReturn = _sessionsReturnFor(state.mode);
+        emit(
+          state.copyWith(
+            mode: next,
+            excluded: const {},
+            parkedResume: const {},
+          ),
+        );
+        _enterSessions();
       case InteractionMode.fade:
         _footFadeSession = _looper.sessionRevision;
         emit(
@@ -1813,9 +1853,11 @@ class ControlCubit extends Cubit<ControlState> {
       case InteractionMode.reverse:
       case InteractionMode.peel:
       case InteractionMode.tuner:
-      // Multiply and Divide keep Record / Play on the pedal too (pen 16).
+      // Multiply and Divide keep Record / Play on the pedal too (pen 16),
+      // and so does the Sessions face (#1910).
       case InteractionMode.multiply:
       case InteractionMode.divide:
+      case InteractionMode.sessions:
         _recAdvance(state.cursor);
       case InteractionMode.mute:
         _muteRecPlay();
@@ -2033,6 +2075,7 @@ class ControlCubit extends Cubit<ControlState> {
       case InteractionMode.tuner:
       case InteractionMode.multiply:
       case InteractionMode.divide:
+      case InteractionMode.sessions:
         parkAll();
       case InteractionMode.fx:
       case InteractionMode.custom:
@@ -2161,6 +2204,7 @@ class ControlCubit extends Cubit<ControlState> {
       case InteractionMode.divide:
       case InteractionMode.peel:
       case InteractionMode.tuner:
+      case InteractionMode.sessions:
         // Inert: the performance surfaces replace the Tracks columns, and
         // their track pedals act through their own roles.
         break;
@@ -2685,6 +2729,33 @@ class ControlCubit extends Cubit<ControlState> {
     }
   }
 
+  /// Hands over the session catalogue the Sessions face draws (#1910): the
+  /// app calls this whenever the session layer's catalogue, open session or
+  /// failure count changes. An Open asked from the face settles here: the
+  /// face closes when its session is the open one, and gives its switches
+  /// back when the Open failed.
+  void setSessionCatalogue(FootSessionCatalogue catalogue) =>
+      _onSessionCatalogue(catalogue);
+
+  /// Admits a screen contact on the Sessions face into the shared ledger.
+  void footSessionsPressed(PedalButton button, Object contact) {
+    if (state.mode != InteractionMode.sessions || isClosed) return;
+    _handleEvent(ButtonPressed(button), contact: contact);
+  }
+
+  /// Only the admitted screen contact may complete its Sessions gesture.
+  void footSessionsReleased(PedalButton button, Object contact) =>
+      footMixerReleased(button, contact);
+
+  /// Cancels an abandoned Sessions contact without its action.
+  void footSessionsCancelled(PedalButton button, Object contact) =>
+      footTunerCancelled(button, contact);
+
+  /// Accessible semantic activation: [button]'s press, or its Hold (Clear
+  /// starts a new session) when [hold] is set.
+  void activateFootSessionsPedal(PedalButton button, {bool hold = false}) =>
+      _activateSessionsPedal(button, hold: hold);
+
   /// Admits a screen contact on the Tuner face into the shared ledger.
   void footTunerPressed(PedalButton button, Object contact) {
     if (state.mode != InteractionMode.tuner || isClosed) return;
@@ -3020,6 +3091,10 @@ class ControlCubit extends Cubit<ControlState> {
     }
     if (state.mode == InteractionMode.tuner) {
       _onTunerPress(button);
+      return;
+    }
+    if (state.mode == InteractionMode.sessions) {
+      _onSessionsPress(button);
       return;
     }
     if (state.mode.isLength) {
@@ -3445,6 +3520,17 @@ class ControlCubit extends Cubit<ControlState> {
         return _sweepTrackChains(enabled: false);
       case ControlCommand.trackFxOn:
         return _sweepTrackChains(enabled: true);
+      // Handed to the session layer, which decides and says how it went
+      // (a take in progress, a failed save, a guard): accepted here once
+      // it is handed over, so the two never give two notices for one press.
+      case ControlCommand.newLoop:
+        if (_takeLocked()) return false;
+        _startNewLoop();
+        return true;
+      case ControlCommand.saveSession:
+        if (_takeLocked()) return false;
+        _saveSession();
+        return true;
     }
   }
 
@@ -3518,12 +3604,14 @@ class ControlCubit extends Cubit<ControlState> {
   /// action itself calls [_meetClearFill] once the clear is accepted, which
   /// the board confirms with its flash. A [clearPause] delays the fill and
   /// lengthens the hold by the same time, so the fill still runs the whole
-  /// threshold and meets the centre as the hold fires.
+  /// threshold and meets the centre as the hold fires. [onSettled] runs once
+  /// when the hold stops being pending, whichever way it ends.
   void _armGesture(
     _HoldGesture gesture, {
     required PedalButton? cue,
     required void Function() onHold,
     void Function()? onTap,
+    void Function()? onSettled,
     bool Function()? clears,
     Duration clearPause = Duration.zero,
   }) {
@@ -3538,8 +3626,11 @@ class ControlCubit extends Cubit<ControlState> {
       onHold: onHold,
       onTap: onTap,
       onSettled: cue == null
-          ? null
+          ? onSettled
           : () {
+              // First: the cue's own state change projects a frame, which
+              // must already be without what the caller ends here.
+              onSettled?.call();
               _setHoldPending(cue, false);
               if (clears != null) _endClearFill(cue);
             },
@@ -3643,6 +3734,7 @@ class ControlCubit extends Cubit<ControlState> {
     InteractionMode.reverse,
     InteractionMode.fx,
     InteractionMode.custom,
+    InteractionMode.sessions,
   };
 
   /// Publishes whether [button]'s hold is pending. Clearing always runs, so a
@@ -3717,9 +3809,9 @@ class ControlCubit extends Cubit<ControlState> {
 
   /// Arms or disarms performance recording, mirroring the toolbar's own
   /// dispatch (`PerformanceRecorderCubit.toggleArm` calls the same
-  /// repository methods, including the guarded `disarm()` — not
-  /// `disarmAndFinalize()`, which is reserved for `SessionCubit`'s
-  /// unguarded auto-disarm-before-load) — the repository's own double-press
+  /// repository methods, including the guarded `disarm()` — not the
+  /// unguarded `disarmForSessionChange()`, which is `SessionCubit`'s
+  /// auto-disarm before a load) — the repository's own double-press
   /// guard covers a rapid re-press identically here, so it is not
   /// duplicated in this cubit.
   void togglePerformanceRecord() {
@@ -3775,9 +3867,11 @@ class ControlCubit extends Cubit<ControlState> {
 
   void _enterPedalMode(InteractionMode mode) => setMode(
     state.mode == mode
-        ? mode == InteractionMode.fx
-              ? _fxReturn
-              : InteractionMode.record
+        ? switch (mode) {
+            InteractionMode.fx => _fxReturn,
+            InteractionMode.sessions => _sessionsReturn,
+            _ => InteractionMode.record,
+          }
         : mode,
   );
 
@@ -3915,7 +4009,6 @@ class ControlCubit extends Cubit<ControlState> {
     _invalidateGestures();
     emit(state.copyWith(globalBindings: next, sessionBindings: session));
     if (!saves) return;
-    _storeFxStopNotice();
     await _settings.savePedalBindings(next.encode());
   });
 
@@ -4452,6 +4545,9 @@ class ControlCubit extends Cubit<ControlState> {
       customFunctions: customFunctions,
       physicalCustomStates: physicalCustom,
       tunerStates: _tunerStates(),
+      sessionStates: _sessionsStates(),
+      sessionHeld: _sessionsHeld(),
+      openFill: _sessionsOpenFill(),
       pressed: _pressedButtons.keys.toSet(),
       clearFilling: _clearFills.keys.toSet(),
     );
@@ -4681,6 +4777,8 @@ class ControlCubit extends Cubit<ControlState> {
     // Every gesture has settled, and each settle sends its own end.
     _clearFillTicker?.cancel();
     _clearFillTicker = null;
+    _openFillTicker?.cancel();
+    _openFillTicker = null;
     await _looperSub.cancel();
     await _eventsSub.cancel();
     await _statusSub.cancel();

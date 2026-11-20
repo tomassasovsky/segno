@@ -302,7 +302,8 @@ class TrackColumn extends StatelessWidget {
                 InteractionMode.peel ||
                 InteractionMode.tuner ||
                 InteractionMode.multiply ||
-                InteractionMode.divide => l10n.a11yTrackTileCustom(
+                InteractionMode.divide ||
+                InteractionMode.sessions => l10n.a11yTrackTileCustom(
                   name,
                   stateWord,
                 ),
@@ -323,6 +324,7 @@ class TrackColumn extends StatelessWidget {
                   case InteractionMode.tuner:
                   case InteractionMode.multiply:
                   case InteractionMode.divide:
+                  case InteractionMode.sessions:
                   case InteractionMode.custom:
                     // Selection only. Record/Play operates the selected
                     // track, so a tap arms it rather than recording. What a

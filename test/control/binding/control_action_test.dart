@@ -126,7 +126,41 @@ void main() {
         CommandAction(ControlCommand.trackFxOn),
       ]);
       expect(groups, isNot(contains(ControlActionGroup.backing)));
-      expect(groups, isNot(contains(ControlActionGroup.sessions)));
+      // The Sessions group holds the two session commands (#1229, #1910).
+      expect(controlActionsIn(ControlActionGroup.sessions), const [
+        CommandAction(ControlCommand.newLoop),
+        CommandAction(ControlCommand.saveSession),
+      ]);
+    });
+
+    test('the Sessions face is a mode a control can be assigned (#1910)', () {
+      const sessions = ModeAction(InteractionMode.sessions);
+      expect(sessions.key, 'mode:sessions');
+      expect(ControlAction.tryParse('mode:sessions'), sessions);
+      expect(sessions.group, ControlActionGroup.functions);
+      expect(controlActionCatalogue(), contains(sessions));
+    });
+
+    test('the session commands keep the keys of the accepted catalogue', () {
+      expect(
+        const CommandAction(ControlCommand.newLoop).key,
+        'command:new-loop',
+      );
+      expect(
+        const CommandAction(ControlCommand.saveSession).key,
+        'session:save',
+      );
+      expect(
+        ControlAction.tryParse('command:new-loop'),
+        const CommandAction(ControlCommand.newLoop),
+      );
+      expect(
+        ControlAction.tryParse('session:save'),
+        const CommandAction(ControlCommand.saveSession),
+      );
+      // Previous and next were dropped for the Sessions face (#1910).
+      expect(ControlAction.tryParse('session:next'), isNull);
+      expect(ControlAction.tryParse('session:previous'), isNull);
     });
 
     test('every group listing is a subset of the catalogue, in its order', () {

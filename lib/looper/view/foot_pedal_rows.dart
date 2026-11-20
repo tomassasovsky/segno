@@ -19,7 +19,7 @@ class FootPedalRows extends StatelessWidget {
   static const double pedalWidth = 180;
 
   /// Where the rear row starts below the frame's top.
-  static const double _rearTop = 56;
+  static const double rearTop = 56;
 
   /// Where the front row starts below the frame's top.
   static const double _frontTop = 472;
@@ -29,7 +29,7 @@ class FootPedalRows extends StatelessWidget {
     builder: (context, constraints) => Stack(
       children: [
         for (final (row, top) in [
-          (ConsolePedalLayout.rearRow, _rearTop),
+          (ConsolePedalLayout.rearRow, rearTop),
           (ConsolePedalLayout.frontRow, _frontTop),
         ])
           for (final button in row)

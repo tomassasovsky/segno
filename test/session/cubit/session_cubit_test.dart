@@ -241,6 +241,7 @@ void main() {
     registerFallbackValue(const SessionChains());
     registerFallbackValue(const SessionSettings());
     registerFallbackValue(_conversion);
+    registerFallbackValue(<SessionId>{});
   });
 
   SessionSettingsCoordinator buildCapture() => SessionSettingsCoordinator(
@@ -258,6 +259,7 @@ void main() {
   setUp(() async {
     liveFingerprint = 'fp';
     repository = _MockSessionRepository();
+    when(repository.stopAudition).thenReturn(EngineResult.ok);
     when(repository.newSessionId).thenAnswer((_) async => 'new');
     when(repository.listFolders).thenAnswer((_) async => const []);
     when(
@@ -322,7 +324,7 @@ void main() {
     captureSettings = buildCapture();
     // open's auto-disarm-before-load orchestration; a no-op success by
     // default since nothing is armed in these tests.
-    when(performance.disarmAndFinalize)
+    when(performance.disarmForSessionChange)
         .thenAnswer((_) async => EngineResult.ok);
   });
 
@@ -683,7 +685,7 @@ void main() {
           'previous mix',
         );
         expect((mixPersistence as _WriteThenThrowPersistence).restores, 0);
-        verifyNever(performance.disarmAndFinalize);
+        verifyNever(performance.disarmForSessionChange);
         verifyNever(() => looper.applySession(any()));
         verifyNever(looper.blockStartForSessionBoot);
         verifyNever(looper.stopEngine);
@@ -823,7 +825,7 @@ void main() {
       expect(cubit.state.refusedBy, GuardKind.deviceChange);
       // Counted like every other failure, so the Library shows it once.
       expect(cubit.state.failureCount, 1);
-      verifyNever(performance.disarmAndFinalize);
+      verifyNever(performance.disarmForSessionChange);
       verifyNever(() => looper.applySession(any()));
       expect(fxPersistence.sessionTransitionActive, isFalse);
       expect(guards.active.single.kind, GuardKind.deviceChange);
@@ -849,7 +851,7 @@ void main() {
       final guards = GuardRegistry();
       final seenAtFinalize = <GuardKind>[];
       final seenAtApply = <GuardKind>[];
-      when(performance.disarmAndFinalize).thenAnswer((_) async {
+      when(performance.disarmForSessionChange).thenAnswer((_) async {
         seenAtFinalize.addAll(guards.active.map((o) => o.kind));
         return EngineResult.ok;
       });
@@ -1194,7 +1196,7 @@ void main() {
       setUp: () {
         stubCatalog();
         when(() => repository.nextAutomaticName(any()))
-            .thenAnswer((_) async => 'New loop 2');
+            .thenAnswer((_) async => 'New session 2');
       },
       build: build,
       act: (cubit) => cubit.save(),
@@ -1204,7 +1206,7 @@ void main() {
             .having((s) => s.status, 'st', SessionStatus.success)
             .having((s) => s.outcome, 'outcome', SessionOutcome.savedAs)
             .having((s) => s.currentSessionId, 'id', 'new')
-            .having((s) => s.currentSessionName, 'name', 'New loop 2'),
+            .having((s) => s.currentSessionName, 'name', 'New session 2'),
       ],
       verify: (_) {
         verify(
@@ -1216,7 +1218,7 @@ void main() {
             chains: any(named: 'chains'),
             settings: any(named: 'settings'),
             pedalBindings: any(named: 'pedalBindings'),
-            name: 'New loop 2',
+            name: 'New session 2',
             captureStillValid: any(named: 'captureStillValid'),
           ),
         ).called(1);
@@ -1334,7 +1336,7 @@ void main() {
           ),
         ).called(1);
         verify(() => looper.applySession(any())).called(1);
-        verify(performance.disarmAndFinalize).called(1);
+        verify(performance.disarmForSessionChange).called(1);
         verifyNever(() => repository.commitConversion(any(), any()));
       },
     );
@@ -1469,7 +1471,7 @@ void main() {
         );
         when(() => looper.applySession(any())).thenAnswer((_) async {});
         when(() => repository.nextAutomaticName(any()))
-            .thenAnswer((_) async => 'New loop 3');
+            .thenAnswer((_) async => 'New session 3');
       }
 
       VerificationResult verifySavedTo(String path, {String? name}) => verify(
@@ -1548,7 +1550,7 @@ void main() {
       });
 
       test(
-        'an unnamed rig with any edit is saved as the next New loop',
+        'an unnamed rig with any edit is saved as the next New session',
         () async {
           stubOpen();
           final cubit = build();
@@ -1562,7 +1564,7 @@ void main() {
             () =>
                 repository.nextAutomaticName(SessionCubit.automaticNamePrefix),
           ).called(1);
-          verifySavedTo('/root/new', name: 'New loop 3').called(1);
+          verifySavedTo('/root/new', name: 'New session 3').called(1);
           expect(cubit.state.currentSessionId, 'B');
         },
       );
@@ -1694,7 +1696,7 @@ void main() {
 
         await cubit.open('B');
 
-        verifySavedTo('/root/new', name: 'New loop 3').called(1);
+        verifySavedTo('/root/new', name: 'New session 3').called(1);
       });
 
       test('opening the current session does nothing', () async {
@@ -1911,7 +1913,7 @@ void main() {
       });
     });
 
-    group('New loop (plan D9)', () {
+    group('New session (plan D9)', () {
       /// The order the seams below are reached in.
       late List<String> events;
 
@@ -1953,7 +1955,7 @@ void main() {
           applied.add(inv.positionalArguments.first as SessionRig);
         });
         when(() => repository.nextAutomaticName(any()))
-            .thenAnswer((_) async => 'New loop 3');
+            .thenAnswer((_) async => 'New session 3');
       }
 
       VerificationResult verifySavedTo(String path, {String? name}) => verify(
@@ -1997,7 +1999,7 @@ void main() {
       );
 
       test('applies the empty rig with the live settings, then saves it as '
-          'the next New loop, which becomes current', () async {
+          'the next New session, which becomes current', () async {
         stubNewLoop();
         final cubit = build();
         addTearDown(cubit.close);
@@ -2022,15 +2024,100 @@ void main() {
             chains: any(named: 'chains'),
             settings: any(named: 'settings'),
             pedalBindings: any(named: 'pedalBindings'),
-            name: 'New loop 3',
+            name: 'New session 3',
             captureStillValid: any(named: 'captureStillValid'),
           ),
         ]);
         expect(cubit.state.status, SessionStatus.success);
         expect(cubit.state.outcome, SessionOutcome.newLoop);
         expect(cubit.state.currentSessionId, 'new');
-        expect(cubit.state.currentSessionName, 'New loop 3');
+        expect(cubit.state.currentSessionName, 'New session 3');
         expect(cubit.state.sessions, summaries);
+      });
+
+      test('asked to announce it, the outcome carries the name the changed '
+          'outgoing session was saved under, and none when nothing was saved '
+          '(#1910)', () async {
+        stubNewLoop();
+        final cubit = build();
+        addTearDown(cubit.close);
+        cubit.emit(
+          const SessionState(currentSessionId: 'A', currentSessionName: 'A'),
+        );
+        await cubit.save();
+        liveFingerprint = 'an overdub';
+
+        await cubit.newLoop(announceKept: true);
+
+        expect(cubit.state.outcome, SessionOutcome.newLoop);
+        expect(cubit.state.keptSessionName, 'A');
+
+        // The new session is untouched: nothing is saved, nothing is said.
+        await cubit.newLoop(announceKept: true);
+
+        expect(cubit.state.outcome, SessionOutcome.newLoop);
+        expect(cubit.state.keptSessionName, isNull);
+      });
+
+      test('ends a Library Listen preview before anything else, whoever '
+          'asked (#1910)', () async {
+        stubNewLoop();
+        final cubit = build();
+        addTearDown(cubit.close);
+        await cubit.recordBaseline();
+
+        await cubit.newLoop(announceKept: true);
+
+        verifyInOrder([
+          repository.stopAudition,
+          () => looper.applySession(any()),
+        ]);
+      });
+
+      test('asked to announce it, a new session that started but could not be '
+          'saved still carries the name it kept (#1910)', () async {
+        stubNewLoop();
+        final cubit = build();
+        addTearDown(cubit.close);
+        cubit.emit(
+          const SessionState(currentSessionId: 'A', currentSessionName: 'A'),
+        );
+        await cubit.save();
+        liveFingerprint = 'an overdub';
+        when(
+          () => repository.save(
+            '/root/new',
+            chains: any(named: 'chains'),
+            settings: any(named: 'settings'),
+            pedalBindings: any(named: 'pedalBindings'),
+            name: any(named: 'name'),
+            captureStillValid: any(named: 'captureStillValid'),
+          ),
+        ).thenThrow(const FileSystemException('disk full'));
+
+        await cubit.newLoop(announceKept: true);
+
+        expect(cubit.state.error, SessionError.newLoopNotSaved);
+        expect(cubit.state.currentSessionName, 'New session 3');
+        expect(cubit.state.keptSessionName, 'A');
+      });
+
+      test('not asked, as from the Library sheet, the outcome carries no '
+          'name', () async {
+        stubNewLoop();
+        final cubit = build();
+        addTearDown(cubit.close);
+        cubit.emit(
+          const SessionState(currentSessionId: 'A', currentSessionName: 'A'),
+        );
+        await cubit.save();
+        liveFingerprint = 'an overdub';
+
+        await cubit.newLoop();
+
+        verifySavedTo('/root/A', name: 'A');
+        expect(cubit.state.outcome, SessionOutcome.newLoop);
+        expect(cubit.state.keptSessionName, isNull);
       });
 
       test('a take in progress is ended and saved before the clear', () async {
@@ -2105,7 +2192,7 @@ void main() {
               chains: any(named: 'chains'),
               settings: any(named: 'settings'),
               pedalBindings: any(named: 'pedalBindings'),
-              name: 'New loop 3',
+              name: 'New session 3',
               captureStillValid: any(named: 'captureStillValid'),
             ),
           ]);
@@ -2134,7 +2221,7 @@ void main() {
             captureStillValid: any(named: 'captureStillValid'),
           ),
         );
-        verifySavedTo('/root/new', name: 'New loop 3').called(1);
+        verifySavedTo('/root/new', name: 'New session 3').called(1);
       });
 
       test('a failed preservation applies nothing and mints no id', () async {
@@ -2170,7 +2257,7 @@ void main() {
       test('a refusal before the apply gives the new id back and leaves the '
           'current session', () async {
         stubNewLoop();
-        when(performance.disarmAndFinalize)
+        when(performance.disarmForSessionChange)
             .thenAnswer((_) async => EngineResult.device);
         final cubit = build();
         addTearDown(cubit.close);
@@ -2187,7 +2274,7 @@ void main() {
         verifyNever(() => looper.applySession(any()));
       });
 
-      test('an empty rig that cannot be written leaves the new loop started '
+      test('an empty rig that cannot be written leaves the new session started '
           'and current, and says something failed', () async {
         stubNewLoop();
         final cubit = build();
@@ -2210,11 +2297,11 @@ void main() {
         expect(cubit.state.status, SessionStatus.failure);
         expect(cubit.state.error, SessionError.newLoopNotSaved);
         expect(cubit.state.currentSessionId, 'new');
-        expect(cubit.state.currentSessionName, 'New loop 3');
+        expect(cubit.state.currentSessionName, 'New session 3');
         verifyNever(() => repository.releaseSessionId(any()));
 
         // The outgoing rig's reference no longer applies: with no reference,
-        // a rig holding audio is saved on the next Open, to the new loop.
+        // a rig holding audio is saved on the next Open, to the new session.
         when(
           () =>
               repository.open(any(), liveSettings: any(named: 'liveSettings')),
@@ -2230,7 +2317,7 @@ void main() {
         stubAudioInRig();
         clearInteractions(repository);
         await cubit.open('B');
-        verifySavedTo('/root/new', name: 'New loop 3').called(1);
+        verifySavedTo('/root/new', name: 'New session 3').called(1);
       });
 
       test('keeps the pedal remap, and releases a held momentary before the '
@@ -2248,7 +2335,7 @@ void main() {
         expect(events.indexOf('capture'), lessThan(events.indexOf('apply')));
       });
 
-      test('the new loop is the reference: opening another session while '
+      test('the new session is the reference: opening another session while '
           'it is unchanged saves nothing more', () async {
         stubNewLoop();
         when(
@@ -2301,7 +2388,7 @@ void main() {
           entries: [BuiltInEffect(type: TrackEffectType.reverb)],
         );
 
-        /// What is left of the budget, read when New loop checks.
+        /// What is left of the budget, read when New session checks.
         late int room;
 
         /// The names the port was handed.
@@ -2546,11 +2633,11 @@ void main() {
 
           await cubit.newLoop(template: template);
 
-          verifySavedTo('/root/new', name: 'New loop 3').called(1);
+          verifySavedTo('/root/new', name: 'New session 3').called(1);
           expect(cubit.state.status, SessionStatus.success);
           expect(cubit.state.outcome, SessionOutcome.newLoop);
           expect(cubit.state.trackNamesNotSaved, isTrue);
-          expect(cubit.state.currentSessionName, 'New loop 3');
+          expect(cubit.state.currentSessionName, 'New session 3');
           expect(cubit.state.sessions, summaries);
         });
 
@@ -2685,7 +2772,7 @@ void main() {
             .having((s) => s.currentSessionName, 'current', 'A'),
       ],
       verify: (_) {
-        verifyNever(performance.disarmAndFinalize);
+        verifyNever(performance.disarmForSessionChange);
         verifyNever(() => looper.applySession(any()));
         verifyNever(looper.stopEngine);
       },
@@ -2716,7 +2803,7 @@ void main() {
         verifyInOrder([
           () =>
               repository.open(any(), liveSettings: any(named: 'liveSettings')),
-          performance.disarmAndFinalize,
+          performance.disarmForSessionChange,
           () => looper.applySession(any()),
         ]);
       },
@@ -2738,7 +2825,7 @@ void main() {
             ),
           ),
         );
-        when(performance.disarmAndFinalize)
+        when(performance.disarmForSessionChange)
             .thenAnswer((_) async => EngineResult.device);
       },
       seed: () =>
@@ -2756,7 +2843,7 @@ void main() {
             .having((s) => s.currentSessionName, 'current', 'A'),
       ],
       verify: (_) {
-        verify(performance.disarmAndFinalize).called(1);
+        verify(performance.disarmForSessionChange).called(1);
         verify(
           () =>
               repository.open(any(), liveSettings: any(named: 'liveSettings')),
@@ -3028,6 +3115,136 @@ void main() {
             .having((s) => s.folders, 'folders', ['Gigs']),
       ],
     );
+
+    group('the sessions kept off the Sessions face (#1921)', () {
+      /// Stubs the repository's file with [stored], which a write replaces.
+      void stubHidden(Set<SessionId> stored) {
+        var hidden = stored;
+        when(repository.readHiddenFromFace).thenAnswer((_) async => hidden);
+        when(() => repository.writeHiddenFromFace(any()))
+            .thenAnswer((inv) async {
+              hidden = inv.positionalArguments.first as Set<SessionId>;
+            });
+      }
+
+      blocTest<SessionCubit, SessionState>(
+        'refreshSessions reads them with the catalog',
+        setUp: () {
+          stubCatalog();
+          stubHidden({'A'});
+        },
+        build: build,
+        act: (cubit) => cubit.refreshSessions(),
+        expect: () => [
+          isA<SessionState>()
+              .having((s) => s.sessions, 'sessions', summaries)
+              .having((s) => s.hiddenFromFace, 'hidden', {'A'}),
+        ],
+      );
+
+      blocTest<SessionCubit, SessionState>(
+        'a file that cannot be read keeps what is already in state',
+        setUp: () {
+          stubCatalog();
+          when(repository.readHiddenFromFace)
+              .thenThrow(const FileSystemException('denied'));
+        },
+        seed: () => const SessionState(hiddenFromFace: {'A'}),
+        build: build,
+        act: (cubit) => cubit.refreshSessions(),
+        expect: () => [
+          isA<SessionState>()
+              .having((s) => s.sessions, 'sessions', summaries)
+              .having((s) => s.hiddenFromFace, 'hidden', {'A'}),
+        ],
+      );
+
+      blocTest<SessionCubit, SessionState>(
+        'hiding a session writes it with the ones already hidden',
+        setUp: () {
+          stubCatalog();
+          stubHidden({'A'});
+        },
+        seed: () =>
+            const SessionState(sessions: summaries, hiddenFromFace: {'A'}),
+        build: build,
+        act: (cubit) => cubit.setShownOnFace('B', shown: false),
+        skip: 1,
+        expect: () => [
+          isA<SessionState>()
+              .having((s) => s.status, 'st', SessionStatus.success)
+              .having(
+                (s) => s.outcome,
+                'outcome',
+                SessionOutcome.faceListChanged,
+              )
+              .having((s) => s.hiddenFromFace, 'hidden', {'A', 'B'}),
+        ],
+      );
+
+      blocTest<SessionCubit, SessionState>(
+        'showing a session takes it out, and leaves the others hidden',
+        setUp: () {
+          stubCatalog();
+          stubHidden({'A', 'B'});
+        },
+        seed: () =>
+            const SessionState(sessions: summaries, hiddenFromFace: {'A', 'B'}),
+        build: build,
+        act: (cubit) => cubit.setShownOnFace('A', shown: true),
+        skip: 1,
+        expect: () => [
+          isA<SessionState>()
+              .having((s) => s.status, 'st', SessionStatus.success)
+              .having((s) => s.hiddenFromFace, 'hidden', {'B'}),
+        ],
+      );
+
+      blocTest<SessionCubit, SessionState>(
+        'a write that fails is a failure, and state keeps what it had',
+        setUp: () {
+          stubCatalog();
+          when(repository.readHiddenFromFace).thenAnswer((_) async => {'A'});
+          when(() => repository.writeHiddenFromFace(any()))
+              .thenThrow(const FileSystemException('read-only'));
+        },
+        seed: () =>
+            const SessionState(sessions: summaries, hiddenFromFace: {'A'}),
+        build: build,
+        act: (cubit) => cubit.setShownOnFace('B', shown: false),
+        skip: 1,
+        expect: () => [
+          isA<SessionState>()
+              .having((s) => s.status, 'st', SessionStatus.failure)
+              .having((s) => s.error, 'error', SessionError.unknown)
+              .having((s) => s.hiddenFromFace, 'hidden', {'A'}),
+        ],
+      );
+
+      blocTest<SessionCubit, SessionState>(
+        'deleting a session re-reads them, without the deleted one',
+        setUp: () {
+          stubCatalog(
+            list: const [SessionSummary(id: 'B', name: 'B')],
+          );
+          when(() => repository.deleteSession(any())).thenAnswer((_) async {});
+          stubHidden(const {});
+        },
+        seed: () => const SessionState(
+          currentSessionId: 'B',
+          sessions: summaries,
+          hiddenFromFace: {'A'},
+        ),
+        build: build,
+        act: (cubit) => cubit.deleteSession('A'),
+        skip: 1,
+        expect: () => [
+          isA<SessionState>()
+              .having((s) => s.outcome, 'outcome', SessionOutcome.deleted)
+              .having((s) => s.hiddenFromFace, 'hidden', isEmpty),
+        ],
+      );
+    });
 
     blocTest<SessionCubit, SessionState>(
       'duplicateSession copies the bundle and refreshes the catalog',

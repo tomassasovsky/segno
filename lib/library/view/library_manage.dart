@@ -117,6 +117,32 @@ Future<void> showLibraryManage(
   }
 }
 
+/// A row's options (its three-dot button): `Hide from pedal`, or `Show on
+/// pedal` for a session that is hidden (#1921). The Sessions pedal function
+/// lists every saved session the player did not hide; a hidden one stays in
+/// the Library and opens from it as before.
+Future<void> showLibraryRowOptions(
+  BuildContext context,
+  SessionSummary summary,
+) async {
+  final l10n = context.l10n;
+  final session = context.read<SessionCubit>();
+  final hidden = session.state.hiddenFromFace.contains(summary.id);
+  const pedal = 'pedal';
+  final choice = await showFxOptionsSheet(
+    context,
+    title: summary.name,
+    options: [
+      FxOption(
+        id: pedal,
+        label: hidden ? l10n.libraryShowOnPedal : l10n.libraryHideFromPedal,
+      ),
+    ],
+  );
+  if (choice != pedal) return;
+  await session.setShownOnFace(summary.id, shown: hidden);
+}
+
 /// Asks for a session name on the keyboard sheet (pen 19/04) and runs [run]
 /// with it. A name that sanitizes to nothing, or that another session
 /// carries exactly, is answered in the sheet before anything runs; a

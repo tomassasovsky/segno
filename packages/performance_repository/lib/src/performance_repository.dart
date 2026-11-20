@@ -735,11 +735,11 @@ class PerformanceRepository {
   }
 
   /// Disarms performance-recording capture unconditionally — the
-  /// **programmatic** path (`SessionCubit` awaits this before applying a
-  /// loaded session): never subject to [disarm]'s double-press guard, since
-  /// a session load has nothing to do with a fat-fingered re-press of the
-  /// arm/disarm control and must not be silently skipped by a guard built
-  /// for a different scenario.
+  /// **programmatic** path (the recorder ending a take that stopped on its
+  /// own; a session change uses [disarmForSessionChange]): never subject to
+  /// [disarm]'s double-press guard, which is built for a fat-fingered
+  /// re-press of the arm/disarm control and must not silently skip a stop
+  /// that has nothing to do with that gesture.
   ///
   /// Takes the disarm-time settled-lane snapshot pass (covers a track
   /// recorded fresh during the performance — recording finalization produces
@@ -765,6 +765,23 @@ class PerformanceRepository {
     return await _finalizeArmed(dir);
   }
 
+  /// [disarmAndFinalize] for a session that is about to replace the rig (an
+  /// Open or a New session). The take is finalized the same way, and
+  /// [endedBySessionChange] says so until the next take is finalized, so
+  /// the recorder can say the recording was saved without opening its
+  /// completion sheet over the new session (#1229, #1910).
+  Future<EngineResult> disarmForSessionChange() async {
+    await _armFinished?.future;
+    final dir = _armedDir;
+    if (dir == null) return EngineResult.ok;
+    return await _finalizeArmed(dir, sessionChange: true);
+  }
+
+  /// Whether the take finalized last was ended by a session change
+  /// ([disarmForSessionChange]) rather than by the player or by itself.
+  bool get endedBySessionChange => _endedBySessionChange;
+  bool _endedBySessionChange = false;
+
   /// The disarm-time snapshot of the take in [dir], taken while the engine
   /// is still the live session's.
   PerformanceDisarmSnapshot _disarmSnapshot(String dir) =>
@@ -785,7 +802,12 @@ class PerformanceRepository {
         ),
       );
 
-  Future<EngineResult> _finalizeArmed(String dir) async {
+  Future<EngineResult> _finalizeArmed(
+    String dir, {
+    bool sessionChange = false,
+  }) async {
+    // Set before the status is published: the recorder reads it there.
+    _endedBySessionChange = sessionChange;
     _setStatus(PerformanceCaptureStatus.finalizing);
     final PerformanceDisarmSnapshot disarmSnapshot;
     final EngineResult result;

@@ -3840,6 +3840,75 @@ void main() {
       expect(find.byType(ConsoleDialogShell), findsNothing);
     });
 
+    testWidgets('a take a session change ended opens no dialog over the new '
+        'session: the stage says it was saved (#1229, #1910)', (tester) async {
+      whenListen(
+        performanceRecorder,
+        Stream.fromIterable(const [
+          PerformanceRecorderRendering(percent: 10, endedBySessionChange: true),
+          PerformanceRecorderCompleted(
+            PerformanceRecordDone('/tmp/perf-1'),
+            endedBySessionChange: true,
+          ),
+        ]),
+        initialState: const PerformanceRecorderIdle(),
+      );
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+      await tester.pump();
+      await tester.pump();
+
+      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+      expect(find.byType(ConsoleDialogShell), findsNothing);
+      expect(said.titles, [l10n.perfSavedBySessionChange]);
+      expect(said.shown.single.tone, NoticeTone.success);
+      await tester.pump(const Duration(seconds: 10));
+    });
+
+    testWidgets('a take a session change ended that dropped frames still '
+        'opens the completion sheet, which says so', (tester) async {
+      whenListen(
+        performanceRecorder,
+        Stream.fromIterable(const [
+          PerformanceRecorderRendering(percent: 10, endedBySessionChange: true),
+          PerformanceRecorderCompleted(
+            PerformanceRecordDone('/tmp/perf-1'),
+            hadGlitch: true,
+            endedBySessionChange: true,
+          ),
+        ]),
+        initialState: const PerformanceRecorderIdle(),
+      );
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.byKey(const Key('perfCompletion_sheet')), findsOneWidget);
+      expect(said.titles, isEmpty);
+    });
+
+    testWidgets('a take a session change ended that did not come out whole '
+        'still opens the completion sheet', (tester) async {
+      whenListen(
+        performanceRecorder,
+        Stream.fromIterable(const [
+          PerformanceRecorderRendering(percent: 10, endedBySessionChange: true),
+          PerformanceRecorderCompleted(
+            PerformanceRecordPartial('/tmp/perf-1'),
+            endedBySessionChange: true,
+          ),
+        ]),
+        initialState: const PerformanceRecorderIdle(),
+      );
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.byKey(const Key('perfCompletion_sheet')), findsOneWidget);
+    });
+
     testWidgets('a short-capture auto-discard is said in the top bar, not the '
         'completion sheet', (tester) async {
       whenListen(

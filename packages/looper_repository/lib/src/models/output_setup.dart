@@ -88,7 +88,7 @@ class OutputBus extends Equatable {
 
 /// The output setup (accepted design, Output setup): every destination that
 /// is off its defaults, keyed by bus. Session-owned like the input setup,
-/// and carried into New Loop; only the destinations' names are appliance
+/// and carried into New session; only the destinations' names are appliance
 /// aliases.
 class OutputSetup extends Equatable {
   /// Creates an [OutputSetup].

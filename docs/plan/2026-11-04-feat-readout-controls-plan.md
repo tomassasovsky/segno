@@ -189,11 +189,16 @@ Acceptance:
 
 ## Design writeback
 
-Penpot, a new page area `READOUT / controls` with the strip, the panel in its
-states and the keypad, at 640x375 logical. Each part's PR lists its geometry
-under "Design writeback".
+Penpot, page `01 CURRENT UX / 25 Main views and selected-track display`,
+section "25  Readout controls": eleven `READOUT / ...` boards at 640x375
+logical, drawn from `test/screenshots/readout_controls_screenshots_test.dart`
+(the readout with its strip and the panel while recording, each in English
+and Spanish; the panel, retimes, every signature, the keypad and its range
+refusal; Clear tempo refused in English and Spanish), each with its `c/`
+note. The page's "Selected track · 7-inch" tile carries a note that the strip
+replaced its bottom row. Snapshot in tomassasovsky/segno-design#21.
 
-## Device checks (later, on the console)
+## Device checks (later, on the console, #1906)
 
 - Tap-tempo latency from the readout: taps at 120 BPM on the readout land
   within 0.5 BPM of the same taps on the main screen. If they do not, carry

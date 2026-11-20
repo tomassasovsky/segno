@@ -8963,7 +8963,7 @@ class LooperRepository {
   /// removes it) and the chain switch at each address of [chainSwitches]
   /// set to its value; negative when it would shrink. What an edit is
   /// weighed by against [fxRoomNs]: one chain for an effects edit or for a
-  /// switch the screen turns on, several for a New loop template.
+  /// switch the screen turns on, several for a New session template.
   int fxGrowthNs(
     Map<FxAddress, List<TrackEffect>> chains, {
     Map<FxAddress, bool> chainSwitches = const {},

@@ -22,6 +22,7 @@ import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/control/model/foot_mixer.dart';
+import 'package:segno/control/model/foot_sessions.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/application/fade_settings.dart';
 import 'package:segno/looper/looper.dart';
@@ -32,6 +33,7 @@ import 'package:segno/session/session.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/tuner/cubit/tuner_cubit.dart';
 import 'package:segno/tuner/pitch.dart';
+import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/helpers.dart';
@@ -42,6 +44,8 @@ class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
 class _MockLooperRepository extends Mock implements LooperRepository;
 
 class _MockSessionCubit extends MockCubit<SessionState> implements SessionCubit;
+
+class _MockSessionRepository extends Mock implements SessionRepository;
 
 class _MockPerformanceRecorderCubit extends MockCubit<PerformanceRecorderState>
     implements PerformanceRecorderCubit;
@@ -101,6 +105,7 @@ void main() {
   late LooperRepository repository;
   late SettingsRepository settings;
   late SessionCubit session;
+  late SessionRepository sessionRepository;
   late _ScenePerformance performance;
   late PerformanceRecorderCubit performanceRecorder;
   late TransportClockCubit transportClock;
@@ -211,6 +216,8 @@ void main() {
     addTearDown(control.close);
     session = _MockSessionCubit();
     when(() => session.state).thenReturn(const SessionState());
+    // The Sessions face's preview (#1921) reads a saved session from here.
+    sessionRepository = _MockSessionRepository();
     performanceRecorder = _MockPerformanceRecorderCubit();
     when(() => performanceRecorder.state)
         .thenReturn(const PerformanceRecorderIdle());
@@ -293,6 +300,9 @@ void main() {
             // the same store.
             RepositoryProvider<SettingsRepository>.value(value: settings),
             RepositoryProvider<FadeSettings>.value(value: fade),
+            RepositoryProvider<SessionRepository>.value(
+              value: sessionRepository,
+            ),
           ],
           child: MultiBlocProvider(
             providers: [
@@ -595,6 +605,252 @@ void main() {
     }, skip: !rendersScreenshots);
   }
 
+  // The Sessions face (#1910): every saved session the player did not hide,
+  // four to a page (#1921), with what opening one would end while a loop
+  // plays. `page`: the second page, with two empty positions. `opening`: an
+  // Open asked from the face and not settled. `failed`: one that did not
+  // open. `hidden`: the open session is hidden, so the readout names it.
+  // `stopped`: nothing playing. `none`: no saved session. A press shows a
+  // session and a Hold opens it:
+  // `preview` shows a session with recordings, `preview_setup` one that
+  // holds a setup and no recordings, `preview_unreadable` one that does not
+  // read, and `hold` a Hold to open halfway through.
+  for (final scene in [
+    'default',
+    'page',
+    'opening',
+    'failed',
+    'hidden',
+    'stopped',
+    'none',
+    'spanish',
+    'preview',
+    'preview_setup',
+    'preview_unreadable',
+    'hold',
+  ]) {
+    testWidgets('Sessions face: $scene', (tester) async {
+      seed(
+        const LooperState(
+          status: EngineStatus(
+            isConnected: true,
+            devicePresent: true,
+            deviceName: 'Segno',
+            inputChannels: 2,
+            outputChannels: 2,
+          ),
+          tracks: [
+            Track(state: TrackState.playing, lengthFrames: 48000),
+            Track(channel: 1, state: TrackState.stopped, lengthFrames: 48000),
+            Track(channel: 2),
+            Track(channel: 3),
+          ],
+        ),
+      );
+      if (scene == 'stopped') {
+        seed(
+          const LooperState(
+            status: EngineStatus(
+              isConnected: true,
+              devicePresent: true,
+              deviceName: 'Segno',
+              inputChannels: 2,
+              outputChannels: 2,
+            ),
+            tracks: [
+              Track(state: TrackState.stopped, lengthFrames: 48000),
+              Track(channel: 1),
+            ],
+          ),
+        );
+      }
+      const sessions = [
+        FootSessionEntry(
+          id: 'a',
+          name: 'Intro',
+          trackCount: 2,
+          tempoBpm: 84,
+          looperMode: LooperMode.multi,
+        ),
+        FootSessionEntry(
+          id: 'b',
+          name: 'Evening loop',
+          trackCount: 3,
+          tempoBpm: 84,
+          looperMode: LooperMode.song,
+        ),
+        FootSessionEntry(
+          id: 'c',
+          name: 'Slow one',
+          trackCount: 2,
+          tempoBpm: 72,
+          looperMode: LooperMode.sync,
+        ),
+        FootSessionEntry(
+          id: 'd',
+          name: 'Stomp',
+          trackCount: 4,
+          tempoBpm: 120,
+          looperMode: LooperMode.band,
+        ),
+        FootSessionEntry(
+          id: 'e',
+          name: 'Encore',
+          trackCount: 3,
+          tempoBpm: 96,
+          looperMode: LooperMode.multi,
+        ),
+        // A prepared setup with nothing recorded.
+        FootSessionEntry(
+          id: 'f',
+          name: 'Outro',
+          tempoBpm: 96,
+          looperMode: LooperMode.band,
+        ),
+      ];
+      String chainOf(List<TrackEffectType> types) => encodeFxChain(
+        FxChainEnvelope(
+          entries: [for (final type in types) BuiltInEffect(type: type)],
+        ),
+      );
+      SessionPreviewTrack recorded(int channel, int layers) =>
+          SessionPreviewTrack(
+            channel: channel,
+            lengthFrames: 96000,
+            baseLengthFrames: 96000,
+            bars: 4,
+            layers: layers,
+            muted: false,
+            fxCount: 0,
+            liveLayerFile: 'track${channel}_lane0_L0.wav',
+          );
+      when(() => sessionRepository.readPreview(any())).thenAnswer((call) async {
+        switch (call.positionalArguments.first as String) {
+          case 'b':
+            return SessionPreview(
+              summary: SessionSummary(
+                id: 'b',
+                name: 'Evening loop',
+                tempoBpm: 84,
+                modifiedAt: DateTime(2020, 9, 7),
+              ),
+              tracks: [recorded(0, 2), recorded(1, 1), recorded(3, 4)],
+              fxCount: 3,
+              sampleRate: 48000,
+              looperMode: LooperMode.song,
+              loopBars: 4,
+              inputChains: [
+                chainOf(const [TrackEffectType.drive, TrackEffectType.delay]),
+              ],
+              allTracksChain: chainOf(const [TrackEffectType.compressor]),
+            );
+          case 'f':
+            return SessionPreview(
+              summary: SessionSummary(
+                id: 'f',
+                name: 'Outro',
+                tempoBpm: 96,
+                modifiedAt: DateTime(2020, 9, 7),
+              ),
+              tracks: const [],
+              fxCount: 6,
+              sampleRate: 48000,
+              looperMode: LooperMode.band,
+              loopBars: 8,
+              inputChains: [
+                chainOf(const [TrackEffectType.chorus, TrackEffectType.reverb]),
+              ],
+              trackChains: [
+                chainOf(const [TrackEffectType.delay]),
+              ],
+              outputChains: [
+                chainOf(const [TrackEffectType.eq, TrackEffectType.compressor]),
+              ],
+            );
+          default:
+            throw StateError('unreadable');
+        }
+      });
+      // Name order: Encore, Evening loop, Intro, Outro, Slow one, Stomp.
+      final catalogue = FootSessionCatalogue(
+        sessions: switch (scene) {
+          'none' => const [],
+          'hidden' => [
+            for (final session in sessions)
+              if (session.id == 'a')
+                FootSessionEntry(
+                  id: session.id,
+                  name: session.name,
+                  onFace: false,
+                  trackCount: session.trackCount,
+                  tempoBpm: session.tempoBpm,
+                  looperMode: session.looperMode,
+                )
+              else
+                session,
+          ],
+          _ => sessions,
+        },
+        openId: scene == 'none' ? null : 'a',
+      );
+      control
+        ..setSessionCatalogue(catalogue)
+        ..setMode(InteractionMode.sessions);
+      if (scene == 'failed') {
+        // Encore is asked for and the session layer reports a failure.
+        control
+          ..activateFootSessionsPedal(PedalButton.track1, hold: true)
+          ..setSessionCatalogue(
+            FootSessionCatalogue(
+              sessions: catalogue.sessions,
+              openId: catalogue.openId,
+              failureCount: 1,
+            ),
+          );
+      }
+      if (scene == 'page') {
+        control.activateFootSessionsPedal(PedalButton.bank);
+      }
+      if (scene == 'opening') {
+        control.activateFootSessionsPedal(PedalButton.track1, hold: true);
+      }
+      // A press: Evening loop, the setup-only Outro, and Encore, which the
+      // repository cannot read.
+      final tapped = switch (scene) {
+        'preview' => PedalButton.track2,
+        'preview_setup' => PedalButton.track4,
+        'preview_unreadable' => PedalButton.track1,
+        _ => null,
+      };
+      if (tapped != null) control.activateFootSessionsPedal(tapped);
+      await pump(
+        tester,
+        locale: scene == 'spanish' ? const Locale('es') : null,
+      );
+      // The shown session's manifest.
+      await tester.pump();
+      await tester.pump();
+      const contact = Object();
+      if (scene == 'hold') {
+        control.footSessionsPressed(PedalButton.track2, contact);
+        // The press shows the session at once; then its manifest lands.
+        await tester.pump();
+        await tester.pump();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 400));
+      }
+      expect(tester.takeException(), isNull);
+      await expectLater(
+        find.byType(TracksView),
+        matchesGoldenFile('goldens/foot_sessions_$scene.png'),
+      );
+      if (scene == 'hold') {
+        control.footSessionsCancelled(PedalButton.track2, contact);
+        await tester.pump();
+      }
+    }, skip: !rendersScreenshots);
+  }
+
   // Foot Custom (pen 10 `uEukr`, and 20/03 `E7kQV` while a performance
   // records). The build dims only unassigned switches (`MV9wz`); the pen
   // also dims assigned Record / Play and Undo (write-back W2).
@@ -722,6 +978,44 @@ void main() {
               ? 'goldens/foot_custom.png'
               : 'goldens/foot_custom_recording.png',
         ),
+      );
+    }, skip: !rendersScreenshots);
+  }
+
+  // Foot Custom with the map a console starts with (#1908): both banks, and
+  // bank A in Spanish.
+  for (final scene in ['bank_a', 'bank_b', 'spanish']) {
+    testWidgets('Foot Custom default map, $scene', (tester) async {
+      seed(
+        LooperState(
+          status: const EngineStatus(
+            isConnected: true,
+            devicePresent: true,
+            deviceName: 'Segno',
+            inputChannels: 2,
+            outputChannels: 2,
+          ),
+          tracks: [
+            for (var channel = 0; channel < 8; channel++)
+              Track(
+                channel: channel,
+                state: channel < 3 ? TrackState.playing : TrackState.empty,
+                lengthFrames: channel < 3 ? 48000 : 0,
+              ),
+          ],
+        ),
+      );
+      await tester.runAsync(() => control.setPedalSetup(PedalSetup.fresh));
+      control.setMode(InteractionMode.custom);
+      if (scene == 'bank_b') control.toggleBankWithCursor();
+      await pump(
+        tester,
+        locale: scene == 'spanish' ? const Locale('es') : null,
+      );
+      expect(tester.takeException(), isNull);
+      await expectLater(
+        find.byType(TracksView),
+        matchesGoldenFile('goldens/foot_custom_default_$scene.png'),
       );
     }, skip: !rendersScreenshots);
   }

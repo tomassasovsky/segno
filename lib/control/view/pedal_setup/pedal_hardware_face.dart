@@ -13,9 +13,12 @@ class PedalHardwareFace extends StatelessWidget {
   /// Whether the enclosing pedal is being edited.
   final bool selected;
 
+  /// The face's width over its height, as it is drawn.
+  static const double aspectRatio = 84 / 114;
+
   @override
   Widget build(BuildContext context) => AspectRatio(
-    aspectRatio: 84 / 114,
+    aspectRatio: aspectRatio,
     child: CustomPaint(
       painter: _PedalFacePainter(selected: selected),
       child: LayoutBuilder(

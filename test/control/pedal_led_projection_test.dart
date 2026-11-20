@@ -32,6 +32,7 @@ Map<PedalButton, PedalLedState?> _lights(
   bool performanceArmed = false,
   Map<PedalButton, bool> physicalCustomStates = const {},
   Map<PedalButton, bool> tunerStates = const {},
+  Map<PedalButton, bool> sessionStates = const {},
   Map<PedalButton, FxSwitchReading> boundSwitches = const {},
   Set<PedalButton> pressed = const {},
 }) {
@@ -44,6 +45,7 @@ Map<PedalButton, PedalLedState?> _lights(
     performanceArmed: performanceArmed,
     physicalCustomStates: physicalCustomStates,
     tunerStates: tunerStates,
+    sessionStates: sessionStates,
     boundSwitches: boundSwitches,
     pressed: pressed,
   );
@@ -404,6 +406,104 @@ void main() {
     expect(lights[PedalButton.bank], PedalLedState.laterBank);
     expect(lights[PedalButton.track1], isNull);
     expect(lights[PedalButton.undo], isNull);
+  });
+
+  test('Sessions lights the open session and a later page, and nothing else '
+      'unless held (#1910)', () {
+    const overlay = ControlState(mode: InteractionMode.sessions);
+    final playing = _looper(const [
+      Track(state: TrackState.playing, lengthFrames: 48000),
+    ]);
+    final lights = _lights(
+      playing,
+      overlay,
+      sessionStates: const {
+        PedalButton.track3: true,
+        PedalButton.bank: true,
+        PedalButton.track1: false,
+      },
+      pressed: const {PedalButton.undo},
+    );
+    expect(lights[PedalButton.track3], PedalLedState.selected);
+    expect(lights[PedalButton.bank], PedalLedState.laterBank);
+    expect(lights[PedalButton.mode], PedalLedState.current);
+    expect(lights[PedalButton.track1], isNull);
+    // A playing loop does not light the track switches or Rec / Play here.
+    expect(lights[PedalButton.track2], isNull);
+    expect(lights[PedalButton.recPlay], isNull);
+    expect(lights[PedalButton.clear], isNull);
+    expect(lights[PedalButton.undo], PedalLedState.pressed);
+  });
+
+  group('the hold to open on the Sessions face (#1921)', () {
+    const overlay = ControlState(mode: InteractionMode.sessions);
+    const held = PedalButton.track3;
+
+    test('fills the held switch left to right in the colour of the open '
+        "session's switch", () {
+      final frame = projectFrame(
+        _empty,
+        overlay,
+        sessionStates: const {PedalButton.track1: true},
+        sessionHeld: const {held},
+        openFill: (button: held, progress: 100),
+        pressed: const {held},
+      );
+      expect(frame.queuedButton, held);
+      expect(frame.queuedProgress, 100);
+      // The board fills a switch only while the frame lights it.
+      expect(frame.isLit(held), isTrue);
+      expect(
+        frame.pedalColors[held.index],
+        frame.pedalColors[PedalButton.track1.index],
+      );
+    });
+
+    test('with no fill, a held switch over a session is lit whole in the '
+        'same colour: the hold has fired, or cannot open anything', () {
+      final frame = projectFrame(
+        _empty,
+        overlay,
+        sessionStates: const {PedalButton.track1: true},
+        sessionHeld: const {held},
+        pressed: const {held},
+      );
+      expect(frame.queuedButton, isNull);
+      expect(frame.queuedProgress, 0);
+      expect(frame.isLit(held), isTrue);
+      expect(
+        frame.pedalColors[held.index],
+        frame.pedalColors[PedalButton.track1.index],
+      );
+    });
+
+    test('belongs to the Sessions face alone', () {
+      final frame = projectFrame(
+        _empty,
+        const ControlState(),
+        sessionHeld: const {held},
+        openFill: (button: held, progress: 100),
+        pressed: const {held},
+      );
+      expect(frame.queuedButton, isNull);
+    });
+
+    test('a waiting Song section is not drawn on the face, so the one fill '
+        'the frame has is free for the hold', () {
+      expect(showsSectionQueue(_empty, InteractionMode.sessions), isFalse);
+    });
+
+    test('a fill on a switch that is not held breaks the invariant', () {
+      expect(
+        () => projectFrame(
+          _empty,
+          overlay,
+          sessionHeld: const {held},
+          openFill: (button: held, progress: 100),
+        ),
+        throwsStateError,
+      );
+    });
   });
 
   group('Custom mode', () {

@@ -208,12 +208,6 @@ final _messages = <_Copy>[
     body: (l) => l.bootModeRetiredBody,
   ),
   _copy(
-    'tuner seeded',
-    (l) => l.footTunerSeeded,
-    tone: NoticeTone.neutral,
-    body: (l) => l.footTunerSeededBody,
-  ),
-  _copy(
     'undo clear all',
     (l) => l.undoClearAllToast,
     tone: NoticeTone.neutral,
@@ -243,7 +237,11 @@ final _messages = <_Copy>[
     (l) => l.sessionSavedAs('Night set, second half'),
     tone: NoticeTone.success,
   ),
-  _copy('session loaded', (l) => l.sessionLoaded, tone: NoticeTone.success),
+  _copy(
+    'session opened',
+    (l) => l.sessionOpened('Night set, second half'),
+    tone: NoticeTone.success,
+  ),
   _copy(
     'session converted',
     (l) => l.sessionLoadedConverted,
@@ -279,7 +277,10 @@ final _messages = <_Copy>[
   _copy('folder not empty', (l) => l.libraryFolderNotEmpty),
   _copy('take running', (l) => l.libraryTakeStillRunning),
   _copy('template', (l) => l.sessionTemplateDoesNotFit),
-  _copy('new loop not saved', (l) => l.sessionNewLoopNotSaved('New loop 12')),
+  _copy(
+    'new session not saved',
+    (l) => l.sessionNewLoopNotSaved('New session 12'),
+  ),
   _copy('track names', (l) => l.sessionTrackNamesNotSaved),
   _copy('low disk', (l) => l.perfLowDiskBlocked),
   _copy('interface switch refused', (l) => l.routingInterfaceRefused),

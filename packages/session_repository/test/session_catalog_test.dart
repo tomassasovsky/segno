@@ -86,6 +86,19 @@ void main() {
       expect(sessions.singleWhere((s) => s.id == 's-b').folder, 'Gigs');
     });
 
+    test('a row carries the looper mode the manifest names, and none for a '
+        'name this build does not know (#1921)', () async {
+      makeBundle('s-song', extra: {'looperMode': 'song'});
+      makeBundle('s-future', extra: {'looperMode': 'orbit'});
+      makeBundle('s-none');
+
+      final byId = {for (final s in await repo().listSessions()) s.id: s};
+
+      expect(byId['s-song']!.looperMode, LooperMode.song);
+      expect(byId['s-future']!.looperMode, isNull);
+      expect(byId['s-none']!.looperMode, isNull);
+    });
+
     test('a legacy bundle lists under its directory name', () async {
       makeBundle('Evening loop');
 
@@ -539,15 +552,15 @@ void main() {
 
   group('nextAutomaticName', () {
     test('returns the smallest unused number, case-insensitively', () async {
-      makeBundle('s-1', name: 'New loop 1');
-      makeBundle('s-3', name: 'new loop 3');
-      expect(await repo().nextAutomaticName('New loop'), 'New loop 2');
-      makeBundle('s-2', name: 'New Loop 2');
-      expect(await repo().nextAutomaticName('New loop'), 'New loop 4');
+      makeBundle('s-1', name: 'New session 1');
+      makeBundle('s-3', name: 'new session 3');
+      expect(await repo().nextAutomaticName('New session'), 'New session 2');
+      makeBundle('s-2', name: 'New Session 2');
+      expect(await repo().nextAutomaticName('New session'), 'New session 4');
     });
 
     test('starts at 1 on an empty catalog', () async {
-      expect(await repo().nextAutomaticName('New loop'), 'New loop 1');
+      expect(await repo().nextAutomaticName('New session'), 'New session 1');
     });
   });
 
@@ -902,6 +915,69 @@ void main() {
       expect(third.lengthFrames, 192000);
     });
 
+    test('carries the setup: the looper mode and the stored chains by place '
+        '(#1921)', () async {
+      // Nothing recorded: the session is a setup.
+      final engine = FakeSessionEngine()
+        ..tempoBpm = 120
+        ..tempoSource = TempoSource.manual
+        ..looperMode = LooperMode.song;
+      final dir = await repo().bundlePathOf('s-a');
+      await repo(engine: engine).save(
+        dir,
+        settings: const SessionSettings(
+          tempoBpm: 120,
+          tempoSource: TempoSource.manual,
+        ),
+        chains: SessionChains(
+          monitors: [
+            SessionMonitor(
+              input: 1,
+              mode: 'auto',
+              outputMask: 1,
+              volume: 1,
+              muted: false,
+              encoded: chain(2),
+            ),
+            SessionMonitor(
+              input: 0,
+              mode: 'auto',
+              outputMask: 1,
+              volume: 1,
+              muted: false,
+              encoded: chain(1),
+            ),
+            // An input with no effects is not a chain to name.
+            const SessionMonitor(
+              input: 2,
+              mode: 'auto',
+              outputMask: 1,
+              volume: 1,
+              muted: false,
+              encoded: '',
+            ),
+          ],
+          laneChains: [
+            SessionLaneChain(channel: 3, lane: 0, encoded: chain(3)),
+          ],
+          trackChains: [SessionTrackChain(channel: 1, encoded: chain(4))],
+          outputChains: [SessionOutputChain(bus: 0, encoded: chain(5))],
+          allTracksChain: chain(6),
+        ),
+      );
+
+      final preview = await repo().readPreview('s-a');
+
+      expect(preview.tracks, isEmpty);
+      expect(preview.looperMode, LooperMode.song);
+      expect(preview.summary.looperMode, LooperMode.song);
+      // Inputs in input order; lanes before tracks.
+      expect(preview.inputChains, [chain(1), chain(2)]);
+      expect(preview.trackChains, [chain(3), chain(4)]);
+      expect(preview.outputChains, [chain(5)]);
+      expect(preview.allTracksChain, chain(6));
+    });
+
     test('reports 0 bars without a tempo', () async {
       final engine = FakeSessionEngine()..seedTrack(0, Float32List(1000));
       final dir = await repo().bundlePathOf('s-a');
@@ -1173,6 +1249,98 @@ void main() {
       expect(await r.readMixdownPeaks('s-b'), isNull);
       expect(await r.readMixdownPeaks('s-ghost'), isNull);
       expect(engine.peakReads, hasLength(1));
+    });
+  });
+
+  group('the sessions kept off the Sessions face (#1921)', () {
+    File faceFile() => File('${root.path}/${SessionRepository.faceListName}');
+
+    test('is empty before any session was hidden', () async {
+      makeBundle('s-a');
+
+      expect(await repo().readHiddenFromFace(), isEmpty);
+    });
+
+    test('reads back what was written, and the file does not list as a '
+        'session or a folder', () async {
+      makeBundle('s-a');
+      makeBundle('s-b', folder: 'Gigs');
+      makeBundle('s-c');
+      final r = repo();
+
+      await r.writeHiddenFromFace({'s-b', 's-a'});
+
+      expect(await r.readHiddenFromFace(), {'s-a', 's-b'});
+      expect((await r.listSessions()).map((s) => s.id), {'s-a', 's-b', 's-c'});
+      expect(await r.listFolders(), ['Gigs']);
+    });
+
+    test('creates the root for the first write', () async {
+      root.deleteSync(recursive: true);
+
+      await repo().writeHiddenFromFace(const {});
+
+      expect(faceFile().existsSync(), isTrue);
+    });
+
+    test('a renamed and a moved session stay hidden', () async {
+      makeBundle('s-a', name: 'One');
+      makeBundle('s-b', name: 'Two');
+      final r = repo();
+      await r.createFolder('Gigs');
+      await r.writeHiddenFromFace({'s-a', 's-b'});
+
+      await r.renameSession('s-a', 'Uno');
+      await r.moveSession('s-b', folder: 'Gigs');
+
+      expect(await r.readHiddenFromFace(), {'s-a', 's-b'});
+    });
+
+    test('a deleted session, an id with no bundle and an entry that is no '
+        'id are left out', () async {
+      makeBundle('s-a');
+      makeBundle('s-b');
+      final r = repo();
+      faceFile().writeAsStringSync(
+        jsonEncode({
+          'version': 1,
+          'hidden': ['s-ghost', 's-a', 7, '../s-a', 's-b', 's-a'],
+        }),
+      );
+
+      await r.deleteSession('s-b');
+
+      expect(await r.readHiddenFromFace(), {'s-a'});
+    });
+
+    test('a file that does not read hides nothing', () async {
+      makeBundle('s-a');
+      final r = repo();
+
+      faceFile().writeAsStringSync('not json');
+      expect(await r.readHiddenFromFace(), isEmpty);
+      faceFile().writeAsStringSync(jsonEncode(['s-a']));
+      expect(await r.readHiddenFromFace(), isEmpty);
+      faceFile().writeAsStringSync(jsonEncode({'hidden': 's-a'}));
+      expect(await r.readHiddenFromFace(), isEmpty);
+    });
+
+    test('a write that fails leaves the file as it was', () async {
+      makeBundle('s-a');
+      makeBundle('s-b');
+      final r = repo();
+      await r.writeHiddenFromFace({'s-a'});
+      SessionRepository.debugOnWriteFaceList = (_) =>
+          throw const FileSystemException('rename failed');
+      addTearDown(() => SessionRepository.debugOnWriteFaceList = null);
+
+      await expectLater(
+        r.writeHiddenFromFace({'s-a', 's-b'}),
+        throwsA(isA<FileSystemException>()),
+      );
+
+      expect(await r.readHiddenFromFace(), {'s-a'});
+      expect(File('${faceFile().path}.tmp').existsSync(), isFalse);
     });
   });
 }

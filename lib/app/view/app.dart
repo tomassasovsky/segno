@@ -19,6 +19,7 @@ import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/app_notices.dart';
 import 'package:segno/app/application/app_runtime.dart';
+import 'package:segno/app/foot_session_catalogue.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/app/segno_navigator.dart';
@@ -39,6 +40,7 @@ import 'package:segno/backing/cubit/backing_mix_cubit.dart';
 import 'package:segno/common/on_screen_keyboard/on_screen_keyboard_host.dart';
 import 'package:segno/console_leds/cubit/console_leds_cubit.dart';
 import 'package:segno/control/control.dart';
+import 'package:segno/control/model/foot_sessions.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/logging/app_log.dart';
 import 'package:segno/looper/application/record_settings.dart';
@@ -1103,7 +1105,13 @@ class _AppViewState extends State<_AppView> {
       name: name,
       defaultName: name == storedDefaultTrackName(control.cursor),
       mode: control.mode.token,
-      bank: control.activeBank,
+      // The Sessions face pages its own list, so the readout shows its page.
+      bank: control.mode == InteractionMode.sessions
+          ? projectFootSessions(
+              control.sessionCatalogue,
+              control.footSessions,
+            ).page
+          : control.activeBank,
       notice: _readoutNotice(),
       goodbye: readoutGoodbyeOf(
         power,
@@ -1510,20 +1518,6 @@ class _AppViewState extends State<_AppView> {
     );
   }
 
-  /// Where the Tuner went once the tray stopped carrying it (#1229, D11):
-  /// said once, the boot `Hold · Tuner` was added to Custom pedal 2.
-  void _showTunerSeeded() {
-    _notices.show(
-      Notice(
-        id: AppNoticeId.tunerSeeded,
-        explains: true,
-        icon: LucideIcons.info,
-        title: (l10n) => l10n.footTunerSeeded,
-        body: (l10n) => l10n.footTunerSeededBody,
-      ),
-    );
-  }
-
   /// Labels come from [_l10n] (above [MaterialApp]), not a builder context —
   /// the menu bar must not live under [MaterialApp] or DevTools / theme
   /// rebuilds remount it and trip the single-delegate lock assertion.
@@ -1630,6 +1624,13 @@ class _AppViewState extends State<_AppView> {
         BlocListener<SessionCubit, SessionState>(
           listener: (_, _) => _reconcileRestoreNotices(),
         ),
+        // The Sessions face draws the session layer's catalogue, and a
+        // cubit never reads a cubit: the app hands each change over (#1910).
+        BlocListener<SessionCubit, SessionState>(
+          listener: (context, state) => context
+              .read<ControlCubit>()
+              .setSessionCatalogue(footSessionCatalogueOf(state)),
+        ),
         BlocListener<MonitorCubit, MonitorState>(
           listenWhen: (previous, current) =>
               previous.restoreFailed != current.restoreFailed,
@@ -1646,11 +1647,6 @@ class _AppViewState extends State<_AppView> {
               previous.retiredBootMode == null &&
               current.retiredBootMode != null,
           listener: (_, _) => _showBootModeRetired(),
-        ),
-        BlocListener<ControlCubit, ControlState>(
-          listenWhen: (previous, current) =>
-              !previous.tunerDefaultSeeded && current.tunerDefaultSeeded,
-          listener: (_, _) => _showTunerSeeded(),
         ),
         BlocListener<ControlCubit, ControlState>(
           listenWhen: (previous, current) =>

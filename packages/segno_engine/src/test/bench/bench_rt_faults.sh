@@ -28,6 +28,12 @@
 # The bench sets SEGNO_ALSA_PERIODS=8 like segno-kiosk-launch, unless the
 # environment already sets it.
 # --list prints the device ids for --playback / --capture.
+# While a window runs, read nothing from /proc/asound: a PCM's status file
+# takes the stream lock the callback's ALSA calls need (a sleeping lock on
+# PREEMPT_RT), and once-a-second reads made #1724's and #1729's runs late.
+# Set ftrace's ring size and events before the bench starts and flip only
+# tracing_on during the window: resizing the ring or enabling an event mid-run
+# stalls every core (#1724).
 set -euo pipefail
 cd "$(dirname "$0")/../../.."   # src/test/bench -> packages/segno_engine
 

@@ -173,6 +173,14 @@ const int kFxBenchPeriod = 64;
 /// share s puts the p99.9 at 1.16 s of the block at the limit; 0.9 / 1.16
 /// is 0.773, so 0.77. The engine counts the services past it
 /// (`over_share_periods`, LE_CB_OVER_SHARE_NUM / DEN).
+///
+/// The 1.16 came from a run whose sampling script read the sound card's
+/// status from /proc once a second, which delays the callback (see
+/// [kFxTrackJobNs]), and with every core's context switches traced, which
+/// delays it too. The app's own limits are now set from runs with neither
+/// (#1724, build 279): ten minutes on the stage with four takes playing, a
+/// take recorded and a screen change, against the bar of no dropout. Those
+/// runs set [kFxTrackJobNs] and [kFxSerialFactor]; the share is unchanged.
 const double kFxBudgetShare = 0.77;
 
 /// The rate the charges default to.
@@ -273,23 +281,59 @@ const Map<int, double> kFxHandoffUs = {1: 4.48, 2: 5.184, 3: 6.208};
 /// sums every track onto the outputs, work the monitor jobs' handoff
 /// ([kFxHandoffUs]) does not have.
 ///
-/// Set from the console (build 238, 48 kHz / 32, two workers,
-/// `bench_rt_faults --track-racks K`, #1729): Ed's Racks on 3 and 5 tracks
-/// ran with no late period and no xrun, on 6 and 7 with 66 and 87 late
-/// periods in 120 s, more than the 42 in 200 s of #1724's run at the
-/// limit. The per-job charge that admits 5 and refuses 6 at the 77 % share
-/// lies between 348 and 727 ns; this is near its middle. Four input racks
-/// beside one track rack, which this admits, ran with none; beside three,
-/// which it refuses, 72 late periods and 2 xruns. The engine records and
-/// sums every track of a block whose track chains are jobs, chained or not;
-/// those runs had all eight, so the figure carries that share. It is the
-/// console's setting's figure: a longer block spends less a frame on it.
-const int kFxTrackJobNs = 500;
+/// Set from the app on the console (#1724, build 279, master 29cf36f6d,
+/// 48 kHz / 32, two workers), with the rule that what the budget admits
+/// must run with no dropout and that it admits one rig fewer than the
+/// heaviest that does. Each run was ten minutes on the stage with four
+/// takes playing, a take recorded at two minutes and another at seven and
+/// a half, and a screen change (Settings, the Device page, back) at five,
+/// with nothing traced; the engine's own counters were read from the app's
+/// memory. With Ed's Rack on the four inputs, racks on 7 tracks ran with
+/// no dropout (40 late periods) and on 8 with none either (144 late
+/// periods). So 7 is admitted and 8 refused: a charge from 277 to 441 ns
+/// does that, and 300 sits near the low end, the 8 refused by 1.3 %. The
+/// work it pays for is per frame, so a longer block spends no more a frame
+/// on it; it was run only at 48 kHz / 32.
+///
+/// The 200 ns it replaces came from `bench_rt_faults` (build 278), which
+/// has none of the app's own work on the callback, and the 500 ns before it
+/// from #1729's runs on build 238, whose late periods were partly the
+/// measurement's (a sampling script that read the sound card's status from
+/// /proc once a second).
+const int kFxTrackJobNs = 300;
+
+/// What a chain that runs on the callback itself (All tracks and the
+/// outputs: [fxLoadNs]'s `serial`) charges for each nanosecond of its own
+/// cost, against a chain the workers share, which charges its cost.
+///
+/// In the app the callback also carries its own work and the transients of
+/// recording a take and changing the screen, which the workers do not, so
+/// effects that wait their turn on it end a period later than the same
+/// effects on a worker. Set from the same runs as [kFxTrackJobNs] (#1724,
+/// build 279, 48 kHz / 32, ten minutes each, nothing traced), with Ed's
+/// Rack on the four inputs and racks in series on output pair 0's chain:
+/// three racks there dropped out once, at the screen change (318 late
+/// periods), though the rule before this charged them at 91 %, under the
+/// eight tracks' 96 % that ran clean; two ran with no dropout. So one is
+/// admitted and two refused: a factor from 1.76 to 3.51 does that, and 2.5
+/// sits near the middle. Beside the four input racks and one on the
+/// output's chain, racks then fit on two tracks and not on three (98 % and
+/// 106 %).
+///
+/// It was measured only at 48 kHz / 32 and applies at every setting, and
+/// with no workers too: there the jobs run on the callback beside the
+/// serial chains and charge their cost, as the no-worker runs of #1746
+/// measured, while a chain on the callback in the app was only measured
+/// with the workers running, so it keeps the factor rather than lose it
+/// unmeasured. #1914 is removing the callback's own extra work in the app,
+/// after which this is measured again.
+const double kFxSerialFactor = 2.5;
 
 /// What the effects charge the audio thread's worst block, in nanoseconds
 /// per frame, at [period]-frame blocks with [workers] effects workers
 /// beside the callback (#1515): the chains that stay on the callback
-/// ([serial]) plus the critical path of the [jobs], the chains the workers
+/// ([serial], charged [kFxSerialFactor] times their cost) plus the critical
+/// path of the [jobs], the chains the workers
 /// share: one monitor input's non-empty chain each (#1515), and one track's
 /// lanes' and own chains each, when one of them is non-empty (#1729).
 ///
@@ -305,9 +349,8 @@ const int kFxTrackJobNs = 500;
 /// (build 274, 48 kHz / 32, no workers) Ed's Racks on 3 and 4 tracks ran
 /// as the same racks on the inputs did, and on 5, at 90 % of the budget,
 /// with 6 to 9 late periods in 120 s and no xrun (#1746). That is a little
-/// heavier than five racks on the inputs and output (none), and inside
-/// #1724's bar only by the share's margin: a share or a rack charge cut
-/// reaches the track racks first.
+/// heavier than five racks on the inputs and output (none): a share or a
+/// rack charge cut reaches the track racks first.
 int fxLoadNs({
   required int serial,
   required Iterable<int> jobs,
@@ -319,13 +362,14 @@ int fxLoadNs({
   // passthroughs): the engine releases a round for it all the same.
   final costs = jobs.toList();
   final sum = costs.fold(0, (a, b) => a + b);
+  final onCallback = (serial * kFxSerialFactor).ceil();
   final handoffUs = kFxHandoffUs[workers > 3 ? 3 : workers];
-  if (handoffUs == null || costs.length < 2) return serial + sum;
+  if (handoffUs == null || costs.length < 2) return onCallback + sum;
   final cores = workers + 1;
   final largest = costs.reduce((a, b) => a > b ? a : b);
   final handoff = (handoffUs * 1000 / _perBlock(period)).ceil();
   final path = (sum + (cores - 1) * largest + cores - 1) ~/ cores;
-  return serial + handoff + trackJobs * kFxTrackJobNs + path;
+  return onCallback + handoff + trackJobs * kFxTrackJobNs + path;
 }
 
 /// The frames a per-block cost spreads over: the block below the bench's

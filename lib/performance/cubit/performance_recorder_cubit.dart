@@ -176,6 +176,10 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   bool get _stoppedOnItsOwn =>
       _stopReason == PerformanceStopReason.idle ||
       _stopReason == PerformanceStopReason.lengthLimit;
+
+  /// Whether a session change ended the take this cubit is delivering, read
+  /// from the repository when its finalize starts.
+  bool _endedBySessionChange = false;
   bool _loaded = false;
 
   /// Refused arms so far; see [PerformanceRecorderIdle.refusal].
@@ -320,6 +324,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
         tracks: current.tracks,
         duration: current.duration,
         hadGlitch: current.hadGlitch,
+        endedBySessionChange: current.endedBySessionChange,
       ),
     );
   }
@@ -528,6 +533,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
         :final percent,
         :final name,
         :final stoppedOnItsOwn,
+        :final endedBySessionChange,
       ):
         _emit(
           PerformanceRecorderRendering(
@@ -536,6 +542,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
             refusal: ++_refusals,
             refusedWith: refusal,
             stoppedOnItsOwn: stoppedOnItsOwn,
+            endedBySessionChange: endedBySessionChange,
           ),
         );
       case PerformanceRecorderArmed():
@@ -586,6 +593,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
         _armedTicker?.cancel();
         _armedTicker = null;
         _deliveryHold ??= _performance.holdArm();
+        _endedBySessionChange = _performance.endedBySessionChange;
         _emit(PerformanceRecorderFinalizing(refusal: _refusals));
       case PerformanceCaptureStatus.done:
         // One last read, and the only one that can see the whole capture.
@@ -809,6 +817,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
         name: _basename(dir),
         refusal: _refusals,
         stoppedOnItsOwn: _stoppedOnItsOwn,
+        endedBySessionChange: _endedBySessionChange,
       ),
     );
     final completer = Completer<void>();
@@ -844,6 +853,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
             ? current.refusedWith
             : null,
         stoppedOnItsOwn: _stoppedOnItsOwn,
+        endedBySessionChange: _endedBySessionChange,
       ),
     );
     if (!progress.done) return;
@@ -913,6 +923,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
         tracks: tracks,
         duration: _completedDuration,
         hadGlitch: _sawOverrun,
+        endedBySessionChange: _endedBySessionChange,
       ),
     );
   }

@@ -588,8 +588,12 @@ int le_heard_block_begin(le_engine* e, int tc, const int32_t* lane_n,
     /* A lane whose last image went (a fresh clean take, a reset) leaves the
      * heard path while it may still be playing it: its chain comes back
      * through its re-enable ramp, as on a source switch. A lane that gets
-     * its first one starts on its clean take and fades to the image (a take
-     * that records one has done so by the time it plays). */
+     * its first one starts on its clean take and fades to the image, unless
+     * its track is recording: nothing of a recording track plays (its play
+     * gain is 0), so the fade would blend silence with the Pre run of
+     * silence, and run the lane's whole rack on the callback, cold, for its
+     * 10 ms, in the blocks a take starts in (#1914). Such a lane starts on
+     * its image, as the performance render's take does (perf_render). */
     const uint32_t left = e->heard_lanes[t] & ~lanes;
     for (int l = 0; l < LE_MAX_LANES && left != 0u; ++l) {
       if (!(left & (1u << l))) continue;
@@ -610,8 +614,16 @@ int le_heard_block_begin(le_engine* e, int tc, const int32_t* lane_n,
       h->mix = 0.0f;
     }
     const uint32_t entered = lanes & ~e->heard_lanes[t];
+    const int recording = load_i32(&tr->a_state) == LE_TRACK_RECORDING;
     for (int l = 0; l < LE_MAX_LANES && entered != 0u; ++l) {
-      if (entered & (1u << l)) e->heard[t][l].mix = 0.0f;
+      if (entered & (1u << l)) {
+        e->heard[t][l].mix =
+            recording && atomic_load_explicit(&e->heard[t][l].a_source,
+                                              memory_order_relaxed) ==
+                             LE_HEARD_SOURCE_HEARD
+                ? 1.0f
+                : 0.0f;
+      }
 #ifdef LE_NATIVE_TESTS
       /* le_test_heard_force 2 plays the image from its first frame, so the
        * suite's exact sound checks see no crossfade rounding. */

@@ -733,6 +733,74 @@ static void test_late_take_is_walked_from_the_playhead(void) {
   le_engine_destroy(e);
 }
 
+/* The prefaulter's pace (#1914): faulting in zeroes every page, and at the
+ * thread's old gigabytes a second a take's start and a spare's fill took the
+ * memory bus from the audio threads. A take over a long loop started at the
+ * playhead has a follow job (from a second past the playhead) and a fill job
+ * (the frames before it): while the follow job is behind, a paced pass works
+ * it alone, and asks for the time its chunk takes at the thread's rate. The
+ * take then runs at real-time pace with the real thread, and nothing faults
+ * on the audio thread. */
+static void test_prefaulter_paces_and_follows_first(void) {
+  printf("test_prefaulter_paces_and_follows_first\n");
+  const int32_t rate = 96000;
+  const int sec_blocks = rate / RT_BLOCK;
+  le_engine* e = le_engine_create();
+  CHECK(le_engine_configure(e, rate, 2, 2, rate * 60) == LE_OK);
+  rt_audio_thread a;
+  CHECK(rt_audio_start(&a, e));
+  CHECK(le_engine_record(e, 0) == LE_OK); /* a 40 s loop, fast */
+  for (int sec = 0; sec < 40; ++sec) {
+    le_prefault_tick(e);
+    rt_run(&a, sec_blocks, 0.3f);
+  }
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  rt_run(&a, 35 * sec_blocks, 0.0f);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s); /* a poll: the zero spares are made */
+  le_prefault_tick(e);
+  const int32_t p = load_i32(&e->a_master_pos);
+  CHECK(le_engine_record(e, 1) == LE_OK); /* immediate, at the playhead */
+  int64_t wait_ns = 0;
+  CHECK(le_prefault_paced_pass_for_test(e, &wait_ns)); /* still behind */
+  const float* b = e->tracks[1].lanes[0].pool[0];
+  const size_t head = (size_t)rate * LE_PREFAULT_HEAD_SECONDS;
+  const size_t chunk = (size_t)64 << 10; /* LE_PREFAULT_CHUNK_BYTES */
+  /* the follow job's first chunk, a second past the playhead */
+  CHECK(rt_resident_pages(b + p + head, chunk / 2) ==
+        rt_pages(b + p + head, chunk / 2));
+  /* the fill (the frames before the playhead; at 20 s, past what earlier
+   * takes left faulted in) waits for it */
+  const float* fill = b + (size_t)rate * 20;
+  CHECK(rt_resident_pages(fill, chunk) == 0);
+  /* one chunk at 64 MB/s or more is a millisecond at most */
+  printf("  the pass asks for %.0f us\n", (double)wait_ns / 1000.0);
+  CHECK(wait_ns > 0 && wait_ns <= 1000000);
+  rt_run_paced(&a, 3 * sec_blocks, 0.25f, rate); /* the real thread only */
+  CHECK(rt_resident_pages(fill, chunk) == rt_pages(fill, chunk)); /* after */
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  /* A fresh take on track 2 moves its follow job's target every pass; once
+   * the job is half its lead ahead, a fill (a spare's, here) still runs. */
+  CHECK(le_engine_record(e, 2) == LE_OK);
+  const size_t spare_bytes = (size_t)rate * 4 * sizeof(float);
+  float* spare = (float*)le_rt_alloc(spare_bytes);
+  CHECK(spare != NULL);
+  _Atomic int32_t spare_ready = 0;
+  le_prefault_buffer(e, spare, (int32_t)(spare_bytes / sizeof(float)),
+                     &spare_ready);
+  rt_run_paced(&a, 2 * sec_blocks, 0.25f, rate); /* recording all along */
+  CHECK(atomic_load(&spare_ready) == 1);
+  CHECK(le_engine_record(e, 2) == LE_OK);
+  le_prefault_forget(e, spare);
+  le_rt_free(spare);
+  rt_run(&a, sec_blocks, 0.0f);
+  rt_audio_stop(&a);
+  printf("  %ld blocks: %ld faults on the audio thread (worst block %ld)\n",
+         a.blocks_run, a.faults, a.worst_block);
+  CHECK(a.faults == 0);
+  le_engine_destroy(e);
+}
+
 /* Standbys stay inside LE_STANDBY_BUDGET_BYTES: a track whose standbys would
  * exceed it gets none (its punch-in takes the fresh path, and still does not
  * fault), and an imported session, with no captures, keeps none. */
@@ -1128,6 +1196,7 @@ static void run_rt_memory_tests(void) {
   test_audio_thread_takes_no_page_faults_with_track_jobs();
   test_long_take_is_followed_by_the_prefaulter();
   test_late_take_is_walked_from_the_playhead();
+  test_prefaulter_paces_and_follows_first();
   test_standbys_stay_in_budget();
   test_take_pressed_at_the_loop_end_wraps_faulted_in();
   test_band_handoff_take_starts_faulted_in();

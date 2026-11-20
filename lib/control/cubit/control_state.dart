@@ -32,10 +32,11 @@ class ControlState extends Equatable {
     this.assignedActionRefusal,
     this.assignedActionLowDisk = false,
     this.footTuner = const FootTunerSelection(),
+    this.footSessions = const FootSessionsSelection(),
+    this.sessionCatalogue = const FootSessionCatalogue(),
     this.tunerPreferences = const TunerPreferences(),
     this.footTunerFailure = 0,
     this.footTunerRefusal = FootTunerRefusal.armFailed,
-    this.tunerDefaultSeeded = false,
     this.pendingHolds = const <PedalButton>{},
     this.holdThreshold = const Duration(milliseconds: 800),
     this.footFxFailure = 0,
@@ -184,6 +185,13 @@ class ControlState extends Equatable {
   /// Reset on every Tuner entry; never stored.
   final FootTunerSelection footTuner;
 
+  /// The Sessions face's page and pending Open while the mode is up (#1910).
+  final FootSessionsSelection footSessions;
+
+  /// The session catalogue as the app last handed it over, for the Sessions
+  /// face. The session layer owns it; this is a copy to project from.
+  final FootSessionCatalogue sessionCatalogue;
+
   /// The stored tuner preferences (A4 reference, input), mirrored from
   /// `TunerSettings` so the Tuner face projects from one state. Derived,
   /// never edited here.
@@ -195,10 +203,6 @@ class ControlState extends Equatable {
 
   /// Why the latest refused foot Tuner press changed nothing.
   final FootTunerRefusal footTunerRefusal;
-
-  /// Set once when this boot added `Hold · Tuner` to Custom pedal 2 (#1229,
-  /// D11), so the app can say where the Tuner is.
-  final bool tunerDefaultSeeded;
 
   /// The pedals whose Hold is armed and not yet settled: the hold has neither
   /// fired, nor been released into its tap, nor been cancelled (#1229, the
@@ -364,10 +368,11 @@ class ControlState extends Equatable {
     ControlAction? assignedActionRefusal,
     bool? assignedActionLowDisk,
     FootTunerSelection? footTuner,
+    FootSessionsSelection? footSessions,
+    FootSessionCatalogue? sessionCatalogue,
     TunerPreferences? tunerPreferences,
     int? footTunerFailure,
     FootTunerRefusal? footTunerRefusal,
-    bool? tunerDefaultSeeded,
     Set<PedalButton>? pendingHolds,
     Duration? holdThreshold,
     int? footFxFailure,
@@ -420,10 +425,11 @@ class ControlState extends Equatable {
     assignedActionRefusal: assignedActionRefusal ?? this.assignedActionRefusal,
     assignedActionLowDisk: assignedActionLowDisk ?? this.assignedActionLowDisk,
     footTuner: footTuner ?? this.footTuner,
+    footSessions: footSessions ?? this.footSessions,
+    sessionCatalogue: sessionCatalogue ?? this.sessionCatalogue,
     tunerPreferences: tunerPreferences ?? this.tunerPreferences,
     footTunerFailure: footTunerFailure ?? this.footTunerFailure,
     footTunerRefusal: footTunerRefusal ?? this.footTunerRefusal,
-    tunerDefaultSeeded: tunerDefaultSeeded ?? this.tunerDefaultSeeded,
     pendingHolds: pendingHolds ?? this.pendingHolds,
     holdThreshold: holdThreshold ?? this.holdThreshold,
     footFxFailure: footFxFailure ?? this.footFxFailure,
@@ -477,10 +483,11 @@ class ControlState extends Equatable {
     assignedActionRefusal,
     assignedActionLowDisk,
     footTuner,
+    footSessions,
+    sessionCatalogue,
     tunerPreferences,
     footTunerFailure,
     footTunerRefusal,
-    tunerDefaultSeeded,
     pendingHolds,
     holdThreshold,
     footFxFailure,

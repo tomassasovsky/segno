@@ -199,6 +199,8 @@ class _Rig {
       midiClock: () => clock.elapsed,
       controller: controller,
       takeLocked: () => powerOffUp,
+      startNewLoop: () => newLoops++,
+      saveSession: () => saves++,
       fadeSettings: ownedFade,
       ownedValues: OwnedValuePort(
         looper: looper,
@@ -232,6 +234,10 @@ class _Rig {
 
   /// The power-off route is up: takes are locked.
   bool powerOffUp = false;
+
+  /// How often the session layer was asked for a New session and for a Save.
+  int newLoops = 0;
+  int saves = 0;
 
   void bindMidi({
     int id = 21,
@@ -416,6 +422,42 @@ void main() {
       expect(r.mix.durableSnapshot.monitorLevels[0], 1);
       r.midiValue(0);
       expect(looper.monitorVolume(0), 1);
+    },
+  );
+
+  check(
+    'External New session and MIDI Save session are handed to the session '
+    'layer once a press, and not while takes are locked (#1910)',
+    const ExternalJackSetup(
+      single: ExternalSwitchSetup(
+        gestures: ControlGesturePair(
+          press: CommandAction(ControlCommand.newLoop),
+        ),
+      ),
+    ),
+    (r) {
+      r
+        ..sample(255)
+        ..settle();
+      expect((r.newLoops, r.saves), (1, 0));
+      r
+        ..sample(0)
+        ..settle();
+      expect((r.newLoops, r.saves), (1, 0));
+
+      r
+        ..bindMidi(controls: [MidiActionControl(key: 'session:save')])
+        ..midiValue(127);
+      expect((r.newLoops, r.saves), (1, 1));
+      r.midiValue(0);
+      expect((r.newLoops, r.saves), (1, 1));
+
+      r
+        ..powerOffUp = true
+        ..sample(255)
+        ..settle()
+        ..midiValue(127);
+      expect((r.newLoops, r.saves), (1, 1));
     },
   );
 

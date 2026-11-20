@@ -65,7 +65,14 @@ enum InteractionMode {
   /// Foot-controlled Divide (#1168, pen 16 screens 03-08): the track pedals
   /// select a recorded track, Undo keeps its first half (hold for Undo) and
   /// Clear its last half; Rec/Play keeps recording.
-  divide;
+  divide,
+
+  /// The Sessions face (#1910): it lists the saved sessions four to a
+  /// page. A press on a track switch shows its session and a Hold opens it,
+  /// Clear and Bank turn the page, Undo saves and a held Undo starts a new
+  /// session; Rec/Play and Stop keep the transport.
+  /// Never a boot mode.
+  sessions;
 
   /// The persisted token for this mode. Derived from the member name, so a
   /// member rename changes the current stored identity.
