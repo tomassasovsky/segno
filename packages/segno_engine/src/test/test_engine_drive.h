@@ -455,7 +455,7 @@ static void test_drive_latency_sums_in_a_chain(void) {
 /* The oversamplers' designs are made once a rate (#1914): a second slot
  * landing on the Overdrive at the same rate designs nothing, and runs as
  * the first did. */
-extern int le_test_os_designs;
+extern _Atomic int le_test_os_designs;
 static void test_drive_design_made_once(void) {
   printf("test_drive_design_made_once\n");
   const int sr = 50000; /* no other test runs it: the designs are the process's */

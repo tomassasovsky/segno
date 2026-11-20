@@ -6554,7 +6554,7 @@ static double le_os_pass_hz(int sr) {
 static int le_os_coefs_design(int sr, int s, float* c);
 
 #ifdef LE_NATIVE_TESTS
-int le_test_os_designs = 0; /* designs made from the series */
+_Atomic int le_test_os_designs = 0; /* designs made from the series */
 #endif
 
 /* Every design made, by rate and stage. A slot landing on a kind that
@@ -6585,7 +6585,7 @@ static int le_os_coefs(int sr, int s, float* c) {
   }
   const int n = le_os_coefs_design(sr, s, c);
 #ifdef LE_NATIVE_TESTS
-  ++le_test_os_designs;
+  atomic_fetch_add_explicit(&le_test_os_designs, 1, memory_order_relaxed);
 #endif
   for (int i = 0; i < LE_OS_MEMO; ++i) {
     uint32_t free_key = 0u;
