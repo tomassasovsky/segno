@@ -251,6 +251,34 @@ static void test_heard_take_plays_its_image(void) {
   le_engine_destroy(e);
 }
 
+/* A take that records its image starts its lane on the image, not on a
+ * 10 ms fade from its clean take (#1914): nothing of a recording track
+ * plays, and the fade ran the lane's whole chain on the callback in the
+ * blocks a take starts in. The take still records and plays as before. */
+static void test_heard_take_starts_on_its_image(void) {
+  printf("test_heard_take_starts_on_its_image\n");
+  enum { N = 4800, F = 480 };
+  le_engine* e = heard_engine(48000);
+  heard_monitor_reverb(e);
+  CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_DRIVE) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1, 1) == LE_OK);
+  le_record_image image = heard_image(3, 1);
+  CHECK(le_engine_record_with_image(e, 0, &image) == LE_OK);
+  heard_feed(e, 0, 64, 64, NULL);
+  CHECK(load_i32(&e->tracks[0].a_state) == LE_TRACK_RECORDING);
+  CHECK(e->heard[0][0].mix == 1.0f);
+  heard_feed(e, 64, N - 64, 64, NULL);
+  CHECK(e->heard[0][0].mix == 1.0f);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  heard_feed(e, N, 2 * F, 64, NULL);
+  le_lane_snapshot ls;
+  le_engine_get_lane(e, 0, 0, &ls);
+  CHECK(ls.heard == 1);
+  CHECK(ls.source == LE_LANE_SOURCE_HEARD);
+  CHECK(e->heard[0][0].mix == 1.0f);
+  le_engine_destroy(e);
+}
+
 /* Switching the lane to its clean take crossfades over 10 ms to the clean
  * take through the lane's chain, which comes back through its re-enable
  * ramp; switching back returns to the image. */
@@ -653,6 +681,7 @@ static void run_heard_tests(void) {
   test_heard_attach_edges();
   test_heard_take_records_the_chain_output();
   test_heard_take_plays_its_image();
+  test_heard_take_starts_on_its_image();
   test_heard_source_switch();
   test_heard_records_an_unmonitored_chain();
   test_heard_capture_is_block_invariant();
