@@ -59,7 +59,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1540 | Drive pedals' aliasing at 48 kHz: four kinds oversampled (#1552); the owner's blind pairs decide whether the built-in Drive is oversampled too | build | plan-gate | `claude/drive-alias-1540` |
 | #1498 | Restart and shut down also wait for RAUC's own install, after an app restart | in-review | blocked-verify | `claude/rauc-power-gate-1498` |
 | #1755 | Every effect cheaper without changing its sound: pitch (#1764, #1770), drives (#1759), reverbs/delays/filters (#1762) and the Vinyl (#1904, part 4) bit-identical; part 5, the Degrade at 96 kHz, is next (scope on the issue) | build | auto | `claude/fx-opt-part5-1755` |
-| #1914 | The app's audio callback runs late on screen changes and take starts: it waits on memory (Ed's Racks overflow the caches). Parts 1-4 merged; part 5 (Mesa keeps a page transition's render target, warmed at startup) and part 6 (an inaudible heard lane snaps to its target) in review. Steady playback and take starts clean on the console | in-review | plan-gate | `claude/cb-overhead-1914-p6` |
+| #1914 | The app's audio callback runs late on screen changes and take starts: it waits on memory (Ed's Racks overflow the caches). Parts 1-4 merged (#1925, #1926, #1932, #1933); part 5 in review (Mesa's v3d BO cache keeps a page transition's render target). Steady playback is clean on master. Open: the 2-lane take start (1-2 late periods a run), the rare scheduling gaps | in-review | plan-gate | `claude/cb-overhead-1914-p5` |
 | #1724 | Effects budget from the app's measured headroom: 10-minute untraced in-app ladder at 48 kHz / 32 (build 279); track job 200 → 300 ns, chains on the callback charged 2.5× (`kFxSerialFactor`); 4 inputs + 7 tracks or + 1 output rack fit | in-review | auto | `claude/fx-headroom-1724-p3` |
 | #1515 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track and lane chains) is #1729 | build | plan-gate | `claude/fx-multicore-1515-p1b` |
 | #1816 | Console WiFi against an ASUS RT-AX89X with 802.11ax on: firmware already matches Pi OS; brcmfmac options aligned with Pi OS and a troubleshooting note; failure not reproduced, issue stays open until it recurs | in-review | auto | `claude/wifi-firmware-1816` |
@@ -104,6 +104,28 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   Transpose, Hold Reverse and the Hold on pedal 4 to Speed. Sessions by
   foot (#1910) are not in the default map.
 
+## November 2026 Page transitions without the allocation burst (#1914 part 5)
+
+- The screen changes' late periods were the page transition's first frames,
+  on the transitions to and from the stage. The fade (`FadeTransition` over
+  the page) needs an offscreen pass. Impeller on GLES gives one explicit 4x
+  MSAA (the V3D in Mesa 25.1.6 has no `GL_EXT_multisampled_render_to_texture`):
+  about 73 MB at 1080p, in `bo_stats` of the v3d debugfs.
+- Impeller drops the target 4 frames after the fade, and Mesa's v3d BO cache
+  frees it 2 s later, so each transition after a pause allocated it again.
+  The kernel zeroing its pages stalls the memory bus. In the app, transitions
+  that reused it had no late period (14 of 14); transitions that re-created
+  it had 0 to 9 each (30 in 16).
+- The owner keeps the transition as it looks. Mesa's v3d BO cache now keeps
+  BOs of 4 MB or more for 300 s instead of 2 (`recipes-graphics/mesa`). With
+  the patched driver on the console, only the first transition after the app
+  starts allocates (2 late periods). The 15 after it reused the target and
+  had none, and the screen changes past 77 % of the deadline went from
+  242-272 a run to 48-71.
+- Measured alternatives, for the record: the same fade at 100 ms (no
+  better), drawn from snapshots (worse: they allocate too), scale only and
+  scale under a fading scrim (as cheap as instant, but the owner keeps the
+  dissolve).
 ## November 2026 A heard lane nothing reaches goes to its target at once (#1914 part 6)
 
 - Part 4 started a recording take's heard lane on its image, but in the
