@@ -59,7 +59,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1540 | Drive pedals' aliasing at 48 kHz: four kinds oversampled (#1552); the owner's blind pairs decide whether the built-in Drive is oversampled too | build | plan-gate | `claude/drive-alias-1540` |
 | #1498 | Restart and shut down also wait for RAUC's own install, after an app restart | in-review | blocked-verify | `claude/rauc-power-gate-1498` |
 | #1755 | Every effect cheaper without changing its sound: pitch (#1764, #1770), drives (#1759), reverbs/delays/filters (#1762) and the Vinyl (#1904, part 4) bit-identical; part 5, the Degrade at 96 kHz, is next (scope on the issue) | build | auto | `claude/fx-opt-part5-1755` |
-| #1724 | Effects budget from the console's measured headroom: charges at the configured rate and period, share 77 % from the 48 kHz / 32 stress run | in-review | auto | `claude/fx-headroom-1724` |
+| #1724 | Effects budget from the console's measured headroom: the track-job charge re-measured without the sampling script's perturbation (500 to 200 ns a frame); Ed's Racks on all four inputs and all eight tracks now fit at 48 kHz / 32 | in-review | auto | `claude/fx-headroom-1724-p2` |
 | #1515 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track and lane chains) is #1729 | build | plan-gate | `claude/fx-multicore-1515-p1b` |
 | #1816 | Console WiFi against an ASUS RT-AX89X with 802.11ax on: firmware already matches Pi OS; brcmfmac options aligned with Pi OS and a troubleshooting note; failure not reproduced, issue stays open until it recurs | in-review | auto | `claude/wifi-firmware-1816` |
 
@@ -95,6 +95,28 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 - When Transpose and Speed ship (#1179), pedal 1 in bank A returns to
   Transpose, Hold Reverse and the Hold on pedal 4 to Speed. Sessions by
   foot (#1910) are not in the default map.
+
+## November 2026 The track-job charge from clean console runs (#1724)
+
+- #1724's and #1729's console runs sampled the sound card's status from
+  `/proc/asound` once a second while they measured, which takes the lock the
+  callback's ALSA calls need (a sleeping lock on PREEMPT_RT), and resized the
+  trace ring as each window began. The callback's long services lined up
+  with both. Measured without either (ftrace set up before the bench starts,
+  only `tracing_on` flipped), the rigs those runs failed ran clean.
+- Console (build 278, 48 kHz / 32, two workers, `bench_rt_faults` from
+  master 6115156ad, 120 s each): Ed's Racks on 4 inputs and 6, 7 or 8
+  tracks, no late period and no xrun (worst 542, 531, 579 us of 666);
+  4 inputs, 6 tracks and 1 on the output, clean (632 us); 4, 8 and 1, 2 late.
+  On the output beside the four inputs: 3 racks clean (636 us), 4 with 17
+  late, 5 with 3046.
+- `kFxTrackJobNs` 500 → 200 ns a frame. At 48 kHz / 32 with two workers,
+  racks fit on all 4 inputs and all 8 tracks (6 before), and 6 tracks beside
+  an output rack (4 before). The share (77 %) and the serial charges stand.
+- In the app (4 inputs and 6 tracks racked, four takes playing): per-period
+  p99.9 579 us against the bench's 452 for the same rig; no dropout in six
+  untraced minutes on the stage. The app at the new 8-track limit is not
+  measured: build 278 holds what today's rule refuses.
 
 ## November 2026 The stage's CPU figure reads the real load (#1868)
 
