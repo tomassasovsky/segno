@@ -2774,7 +2774,7 @@ class ControlCubit extends Cubit<ControlState> {
       footTunerCancelled(button, contact);
 
   /// Accessible semantic activation: [button]'s press, or its Hold (Clear
-  /// starts a new loop) when [hold] is set.
+  /// starts a new session) when [hold] is set.
   void activateFootSessionsPedal(PedalButton button, {bool hold = false}) =>
       _activateSessionsPedal(button, hold: hold);
 

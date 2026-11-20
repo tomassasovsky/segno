@@ -65,7 +65,7 @@ class LibraryPage extends StatelessWidget {
 }
 
 /// The Library's frame: the topbar with the section tab and Stage, the
-/// title row with the location segment and New loop, the Sessions tab, and
+/// title row with the location segment and New session, the Sessions tab, and
 /// under it the line that reports a failed action (pen 19/05).
 ///
 /// A footswitch press returns to Tracks, as Stage does (plan D14). After
@@ -193,7 +193,7 @@ class _LibraryViewState extends State<LibraryView> {
             }
           },
         ),
-        // A new loop is played on the stage (19/06), which names it; one
+        // A new session is played on the stage (19/06), which names it; one
         // that started but could not be saved yet goes there too, where the
         // stage says so.
         BlocListener<SessionCubit, SessionState>(
@@ -206,7 +206,7 @@ class _LibraryViewState extends State<LibraryView> {
         ),
       ],
       // The listeners hold in both sections: a footswitch, a recording
-      // track and a New loop act the same from Audio.
+      // track and a New session act the same from Audio.
       child: Material(
         type: MaterialType.transparency,
         child: LoopSettingsFrame(
@@ -319,7 +319,7 @@ class LibrarySectionTabs extends StatelessWidget {
 
 /// The failures the Library reports on its 19/05 line.
 enum LibraryFailure {
-  /// A save failed: the pen's "Could not save your current loop. Nothing
+  /// A save failed: the pen's "Could not save your current session. Nothing
   /// was changed."
   saveFailed,
 
@@ -329,13 +329,13 @@ enum LibraryFailure {
   /// A folder that still holds sessions was asked to be deleted.
   folderNotEmpty,
 
-  /// An Open or New loop ended a take that did not finish in time.
+  /// An Open or New session ended a take that did not finish in time.
   captureInProgress,
 
-  /// A New loop started but could not be saved yet.
+  /// A New session started but could not be saved yet.
   newLoopNotSaved,
 
-  /// A New loop with Ed's setup no longer fit the effects budget.
+  /// A New session with Ed's setup no longer fit the effects budget.
   templateDoesNotFit,
 
   /// Any other catalog action failed.
@@ -380,7 +380,7 @@ LibraryFailure? libraryFailureOf(SessionState state) {
 }
 
 /// The pen's 19/05 line under the layout: "Could not save your current
-/// loop. Nothing was changed." for a failed save, and the same place for
+/// session. Nothing was changed." for a failed save, and the same place for
 /// any other failed catalog action.
 class LibraryFailureLine extends StatelessWidget {
   /// Creates the line for [failure].
@@ -422,7 +422,7 @@ class LibraryFailureLine extends StatelessWidget {
 }
 
 /// The title row's actions: the `Internal` / `USB` location segment and
-/// `New loop`, which asks first (19/02) and is inert while another session
+/// `New session`, which asks first (19/02) and is inert while another session
 /// action runs.
 class LibraryActions extends StatelessWidget {
   /// Creates the Library's title-row actions.
@@ -464,7 +464,10 @@ class LibraryActions extends StatelessWidget {
           opacity: busy ? context.surface.disabledOpacity : 1,
           child: LoopOutlinedButton(
             key: const Key('library_new_loop'),
-            width: 157,
+            // Wide enough for `New session` at the label size, and wider
+            // for a language whose words are longer.
+            width: 190,
+            fitLabel: true,
             tone: LoopButtonTone.accent,
             label: l10n.libraryNewLoop,
             onTap: busy ? null : () => unawaited(startNewLoop(context)),

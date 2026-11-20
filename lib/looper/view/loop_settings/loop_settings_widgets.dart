@@ -678,7 +678,7 @@ class LoopOutlinedButton extends StatelessWidget {
       _ => surface.textPrimary,
     };
     // The pen draws every accent action's label bold (`Done`, `Open session`,
-    // `Start new loop`, `Use as backing`); the other fills stay regular.
+    // `Start new session`, `Use as backing`); the other fills stay regular.
     final text = TextStyle(
       color: foreground,
       fontFamily: tone == LoopButtonTone.frameRaised

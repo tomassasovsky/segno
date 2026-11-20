@@ -237,11 +237,11 @@ void main() {
     await performance.disarm();
   });
 
-  test('a control assigned Save session or New loop reaches the session '
-      'cubit: Save saves, New loop starts a new loop (#1910)', () async {
+  test('a control assigned Save session or New session reaches the session '
+      'cubit: Save saves, New session starts a new session (#1910)', () async {
     await runtime.start();
     when(() => sessions.nextAutomaticName(any()))
-        .thenAnswer((_) async => 'New loop 1');
+        .thenAnswer((_) async => 'New session 1');
     await runtime.control.setPedalSetup(
       const PedalSetup()
           .withCustom(
@@ -263,13 +263,13 @@ void main() {
     await pumpEventQueue();
 
     // Save, with no open session: the next automatic name is asked for,
-    // and nothing a New loop does first happens.
+    // and nothing a New session does first happens.
     runtime.control.activateFootCustomPedal(PedalButton.track1);
     await pumpEventQueue();
     verify(() => sessions.nextAutomaticName(any())).called(1);
     verifyNever(sessions.stopAudition);
 
-    // New loop: its first step, ending a Library preview.
+    // New session: its first step, ending a Library preview.
     runtime.control.activateFootCustomPedal(PedalButton.track2);
     await pumpEventQueue();
     verify(sessions.stopAudition).called(1);
@@ -316,7 +316,7 @@ void main() {
       ),
     ).thenReturn('edited');
     when(() => sessions.nextAutomaticName(any()))
-        .thenAnswer((_) async => 'New loop 1');
+        .thenAnswer((_) async => 'New session 1');
     when(() => sessions.releaseSessionId(any())).thenAnswer((_) async {});
     when(
       () => sessions.save(
@@ -362,7 +362,7 @@ void main() {
         chains: any(named: 'chains'),
         settings: any(named: 'settings'),
         pedalBindings: any(named: 'pedalBindings'),
-        name: 'New loop 1',
+        name: 'New session 1',
         captureStillValid: any(named: 'captureStillValid'),
       ),
     ).called(1);

@@ -235,7 +235,7 @@ class _Rig {
   /// The power-off route is up: takes are locked.
   bool powerOffUp = false;
 
-  /// How often the session layer was asked for a New loop and for a Save.
+  /// How often the session layer was asked for a New session and for a Save.
   int newLoops = 0;
   int saves = 0;
 
@@ -426,8 +426,8 @@ void main() {
   );
 
   check(
-    'External New loop and MIDI Save session are handed to the session layer '
-    'once a press, and not while takes are locked (#1910)',
+    'External New session and MIDI Save session are handed to the session '
+    'layer once a press, and not while takes are locked (#1910)',
     const ExternalJackSetup(
       single: ExternalSwitchSetup(
         gestures: ControlGesturePair(

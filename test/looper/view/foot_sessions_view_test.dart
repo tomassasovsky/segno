@@ -187,9 +187,9 @@ void main() {
     // A Hold opens every session but the open one.
     expect(find.text('Hold · Open'), findsNWidgets(3));
     expect(under(PedalButton.track2, 'Hold · Open'), findsNothing);
-    // Undo saves on a press and starts a new loop on its Hold.
+    // Undo saves on a press and starts a new session on its Hold.
     expect(under(PedalButton.undo, 'Save'), findsOneWidget);
-    expect(under(PedalButton.undo, 'Hold · New loop'), findsOneWidget);
+    expect(under(PedalButton.undo, 'Hold · New session'), findsOneWidget);
     expect(under(PedalButton.clear, 'Previous page'), findsOneWidget);
     expect(under(PedalButton.bank, 'Next page'), findsOneWidget);
     expect(find.text('1 / 2'), findsOneWidget);
@@ -338,7 +338,7 @@ void main() {
       findsOneWidget,
     );
     expect(
-      find.text('No sessions yet. Save or start a new loop.'),
+      find.text('No sessions yet. Save or start a new session.'),
       findsNothing,
     );
     expect(find.text('Open: Scratch'), findsOneWidget);
@@ -352,7 +352,7 @@ void main() {
     await pump(tester);
 
     expect(
-      find.text('No sessions yet. Save or start a new loop.'),
+      find.text('No sessions yet. Save or start a new session.'),
       findsOneWidget,
     );
     expect(find.text('Empty'), findsNWidgets(4));
@@ -510,12 +510,12 @@ void main() {
     expect(find.text('Previous page'), findsOneWidget);
     expect(find.text('Next page'), findsOneWidget);
     expect(find.text('1 / 1'), findsOneWidget);
-    expect(find.text('Hold · New loop'), findsOneWidget);
+    expect(find.text('Hold · New session'), findsOneWidget);
     // No switch has a bare Hold.
     expect(find.text('Hold'), findsNothing);
   });
 
-  testWidgets('while an Open is in flight Undo offers no new loop', (
+  testWidgets('while an Open is in flight Undo offers no new session', (
     tester,
   ) async {
     given(
@@ -524,7 +524,7 @@ void main() {
     );
     await pump(tester);
 
-    expect(find.text('Hold · New loop'), findsNothing);
+    expect(find.text('Hold · New session'), findsNothing);
   });
 
   testWidgets("a contact on Undo's drawn pedal is the switch's, so its "

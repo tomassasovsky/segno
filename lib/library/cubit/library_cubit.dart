@@ -19,7 +19,7 @@ part 'library_state.dart';
 /// through the engine's audition voice, which it polls every 100 ms
 /// (`listenPoll`) while it plays, and stops on a new selection, a
 /// footswitch press and when the page closes. The page stops it before an
-/// Open, a New loop and when a track starts recording; the engine itself
+/// Open, a New session and when a track starts recording; the engine itself
 /// ends it on a performance arm and a device reopen, which the poll reads
 /// as the preview no longer playing.
 ///

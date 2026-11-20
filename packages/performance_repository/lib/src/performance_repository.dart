@@ -766,7 +766,7 @@ class PerformanceRepository {
   }
 
   /// [disarmAndFinalize] for a session that is about to replace the rig (an
-  /// Open or a New loop). The take is finalized the same way, and
+  /// Open or a New session). The take is finalized the same way, and
   /// [endedBySessionChange] says so until the next take is finalized, so
   /// the recorder can say the recording was saved without opening its
   /// completion sheet over the new session (#1229, #1910).

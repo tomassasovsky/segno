@@ -7,7 +7,7 @@ enum GuardKind {
   /// A performance recording (arm until finalized, discarded or held).
   capture,
 
-  /// Applying a session to the rig: Open, New loop.
+  /// Applying a session to the rig: Open, New session.
   sessionApply,
 
   /// Writing a session bundle or a recording on Internal: save, Save as,

@@ -552,15 +552,15 @@ void main() {
 
   group('nextAutomaticName', () {
     test('returns the smallest unused number, case-insensitively', () async {
-      makeBundle('s-1', name: 'New loop 1');
-      makeBundle('s-3', name: 'new loop 3');
-      expect(await repo().nextAutomaticName('New loop'), 'New loop 2');
-      makeBundle('s-2', name: 'New Loop 2');
-      expect(await repo().nextAutomaticName('New loop'), 'New loop 4');
+      makeBundle('s-1', name: 'New session 1');
+      makeBundle('s-3', name: 'new session 3');
+      expect(await repo().nextAutomaticName('New session'), 'New session 2');
+      makeBundle('s-2', name: 'New Session 2');
+      expect(await repo().nextAutomaticName('New session'), 'New session 4');
     });
 
     test('starts at 1 on an empty catalog', () async {
-      expect(await repo().nextAutomaticName('New loop'), 'New loop 1');
+      expect(await repo().nextAutomaticName('New session'), 'New session 1');
     });
   });
 

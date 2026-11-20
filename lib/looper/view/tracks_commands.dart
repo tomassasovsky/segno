@@ -224,7 +224,7 @@ class TracksCommands {
         return KeyEventResult.handled;
       }
       // Cmd/Ctrl+S writes back to the open session, or saves a rig that has
-      // none as the next New loop (plan D4).
+      // none as the next New session (plan D4).
       if (key == LogicalKeyboardKey.keyS) {
         unawaited(context.read<SessionCubit>().save());
         return KeyEventResult.handled;
@@ -446,11 +446,11 @@ Notice? sessionOutcomeNotice(SessionState state) {
                 : l10n.sessionLoadedConvertedUnsaved,
             body: (l10n) => sessionConversionDetail(l10n, conversion),
           );
-        // The stage's header names the new loop (19/06); nothing over it,
+        // The stage's header names the new session (19/06); nothing over it,
         // unless a template's track names could not be written (#1513).
         case SessionOutcome.newLoop when state.trackNamesNotSaved:
           return refuse((l10n) => l10n.sessionTrackNamesNotSaved);
-        // A New loop asked by foot had no sheet to say the session stays
+        // A New session asked by foot had no sheet to say the session stays
         // (19/02), so the stage says it, when a session was saved.
         case SessionOutcome.newLoop when state.keptSessionName != null:
           final kept = state.keptSessionName!;
@@ -518,7 +518,7 @@ Notice? sessionOutcomeNotice(SessionState state) {
         SessionError.templateDoesNotFit => refuse(
           (l10n) => l10n.sessionTemplateDoesNotFit,
         ),
-        // The new loop started all the same, so a foot's New loop still
+        // The new session started all the same, so a foot's New session still
         // says which session it kept.
         SessionError.newLoopNotSaved => refuse(
           (l10n) => l10n.sessionNewLoopNotSaved(name),
@@ -671,7 +671,7 @@ void onPerformanceRecorderState(
   // A take that stopped on its own (#1767) stopped with nobody there: no
   // dialog waits for them; PerformanceAutoStopNotice tells them when they
   // come back.
-  // A take an Open or a New loop ended (#1229, #1910) is not drawn over the
+  // A take an Open or a New session ended (#1229, #1910) is not drawn over the
   // new session either: the stage says it was saved once it is delivered.
   // One that did not come out whole, or that dropped frames, still opens
   // the dialog, which is where the player reads what is wrong with it.

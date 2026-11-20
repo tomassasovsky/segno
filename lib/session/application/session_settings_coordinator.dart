@@ -51,7 +51,7 @@ class SessionSettingsCoordinator {
   Future<void> installFade(FadeDurations incoming) =>
       _fade.installSession(incoming);
 
-  /// Stops the backing: Open and New Loop leave it stopped (#1200 D9).
+  /// Stops the backing: Open and New session leave it stopped (#1200 D9).
   void stopBacking() => _backing?.stop();
 
   /// Installs a recalled Session's backing setup and click pan within the

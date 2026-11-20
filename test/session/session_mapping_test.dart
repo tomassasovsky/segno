@@ -1544,12 +1544,12 @@ void main() {
     });
   });
 
-  group('New loop (plan D9)', () {
+  group('New session (plan D9)', () {
     String chain(TrackEffectType type) =>
         encodeFxChain(FxChainEnvelope(entries: [BuiltInEffect(type: type)]));
 
     // Every field away from its default, every override map included, so a
-    // field New loop forgot to carry reads its default and differs.
+    // field New session forgot to carry reads its default and differs.
     final full = Session(
       name: 'Evening loop',
       sampleRate: 44100,
@@ -1650,7 +1650,7 @@ void main() {
     test('the source session sets every manifest field away from its '
         'default', () {
       // A field added to Session shows up here first: name it in this
-      // list, set it away from its default above, and write its New loop
+      // list, set it away from its default above, and write its New session
       // fate into Session.forNewLoop.
       final source = full.toJson();
       expect(source.keys.toSet(), {

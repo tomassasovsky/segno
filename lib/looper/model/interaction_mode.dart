@@ -67,9 +67,10 @@ enum InteractionMode {
   /// Clear its last half; Rec/Play keeps recording.
   divide,
 
-  /// The Sessions face (#1910): the four track switches open the four
-  /// sessions drawn above them, Bank shows the next four, Undo saves and a
-  /// held Clear starts a new loop; Rec/Play and Stop keep the transport.
+  /// The Sessions face (#1910): it lists the saved sessions four to a
+  /// page. A press on a track switch shows its session and a Hold opens it,
+  /// Clear and Bank turn the page, Undo saves and a held Undo starts a new
+  /// session; Rec/Play and Stop keep the transport.
   /// Never a boot mode.
   sessions;
 

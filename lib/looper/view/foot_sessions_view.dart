@@ -600,7 +600,7 @@ class _FootSessionsPedal extends StatelessWidget {
     );
     final l10n = context.l10n;
     final pedal = projection[button];
-    // Undo's Hold starts a new loop; a track switch's Hold opens its
+    // Undo's Hold starts a new session; a track switch's Hold opens its
     // session.
     final newLoop = pedal.role == FootSessionsRole.save && pedal.available;
     final opens = pedal.role == FootSessionsRole.open && pedal.opens;

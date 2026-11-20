@@ -36,10 +36,10 @@ void main() {
         '10 Outro',
         'Take 12',
       ]);
-      expect(ordered(['New loop 10', 'New loop 9', 'New loop 2']), [
-        'New loop 2',
-        'New loop 9',
-        'New loop 10',
+      expect(ordered(['New session 10', 'New session 9', 'New session 2']), [
+        'New session 2',
+        'New session 9',
+        'New session 10',
       ]);
     });
 
@@ -158,7 +158,7 @@ void main() {
       ]) {
         expect(projection[button].available, isFalse, reason: button.name);
       }
-      // Save, and New loop on its Hold, are how the first session comes to
+      // Save, and New session on its Hold, are how the first session comes to
       // be.
       expect(projection[PedalButton.undo].available, isTrue);
       expect(projection[PedalButton.clear].available, isFalse);

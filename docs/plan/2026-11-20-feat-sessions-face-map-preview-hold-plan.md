@@ -107,10 +107,12 @@ Decided:
 5. **The open session, when hidden,** is named in the readout (`Open:
    <name>`), since no switch can be lit for it.
 
-Still open: the owner asked whether "New loop" is the right word. The
-answer given was to rename the command to "New session", because the app
-calls the saved thing a session everywhere else and uses "loop" for what
-plays inside one. It is not decided, and it is a change of its own.
+The owner also asked whether "New loop" is the right word, and decided
+to rename the command to "New session": the app calls the saved thing a
+session everywhere else and uses "loop" for what plays inside one. That is
+[#1927](https://github.com/tomassasovsky/segno/issues/1927), a change of
+its own, stacked on Part 2. This plan says "New loop" where it was written
+before the rename.
 
 ## What changes on the face
 

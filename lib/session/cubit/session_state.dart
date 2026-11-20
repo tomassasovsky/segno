@@ -97,17 +97,17 @@ enum SessionError {
   /// A folder that still holds sessions cannot be deleted.
   folderNotEmpty,
 
-  /// An Open or New loop ended a take in progress, and it did not finish in
+  /// An Open or New session ended a take in progress, and it did not finish in
   /// time; nothing was saved, opened or cleared.
   captureInProgress,
 
-  /// A New loop started and is current, but its empty bundle could not be
+  /// A New session started and is current, but its empty bundle could not be
   /// written yet: the first Save writes it.
   newLoopNotSaved,
 
-  /// A New loop with a template (#1513) was refused because the template
+  /// A New session with a template (#1513) was refused because the template
   /// would go over the effects budget. The take in progress has ended and
-  /// the outgoing session is saved; no new loop started.
+  /// the outgoing session is saved; no new session started.
   templateDoesNotFit,
 }
 
@@ -189,15 +189,15 @@ class SessionState extends Equatable {
   /// Per-transition, like [error].
   final GuardKind? refusedBy;
 
-  /// Whether a New loop with a template started but could not write its
+  /// Whether a New session with a template started but could not write its
   /// track names (#1513). A per-transition result, like [conversion].
   final bool trackNamesNotSaved;
 
-  /// The name the outgoing session was saved under by a New loop that was
+  /// The name the outgoing session was saved under by a New session that was
   /// asked to announce it (one asked by foot), or null: the Library's New
-  /// loop said so on its sheet, and an unchanged session was not saved. Set
-  /// on the New loop's outcome, and on [SessionError.newLoopNotSaved], where
-  /// the new loop started all the same. A per-transition result, like
+  /// session said so on its sheet, and an unchanged session was not saved. Set
+  /// on the New session's outcome, and on [SessionError.newLoopNotSaved], where
+  /// the new session started all the same. A per-transition result, like
   /// [conversion].
   final String? keptSessionName;
 

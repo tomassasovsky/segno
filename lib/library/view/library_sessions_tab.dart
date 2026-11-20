@@ -533,7 +533,7 @@ enum LibraryTrackStripSize {
   /// A session row's strip (19/01): 340 x 13.
   row(width: 340, height: 13, slotWidth: 37),
 
-  /// The New loop sheet's before and after strips (19/02): 346 x 36.
+  /// The New session sheet's before and after strips (19/02): 346 x 36.
   sheet(width: 346, height: 36, slotWidth: 38);
 
   new({required this.width, required this.height, required this.slotWidth});

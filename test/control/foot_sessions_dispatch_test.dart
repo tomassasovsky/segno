@@ -57,7 +57,7 @@ class _Rig {
         fade: fade,
       ),
       takeLocked: () => locked,
-      startNewLoop: () => asked.add('new loop'),
+      startNewLoop: () => asked.add('new session'),
       saveSession: () => asked.add('save'),
       openSession: (id) => asked.add('open $id'),
       refreshSessions: () => asked.add('refresh'),
@@ -726,13 +726,13 @@ void main() {
     }
   });
 
-  test('a held Undo starts a new loop, does not also save, and closes the '
+  test('a held Undo starts a new session, does not also save, and closes the '
       'face', () async {
     final rig = await enter();
     try {
       rig.asked.clear();
       await rig.hold(PedalButton.undo);
-      expect(rig.asked, ['new loop']);
+      expect(rig.asked, ['new session']);
       expect(rig.control.state.mode, InteractionMode.record);
     } finally {
       await rig.close();
@@ -753,7 +753,7 @@ void main() {
       await _pump(const Duration(milliseconds: 30));
       // No switch named: the fill is over.
       expect(fills().last, const ClearHoldMessage());
-      expect(rig.asked.where((a) => a == 'new loop'), isEmpty);
+      expect(rig.asked.where((a) => a == 'new session'), isEmpty);
     } finally {
       await rig.close();
     }
@@ -863,7 +863,7 @@ void main() {
   );
 
   test('the semantic activation runs the same roles: a tap shows a session, '
-      'and New loop and an Open take their Hold', () async {
+      'and New session and an Open take their Hold', () async {
     final rig = await enter();
     try {
       rig.asked.clear();
@@ -890,7 +890,7 @@ void main() {
   });
 
   test('the semantic press of Undo saves and its Hold starts a new '
-      'loop', () async {
+      'session', () async {
     final rig = await enter();
     try {
       rig.asked.clear();
@@ -904,7 +904,7 @@ void main() {
     try {
       again.asked.clear();
       again.control.activateFootSessionsPedal(PedalButton.undo, hold: true);
-      expect(again.asked, ['new loop']);
+      expect(again.asked, ['new session']);
       expect(again.control.state.mode, InteractionMode.record);
     } finally {
       await again.close();

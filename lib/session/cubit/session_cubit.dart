@@ -96,7 +96,7 @@ class SessionCubit extends Cubit<SessionState> {
   /// What a refusal names a session apply by.
   static const String applyPurpose = 'opening a session';
 
-  /// How long an Open or New loop waits for a take it ended to finish: the
+  /// How long an Open or New session waits for a take it ended to finish: the
   /// take ends at its Record timing, which can be the next bar or loop top.
   final Duration _captureEndTimeout;
   String? _pendingLoadedBindings;
@@ -163,10 +163,10 @@ class SessionCubit extends Cubit<SessionState> {
     }
   }
 
-  /// The name a save with no identity takes: `New loop N`, the smallest N no
+  /// The name a save with no identity takes: `New session N`, the smallest N no
   /// catalog name carries (plan D4). A name is the session's data, not UI
   /// copy, so it is the same in every language.
-  static const String automaticNamePrefix = 'New loop';
+  static const String automaticNamePrefix = 'New session';
 
   /// Saves the live rig as a NEW session under a fresh id, named [name], and
   /// makes it current. Rejects a name another session carries exactly
@@ -382,13 +382,13 @@ class SessionCubit extends Cubit<SessionState> {
     return saved.slug;
   }
 
-  /// Ends a Library Listen preview before an Open or a New loop changes
+  /// Ends a Library Listen preview before an Open or a New session changes
   /// the rig (plan D10), whoever asked: the Library's buttons stop it
-  /// themselves, and a control assigned New loop has no Library to do it
+  /// themselves, and a control assigned New session has no Library to do it
   /// (#1910). The Library sees its preview has ended on its next poll.
   void _endListen() => _repository.stopAudition();
 
-  /// Ends every take in progress before an Open or New loop saves the
+  /// Ends every take in progress before an Open or New session saves the
   /// outgoing rig, as the record control's Stop would (plan D8: the dialog
   /// promises the loop stays), and waits until none is capturing, so the
   /// take is saved with the rest. A take still capturing after
@@ -436,7 +436,7 @@ class SessionCubit extends Cubit<SessionState> {
 
   /// Runs a save's write and reports any failure that is not a typed
   /// session refusal as [SessionError.saveFailed], the 19/05 banner's
-  /// "Could not save your current loop. Nothing was changed."
+  /// "Could not save your current session. Nothing was changed."
   static Future<T> _asSaveFailure<T>(Future<T> Function() write) async {
     try {
       return await write();
@@ -561,7 +561,7 @@ class SessionCubit extends Cubit<SessionState> {
     }
   }, reserveSessionLoad: true);
 
-  /// Starts a new loop (plan D9): saves the outgoing rig first when it has
+  /// Starts a new session (plan D9): saves the outgoing rig first when it has
   /// changed (plan D7), clears every track and its history, keeps the
   /// sound, tempo and pedal setup, and saves the empty rig at once under
   /// the next automatic name, which becomes current.
@@ -569,7 +569,7 @@ class SessionCubit extends Cubit<SessionState> {
   /// The empty rig is [rigForNewLoop] of the live settings and chains,
   /// applied through the one apply path an Open uses; the transforms reset
   /// with the clear inside it. A failed preservation applies nothing. When
-  /// the empty rig cannot be written after it is applied, the new loop is
+  /// the empty rig cannot be written after it is applied, the new session is
   /// started and current under its new name, the failure is
   /// [SessionError.newLoopNotSaved], and the first Save writes it. A take in
   /// progress is ended first and saved with the outgoing rig, as for Open.
@@ -584,7 +584,7 @@ class SessionCubit extends Cubit<SessionState> {
   /// [SessionState.trackNamesNotSaved] on the outcome.
   ///
   /// With [announceKept] the outcome carries the name the outgoing rig was
-  /// saved under ([SessionState.keptSessionName]). A New loop asked by foot
+  /// saved under ([SessionState.keptSessionName]). A New session asked by foot
   /// sets it: no sheet told the player the session stays (#1229, #1910).
   Future<void> newLoop({
     NewLoopTemplate? template,
@@ -604,7 +604,7 @@ class SessionCubit extends Cubit<SessionState> {
           throw const _SessionRefusal(SessionError.templateDoesNotFit);
         }
         // A held momentary belongs to the outgoing rig, not to the chains
-        // the new loop keeps.
+        // the new session keeps.
         _releaseHeldBindings();
         final revision = _looper.sessionRevision;
         final generation = _looper.mixGeneration;
@@ -640,7 +640,7 @@ class SessionCubit extends Cubit<SessionState> {
             await _renameTracks(template.names);
           } on Object catch (error) {
             // The loop is started; only the names are missing.
-            AppLog.warn('new loop track names not saved: $error');
+            AppLog.warn('new session track names not saved: $error');
             namesSaved = false;
           }
         }
@@ -656,7 +656,7 @@ class SessionCubit extends Cubit<SessionState> {
           );
         } on Object catch (error) {
           // Not a failed save of the outgoing loop, which is safe: the new
-          // loop is started and named, and only its empty bundle is
+          // session is started and named, and only its empty bundle is
           // missing. The first Save writes it.
           throw _SessionRefusal(
             SessionError.newLoopNotSaved,
@@ -686,7 +686,7 @@ class SessionCubit extends Cubit<SessionState> {
   }, reserveSessionLoad: true);
 
   /// Applies [rig] as the session [id] named [name] through the looper
-  /// repository, the one apply path Open and New loop share, and makes it
+  /// repository, the one apply path Open and New session share, and makes it
   /// current. Once the rig is applied, an Open's [conversion] is written
   /// back to the bundle at [path] (#1211). Returns the catalog read before
   /// the apply and the conversion notice. Runs inside `runExclusive`.
@@ -860,7 +860,7 @@ class SessionCubit extends Cubit<SessionState> {
   }
 
   /// Installs an Open's recalled backing setup and click pan (#1200 D9),
-  /// loaded again stopped at 0; a New loop has none and only stops the
+  /// loaded again stopped at 0; a New session has none and only stops the
   /// backing, keeping its prepared setup.
   Future<void> _installBacking(
     ({SessionBacking backing, double clickPan})? backing,
@@ -1257,7 +1257,7 @@ class _SessionRefusal implements Exception {
   final Object? cause;
 
   /// For [SessionError.newLoopNotSaved]: the name the outgoing session was
-  /// saved under, when the New loop was asked to announce it.
+  /// saved under, when the New session was asked to announce it.
   final String? keptSessionName;
 }
 

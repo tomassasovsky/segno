@@ -58,12 +58,12 @@ extension _FootSessionsControl on ControlCubit {
     }
     if (!_sessionsEditable || !pedal.available) return;
     if (pedal.role == FootSessionsRole.save) {
-      // Undo saves on a press and starts a new loop on a Hold (#1921), so
+      // Undo saves on a press and starts a new session on a Hold (#1921), so
       // its press waits for the release. The fill is the one every clearing
-      // Hold draws: a new loop ends what is playing.
+      // Hold draws: a new session ends what is playing.
       // Asked again when the gesture settles: an Open asked from another
       // switch while Undo is down takes Undo away, and neither a Save nor a
-      // new loop may land on a rig that is about to be replaced.
+      // new session may land on a rig that is about to be replaced.
       bool stillAnswers() =>
           _sessionsEditable && _sessionsProjection()[button].available;
       _armGesture(
@@ -74,7 +74,7 @@ extension _FootSessionsControl on ControlCubit {
           if (stillAnswers()) _dispatchSessionsAction(pedal);
         },
         // No confirming flash: the session layer has not accepted the New
-        // loop yet, and says so itself if it refuses.
+        // session yet, and says so itself if it refuses.
         onHold: () {
           if (stillAnswers()) _newLoopFromFace();
         },
@@ -129,7 +129,7 @@ extension _FootSessionsControl on ControlCubit {
   }
 
   /// The semantic activation of [button]: its press, or its Hold (Undo's
-  /// New loop, a track switch's Open).
+  /// New session, a track switch's Open).
   void _activateSessionsPedal(PedalButton button, {required bool hold}) {
     if (state.mode != InteractionMode.sessions || isClosed) return;
     final pedal = _sessionsProjection()[button];
@@ -149,7 +149,7 @@ extension _FootSessionsControl on ControlCubit {
     _dispatchSessionsAction(pedal);
   }
 
-  /// Starts a new loop and closes the face.
+  /// Starts a new session and closes the face.
   void _newLoopFromFace() {
     _startNewLoop();
     _leaveSessions();

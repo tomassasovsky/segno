@@ -68,7 +68,7 @@ enum ControlActionGroup {
   /// Backing-track playback. Empty until the audio library part.
   backing,
 
-  /// Session commands: New loop and Save.
+  /// Session commands: New session and Save.
   sessions,
 }
 

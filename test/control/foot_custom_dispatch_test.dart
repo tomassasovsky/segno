@@ -153,7 +153,7 @@ class _Rig {
   /// The power-off route is up: takes and performance actions are locked.
   bool powerOffUp = false;
 
-  /// How often the session layer was asked for a New loop and for a Save.
+  /// How often the session layer was asked for a New session and for a Save.
   int newLoops = 0;
   int saves = 0;
 
@@ -482,42 +482,45 @@ void main() {
       }
     });
 
-    test('New loop and Save session, from Custom switches, are handed to the '
-        'session layer once a press and say nothing here (#1910)', () async {
-      final rig = await enter(
-        const PedalSetup()
-            .withCustom(
-              PedalButton.track1,
-              bank: 0,
-              pair: const ControlGesturePair(
-                press: CommandAction(ControlCommand.newLoop),
+    test(
+      'New session and Save session, from Custom switches, are handed to the '
+      'session layer once a press and say nothing here (#1910)',
+      () async {
+        final rig = await enter(
+          const PedalSetup()
+              .withCustom(
+                PedalButton.track1,
+                bank: 0,
+                pair: const ControlGesturePair(
+                  press: CommandAction(ControlCommand.newLoop),
+                ),
+              )
+              .withCustom(
+                PedalButton.track2,
+                bank: 0,
+                pair: const ControlGesturePair(
+                  press: CommandAction(ControlCommand.saveSession),
+                ),
               ),
-            )
-            .withCustom(
-              PedalButton.track2,
-              bank: 0,
-              pair: const ControlGesturePair(
-                press: CommandAction(ControlCommand.saveSession),
-              ),
-            ),
-      );
-      try {
-        await rig.stomp(PedalButton.track1);
-        expect((rig.newLoops, rig.saves), (1, 0));
-        await rig.stomp(PedalButton.track2);
-        expect((rig.newLoops, rig.saves), (1, 1));
-        // The session's own notices say how it went.
-        expect(rig.refused, isEmpty);
+        );
+        try {
+          await rig.stomp(PedalButton.track1);
+          expect((rig.newLoops, rig.saves), (1, 0));
+          await rig.stomp(PedalButton.track2);
+          expect((rig.newLoops, rig.saves), (1, 1));
+          // The session's own notices say how it went.
+          expect(rig.refused, isEmpty);
 
-        rig.powerOffUp = true;
-        await rig.stomp(PedalButton.track1);
-        await rig.stomp(PedalButton.track2);
-        expect((rig.newLoops, rig.saves), (1, 1));
-        expect(rig.refused, isEmpty);
-      } finally {
-        await rig.close();
-      }
-    });
+          rig.powerOffUp = true;
+          await rig.stomp(PedalButton.track1);
+          await rig.stomp(PedalButton.track2);
+          expect((rig.newLoops, rig.saves), (1, 1));
+          expect(rig.refused, isEmpty);
+        } finally {
+          await rig.close();
+        }
+      },
+    );
 
     test('nothing is said while the power-off dialog is up', () async {
       final rig = await enter(

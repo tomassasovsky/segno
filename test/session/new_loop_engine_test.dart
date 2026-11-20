@@ -17,7 +17,7 @@ import 'package:segno_engine/segno_engine.dart' show PumpedNativeEngine;
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 
-/// New loop against the REAL native engine (plan D9, Part 5): the empty rig
+/// New session against the REAL native engine (plan D9, Part 5): the empty rig
 /// `SessionCubit.newLoop` applies, built by the same mapping
 /// ([SessionRepository.liveSession], [rigForNewLoop]) and applied through
 /// the same `applySession`, clears every track with its history and resets
@@ -122,76 +122,79 @@ void main() {
   SessionChains chains() =>
       chainsFromLooper(looper, projection: FxChainPersistence(looper: looper));
 
-  test('New loop empties every track, resets the transforms, keeps tempo and '
-      'mode, and the outgoing session reloads byte for byte', () async {
-    // A tempo of its own, so keeping it is not keeping the default.
-    expect(looper.setTempo(96), EngineResult.ok);
-    engine.pump(frames: 0);
-    take(0, 0.5);
-    take(1, 0.25);
-    // An overdub, so track 0 carries history New loop must drop.
-    expect(looper.record(), EngineResult.ok);
-    engine.pump(frames: loopFrames, input: 0.1);
-    expect(looper.record(), EngineResult.ok);
-    for (var k = 0; k < 128; k++) {
-      if (!engine.snapshot().tracks.first.layerInFlight) break;
-      engine.pump(frames: loopFrames);
-    }
-    ticker.add(null);
-    expect(
-      looper.setLaneMute(muted: true, channel: 1, lane: 0),
-      EngineResult.ok,
-    );
-    expect(await looper.toggleReverse(channel: 0), EngineResult.ok);
-    expect(await looper.toggleFade(channel: 1, seconds: 10), EngineResult.ok);
-    engine.pump(frames: 4800);
-
-    final outgoing = engine.snapshot();
-    expect(outgoing.tracks[0].reversed, isTrue);
-    expect(outgoing.tracks[0].undoDepth, greaterThan(0));
-    expect(outgoing.tracks[1].lanes.first.muted, isTrue);
-    expect(outgoing.tracks[1].fade.amount, lessThan(1));
-    expect(outgoing.masterLengthFrames, greaterThan(0));
-    final before = [layers(0), layers(1)];
-
-    // The outgoing session, as New loop's preservation saves it.
-    final saved = '${tempDir.path}/outgoing';
-    await session.save(saved, chains: chains(), settings: settings());
-
-    // New loop.
-    final live = session.liveSession(settings: settings(), chains: chains());
-    await looper.applySession(rigForNewLoop(live), clearPollInterval: poll);
-    engine.pump(frames: 0);
-
-    final fresh = engine.snapshot();
-    for (final track in fresh.tracks) {
-      expect(track.state, TrackState.empty);
-      expect(track.undoDepth, 0);
-      expect(track.redoDepth, 0);
-      expect(track.reversed, isFalse);
-      expect(track.fade.amount, 1);
-      for (final lane in track.lanes) {
-        expect(lane.muted, isFalse);
+  test(
+    'New session empties every track, resets the transforms, keeps tempo and '
+    'mode, and the outgoing session reloads byte for byte',
+    () async {
+      // A tempo of its own, so keeping it is not keeping the default.
+      expect(looper.setTempo(96), EngineResult.ok);
+      engine.pump(frames: 0);
+      take(0, 0.5);
+      take(1, 0.25);
+      // An overdub, so track 0 carries history New session must drop.
+      expect(looper.record(), EngineResult.ok);
+      engine.pump(frames: loopFrames, input: 0.1);
+      expect(looper.record(), EngineResult.ok);
+      for (var k = 0; k < 128; k++) {
+        if (!engine.snapshot().tracks.first.layerInFlight) break;
+        engine.pump(frames: loopFrames);
       }
-    }
-    expect(fresh.masterLengthFrames, 0);
-    expect(outgoing.tempoBpm, 96);
-    expect(fresh.tempoBpm, outgoing.tempoBpm);
-    expect(fresh.tempoSource, outgoing.tempoSource);
-    expect(fresh.looperMode, outgoing.looperMode);
+      ticker.add(null);
+      expect(
+        looper.setLaneMute(muted: true, channel: 1, lane: 0),
+        EngineResult.ok,
+      );
+      expect(await looper.toggleReverse(channel: 0), EngineResult.ok);
+      expect(await looper.toggleFade(channel: 1, seconds: 10), EngineResult.ok);
+      engine.pump(frames: 4800);
 
-    // The outgoing session is still whole.
-    final bundle = await session.read(saved);
-    await looper.applySession(rigFromBundle(bundle), clearPollInterval: poll);
-    engine.pump(frames: 0);
-    final reloaded = engine.snapshot();
-    expect(reloaded.tracks[1].lanes.first.muted, isTrue);
-    final after = [layers(0), layers(1)];
-    for (var c = 0; c < 2; c++) {
-      expect(after[c], hasLength(before[c].length), reason: 'track $c');
-      for (var o = 0; o < before[c].length; o++) {
-        expect(after[c][o], before[c][o], reason: 'track $c layer $o');
+      final outgoing = engine.snapshot();
+      expect(outgoing.tracks[0].reversed, isTrue);
+      expect(outgoing.tracks[0].undoDepth, greaterThan(0));
+      expect(outgoing.tracks[1].lanes.first.muted, isTrue);
+      expect(outgoing.tracks[1].fade.amount, lessThan(1));
+      expect(outgoing.masterLengthFrames, greaterThan(0));
+      final before = [layers(0), layers(1)];
+
+      // The outgoing session, as New session's preservation saves it.
+      final saved = '${tempDir.path}/outgoing';
+      await session.save(saved, chains: chains(), settings: settings());
+
+      // New session.
+      final live = session.liveSession(settings: settings(), chains: chains());
+      await looper.applySession(rigForNewLoop(live), clearPollInterval: poll);
+      engine.pump(frames: 0);
+
+      final fresh = engine.snapshot();
+      for (final track in fresh.tracks) {
+        expect(track.state, TrackState.empty);
+        expect(track.undoDepth, 0);
+        expect(track.redoDepth, 0);
+        expect(track.reversed, isFalse);
+        expect(track.fade.amount, 1);
+        for (final lane in track.lanes) {
+          expect(lane.muted, isFalse);
+        }
       }
-    }
-  });
+      expect(fresh.masterLengthFrames, 0);
+      expect(outgoing.tempoBpm, 96);
+      expect(fresh.tempoBpm, outgoing.tempoBpm);
+      expect(fresh.tempoSource, outgoing.tempoSource);
+      expect(fresh.looperMode, outgoing.looperMode);
+
+      // The outgoing session is still whole.
+      final bundle = await session.read(saved);
+      await looper.applySession(rigFromBundle(bundle), clearPollInterval: poll);
+      engine.pump(frames: 0);
+      final reloaded = engine.snapshot();
+      expect(reloaded.tracks[1].lanes.first.muted, isTrue);
+      final after = [layers(0), layers(1)];
+      for (var c = 0; c < 2; c++) {
+        expect(after[c], hasLength(before[c].length), reason: 'track $c');
+        for (var o = 0; o < before[c].length; o++) {
+          expect(after[c][o], before[c][o], reason: 'track $c layer $o');
+        }
+      }
+    },
+  );
 }

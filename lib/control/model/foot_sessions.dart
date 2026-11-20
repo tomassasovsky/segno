@@ -190,7 +190,7 @@ enum FootSessionsRole {
   /// page, and a Hold opens it (#1921).
   open,
 
-  /// Saves the session on a press, and starts a new loop on a Hold (Undo).
+  /// Saves the session on a press, and starts a new session on a Hold (Undo).
   save,
 
   /// Shows the four sessions before these, wrapping to the last page

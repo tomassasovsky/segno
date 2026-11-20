@@ -395,7 +395,7 @@ void main() {
   }
 
   group('Custom controls', () {
-    testWidgets('the Sessions tab offers New loop and Save session, and one '
+    testWidgets('the Sessions tab offers New session and Save session, and one '
         'is assigned from it (#1910)', (tester) async {
       await pump(tester);
       await openCustom(tester);
@@ -427,7 +427,7 @@ void main() {
         find.byKey(const Key('pedal_choice_session:save')),
         findsOneWidget,
       );
-      expect(find.text('New loop'), findsOneWidget);
+      expect(find.text('New session'), findsOneWidget);
       expect(find.text('Save session'), findsOneWidget);
 
       await tester.tap(find.byKey(const Key('pedal_choice_session:save')));

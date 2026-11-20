@@ -1927,7 +1927,7 @@ class SessionRepository {
 
   /// The manifest [save] would build from [settings], [chains] and
   /// [pedalBindings], without its tracks, audio or name, and with no file
-  /// touched: the settings half of the live rig, for `New loop` to start
+  /// touched: the settings half of the live rig, for `New session` to start
   /// from (plan D9, through [Session.forNewLoop]).
   Session liveSession({
     required SessionSettings settings,

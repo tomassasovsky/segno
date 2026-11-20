@@ -276,7 +276,7 @@ class PerformanceRecorderRendering extends PerformanceRecorderState {
   /// dialog does not open for it; the player is told when they come back.
   final bool stoppedOnItsOwn;
 
-  /// An Open or a New loop ended the take: the capture dialog does not open
+  /// An Open or a New session ended the take: the capture dialog does not open
   /// over the new session, and the stage says the recording was saved once
   /// it is delivered (#1229, #1910).
   final bool endedBySessionChange;
@@ -343,7 +343,7 @@ class PerformanceRecorderCompleted extends PerformanceRecorderState {
   /// capture completes — so the fact has to be carried, not re-read.
   final bool hadGlitch;
 
-  /// An Open or a New loop ended the take (see
+  /// An Open or a New session ended the take (see
   /// [PerformanceRecorderRendering.endedBySessionChange]).
   final bool endedBySessionChange;
 

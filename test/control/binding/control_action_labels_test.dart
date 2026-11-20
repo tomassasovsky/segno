@@ -17,11 +17,11 @@ void main() {
     }
 
     test('are named as the accepted catalogue names them', () async {
-      expect(await labels('en'), ['New loop', 'Save session']);
+      expect(await labels('en'), ['New session', 'Save session']);
     });
 
     test('are named in Spanish', () async {
-      expect(await labels('es'), ['Nuevo loop', 'Guardar sesión']);
+      expect(await labels('es'), ['Nueva sesión', 'Guardar sesión']);
     });
 
     test('the Sessions face is named in both languages', () async {

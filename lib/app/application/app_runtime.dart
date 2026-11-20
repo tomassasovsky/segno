@@ -259,7 +259,7 @@ class AppRuntime {
   late final SessionCubit session;
 
   /// The track names and stage view. Owned here rather than by the widget
-  /// tree because a New loop template writes track names (#1513).
+  /// tree because a New session template writes track names (#1513).
   late final TracksCubit tracks;
 
   /// What the player calls each hardware input. Owned here, beside [tracks],

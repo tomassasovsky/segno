@@ -6,7 +6,7 @@ import 'package:segno_engine/segno_engine.dart'
 
 /// The per-input capture setup the accepted Audio routing pages edit
 /// (Mono input · Pan & trim, Stereo pair · Balance & trim): appliance-wide
-/// like the input names, saved with a session and carried into New Loop.
+/// like the input names, saved with a session and carried into New session.
 ///
 /// Inputs are hardware channels, `0`-based. A stereo pair is two adjacent
 /// jacks, the even lower one Left and the odd upper one Right (jacks 1/2,
