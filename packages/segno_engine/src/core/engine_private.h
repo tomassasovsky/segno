@@ -893,7 +893,21 @@ typedef struct le_fx_state {
    * then that table for good. Published with release; see le_fx_kinds.
    * Last in the struct so nothing before it moves. */
   struct le_fx_kinds *_Atomic kinds;
+  /* The octaver family on a mono pair (#1914): LE_OCT_STEREO runs both
+   * channels; LE_OCT_MONO runs the left alone and copies it to the right,
+   * whose state (but for its input ring, kept written) then stands for the
+   * left's and is brought up to it (le_oct_leave_mono) before anything else
+   * reads it; LE_OCT_TRY checks, at the next sample whose channels are equal,
+   * whether the two states are, and goes mono if they are. Audio thread only.
+   * After kinds, so nothing the mixer reads moves. */
+  uint8_t oct_mono[LE_FX_MAX];
 } le_fx_state;
+
+/* le_fx_state.oct_mono's values. A zeroed state is LE_OCT_STEREO: only a
+ * type's landing (le_fx_entry_reset) lets a slot try. */
+#define LE_OCT_STEREO 0
+#define LE_OCT_MONO 1
+#define LE_OCT_TRY 2
 
 /* [x] through the sound trigger's detector high-pass (#1623): the two
  * sections [c] (le_engine.trig_hp_c) with their states [z], transposed

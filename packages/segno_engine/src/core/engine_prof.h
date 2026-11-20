@@ -99,6 +99,13 @@ typedef struct le_prof {
   uint32_t acc[LE_PROF_PER_CALL];
   _Atomic uint32_t hist[LE_PROF_N][LE_PROF_BINS];
   le_prof_rec tail[LE_PROF_TAIL_N];
+  /* The octaver family's pairs (engine_fx.c, le_oct_run_pair): samples run
+   * on both channels, on the left alone, and each try's outcome (0 the
+   * channels were equal, then the first part that differed). */
+  _Atomic uint64_t a_oct_stereo;
+  _Atomic uint64_t a_oct_mono;
+  _Atomic uint64_t a_oct_try[8];
+  _Atomic uint64_t a_oct_left; /* mono runs a stereo sample ended */
 } le_prof;
 
 extern le_prof le_prof_state;
@@ -198,12 +205,15 @@ static inline void le_prof_end(uint64_t exit_ns, uint32_t frames) {
   atomic_fetch_add_explicit(&p->a_calls, 1u, memory_order_relaxed);
 }
 
+#define LE_PROF_OCT(field) \
+  atomic_fetch_add_explicit(&le_prof_state.field, 1u, memory_order_relaxed)
 #define LE_PROF_MARK(k) le_prof_mark(k)
 #define LE_PROF_NOW() le_now_ns()
 #define LE_PROF_COUNT(k, ns) le_prof_count((k), (ns))
 
 #else
 
+#define LE_PROF_OCT(field) ((void)0)
 #define LE_PROF_MARK(k) ((void)0)
 #define LE_PROF_NOW() 0u
 #define LE_PROF_COUNT(k, ns) ((void)0)
