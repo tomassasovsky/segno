@@ -42,7 +42,9 @@
 
 /* Per callback, in the order they run. */
 enum {
-  LE_PROF_CMD,       /* commands, heads, instruments, MIDI, dub update */
+  LE_PROF_RING,      /* the command ring's drain (apply_command) */
+  LE_PROF_CMD,       /* heads, instruments, MIDI, grace, mutes */
+  LE_PROF_DUB,       /* le_dub_block_update: retires and overdub drains */
   LE_PROF_SETUP,     /* clip detection, every snapshot, the heard begin */
   LE_PROF_LOOP1,     /* the first frame loop: inputs, tracks, click */
   LE_PROF_JOBS_CB,   /* the effects jobs the callback ran itself */
@@ -56,6 +58,7 @@ enum {
   LE_PROF_OUT_CPU,   /* the CPU of that: alsa-lib, miniaudio, the kernel */
   LE_PROF_IN_CPU,    /* the CPU of le_engine_process */
   LE_PROF_SERVICE,   /* OUT_CPU + PROCESS: what a period costs the thread */
+  LE_PROF_L1_MAX,    /* the first frame loop's slowest frame */
   /* Counts, not times (a histogram bin per count): the callback thread's
    * page faults and involuntary context switches, inside le_engine_process
    * and between two callbacks (getrusage, RUSAGE_THREAD). */
@@ -63,6 +66,8 @@ enum {
   LE_PROF_OUT_FLT,
   LE_PROF_IN_IVCSW,
   LE_PROF_OUT_IVCSW,
+  LE_PROF_NCMD,      /* commands applied */
+  LE_PROF_L1_AT,     /* which frame of the block that was */
   LE_PROF_PER_CALL,  /* sections above are per callback, below per event */
   LE_PROF_CB_JOB = LE_PROF_PER_CALL, /* one job on the callback */
   LE_PROF_WK_JOB,    /* one job on a worker */

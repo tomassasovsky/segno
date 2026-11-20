@@ -74,6 +74,11 @@ void le_prefault_tick(le_engine* e);
  * which a buffer is faulted in. */
 void le_prefault_pass_for_test(le_engine* e);
 
+/* Exactly one of the thread's paced passes (#1914): while a take's follow
+ * job is behind, only the follow jobs take a chunk. Stores how long the
+ * thread would wait after it. Returns whether work is left. */
+int le_prefault_paced_pass_for_test(le_engine* e, int64_t* wait_ns);
+
 /* Drops every job whose buffer is `buf` and waits out a chunk of it being
  * faulted: after it returns, nothing faults any part of `buf` again, so the
  * caller may unmap it (le_free_audio_buffer). At most one chunk's wait. */

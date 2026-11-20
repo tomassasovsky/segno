@@ -14,7 +14,7 @@ for ln in open(f'/proc/{pid}/maps'):
     if len(f) >= 6 and name in f[5] and int(f[2], 16) == 0:
         base = int(f[0].split('-')[0], 16); break
 if base is None: sys.exit(f'no mapping of {name} in {pid}')
-SIZE = 3227920  # sizeof(le_prof): keep in step with engine_prof.h
+SIZE = 3834152  # sizeof(le_prof): keep in step with engine_prof.h
 with open(f'/proc/{pid}/mem', 'rb', 0) as m:
     m.seek(base + off); b = m.read(SIZE)
 open(out, 'wb').write(b)

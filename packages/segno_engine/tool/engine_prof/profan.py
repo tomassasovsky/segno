@@ -8,14 +8,14 @@ profan.py timeline <a.bin> <b.bin> <events> [ms]
     `<uptime seconds> <text>` printed where it falls
 profan.py oct <a.bin> <b.bin>             the octaver pairs' counters"""
 import struct, sys
-NAMES = ['cmd', 'setup', 'loop1', 'jobs_cb', 'join', 'postjobs', 'loop2',
+NAMES = ['ring', 'cmd', 'dub', 'setup', 'loop1', 'jobs_cb', 'join', 'postjobs', 'loop2',
          'meters', 'tail', 'PROCESS', 'out_wall', 'out_cpu', 'in_cpu',
-         'SERVICE', 'in_flt', 'out_flt', 'in_ivcs', 'out_ivc',
+         'SERVICE', 'l1_max', 'in_flt', 'out_flt', 'in_ivcs', 'out_ivc', 'ncmd', 'l1_at',
          'cb_job', 'wk_job', 'wk_wake']
-PER_CALL, N, BINS, TAILN = 18, 21, 4096, 32768
-HIST0, TAIL0, REC = 184, 344248, 88
+PER_CALL, N, BINS, TAILN = 23, 26, 4096, 32768
+HIST0, TAIL0, REC = 204, 426192, 104
 OCT0 = TAIL0 + TAILN * REC
-SVC = 13; COUNTS = range(14, 18)
+SVC = 15; COUNTS = range(17, 23)
 def load(p):
     b = open(p, 'rb').read()
     magic, sec, bins, cap = struct.unpack_from('<4I', b, 0)
@@ -62,7 +62,7 @@ if mode == 'hist':
                 cells.append(f'{mean(h):6.1f}{pct(h,50)-0.5:6.0f}{pct(h,99)-0.5:6.0f}{pct(h,99.9)-0.5:6.0f}{pct(h,99.99)-0.5:7.0f}' + (f' n{sum(h)//1000}k' if k >= PER_CALL else '     '))
         print(f'{NAMES[k]:10s} ' + ' '.join(f'{c:>34s}' for c in cells))
     for lab, calls, d in rows:
-        print(f'{lab}: callbacks {calls}, service over 667 us: {sum(d[SVC][667:])}, over 513 (77 %): {sum(d[SVC][513:])}, process over 667: {sum(d[9][667:])}')
+        print(f'{lab}: callbacks {calls}, service over 667 us: {sum(d[SVC][667:])}, over 513 (77 %): {sum(d[SVC][513:])}, process over 667: {sum(d[11][667:])}')
 elif mode == 'tail':
     r = recs(sys.argv[2], sys.argv[3]); lim = int(sys.argv[4]) if len(sys.argv) > 4 else 60
     print(f'{len(r)} tail records')

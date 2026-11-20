@@ -59,7 +59,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1540 | Drive pedals' aliasing at 48 kHz: four kinds oversampled (#1552); the owner's blind pairs decide whether the built-in Drive is oversampled too | build | plan-gate | `claude/drive-alias-1540` |
 | #1498 | Restart and shut down also wait for RAUC's own install, after an app restart | in-review | blocked-verify | `claude/rauc-power-gate-1498` |
 | #1755 | Every effect cheaper without changing its sound: pitch (#1764, #1770), drives (#1759), reverbs/delays/filters (#1762) and the Vinyl (#1904, part 4) bit-identical; part 5, the Degrade at 96 kHz, is next (scope on the issue) | build | auto | `claude/fx-opt-part5-1755` |
-| #1914 | The app's audio callback runs late on screen changes and take starts: it waits on memory (Ed's Racks overflow the caches). Part 1 (in review): the octaver family runs one channel on a mono pair, and a section profiler for the callback. Next: the take-start page zeroing, the screen-change transient | in-review | auto | `claude/cb-overhead-1914` |
+| #1914 | The app's audio callback runs late on screen changes and take starts: it waits on memory (Ed's Racks overflow the caches). Part 1 merged (#1925, the octaver on a mono pair, a callback profiler); part 2 in review: the prefaulter paced, the octaver clears only what it reads. Open: the screen-change bursts (the UI's), the lane racks' cold start at a take | in-review | auto | `claude/cb-overhead-1914-p2` |
 | #1724 | Effects budget from the app's measured headroom: 10-minute untraced in-app ladder at 48 kHz / 32 (build 279); track job 200 → 300 ns, chains on the callback charged 2.5× (`kFxSerialFactor`); 4 inputs + 7 tracks or + 1 output rack fit | in-review | auto | `claude/fx-headroom-1724-p3` |
 | #1515 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track and lane chains) is #1729 | build | plan-gate | `claude/fx-multicore-1515-p1b` |
 | #1816 | Console WiFi against an ASUS RT-AX89X with 802.11ax on: firmware already matches Pi OS; brcmfmac options aligned with Pi OS and a troubleshooting note; failure not reproduced, issue stays open until it recurs | in-review | auto | `claude/wifi-firmware-1816` |
@@ -101,6 +101,29 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 - When Transpose and Speed ship (#1179), pedal 1 in bank A returns to
   Transpose, Hold Reverse and the Hold on pedal 4 to Speed. Sessions by
   foot (#1910) are not in the default map.
+
+## November 2026 Take starts lighter on the memory bus (#1914 part 2)
+
+- What a take start does, measured in the app (Ed's Rack on 4 inputs + 6
+  tracks, the profiled engine, every thread sampled each millisecond): the
+  press faults the take's first second in, then the prefaulter raced 4 s
+  ahead at gigabytes a second; the callback's first block applied the
+  lanes' frozen recipes, zeroing the Dual Octaver's two 1 s rings (375 KB)
+  and starting the lanes' racks cold; the main view's UI thread ran 20-30 ms
+  at about 80 %. The engine alone (`bench_take_start`, no sound card) pays
+  about 180 us in that block, and nothing a block afterwards.
+- The prefaulter now paces itself (64 MB/s, more with many follow jobs, so
+  each still runs 8x its write head), and while a take's follow job is
+  behind only the follow jobs run (`test_prefaulter_paces_and_follows_first`).
+  The octaver family clears only the `LE_OCT_REACH` of its rings it can read
+  (14 KB a channel instead of 188); the next kind on the slot clears the
+  rings it reads as it lands.
+- In the app, four takes a run, three A/B pairs on one boot each: periods
+  past the deadline in the 60 ms after each record press 12 a run (mean of
+  six master runs) to 5, the worst there 1027-1359 us to 948-1005.
+- Screen changes (Settings, the Device page, back) each give a few late
+  periods, with every section of the callback slower: the UI's bursts while
+  a page changes, not the Device page's polling and not engine work.
 
 ## November 2026 The octaver family on a mono pair (#1914 part 1)
 

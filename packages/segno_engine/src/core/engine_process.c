@@ -11227,10 +11227,20 @@ LE_AUDIO_HOT_AT(0) void le_engine_process(le_engine* e, float* output, const flo
                         memory_order_relaxed);
 
   le_command cmd;
+#if LE_PROFILE_SECTIONS
+  uint32_t prof_ncmd = 0;
+#endif
   while (le_ring_pop(&e->ring, &cmd)) {
     apply_command(e, &cmd, perf_frame_base);
     e->commands_applied++; /* rejected and no-op commands settle too */
+#if LE_PROFILE_SECTIONS
+    ++prof_ncmd;
+#endif
   }
+#if LE_PROFILE_SECTIONS
+  le_prof_state.acc[LE_PROF_NCMD] = prof_ncmd;
+#endif
+  LE_PROF_MARK(LE_PROF_RING);
   le_head_land(e, perf_frame_base);
   /* A track that runs again gates by its mutes (#1773). The starts the
    * commands make close a spared gate as they land; this closes it for a
@@ -11276,8 +11286,9 @@ LE_AUDIO_HOT_AT(0) void le_engine_process(le_engine* e, float* output, const flo
   const int32_t looper_mode = load_i32(&e->a_looper_mode);
   const int free_or_song = looper_mode == LE_LOOPER_MODE_FREE ||
                            looper_mode == LE_LOOPER_MODE_SONG;
-  le_dub_block_update(e, perf_frame_base, frames, free_or_song);
   LE_PROF_MARK(LE_PROF_CMD);
+  le_dub_block_update(e, perf_frame_base, frames, free_or_song);
+  LE_PROF_MARK(LE_PROF_DUB);
 
   /* Global master output gain, read once per block after draining the ring so a
    * mid-block change applies from the next block (no per-frame atomic load). */
@@ -11621,7 +11632,20 @@ LE_AUDIO_HOT_AT(0) void le_engine_process(le_engine* e, float* output, const flo
         le_trk_jobs_begin(e, tc, lane_n, lane_fx_any) != 0u
             ? mix_tracks_frame_jobs
             : heard_block ? mix_tracks_frame_heard : NULL;
+#if LE_PROFILE_SECTIONS
+    uint64_t prof_f0 = le_now_ns();
+#endif
     for (uint32_t f = b0; f < b1; ++f) {
+#if LE_PROFILE_SECTIONS
+      if (f > b0) {
+        const uint64_t now = le_now_ns();
+        if (now - prof_f0 > le_prof_state.acc[LE_PROF_L1_MAX]) {
+          le_prof_state.acc[LE_PROF_L1_MAX] = (uint32_t)(now - prof_f0);
+          le_prof_state.acc[LE_PROF_L1_AT] = f - 1u;
+        }
+        prof_f0 = now;
+      }
+#endif
       const uint32_t i = f - b0;
       e->perf.tap_frame = perf_frame_base + f;
       if (le_fx_tempo_tick(e, e->fx_clock_base + f, perf_frame_base + f,

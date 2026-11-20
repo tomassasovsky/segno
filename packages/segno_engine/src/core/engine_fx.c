@@ -2418,10 +2418,27 @@ void le_fx_entry_clear_rings(le_fx_state* fx, int slot, int cap,
       atomic_load_explicit(&fx->line[slot], memory_order_acquire);
   if (line != NULL) le_mdly_clear(line);
   const int rings = le_fx_ring_count(type);
+  /* The octaver family reads no deeper than LE_OCT_REACH behind its head
+   * (fx_octaver), so only that much of its 1 s rings needs zeroing: 14 KB a
+   * channel instead of 188, on every take start and pedal stomp that
+   * engages one (#1914). Behind the head the ring has now, and behind 0,
+   * where le_fx_entry_reset puts it: a caller may reset after the clear
+   * (the VST3 slot's rearm does). Whatever lands on the slot next clears
+   * the rings it reads, whole, as it lands. */
+  const int reach = le_fx_type_hops(type) && cap > LE_OCT_REACH;
   for (int chan = 0; chan < 2; ++chan) {
-    if (le_fx_ring_readable(fx, slot, chan, rings) &&
-        fx->delay[slot][chan] != NULL) {
-      memset(fx->delay[slot][chan], 0, (size_t)cap * sizeof(float));
+    float* const ring = fx->delay[slot][chan];
+    if (!le_fx_ring_readable(fx, slot, chan, rings) || ring == NULL) {
+      /* nothing to clear */
+    } else if (reach) {
+      const int head = fx->delay_pos[slot][chan];
+      const int back = head >= LE_OCT_REACH ? LE_OCT_REACH : head;
+      memset(ring + head - back, 0, (size_t)back * sizeof(float));
+      /* The ring's end: the rest of the window behind this head, and all
+       * of the one behind 0. */
+      memset(ring + cap - LE_OCT_REACH, 0, (size_t)LE_OCT_REACH * sizeof(float));
+    } else {
+      memset(ring, 0, (size_t)cap * sizeof(float));
     }
     /* The Dual Octaver's low band reads its own ring (#1467). */
     le_oct_low* low =
