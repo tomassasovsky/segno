@@ -117,11 +117,15 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   that reused it had no late period (14 of 14); transitions that re-created
   it had 0 to 9 each (30 in 16).
 - The owner keeps the transition as it looks. Mesa's v3d BO cache now keeps
-  BOs of 4 MB or more for 300 s instead of 2 (`recipes-graphics/mesa`). With
-  the patched driver on the console, only the first transition after the app
-  starts allocates (2 late periods). The 15 after it reused the target and
-  had none, and the screen changes past 77 % of the deadline went from
-  242-272 a run to 48-71.
+  BOs of 4 MB or more until the large ones cached pass 256 MB, the oldest
+  going first, instead of for 2 s (`recipes-graphics/mesa`). With the
+  patched driver on the console (a 300 s version, measured), only the first
+  transition after the app starts allocated (2 late periods). The 15 after
+  it reused the target and had none, and the screen changes past 77 % of the
+  deadline went from 242-272 a run to 48-71.
+- The first one too: right after its first frame the main screen draws one
+  invisible full-screen offscreen pass (`OffscreenPassWarmup`), so the
+  target is made at startup and every transition finds it cached.
 - Measured alternatives, for the record: the same fade at 100 ms (no
   better), drawn from snapshots (worse: they allocate too), scale only and
   scale under a fading scrim (as cheap as instant, but the owner keeps the
