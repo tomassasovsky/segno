@@ -238,84 +238,149 @@ Recommended:
 - The 7" readout's footer shows `Sessions` and the page in place of the
   bank. The cards are on the main screen only.
 
-## How the catalogue and the requests travel
+## Technical review, 2026-11-19
 
-`ControlCubit` owns the face, as it owns every face, and it needs the
-catalogue, which `SessionCubit` holds.
+The plan was reviewed for simplicity, conventions and splitting before the
+build. What changed:
 
-- A listener at the app level (`lib/app/view/app.dart`) hands
+- **The commands reach the session layer through injected functions,** not
+  a counter on `ControlState` and a listener. `SessionCubit` already takes
+  `ControlCubit`'s functions this way (`releaseHeldBindings`,
+  `currentPedalBindings`), and a command needs no `BuildContext`.
+- **Part 1 is two PRs.** The recorder's notice changes an Open from touch
+  as well and needs none of the commands, so it goes first.
+- **Part 2 is two PRs,** the face and then its refinements.
+- **Each part carries its own Penpot writeback** (AGENTS.md: a UI change
+  and its design update ship as a pair). Part 3 keeps the contract text and
+  the closing.
+- **The recorder cannot tell a session change from a pedal stop by
+  itself:** the pedal's stop goes through `ControlCubit` to the repository,
+  not through the recorder cubit. The repository therefore says it.
+
+## How the session layer is reached
+
+`ControlCubit` does not depend on `SessionCubit`.
+
+- **Commands (Part 1).** `ControlCubit` takes two functions,
+  `startNewLoop` and `saveSession`, each a `void Function()` that defaults
+  to doing nothing. `AppRuntime` (`lib/app/application/app_runtime.dart`)
+  passes closures over its `session` field, which is read when a press
+  arrives. `_runCommand` checks `takeLocked`, calls the function and
+  reports the press as accepted. Every rule about takes, saving and guards
+  stays inside `SessionCubit`, and its notices are the ones touch gets.
+- **The face (Part 2).** It adds `openSession(id)` and `refreshSessions()`
+  the same way. The catalogue travels the other way: a listener at the app
+  level (`lib/app/view/app.dart`, which already bridges cubits) hands
   `SessionState`'s catalogue, folders, open session and last failure to
-  `ControlCubit` whenever they change. `ControlState` keeps them for the
-  projection.
-- `ControlCubit` keeps the face's own state: the folder and the page.
-- A press that needs the session layer emits a request on `ControlState`
-  (a serial number and what is asked: refresh the catalogue, open an id,
-  save, new loop). This is the `clearAllPulse` pattern.
-- A second app-level listener passes each new request to
-  `lib/app/foot_session_actions.dart`, which calls
-  `SessionCubit.refreshSessions()`, `open(id)`, `save()` or `newLoop()`.
-  These are the methods the Library and Ctrl/Cmd+S call. Every rule about
-  takes, saving and guards stays inside `SessionCubit`.
-
-Entering the face asks for a refresh, because the catalogue in state is
-only as new as the last session action.
+  `ControlCubit` whenever they change, and `ControlState` keeps them for
+  the projection. `ControlCubit` keeps the face's own state: the folder
+  and the page. Entering the face asks for a refresh, because the
+  catalogue in state is only as new as the last session action.
 
 ## Parts
 
-Each part is one PR on a branch `claude/foot-sessions-1910-p<K>`, and each
-leaves every assigned action working.
+Each part is one PR on a branch `claude/foot-sessions-1910-p<K>`, stacked,
+and each leaves every assigned action working.
 
-### Part 1: New loop and Save as assignable commands
+### Part 1a: a recording that a session change ends
 
-New loop is #1229 Part 7, under its decisions O2, D6 and D7. The PR says
-`Refs #1229` and `Refs #1910`.
+For an Open and a New loop from touch today, and from the foot after Part
+1b. #1229's decisions O2 and D6. The PR says `Refs #1229` and `Refs #1910`.
 
-- `ControlCommand.newLoop` (`command:new-loop`) and
-  `ControlCommand.saveSession` (`session:save`), both in the Sessions
-  group, with labels and foot captions in English and Spanish:
-  `lib/control/binding/control_action.dart`,
-  `lib/control/binding/control_action_labels.dart`,
-  `lib/looper/view/foot_custom_view.dart`, `lib/l10n/arb/`.
-- The request on `ControlState` and its emission:
-  `lib/control/cubit/control_state.dart`,
-  `lib/control/cubit/control_cubit.dart`.
-- The app-level listener and the handler: `lib/app/view/app.dart`,
-  `lib/app/foot_session_actions.dart`.
-- `<name> stays in your Library.` for a New loop asked by foot, and only
-  when a session was saved: `lib/session/cubit/session_cubit.dart`,
-  `lib/session/cubit/session_state.dart`,
-  `lib/looper/view/tracks_commands.dart`.
-- A performance recording finished by a session apply shows the saved
-  notice and no completion sheet, for Open and New loop from touch or
-  foot: the stop cause in `packages/performance_repository`, the recorder
-  cubit's state, and `onPerformanceRecorderState` in
-  `lib/looper/view/tracks_commands.dart`.
+- `PerformanceRepository.disarmForSessionChange()` finalizes the take as
+  `disarmAndFinalize()` does and sets `endedBySessionChange`, which holds
+  until the next take is finalized
+  (`packages/performance_repository/lib/src/performance_repository.dart`).
+  `SessionCubit._applyRig` calls it.
+- The recorder cubit reads it when the finalize starts and carries it on
+  its Rendering and Completed states
+  (`lib/performance/cubit/performance_recorder_cubit.dart`,
+  `lib/performance/cubit/performance_recorder_state.dart`).
+- `onPerformanceRecorderState` (`lib/looper/view/tracks_commands.dart`)
+  opens no completion sheet for such a take. Once it is delivered whole,
+  the stage says `Recording saved` with `Find it in Library > Audio.`, as
+  a notice the session's own notice cannot replace unread. A take that did
+  not come out whole still opens the sheet, which is where the player
+  reads what is missing.
 
 Acceptance:
 
-- Both keys parse and print back; the action picker shows the Sessions
-  heading with two rows (`test/control/binding/control_action_test.dart`,
-  `test/control/binding/binding_labels_test.dart`,
-  `test/control/pedal_setup_page_test.dart`).
-- A Custom press, an external switch and a MIDI control assigned either
-  command each emit one request per press, and none while `takeLocked`
-  holds (`test/control/foot_custom_dispatch_test.dart`,
-  `test/control/external_dispatch_test.dart`,
-  `test/control/midi_devices_dispatch_test.dart`).
-- One request calls `SessionCubit.newLoop` or `save` once. Save writes
-  back to the open session, or saves as `New loop N` with none open. The
-  kept-session notice shows for the foot's New loop and not for the
-  Library's button (`test/app/foot_session_actions_test.dart`, against a
-  real `SessionCubit` over a temporary catalogue).
-- A press of Save during a track take saves and the take goes on.
-- A session apply that finishes a recording shows the saved notice and no
-  sheet (`test/looper/view`, `test/performance`).
+- The repository: the take is finalized, the fact is set, and the next
+  take ended another way clears it
+  (`packages/performance_repository/test/performance_repository_test.dart`).
+- The recorder: a take ended this way carries the fact while it renders
+  and once it is done; one ended by `disarmAndFinalize` does not
+  (`test/performance/cubit/performance_recorder_cubit_test.dart`).
+- The stage: no dialog and one success notice for a whole take; the sheet
+  for a partial one (`test/looper/view/tracks_view_test.dart`).
+- `SessionCubit`'s tests stub the new method
+  (`test/session/cubit/session_cubit_test.dart`).
+- Device: start a performance recording, open another session from the
+  Library. The new session shows with no dialog over it, the notice says
+  the recording was saved, and the take is in Library > Audio.
+- Penpot, page `20 Record performance & USB export`: #1229's W6, the
+  notice in place of the completion sheet.
+
+### Part 1b: New loop and Save as assignable commands
+
+New loop is #1229 Part 7, under its decision D7. The PR says `Refs #1229`
+and `Refs #1910`.
+
+- `ControlCommand.newLoop` (`command:new-loop`) and
+  `ControlCommand.saveSession` (`session:save`), both in the Sessions
+  group, with labels in English and Spanish:
+  `lib/control/binding/control_action.dart` (the members and the `group`
+  arm), `lib/control/binding/control_action_labels.dart`, `lib/l10n/arb/`.
+  A shorter foot caption in `lib/looper/view/foot_custom_view.dart` only
+  where the caption-fit test asks for one.
+- The two injected functions and their use in `_runCommand`:
+  `lib/control/cubit/control_cubit.dart`,
+  `lib/app/application/app_runtime.dart`.
+- `SessionCubit.newLoop(announceKept: true)` puts the name of the session
+  it saved on its outcome (`keptSessionName`, null when nothing was
+  saved), and `sessionOutcomeNotice` says `<name> stays in your Library.`
+  for it (`libraryNewLoopStays`, the 19/02 sentence). The Library's New
+  loop does not ask for it and says nothing, as today:
+  `lib/session/cubit/session_cubit.dart`,
+  `lib/session/cubit/session_state.dart`,
+  `lib/looper/view/tracks_commands.dart`.
+- Save needs nothing new in `SessionCubit`: `save()` already writes back
+  or takes `New loop N`, does not end a take, and its notices exist.
+
+Acceptance:
+
+- Both keys parse and print back, and the Sessions group lists exactly
+  these two (`test/control/binding/control_action_test.dart`, where the
+  assertion that the group is empty is replaced).
+- Labels in both languages
+  (`test/control/binding/control_action_labels_test.dart`, new), and both
+  captions fit one line under a pedal
+  (`test/looper/view/foot_custom_caption_fit_test.dart`).
+- The action picker shows the Sessions tab with two rows; the test scrolls
+  the tab strip to reach it (`test/control/pedal_setup_page_test.dart`).
+- A Custom press (`test/control/foot_custom_dispatch_test.dart`), an
+  external switch and a MIDI control
+  (`test/control/external_dispatch_test.dart`) assigned either command
+  each call its function once per press and report the press accepted;
+  none is called while `takeLocked` holds.
+- `newLoop(announceKept: true)` carries the saved session's name and
+  nothing when the rig was unchanged; without it the outcome carries no
+  name (`test/session/cubit/session_cubit_test.dart`). The notice shows
+  for the foot's New loop and not for the Library's
+  (`test/looper/view/session_outcome_notice_test.dart`).
 - Device: assign New loop and Save to two Custom switches; record two
   tracks while a performance recording runs; press Save, then New loop.
   The stage reads `New loop N`, the old session opens from the Library
   with both tracks, and the recording is in Library > Audio.
+- Penpot, page `08 Pedal setup & LEDs` (with a note on pages 24 and 26,
+  which share the picker): the Sessions group with its two rows. Page
+  `10 Performance · Tracks, Custom, FX & Mute`: the two captions.
 
-### Part 2: the Sessions face
+### Part 2a: the Sessions face
+
+After this part the player can assign Sessions, open any session by foot
+from one list, page through it, save, start a new loop, and return to the
+mode they came from.
 
 - `InteractionMode.sessions`, its `mode:sessions` action and label
   `Sessions`. Every exhaustive switch over `InteractionMode` gains the
@@ -325,64 +390,96 @@ Acceptance:
   `lib/control/binding/pedal_led_labels.dart`,
   `lib/control/binding/pedal_led_map.dart`,
   `lib/control/control_projection.dart`, `lib/control/invariants.dart`,
+  `lib/control/cubit/control_cubit.dart`,
   `lib/looper/view/tracks_view.dart`, `lib/looper/view/tracks_commands.dart`,
   `lib/looper/view/stage_top_bar.dart`, `lib/looper/view/track_column.dart`,
   `lib/looper/view/wave_track_row.dart`, `lib/theme/looper_theme.dart`,
   `lib/theme/surface_theme.dart`. It is never a boot mode, like the Tuner.
-- The model: `lib/control/model/foot_sessions.dart`. The face's state (the
-  folder and the page), the order under D1, the folders under D5, and a
-  pure projection from the catalogue, the open session, the looper's state
-  and the recorder's state to the ten pedals and the four cards.
+- The model: `lib/control/model/foot_sessions.dart`. The page, the order
+  under D1 over every session as one list, and a pure projection from the
+  catalogue, the open session and the looper's state to the ten pedals
+  and the four cards.
 - The cubit part: `lib/control/cubit/control_foot_sessions.dart`. Entering
-  and leaving, the presses and the two Holds, the requests, and the mode
-  the face returns to.
+  and leaving, the presses and Clear's Hold, the injected `openSession`
+  and `refreshSessions`, and the mode the face returns to.
 - The catalogue into `ControlState`: `lib/control/cubit/control_state.dart`
   and the listener in `lib/app/view/app.dart`.
 - The view: `lib/looper/view/foot_sessions_view.dart`, with
   `FootPedalRows` and `FootTopBar`.
 - The LED map for the mode, and its entry on Pedals > LED colors.
-- The readout's footer for the mode (`lib/visualizer/`).
-- `<name> opened`, `Could not open <name>`, the card lines and the
-  captions, in English and Spanish.
+- `<name> opened` in place of `Session loaded`, in `sessionOutcomeNotice`
+  (`lib/looper/view/tracks_commands.dart`), and the captions, in English
+  and Spanish.
 
 Acceptance:
 
 - Projection (`test/control/foot_sessions_projection_test.dart`): name
   order ignoring case with numbers as numbers; four per page; the last
   page padded with empty positions; the open session marked; an empty
-  position unavailable; the folder order with Unfiled last and empty
-  folders skipped; the start folder and page for an open session and for
-  none; each card line of D3 for a playing track, a take and a running
-  recording.
+  position unavailable; the start page for an open session and for none.
 - Dispatch (`test/control/foot_sessions_dispatch_test.dart`): a track
-  switch emits one open request for the session in its position; Bank
-  pages and wraps; a held Bank changes folder and does not also page;
-  Undo emits Save; a press of Clear emits nothing and a held Clear emits
-  New loop; MODE returns to the mode the face was entered from; nothing
-  is emitted while an Open is in flight or `takeLocked` holds; entering
-  asks for a refresh.
-- Against a real `SessionCubit`: an Open from the face saves the changed
-  outgoing rig, ends a take, and closes the face on success; a failed
-  Open keeps the face up with the reason on its card.
+  switch calls `openSession` once with the id in its position; Bank pages
+  and wraps; Undo calls Save; a press of Clear calls nothing and a held
+  Clear calls New loop; MODE returns to the mode the face was entered
+  from; nothing is called while an Open is in flight or `takeLocked`
+  holds; entering asks for a refresh.
+- Against a real `SessionCubit` (the setup of
+  `test/session/open_preserves_engine_test.dart`): an Open from the face
+  saves the changed outgoing rig, ends a take, and closes the face.
 - LEDs (`test/control/pedal_led_projection_test.dart`): the open
   session's switch is lit, the rest follow D6.
 - The view (`test/looper/view/foot_sessions_view_test.dart`): the four
-  cards sit above the four track switches at 1920x1080; a tap on a drawn
-  pedal or on a card acts as the switch does; nothing clips with a 40-character name,
-  in both languages.
-- Screenshots: the face with one page, a second page, a loop playing, an
-  Open in flight, a failed Open and no sessions. Regenerated and viewed.
-- Device: a folder of six sessions; Sessions assigned to a Custom switch;
-  open the third while a loop plays; page to the sixth; hold Bank to
-  Unfiled; Save; hold Clear for a New loop.
+  cards sit above the four track switches at 1920x1080; nothing clips
+  with a 40-character name, in both languages.
+- Screenshots: the face with one page, a second page and an Open in
+  flight. Regenerated and viewed.
+- Penpot, page `19 Sessions · New loop & recall`: `09 / Foot / Sessions`
+  and `11 / Foot / Sessions / Opening`, with the `c/` note that records
+  why the face replaced previous and next, the Boss bank and number
+  pattern, and decisions D1 to D6. Pages 08, 24 and 26: `Sessions` under
+  Modes & functions and the LED map. segno-design:
+  `pedal-action-catalogue.js` gains `mode:sessions` and loses
+  `session:previous` and `session:next`.
+- Device: a list of six sessions; Sessions assigned to a Custom switch;
+  open the third; page to the sixth; Save; hold Clear for a New loop.
 
-### Part 3: the design and the contract, and closing the issue
+### Part 2b: folders, the card lines, a failed Open, touch and the readout
 
-- The Penpot writeback below, and the snapshot PR in segno-design.
+- Folders under D5: the face starts on the open session's folder, a held
+  Bank goes to the next one, and the side names it.
+- The card lines of D3: `Stops playback`, `Ends the take`, `Ends the
+  recording`, from the looper's and the recorder's state.
+- A failed Open keeps the face up with the reason on its card, and the
+  stage notice says `Could not open <name>`.
+- Taps on the drawn pedals and on the cards.
+- The readout's footer for the mode (`lib/visualizer/`).
+
+Acceptance:
+
+- Projection: the folder order with Unfiled last and empty folders
+  skipped; the start folder for an open session and for none; each card
+  line for a playing track, a take and a running recording; the reason on
+  the card of a session whose Open failed.
+- Dispatch: a held Bank changes folder and does not also page.
+- Against a real `SessionCubit`: a failed Open keeps the face up and the
+  open session unchanged.
+- The view: a tap on a drawn pedal or on a card acts as the switch does.
+- Screenshots: a loop playing, a failed Open and no sessions.
+- Penpot, page 19: `10 / Foot / Sessions / Playing`,
+  `12 / Foot / Sessions / Could not open` and
+  `13 / Foot / Sessions / Empty`. Page
+  `25 Main views and selected-track display`: the readout's footer in the
+  function.
+- Device: hold Bank to Unfiled; open a session while a loop plays; open
+  one while a performance recording runs.
+
+### Part 3: the contract, and closing the issue
+
 - `docs/handoff/segno-app/accepted-behavior.md`: §4.5 gains a Sessions row
   in the function table, and §6.1 says that by foot the face's card is the
   confirmation of an interruption.
-- Removes the Active threads row and says `Closes #1910`.
+- Removes the Active threads row and says `Closes #1910`. It can be folded
+  into Part 2b's PR.
 
 ### Part 4, not built: an order set by hand
 
@@ -394,30 +491,13 @@ Acceptance:
 
 ## Design writeback
 
-Penpot, file **segno-ui**, through the `penpot` MCP server, one board per
-call.
-
-- Page `19 Sessions · New loop & recall`: boards drawn from the screenshot
-  suite, `09 / Foot / Sessions`, `10 / Foot / Sessions / Playing`,
-  `11 / Foot / Sessions / Opening`, `12 / Foot / Sessions / Could not open`
-  and `13 / Foot / Sessions / Empty`. A `c/` note records why the face
-  replaced previous and next (the four faults above), the Boss bank and
-  number pattern, and decisions D1 to D6.
-- Page `10 Performance · Tracks, Custom, FX & Mute`: the captions for
-  `Sessions`, `New loop` and `Save` on the Custom face.
-- Page `08 Pedal setup & LEDs`, with a note on pages `24 External pedals ·
-  Function assignments` and `26 MIDI controls and Learn`, which share the
-  picker: `Sessions` under Modes & functions, the Sessions group with
-  `New loop` and `Save session`, and the LED map for the function.
-- Page `25 Main views and selected-track display`: the readout's footer in
-  the function.
-- Page `20 Record performance & USB export`: #1229's W6, the saved notice
-  in place of the completion sheet when a session apply finishes a
-  recording.
-- segno-design: `pedal-action-catalogue.js` gains `mode:sessions` and
-  loses `session:previous` and `session:next`; `tool/penpot-snapshot`,
-  commit `penpot/`, a PR linked to the app PR; `.github/segno-design.sha`
-  moves to that commit if the `design` job needs it.
+Each part's Penpot boards and notes are listed under that part, and are
+written in the same pair of PRs as its code: the Penpot file through the
+`penpot` MCP server, one board per call, then `tool/penpot-snapshot` and a
+PR in segno-design that commits `penpot/`, linked to the app PR.
+`.github/segno-design.sha` moves to that commit when the `design` job
+needs it. With no Penpot tab open, the part's PR says the writeback is
+owed and the Active threads row carries it.
 
 ## Device checks (on the console)
 
