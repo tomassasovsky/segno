@@ -319,10 +319,10 @@ class PedalSetup extends Equatable {
     ),
   });
 
-  /// The setup a console that has never saved one starts with: the accepted
-  /// Track controls and [defaultCustom]. `PedalSetup()` stays the setup with
-  /// nothing on Custom, which is what Clear leaves and what a stored setup
-  /// without Custom assignments decodes to.
+  /// The setup a console with none stored starts with, and stores on that
+  /// boot: the accepted Track controls and [defaultCustom]. `PedalSetup()`
+  /// stays the setup with nothing on Custom, which is what Clear leaves and
+  /// what a stored setup without Custom assignments decodes to.
   static final PedalSetup fresh = const PedalSetup().withDefaultCustom();
 
   /// The modes MODE can be assigned to reach.

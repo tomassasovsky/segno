@@ -369,13 +369,13 @@ void main() {
   });
 
   group('a console that never saved a pedal setup (#1908)', () {
-    test('loads the default map and stores nothing', () async {
+    test('loads the default map and stores it', () async {
       final rig = _Rig();
       try {
         await rig.control.load();
         await rig.poll();
         expect(rig.control.state.pedalSetup, PedalSetup.fresh);
-        expect(rig.store.values.containsKey('pedal.setup'), isFalse);
+        expect(rig.store.values['pedal.setup'], PedalSetup.fresh.encode());
         rig.control.setMode(InteractionMode.custom);
         await _pump();
         // Every editable switch is published to the face; none is lit

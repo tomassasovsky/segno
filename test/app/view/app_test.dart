@@ -66,6 +66,14 @@ import '../../helpers/helpers.dart';
 
 /// A supported update backend advertising v0.2.0 (current is v0.1.0), so the
 /// app's startup availability check surfaces the update toast.
+/// The store without what a fresh console's boot writes on its own: the
+/// default pedal setup and the FX Stop notice decision (#1908).
+Map<String, Object> _withoutBootWrites(Map<String, Object> values) => {
+  for (final MapEntry(:key, :value) in values.entries)
+    if (key != 'pedal.setup' && key != 'fx.stop_change_notice_shown')
+      key: value,
+};
+
 class _FakeUpdateBackend implements PlatformUpdateBackend {
   @override
   bool get isSupported => true;
@@ -1568,7 +1576,7 @@ void main() {
             expect(length.state.options.defaultLengthBars, 4);
             expect(repository.trackLengthPresetOverrides, isEmpty);
           } else {
-            expect(store.values, before);
+            expect(_withoutBootWrites(store.values), before);
             expect(
               noticeTitles(tester),
               isNot(contains('Record length needs recovery')),
@@ -1624,7 +1632,7 @@ void main() {
             expect(timing.state.defaultTiming, RecordTiming.quarter);
             expect(repository.trackRecordTimingOverrides, isEmpty);
           } else {
-            expect(store.values, before);
+            expect(_withoutBootWrites(store.values), before);
             expect(
               noticeTitles(tester),
               isNot(contains('Record timing needs recovery')),
@@ -1666,7 +1674,7 @@ void main() {
         // unreadable is repaired to (0, false).
         expect(tempo.state.recordStartReady, isTrue);
         expect(
-          store.values,
+          _withoutBootWrites(store.values),
           malformed
               ? {'tempo.count_in_bars': 0, 'looper.auto_record': false}
               : before,
@@ -1993,7 +2001,10 @@ void main() {
           // A transient read reads cleanly on Retry; malformed data that
           // stays unreadable is repaired to Off.
           expect(tempo.state.clickModeReady, isTrue);
-          expect(store.values, before..['tempo.click_mode'] = 0);
+          expect(
+            _withoutBootWrites(store.values),
+            before..['tempo.click_mode'] = 0,
+          );
           expect(tempo.state.clickModeSnapshot?.mode, ClickMode.off);
           expect(
             noticeTitles(tester),
@@ -4050,7 +4061,7 @@ void main() {
     });
 
     testWidgets('a fresh install starts with the default Custom map, the '
-        'Tuner on a Hold of pedal 2, and stores no setup (#1908)', (
+        'Tuner on a Hold of pedal 2, and stores that setup (#1908)', (
       tester,
     ) async {
       final store = FakeKeyValueStore();
@@ -4066,7 +4077,7 @@ void main() {
         control.state.pedalSetup.customFor(PedalButton.track2, bank: 0).hold,
         const ModeAction(InteractionMode.tuner),
       );
-      expect(store.values.containsKey('pedal.setup'), isFalse);
+      expect(store.values['pedal.setup'], PedalSetup.fresh.encode());
     });
 
     testWidgets('an install that started in Record is not told anything', (

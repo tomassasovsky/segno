@@ -1220,9 +1220,9 @@ class ControlCubit extends Cubit<ControlState> {
   bool _fxStopNoticeShown = true;
 
   // Whether [_fxStopNoticeShown] is already stored. A fresh install decides
-  // it is told in memory at boot and stores that before anything could make
-  // a later boot read it as an upgrade: its first FX entry, pedal setup or
-  // bindings save. Boot itself writes nothing.
+  // at boot that it is told, and stores that just before the default pedal
+  // setup (#1908), which would otherwise make a later boot read it as an
+  // upgrade. An upgraded install stores it at its first FX entry.
   bool _fxStopNoticeStored = true;
 
   // Stop's own press/hold gesture on the performance surfaces that give it a
@@ -1340,16 +1340,31 @@ class ControlCubit extends Cubit<ControlState> {
       fxStopNoticeShown = true;
     }
     _fxStopNoticeShown = fxStopNoticeShown;
-    try {
+    var setupUncertain = false;
+    if (encodedSetup == null) {
       // A console that never saved a setup starts with the default Custom
-      // map (#1908). A stored setup is taken as it is, an empty map included.
-      setup = encodedSetup == null
-          ? PedalSetup.fresh
-          : PedalSetup.decode(encodedSetup);
-    } on FormatException catch (error, stackTrace) {
-      // A corrupt explicit action must not become a default live command.
-      setupUnavailable = true;
-      addError(error, stackTrace);
+      // map and stores it at once (#1908), so a later build with another
+      // default does not change the map this console already plays.
+      setup = PedalSetup.fresh;
+      // First, so a later boot cannot read the stored setup as an upgrade.
+      _storeFxStopNotice();
+      try {
+        await _settings.savePedalSetup(setup.encode());
+      } on PedalSetupSaveException catch (error, stackTrace) {
+        // The default is live either way. With nothing stored, the next
+        // boot stores it.
+        setupUncertain = !error.checkpointRestored;
+        addError(error, stackTrace);
+      }
+    } else {
+      try {
+        // A stored setup is taken as it is, an empty map included.
+        setup = PedalSetup.decode(encodedSetup);
+      } on FormatException catch (error, stackTrace) {
+        // A corrupt explicit action must not become a default live command.
+        setupUnavailable = true;
+        addError(error, stackTrace);
+      }
     }
     if (_inputRetired || _closing || isClosed) return;
     emit(
@@ -1358,6 +1373,7 @@ class ControlCubit extends Cubit<ControlState> {
         holdThreshold: _longPress,
         pedalSetup: setup,
         pedalSetupUnavailable: setupUnavailable,
+        pedalSetupPersistenceUncertain: setupUncertain,
         globalBindings: storedBindings,
       ),
     );
@@ -1530,7 +1546,6 @@ class ControlCubit extends Cubit<ControlState> {
 
   /// Saves [setup] and makes it live.
   Future<void> _commitPedalSetup(PedalSetup setup) async {
-    _storeFxStopNotice();
     try {
       await _settings.savePedalSetup(setup.encode());
     } on PedalSetupSaveException catch (error) {
@@ -3878,7 +3893,6 @@ class ControlCubit extends Cubit<ControlState> {
     _invalidateGestures();
     emit(state.copyWith(globalBindings: next, sessionBindings: session));
     if (!saves) return;
-    _storeFxStopNotice();
     await _settings.savePedalBindings(next.encode());
   });
 

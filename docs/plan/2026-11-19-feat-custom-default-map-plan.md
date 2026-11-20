@@ -218,6 +218,14 @@ connected.
   nothing assigned could not have reached the default. In the dialog,
   `Clear both banks` dims when nothing is assigned and `Use default
   assignments` dims when the map already is the default.
+- A console with no stored setup stores `PedalSetup.fresh` on its first
+  boot (the owner's call on 2026-11-20, after the code review). Part 1
+  loaded the default and stored nothing, so a later build that changed
+  `defaultCustom` would have changed the map on every console that had
+  never pressed Save. A refused write leaves the default playing and
+  nothing stored. The fresh install's FX Stop notice decision is stored in
+  the same boot, before the setup, so the next boot does not read the
+  install as an upgrade.
 - Part 1's test line "lights the assigned switches" was wrong about the
   build. A Custom switch lights while it is held or while its action's
   state is on, not because it is assigned. The tests check that a fresh

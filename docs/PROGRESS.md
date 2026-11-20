@@ -77,9 +77,14 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   Hold Divide; 4 Peel, Hold Undo.
 - Record / Play and Stop carry no Hold, so both act on contact: a Custom
   switch with a Hold moves its Press to the release.
-- A stored setup is taken as it is, an empty Custom map included, and
-  nothing is written at boot. `PedalSetup()` stays the setup with nothing
-  on Custom.
+- That first boot stores the setup (the owner's call, 2026-11-20), so a
+  later build with another default does not change the map a console
+  already plays; `Use default assignments` gives the build's current
+  default. If the write is refused the default still plays, and the next
+  boot stores it. The fresh install's FX Stop notice decision (#1229) is
+  stored in the same boot, no longer at its first FX entry or save.
+- A stored setup is taken as it is, an empty Custom map included.
+  `PedalSetup()` stays the setup with nothing on Custom.
 - Settings > Pedals > Custom controls: the Clear custom assignments dialog
   has a second action, `Use default assignments`. It replaces the draft's
   Custom map; Restore puts back the map from before the latest Clear or

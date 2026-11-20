@@ -42,6 +42,9 @@ class _MockLooperRepository extends Mock implements LooperRepository;
 
 class _ControlledStore extends FakeKeyValueStore {
   Completer<void>? pending;
+
+  /// Refuses a new setup. Writing back the stored one, which is how the
+  /// repository restores its checkpoint after a refusal, still succeeds.
   bool refuse = false;
   bool failRestore = false;
   int failedWrites = 0;
@@ -61,7 +64,9 @@ class _ControlledStore extends FakeKeyValueStore {
         throw StateError('storage refuses checkpoint restore');
       }
       await pending?.future;
-      if (refuse) throw Exception('storage unavailable');
+      if (refuse && value != values[key]) {
+        throw Exception('storage unavailable');
+      }
     }
     await super.setString(key, value);
   }
@@ -920,7 +925,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(trayOpen, isFalse);
     expect(control.state.pedalSetup.modePress, InteractionMode.mute);
-    expect(await settings.loadPedalSetup(), isNull);
+    expect(await settings.loadPedalSetup(), PedalSetup.fresh.encode());
   });
 
   testWidgets('saving built-in edits preserves a newer External save', (
@@ -1150,7 +1155,7 @@ void main() {
     await tester.tap(find.byKey(save));
     await tester.pumpAndSettle();
     expect(control.state.pedalSetup.modePress, InteractionMode.mute);
-    expect(await settings.loadPedalSetup(), isNull);
+    expect(await settings.loadPedalSetup(), PedalSetup.fresh.encode());
     expect(find.byKey(const Key('pedal_setup_saved')), findsNothing);
     expect(find.byKey(const Key('pedal_setup_save_failed')), findsOneWidget);
     expect(
