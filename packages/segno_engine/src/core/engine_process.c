@@ -9029,7 +9029,14 @@ static LE_BRIDGE_NOINLINE le_heard_pair le_heard_lane_wet(
         le_fx_rack_reset(&ln->fx, s);
       }
     }
-    if (target) {
+    if (!audible) {
+      /* Nothing of the lane is heard (a recording track plays nothing, a
+       * stopped one has rung out, a muted one is gated): a fade would only
+       * run the lane's chain here, on the callback, frame by frame, for its
+       * 10 ms. A take whose source render lands a few blocks after it
+       * starts (a tempo stretch) moved its target twice so (#1914). */
+      m = target ? 1.0f : 0.0f;
+    } else if (target) {
       m += od_step;
       if (m > 1.0f) m = 1.0f;
     } else {
