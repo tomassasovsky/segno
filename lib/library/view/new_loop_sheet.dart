@@ -13,11 +13,11 @@ import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/theme/theme.dart';
 
-/// What `Start new loop` was confirmed with: the template to apply, or none
+/// What `Start new session` was confirmed with: the template to apply, or none
 /// for Empty tracks.
 typedef NewLoopConfirmation = ({NewLoopTemplate? template});
 
-/// Asks before `New loop` (plan D8: it always asks), then starts it through
+/// Asks before `New session` (plan D8: it always asks), then starts it through
 /// [SessionCubit.newLoop] with the chosen start (#1513). `Cancel` changes
 /// nothing.
 Future<void> startNewLoop(BuildContext context) async {
@@ -44,17 +44,17 @@ Future<void> startNewLoop(BuildContext context) async {
     ),
   );
   if (confirmed == null) return;
-  // A New loop ends Listen (plan D10).
+  // A New session ends Listen (plan D10).
   library.stopListening();
   await session.newLoop(template: confirmed.template);
 }
 
-/// The New loop sheet (pen 19/02 `New loop / Keep current session`, and
-/// 19/07 `New loop / Ed's setup`): the current session stays in the
+/// The New session sheet (pen 19/02 `New session / Keep current session`, and
+/// 19/07 `New session / Ed's setup`): the current session stays in the
 /// Library, its tracks give way to empty ones, and the effects, tempo and
 /// pedal setup stay. `Start with` chooses Empty tracks or Ed's setup, which
 /// also names tracks 1 to 4 and gives each an Ed's Rack sound. Pops a
-/// [NewLoopConfirmation] on `Start new loop` and null on `Cancel`.
+/// [NewLoopConfirmation] on `Start new session` and null on `Cancel`.
 class NewLoopSheet extends StatelessWidget {
   /// Creates the sheet for the current session [currentName], whose tracks
   /// [channels] hold audio and whose tracks are named [trackNames].
@@ -171,7 +171,8 @@ class NewLoopSheet extends StatelessWidget {
                     opacity: state.canStart ? 1 : surface.disabledOpacity,
                     child: LoopOutlinedButton(
                       key: const Key('new_loop_start'),
-                      width: 216,
+                      width: 262,
+                      fitLabel: true,
                       tone: LoopButtonTone.accent,
                       label: l10n.libraryNewLoopStart,
                       onTap: state.canStart
@@ -309,7 +310,7 @@ class NewLoopNamesLine extends StatelessWidget {
 }
 
 /// "`name` stays in your Library.", the name drawn brighter as the pen
-/// does, or "Your current loop stays in your Library." while the loop has
+/// does, or "Your current session stays in your Library." while the loop has
 /// no name yet.
 class NewLoopKeptLine extends StatelessWidget {
   /// Creates the line for the current session [name] in [style].

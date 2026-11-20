@@ -40,7 +40,7 @@ class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
 final _saved = DateTime(2026, 9, 7, 10);
 
 final _catalog = [
-  const SessionSummary(id: 's-2', name: 'New loop 2'),
+  const SessionSummary(id: 's-2', name: 'New session 2'),
   SessionSummary(
     id: 's-1',
     name: 'Evening loop',
@@ -134,6 +134,8 @@ void main() {
         currentSessionName: _catalog.firstWhere((s) => s.id == current).name,
         sessions: _catalog,
         folders: const ['Gigs'],
+        // Sunday rehearsal is kept off the Sessions pedal function (#1921).
+        hiddenFromFace: const {'s-3'},
       ),
     );
     final repository = _MockSessionRepository();
@@ -262,6 +264,15 @@ void main() {
     await shot('manage');
   }, skip: !rendersScreenshots);
 
+  testWidgets("a row's options, for a session hidden from the pedal", (
+    tester,
+  ) async {
+    await pump(tester, current: 's-1');
+    await tester.tap(find.byKey(const Key('library_row_options_s-3')));
+    await tester.pumpAndSettle();
+    await shot('row_options');
+  }, skip: !rendersScreenshots);
+
   testWidgets('19/04 Rename on the keyboard sheet', (tester) async {
     await pump(tester, current: 's-1');
     await tester.tap(find.byKey(const Key('library_manage')));
@@ -280,7 +291,7 @@ void main() {
     await shot('move');
   }, skip: !rendersScreenshots);
 
-  testWidgets('19/02 the New loop sheet', (tester) async {
+  testWidgets('19/02 the New session sheet', (tester) async {
     await pump(tester, current: 's-1');
     await tester.tap(find.byKey(const Key('library_new_loop')));
     await tester.pumpAndSettle();
@@ -294,7 +305,7 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets("19/07 the New loop sheet with Ed's setup", (tester) async {
+  testWidgets("19/07 the New session sheet with Ed's setup", (tester) async {
     await pump(tester, current: 's-1');
     await chooseEds(tester);
     await shot('new_loop_eds');
@@ -341,6 +352,8 @@ void main() {
         currentSessionName: 'Evening loop',
         sessions: _catalog,
         folders: const ['Gigs'],
+        // Sunday rehearsal is kept off the Sessions pedal function (#1921).
+        hiddenFromFace: const {'s-3'},
       ),
     );
     await tester.pumpAndSettle();

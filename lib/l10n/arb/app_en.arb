@@ -112,7 +112,15 @@
     "sessionMenuTooltip": "Session",
     "a11ySessionMenu": "Session menu",
     "sessionSaved": "Session saved",
-    "sessionLoaded": "Session loaded",
+    "sessionOpened": "{name} opened",
+    "@sessionOpened": {
+        "description": "Stage notice when a session has opened, from the Library or the Sessions face: it names the session, since by foot the name is the confirmation that the right one opened.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
     "sessionLoadedConverted": "Session converted from an older Segno",
     "sessionLoadedConvertedUnsaved": "Session converted for now",
     "sessionConvertedKept": "The original was kept beside it.",
@@ -1283,6 +1291,14 @@
         }
     },
     "perfDone": "Capture saved",
+    "perfSavedBySessionChange": "Recording saved",
+    "@perfSavedBySessionChange": {
+        "description": "Stage notice title when opening a session or starting a new session ended a running performance recording: it is kept, and no completion dialog opens over the new session."
+    },
+    "perfSavedFindInLibrary": "Find it in Library > Audio.",
+    "@perfSavedFindInLibrary": {
+        "description": "Stage notice body under 'Recording saved': where the finished recording is."
+    },
     "perfSavedSubtitle": "{name} — {count, plural, =1{1 track} other{{count} tracks}}, {duration}. Written to the session folder.",
     "@perfSavedSubtitle": {
         "description": "Completion dialog subtitle: capture name, exported track count, wall-clock length (M:SS).",
@@ -3164,7 +3180,7 @@
     },
     "sessionNewLoopNotSaved": "{name} started, but it could not be saved yet. Save it to keep it.",
     "@sessionNewLoopNotSaved": {
-        "description": "A New loop cleared the tracks and took its name, but its empty bundle could not be written; the first Save writes it.",
+        "description": "A New session cleared the tracks and took its name, but its empty bundle could not be written; the first Save writes it.",
         "placeholders": {
             "name": {
                 "type": "String"
@@ -3173,56 +3189,56 @@
     },
     "libraryNewLoopStays": "{name} stays in your Library.",
     "@libraryNewLoopStays": {
-        "description": "The New loop sheet (19/02): the outgoing session, by name, is kept. The name is drawn brighter than the rest of the line.",
+        "description": "The New session sheet (19/02): the outgoing session, by name, is kept. The name is drawn brighter than the rest of the line.",
         "placeholders": {
             "name": {
                 "type": "String"
             }
         }
     },
-    "libraryNewLoopStaysUnnamed": "Your current loop stays in your Library.",
+    "libraryNewLoopStaysUnnamed": "Your current session stays in your Library.",
     "@libraryNewLoopStaysUnnamed": {
-        "description": "The New loop sheet when the current loop has no name yet: it is saved under the next automatic name if it changed."
+        "description": "The New session sheet when the current session has no name yet: it is saved under the next automatic name if it changed."
     },
     "libraryNewLoopKeeps": "Keep your effects, tempo and pedal setup.",
     "@libraryNewLoopKeeps": {
-        "description": "The New loop sheet: what a new loop keeps from the current one."
+        "description": "The New session sheet: what a new session keeps from the current one."
     },
-    "libraryNewLoopStart": "Start new loop",
+    "libraryNewLoopStart": "Start new session",
     "@libraryNewLoopStart": {
-        "description": "Confirms New loop."
+        "description": "Confirms New session."
     },
     "libraryNewLoopStartWith": "Start with",
     "@libraryNewLoopStartWith": {
-        "description": "The New loop sheet: label of the choice of what the new loop starts with (#1513)."
+        "description": "The New session sheet: label of the choice of what the new session starts with (#1513)."
     },
     "libraryNewLoopEmptyTracks": "Empty tracks",
     "@libraryNewLoopEmptyTracks": {
-        "description": "The New loop sheet: start with empty tracks, the plain New loop."
+        "description": "The New session sheet: start with empty tracks, the plain New session."
     },
     "libraryNewLoopEdsSetup": "Ed's setup",
     "@libraryNewLoopEdsSetup": {
-        "description": "The New loop sheet: start with Ed's setup, four named tracks each with an Ed's Rack sound. A product name, kept as is."
+        "description": "The New session sheet: start with Ed's setup, four named tracks each with an Ed's Rack sound. A product name, kept as is."
     },
     "libraryNewLoopEdsSummary": "Tracks 1 to 4 become Guitar, Boom, RC20 and Vox, each with an Ed's Rack sound. Your other effects, tempo and pedal setup stay.",
     "@libraryNewLoopEdsSummary": {
-        "description": "The New loop sheet with Ed's setup chosen: what it does. Guitar, Boom, RC20 and Vox are the track names it writes, which stay in English."
+        "description": "The New session sheet with Ed's setup chosen: what it does. Guitar, Boom, RC20 and Vox are the track names it writes, which stay in English."
     },
     "libraryNewLoopEdsLoading": "Loading the Ed's Rack sounds.",
     "@libraryNewLoopEdsLoading": {
-        "description": "The New loop sheet with Ed's setup chosen, while its sounds are read; Start new loop waits."
+        "description": "The New session sheet with Ed's setup chosen, while its sounds are read; Start new session waits."
     },
     "libraryNewLoopEdsMissing": "The Ed's Rack sounds could not be read, so Ed's setup cannot start.",
     "@libraryNewLoopEdsMissing": {
-        "description": "The New loop sheet with Ed's setup chosen when one of its sounds is missing from this build."
+        "description": "The New session sheet with Ed's setup chosen when one of its sounds is missing from this build."
     },
     "libraryNewLoopEdsOverBudget": "Ed's setup would go over the effects budget. Remove some effects first.",
     "@libraryNewLoopEdsOverBudget": {
-        "description": "The New loop sheet with Ed's setup chosen when its four racks do not fit the effects budget."
+        "description": "The New session sheet with Ed's setup chosen when its four racks do not fit the effects budget."
     },
     "libraryNewLoopNamesShared": "Track names are shared by every session.",
     "@libraryNewLoopNamesShared": {
-        "description": "The New loop sheet with Ed's setup chosen: the track names it writes also show in every other session."
+        "description": "The New session sheet with Ed's setup chosen: the track names it writes also show in every other session."
     },
     "libraryNewLoopNameReplaced": "{name} is replaced.",
     "@libraryNewLoopNameReplaced": {
@@ -3245,17 +3261,17 @@
             }
         }
     },
-    "sessionTemplateDoesNotFit": "Ed's setup would go over the effects budget, so no new loop started.",
+    "sessionTemplateDoesNotFit": "Ed's setup would go over the effects budget, so no new session started.",
     "@sessionTemplateDoesNotFit": {
-        "description": "Ed's setup was refused when the new loop was about to start because the effects changed after the sheet checked."
+        "description": "Ed's setup was refused when the new session was about to start because the effects changed after the sheet checked."
     },
-    "sessionTrackNamesNotSaved": "The new loop started, but its track names could not be saved.",
+    "sessionTrackNamesNotSaved": "The new session started, but its track names could not be saved.",
     "@sessionTrackNamesNotSaved": {
-        "description": "Ed's setup started the new loop, but writing the track names failed."
+        "description": "Ed's setup started the new session, but writing the track names failed."
     },
     "libraryTakeStillRunning": "The take is finishing. Try again when it has stopped.",
     "@libraryTakeStillRunning": {
-        "description": "An Open or New loop ended a take in progress and it did not finish in time; nothing was saved, opened or cleared."
+        "description": "An Open or New session ended a take in progress and it did not finish in time; nothing was saved, opened or cleared."
     },
     "libraryOpenInterruptTitle": "Stop playback and open {name}?",
     "@libraryOpenInterruptTitle": {
@@ -3266,9 +3282,9 @@
             }
         }
     },
-    "libraryOpenInterruptBody": "Your current loop stays in your Library.",
+    "libraryOpenInterruptBody": "Your current session stays in your Library.",
     "@libraryOpenInterruptBody": {
-        "description": "Under the Open confirmation: the outgoing loop is kept."
+        "description": "Under the Open confirmation: the outgoing session is kept."
     },
     "libraryOpenConfirm": "Open",
     "@libraryOpenConfirm": {
@@ -3276,7 +3292,7 @@
     },
     "libraryManageSaveOpen": "Save {name}",
     "@libraryManageSaveOpen": {
-        "description": "Manage row on another session: saves the open session (or the current loop) named here.",
+        "description": "Manage row on another session: saves the open session (or the current session) named here.",
         "placeholders": {
             "name": {
                 "type": "String"
@@ -3285,14 +3301,14 @@
     },
     "libraryManageSaveOpenAs": "Save {name} as…",
     "@libraryManageSaveOpenAs": {
-        "description": "Manage row on another session: saves the open session (or the current loop) under a new name.",
+        "description": "Manage row on another session: saves the open session (or the current session) under a new name.",
         "placeholders": {
             "name": {
                 "type": "String"
             }
         }
     },
-    "libraryCurrentLoop": "the current loop",
+    "libraryCurrentLoop": "the current session",
     "@libraryCurrentLoop": {
         "description": "Names the live rig in a Save row when no session is open."
     },
@@ -3333,6 +3349,27 @@
     "@libraryMoveToFolder": {
         "description": "Manage option that moves the session to a folder."
     },
+    "libraryRowOptions": "Options for {name}",
+    "@libraryRowOptions": {
+        "description": "Library (#1921): the accessible name of the three-dot button on a session's row, which opens that session's options.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "libraryHideFromPedal": "Hide from pedal",
+    "@libraryHideFromPedal": {
+        "description": "Library row options (#1921): keeps the session off the list the Sessions pedal function pages through. It stays in the Library."
+    },
+    "libraryShowOnPedal": "Show on pedal",
+    "@libraryShowOnPedal": {
+        "description": "Library row options (#1921): puts a hidden session back on the list the Sessions pedal function pages through."
+    },
+    "libraryHiddenFromPedal": "Hidden from pedal",
+    "@libraryHiddenFromPedal": {
+        "description": "Library (#1921): on the row of a session the player keeps off the Sessions pedal function's list, after its date and track count."
+    },
     "libraryMoveTitle": "Move to folder",
     "@libraryMoveTitle": {
         "description": "Title of the folder choice for a move."
@@ -3354,7 +3391,7 @@
             }
         }
     },
-    "librarySaveFailed": "Could not save your current loop. Nothing was changed.",
+    "librarySaveFailed": "Could not save your current session. Nothing was changed.",
     "@librarySaveFailed": {
         "description": "Library banner (pen 19/05) and toast when a save fails."
     },
@@ -3408,9 +3445,9 @@
     "@libraryUsb": {
         "description": "Library location: a removable USB drive."
     },
-    "libraryNewLoop": "New loop",
+    "libraryNewLoop": "New session",
     "@libraryNewLoop": {
-        "description": "Library action that starts an empty loop."
+        "description": "Library action that starts an empty session."
     },
     "librarySearchSessions": "Search sessions",
     "@librarySearchSessions": {
@@ -6941,6 +6978,169 @@
     "@actionModeTuner": {
         "description": "Foot Tuner: the mode's name, in pickers and on its face (#1229)."
     },
+    "actionModeSessions": "Sessions",
+    "@actionModeSessions": {
+        "description": "Sessions face (#1910): the mode's name, in pickers and on its face. It lists the saved sessions four to a page; a press on a track switch shows its session and a Hold opens it."
+    },
+    "footSessionsPage": "Page {page} of {pages}",
+    "@footSessionsPage": {
+        "description": "Sessions face: which page of four sessions is in view, at the top of the readout while no session is shown.",
+        "placeholders": {
+            "page": {
+                "type": "int"
+            },
+            "pages": {
+                "type": "int"
+            }
+        }
+    },
+    "footSessionsCount": "{count, plural, =1{1 session} other{{count} sessions}}",
+    "@footSessionsCount": {
+        "description": "Sessions face: how many sessions the face lists, under the page in the readout.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "footSessionsNone": "No sessions yet. Save or start a new session.",
+    "@footSessionsNone": {
+        "description": "Sessions face with no session to list: Undo saves, and a held Undo starts a new session."
+    },
+    "footSessionsAllHidden": "Every session is hidden from the pedal. Show them in Library.",
+    "@footSessionsAllHidden": {
+        "description": "Sessions face (#1921): sessions are saved and the player hid every one from the pedal in the Library, so the face lists none."
+    },
+    "footSessionsOpenNotListed": "Open: {name}",
+    "@footSessionsOpenNotListed": {
+        "description": "Sessions face (#1921): names the open session in the readout when the face does not list it (the player hid it), so no switch is lit for it.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "footSessionsPreviousPage": "Previous page",
+    "@footSessionsPreviousPage": {
+        "description": "Sessions face (#1921): the caption of Clear, which shows the four sessions before the ones in view."
+    },
+    "footSessionsOpenNow": "Open now",
+    "@footSessionsOpenNow": {
+        "description": "Sessions face: the card of the session that is open."
+    },
+    "footSessionsOpening": "Opening…",
+    "@footSessionsOpening": {
+        "description": "Sessions face: the card of the session an Open was asked for, until it has opened."
+    },
+    "footSessionsTracks": "{count, plural, =0{No recordings} =1{1 track} other{{count} tracks}}",
+    "@footSessionsTracks": {
+        "description": "Sessions face: how many recorded tracks a session's card and its preview show. A session with none is a prepared setup, not an empty one, so it says there are no recordings (#1921).",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "footSessionsTempo": "{bpm} BPM",
+    "@footSessionsTempo": {
+        "description": "Sessions face: a session's tempo on its card, after the track count.",
+        "placeholders": {
+            "bpm": {
+                "type": "String"
+            }
+        }
+    },
+    "footSessionsStopsPlayback": "Opening a session stops playback",
+    "@footSessionsStopsPlayback": {
+        "description": "Sessions face: on a card while a track plays. Opening the session stops it."
+    },
+    "footSessionsEndsTake": "Opening a session ends the take",
+    "@footSessionsEndsTake": {
+        "description": "Sessions face: on a card while a track records, overdubs or is armed. Opening the session ends the take and saves it with the session that is left."
+    },
+    "footSessionsEndsRecording": "Opening a session ends the recording",
+    "@footSessionsEndsRecording": {
+        "description": "Sessions face: on a card while a performance recording runs. Opening the session finishes and saves it."
+    },
+    "footSessionsCouldNotOpen": "Could not open",
+    "@footSessionsCouldNotOpen": {
+        "description": "Sessions face: on the card of the session whose Open, asked from the face, failed. The stage notice says why."
+    },
+    "sessionOpenFailed": "Could not open {name}",
+    "@sessionOpenFailed": {
+        "description": "Stage notice title when a session could not be opened, naming it: from the Sessions face the player cannot see the Library row that refused.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "readoutFunctionPage": "{function} · Page {page}",
+    "@readoutFunctionPage": {
+        "description": "The 7-inch readout's footer in a function that pages its own list (Sessions): the function and the page in view, in place of the bank.",
+        "placeholders": {
+            "function": {
+                "type": "String"
+            },
+            "page": {
+                "type": "int"
+            }
+        }
+    },
+    "footSessionsOpen": "Open",
+    "@footSessionsOpen": {
+        "description": "Sessions face: the caption of a track switch with a session above it. The Open is the switch's Hold; a tap previews (#1921)."
+    },
+    "footSessionsHint": "Press a switch to see its session. Hold it to open.",
+    "@footSessionsHint": {
+        "description": "Sessions face (#1921): the last line of the readout while no session is shown, saying what a press and a Hold on a track switch do."
+    },
+    "footSessionsNoTempo": "No tempo",
+    "@footSessionsNoTempo": {
+        "description": "Sessions face preview (#1921): in the setup line of a session saved without a tempo."
+    },
+    "footSessionsNoEffects": "None",
+    "@footSessionsNoEffects": {
+        "description": "Sessions face readout (#1921): on the Effects line of a session with no effects."
+    },
+    "footSessionsMore": "+{count}",
+    "@footSessionsMore": {
+        "description": "Sessions face readout (#1921): on the Effects line, after the names that are written, how many more there are.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "footSessionsRecorded": "{count, plural, =0{None recorded} other{{count} recorded}}",
+    "@footSessionsRecorded": {
+        "description": "Sessions face preview (#1921): on the Tracks line, after the strip of eight tracks, how many of them hold a recording.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "footSessionsSave": "Save",
+    "@footSessionsSave": {
+        "description": "Sessions face: the caption of Undo, which saves the session on a press. Its Hold starts a new session (#1921)."
+    },
+    "footSessionsNextPage": "Next page",
+    "@footSessionsNextPage": {
+        "description": "Sessions face: the caption of Bank, which shows the next four sessions."
+    },
+    "footSessionsPageOf": "{page} / {pages}",
+    "@footSessionsPageOf": {
+        "description": "Sessions face: the page in view under Bank's caption.",
+        "placeholders": {
+            "page": {
+                "type": "int"
+            },
+            "pages": {
+                "type": "int"
+            }
+        }
+    },
     "footTunerReference": "A4 reference",
     "@footTunerReference": {
         "description": "Foot Tuner face: the label over the A4 reference value."
@@ -7902,6 +8102,14 @@
     "actionTrackFxOn": "Track FX on",
     "@actionTrackFxOn": {
         "description": "Assignable FX command: turns every track chain on, chain-less tracks included; it does not restore an earlier pattern."
+    },
+    "actionNewLoop": "New session",
+    "@actionNewLoop": {
+        "description": "Assignable session command: saves the current session and starts an empty session (pen 19/01 New session)."
+    },
+    "actionSaveSession": "Save session",
+    "@actionSaveSession": {
+        "description": "Assignable session command: saves the live rig to the open session, or under the next automatic name when none is open."
     },
     "footFxSlot": "FX {bank}{number}",
     "@footFxSlot": {

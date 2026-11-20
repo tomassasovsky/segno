@@ -63,7 +63,7 @@ final _catalog = [
     trackCount: 1,
     populatedChannels: const [4],
   ),
-  const SessionSummary(id: 's-new', name: 'New loop 2'),
+  const SessionSummary(id: 's-new', name: 'New session 2'),
 ];
 
 SessionPreviewTrack _track(int channel, int frames, {int bars = 0}) =>
@@ -157,7 +157,7 @@ void main() {
     pedalEvents = StreamController<PedalEvent>.broadcast();
     pedal = _MockPedalRepository();
     when(() => pedal.events).thenAnswer((_) => pedalEvents.stream);
-    // The effects budget New loop's Ed's setup is checked against: room for
+    // The effects budget New session's Ed's setup is checked against: room for
     // anything, with no chains on the tracks.
     looperRepository = _MockLooperRepository();
     when(() => looperRepository.fxGrowthNs(any())).thenReturn(100);
@@ -272,7 +272,7 @@ void main() {
 
   group('the shell', () {
     testWidgets('draws the title, the Sessions tab, the locations and New '
-        'loop', (tester) async {
+        'session', (tester) async {
       await openLibrary(tester);
 
       expect(find.byKey(const Key('library_page')), findsOneWidget);
@@ -293,7 +293,7 @@ void main() {
       );
     });
 
-    testWidgets('New loop is inert while a session action runs', (
+    testWidgets('New session is inert while a session action runs', (
       tester,
     ) async {
       await openLibrary(
@@ -1249,6 +1249,149 @@ void main() {
     });
   });
 
+  group("a row's options (#1921)", () {
+    setUp(() {
+      when(() => session.setShownOnFace(any(), shown: any(named: 'shown')))
+          .thenAnswer((_) async {});
+    });
+
+    SessionState withHidden(
+      Set<SessionId> hidden, {
+      SessionStatus status = SessionStatus.idle,
+    }) => SessionState(
+      status: status,
+      currentSessionId: 's-cur',
+      currentSessionName: 'Evening loop',
+      sessions: _catalog,
+      folders: const ['Gigs'],
+      hiddenFromFace: hidden,
+    );
+
+    Finder options(String id) => find.byKey(Key('library_row_options_$id'));
+
+    testWidgets('every row has a three-dot button, named for its session', (
+      tester,
+    ) async {
+      await openLibrary(tester);
+
+      for (final summary in _catalog) {
+        expect(options(summary.id), findsOneWidget, reason: summary.id);
+      }
+      expect(
+        find.descendant(
+          of: options('s-gig'),
+          matching: find.byIcon(LucideIcons.ellipsis),
+        ),
+        findsOneWidget,
+      );
+      expect(find.bySemanticsLabel('Options for Night set'), findsOneWidget);
+    });
+
+    testWidgets('it offers to hide a session that is on the pedal, and '
+        'hides it', (tester) async {
+      await openLibrary(tester);
+      await tester.tap(options('s-gig'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('fx_options_sheet')),
+          matching: find.text('Night set'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Hide from pedal'), findsOneWidget);
+      expect(find.text('Show on pedal'), findsNothing);
+      await tester.tap(find.byKey(const Key('fx_option_pedal')));
+      await tester.pumpAndSettle();
+
+      verify(() => session.setShownOnFace('s-gig', shown: false)).called(1);
+    });
+
+    testWidgets('it offers to show a hidden session, and shows it', (
+      tester,
+    ) async {
+      await openLibrary(tester, state: withHidden({'s-gig'}));
+      await tester.tap(options('s-gig'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Show on pedal'), findsOneWidget);
+      expect(find.text('Hide from pedal'), findsNothing);
+      await tester.tap(find.byKey(const Key('fx_option_pedal')));
+      await tester.pumpAndSettle();
+
+      verify(() => session.setShownOnFace('s-gig', shown: true)).called(1);
+    });
+
+    testWidgets('Cancel changes nothing', (tester) async {
+      await openLibrary(tester);
+      await tester.tap(options('s-gig'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('fx_options_cancel')));
+      await tester.pumpAndSettle();
+
+      verifyNever(
+        () => session.setShownOnFace(any(), shown: any(named: 'shown')),
+      );
+    });
+
+    testWidgets('opening the options does not select the row', (tester) async {
+      await openLibrary(tester);
+      await tester.tap(options('s-gig'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('fx_options_cancel')));
+      await tester.pumpAndSettle();
+
+      expect(
+        inPreview(find.byKey(const Key('library_preview_name'))),
+        findsOneWidget,
+      );
+      expect(
+        tester
+            .widget<AppText>(find.byKey(const Key('library_preview_name')))
+            .data,
+        'Evening loop',
+      );
+    });
+
+    testWidgets('a hidden session says so on its row, and the others do not', (
+      tester,
+    ) async {
+      await openLibrary(tester, state: withHidden({'s-gig', 's-cur'}));
+
+      expect(
+        find.descendant(
+          of: row('s-gig'),
+          matching: find.textContaining('1 track · Hidden from pedal'),
+        ),
+        findsOneWidget,
+      );
+      // The open session can be hidden too.
+      expect(
+        inRow('s-cur', 'Current session · Hidden from pedal'),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: row('s-new'),
+          matching: find.textContaining('Hidden from pedal'),
+        ),
+        findsNothing,
+      );
+    });
+
+    testWidgets('the buttons wait while a session action runs', (tester) async {
+      await openLibrary(
+        tester,
+        state: withHidden(const {}, status: SessionStatus.working),
+      );
+      await tester.tap(options('s-gig'));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('fx_options_sheet')), findsNothing);
+    });
+  });
+
   group('after an action', () {
     late StreamController<SessionState> states;
 
@@ -1607,7 +1750,7 @@ void main() {
     });
   });
 
-  group('New loop (19/02)', () {
+  group('New session (19/02)', () {
     Future<void> tapNewLoop(
       WidgetTester tester, {
       SessionState? state,
@@ -1666,7 +1809,9 @@ void main() {
       verifyNever(() => session.newLoop(template: any(named: 'template')));
     });
 
-    testWidgets('a loop with no name yet is the current loop', (tester) async {
+    testWidgets('a session with no name yet is the current session', (
+      tester,
+    ) async {
       await tapNewLoop(tester, state: SessionState(sessions: _catalog));
 
       expect(find.text(l10n.libraryNewLoopStaysUnnamed), findsOneWidget);
@@ -1683,7 +1828,7 @@ void main() {
       verifyNever(() => session.newLoop(template: any(named: 'template')));
     });
 
-    testWidgets('Start new loop starts it', (tester) async {
+    testWidgets('Start new session starts it', (tester) async {
       await tapNewLoop(tester);
 
       await tester.tap(find.byKey(const Key('new_loop_start')));
@@ -1706,7 +1851,9 @@ void main() {
         await tester.pumpAndSettle();
       }
 
-      testWidgets('opens on Empty tracks, the plain New loop', (tester) async {
+      testWidgets('opens on Empty tracks, the plain New session', (
+        tester,
+      ) async {
         await tapNewLoop(tester);
 
         expect(selected(tester, 'new_loop_template_empty'), isTrue);
@@ -1833,7 +1980,7 @@ void main() {
       });
     });
 
-    testWidgets('a started new loop is played on the stage (19/06)', (
+    testWidgets('a started new session is played on the stage (19/06)', (
       tester,
     ) async {
       final states = StreamController<SessionState>.broadcast();
@@ -1856,7 +2003,7 @@ void main() {
             status: SessionStatus.success,
             outcome: SessionOutcome.newLoop,
             currentSessionId: 's-new',
-            currentSessionName: 'New loop 2',
+            currentSessionName: 'New session 2',
             sessions: _catalog,
           ),
         );
@@ -1866,27 +2013,30 @@ void main() {
       expect(find.text('stage'), findsOneWidget);
     });
 
-    testWidgets('a new loop that could not be saved yet is on the stage too, '
-        'which says so', (tester) async {
-      final states = StreamController<SessionState>.broadcast();
-      addTearDown(states.close);
-      await tapNewLoop(tester, states: states.stream);
-      await tester.tap(find.byKey(const Key('new_loop_start')));
-      await tester.pumpAndSettle();
+    testWidgets(
+      'a new session that could not be saved yet is on the stage too, '
+      'which says so',
+      (tester) async {
+        final states = StreamController<SessionState>.broadcast();
+        addTearDown(states.close);
+        await tapNewLoop(tester, states: states.stream);
+        await tester.tap(find.byKey(const Key('new_loop_start')));
+        await tester.pumpAndSettle();
 
-      states.add(
-        SessionState(
-          status: SessionStatus.failure,
-          error: SessionError.newLoopNotSaved,
-          currentSessionId: 's-new',
-          currentSessionName: 'New loop 2',
-          sessions: _catalog,
-        ),
-      );
-      await tester.pumpAndSettle();
+        states.add(
+          SessionState(
+            status: SessionStatus.failure,
+            error: SessionError.newLoopNotSaved,
+            currentSessionId: 's-new',
+            currentSessionName: 'New session 2',
+            sessions: _catalog,
+          ),
+        );
+        await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('library_page')), findsNothing);
-    });
+        expect(find.byKey(const Key('library_page')), findsNothing);
+      },
+    );
 
     testWidgets('an Open stays in the Library', (tester) async {
       final states = StreamController<SessionState>.broadcast();
@@ -2013,7 +2163,7 @@ void main() {
       ]);
     });
 
-    testWidgets('New loop stops it', (tester) async {
+    testWidgets('New session stops it', (tester) async {
       when(() => session.newLoop(template: any(named: 'template')))
           .thenAnswer((_) async {});
       await openLibrary(tester);
@@ -2265,7 +2415,7 @@ void main() {
       verify(session.save).called(1);
     });
 
-    testWidgets('with no open session they name the current loop', (
+    testWidgets('with no open session they name the current session', (
       tester,
     ) async {
       await openLibrary(tester, state: SessionState(sessions: _catalog));

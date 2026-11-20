@@ -53,16 +53,19 @@ void main() {
       expect(payload.containsKey('samples'), isTrue);
     });
 
-    test('a resized buffer re-sends — a new loop length is a new picture', () {
-      final payload = waveformFramePayload(
-        samples: Float32List.fromList([0.1, 0.2]),
-        progress: 0,
-        selectedTrack: '',
-        lastSent: Float32List.fromList([0.1, 0.2, 0.3]),
-      );
+    test(
+      'a resized buffer re-sends — a new session length is a new picture',
+      () {
+        final payload = waveformFramePayload(
+          samples: Float32List.fromList([0.1, 0.2]),
+          progress: 0,
+          selectedTrack: '',
+          lastSent: Float32List.fromList([0.1, 0.2, 0.3]),
+        );
 
-      expect(payload.containsKey('samples'), isTrue);
-    });
+        expect(payload.containsKey('samples'), isTrue);
+      },
+    );
   });
 
   group('waveformFrameFrom', () {

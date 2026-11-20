@@ -196,6 +196,10 @@ PedalTrackLed projectTrackLed(
       // The track switches pick inputs here, not tracks: their light is the
       // switch light alone (`tunerStates`).
       return PedalTrackLed.off;
+    case InteractionMode.sessions:
+      // The track switches pick sessions here: their light is the switch
+      // light alone (`sessionStates`).
+      return PedalTrackLed.off;
     case InteractionMode.multiply:
     case InteractionMode.divide:
       // Red on the selected recorded track, the one every edit acts on (the
@@ -240,9 +244,15 @@ PedalStateFrame projectFrame(
   Map<int, bool> customFunctions = const {},
   Map<PedalButton, bool> physicalCustomStates = const {},
   Map<PedalButton, bool> tunerStates = const {},
+  Map<PedalButton, bool> sessionStates = const {},
+  Set<PedalButton> sessionHeld = const {},
+  ({PedalButton button, int progress})? openFill,
   Set<PedalButton> pressed = const {},
   Set<PedalButton> clearFilling = const {},
 }) {
+  // A hold to open belongs to the Sessions face alone (#1921).
+  final onSessions = overlay.mode == InteractionMode.sessions;
+  final opening = onSessions ? openFill : null;
   final leds = <PedalTrackLed>[
     for (var channel = 0; channel < PedalStateFrame.trackCount; channel++)
       projectTrackLed(
@@ -282,6 +292,8 @@ PedalStateFrame projectFrame(
     performanceArmed: performanceArmed,
     physicalCustomStates: physicalCustomStates,
     tunerStates: tunerStates,
+    sessionStates: sessionStates,
+    sessionHeld: onSessions ? sessionHeld : const {},
     boundSwitches: boundSwitches,
     pressed: pressed,
     clearFilling: clearFilling,
@@ -299,6 +311,13 @@ PedalStateFrame projectFrame(
       ? (looper.transport.masterLengthFrames * 1000000 / sampleRate).round()
       : 0;
   final queued = queuedSongPill(looper, overlay);
+  // The frame has one left-to-right fill. A waiting section is never shown
+  // on the Sessions face ([showsSectionQueue]), so there the field is the
+  // pending hold's: the board fills that switch in its own colour, and
+  // lights it whole once a frame no longer names it.
+  final fill = opening == null
+      ? queued
+      : (button: opening.button as PedalButton?, progress: opening.progress);
   final frame = PedalStateFrame(
     globalColor: global,
     trackLeds: leds,
@@ -319,7 +338,9 @@ PedalStateFrame projectFrame(
       InteractionMode.reverse ||
       InteractionMode.peel ||
       InteractionMode.tuner => PedalMode.custom,
-      InteractionMode.multiply || InteractionMode.divide => PedalMode.custom,
+      InteractionMode.multiply ||
+      InteractionMode.divide ||
+      InteractionMode.sessions => PedalMode.custom,
     },
     loopLengthMicros: lengthMicros.clamp(
       0,
@@ -340,8 +361,8 @@ PedalStateFrame projectFrame(
         ),
     ],
     activeButtonMask: activeButtonMask,
-    queuedButton: queued.button,
-    queuedProgress: queued.progress,
+    queuedButton: fill.button,
+    queuedProgress: fill.progress,
   );
   // The control-surface invariant spec runs on every projection in debug
   // builds — the same predicates the sequence fuzzer checks. assert() only:
@@ -368,10 +389,13 @@ PedalStateFrame projectFrame(
 ///
 /// A held pedal reads [PedalLedState.pressed] whatever else it shows, MODE
 /// included, unless it is in [clearFilling]: a clear hold's fill is running
-/// on it, and the fill draws over its own state (#1534). [pressed] is the
-/// cubit's set of held contacts, updated on the press event itself and
-/// projected in the same call, so the light never waits for the engine to
-/// answer.
+/// on it, and the fill draws over its own state (#1534). [sessionHeld] are
+/// the Sessions face's held switches that stand for a session: they read
+/// [PedalLedState.selected], the colour a hold to open fills in and the one
+/// the switch keeps once the hold has fired (#1921).
+/// [pressed] is the cubit's set of held contacts, updated on the press event
+/// itself and projected in the same call, so the light never waits for the
+/// engine to answer.
 List<PedalLedState?> projectPedalLights(
   LooperState looper,
   ControlState overlay,
@@ -380,6 +404,8 @@ List<PedalLedState?> projectPedalLights(
   bool performanceArmed = false,
   Map<PedalButton, bool> physicalCustomStates = const {},
   Map<PedalButton, bool> tunerStates = const {},
+  Map<PedalButton, bool> sessionStates = const {},
+  Set<PedalButton> sessionHeld = const {},
   Map<PedalButton, FxSwitchReading> boundSwitches = const {},
   Set<PedalButton> pressed = const {},
   Set<PedalButton> clearFilling = const {},
@@ -422,7 +448,8 @@ List<PedalLedState?> projectPedalLights(
       InteractionMode.peel => PedalLedState.peelable,
       InteractionMode.multiply ||
       InteractionMode.divide ||
-      InteractionMode.mixer => PedalLedState.selected,
+      InteractionMode.mixer ||
+      InteractionMode.sessions => PedalLedState.selected,
       InteractionMode.tuner => PedalLedState.tuned,
       InteractionMode.custom => PedalLedState.lit,
     };
@@ -440,6 +467,14 @@ List<PedalLedState?> projectPedalLights(
               PedalButton.bank => PedalLedState.laterBank,
               _ => PedalLedState.tuned,
             }
+          : null,
+    // The Sessions face's own lights: the open session's switch, and Bank
+    // past the first page. The rest light only while held.
+    _ when mode == InteractionMode.sessions =>
+      (sessionStates[button] ?? false)
+          ? (button == PedalButton.bank
+                ? PedalLedState.laterBank
+                : PedalLedState.selected)
           : null,
     _ when mode == InteractionMode.mixer =>
       FootMixerProjection.pedalRoles[button]!.slot != null &&
@@ -480,6 +515,9 @@ List<PedalLedState?> projectPedalLights(
   // (#1534): there the fill draws over the pill's own state colour (playing
   // green, recording red), or pressed when that state is dark.
   PedalLedState? state(PedalButton button) {
+    // A held switch over a session reads in the colour of the open
+    // session's switch: a hold to open fills in it and ends in it (#1921).
+    if (sessionHeld.contains(button)) return PedalLedState.selected;
     if (!pressed.contains(button)) return own(button);
     if (!clearFilling.contains(button)) return PedalLedState.pressed;
     return own(button) ?? PedalLedState.pressed;

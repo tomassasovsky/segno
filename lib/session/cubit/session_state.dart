@@ -28,7 +28,7 @@ enum SessionOutcome {
   /// A [SessionCubit.open] succeeded.
   loaded,
 
-  /// A [SessionCubit.newLoop] started an empty loop under the next automatic
+  /// A [SessionCubit.newLoop] started an empty session under the next automatic
   /// name, which is now current.
   newLoop,
 
@@ -52,6 +52,10 @@ enum SessionOutcome {
 
   /// An empty folder was deleted.
   folderDeleted,
+
+  /// A session was hidden from the Sessions face, or put back on it
+  /// (#1921).
+  faceListChanged,
 }
 
 /// A classified failure kind, so the UI can show a localized, human-readable
@@ -93,17 +97,17 @@ enum SessionError {
   /// A folder that still holds sessions cannot be deleted.
   folderNotEmpty,
 
-  /// An Open or New loop ended a take in progress, and it did not finish in
+  /// An Open or New session ended a take in progress, and it did not finish in
   /// time; nothing was saved, opened or cleared.
   captureInProgress,
 
-  /// A New loop started and is current, but its empty bundle could not be
+  /// A New session started and is current, but its empty bundle could not be
   /// written yet: the first Save writes it.
   newLoopNotSaved,
 
-  /// A New loop with a template (#1513) was refused because the template
+  /// A New session with a template (#1513) was refused because the template
   /// would go over the effects budget. The take in progress has ended and
-  /// the outgoing session is saved; no new loop started.
+  /// the outgoing session is saved; no new session started.
   templateDoesNotFit,
 }
 
@@ -128,11 +132,13 @@ class SessionState extends Equatable {
     this.currentSessionName,
     this.sessions = const [],
     this.folders = const [],
+    this.hiddenFromFace = const {},
     this.bootRecoveryRequired = false,
     this.conversion,
     this.refusedBy,
     this.failureCount = 0,
     this.trackNamesNotSaved = false,
+    this.keptSessionName,
   });
 
   /// The current action status.
@@ -168,6 +174,10 @@ class SessionState extends Equatable {
   /// Move to folder.
   final List<String> folders;
 
+  /// The sessions the player keeps off the Sessions face (#1921). The face
+  /// lists every other saved session.
+  final Set<SessionId> hiddenFromFace;
+
   /// The new rig was accepted but boot settings or bindings still need Retry.
   final bool bootRecoveryRequired;
 
@@ -179,9 +189,17 @@ class SessionState extends Equatable {
   /// Per-transition, like [error].
   final GuardKind? refusedBy;
 
-  /// Whether a New loop with a template started but could not write its
+  /// Whether a New session with a template started but could not write its
   /// track names (#1513). A per-transition result, like [conversion].
   final bool trackNamesNotSaved;
+
+  /// The name the outgoing session was saved under by a New session that was
+  /// asked to announce it (one asked by foot), or null: the Library's New
+  /// session said so on its sheet, and an unchanged session was not saved. Set
+  /// on the New session's outcome, and on [SessionError.newLoopNotSaved], where
+  /// the new session started all the same. A per-transition result, like
+  /// [conversion].
+  final String? keptSessionName;
 
   /// How many actions have failed so far. Durable: a later emit that only
   /// re-lists the catalog keeps it, so a view can tell a failure it has
@@ -191,11 +209,12 @@ class SessionState extends Equatable {
   /// Returns a copy for the next emit.
   ///
   /// The **result** fields ([outcome] / [error] / [errorMessage] /
-  /// [failedSessionId] / [conversion] / [trackNamesNotSaved]) are
+  /// [failedSessionId] / [conversion] / [trackNamesNotSaved] /
+  /// [keptSessionName]) are
   /// per-transition: they default to `null` or false (cleared) unless passed,
   /// so a fresh status never carries a stale result. The **durable** fields
-  /// ([currentSessionId] / [currentSessionName] / [sessions] / [folders]) are
-  /// preserved unless overridden.
+  /// ([currentSessionId] / [currentSessionName] / [sessions] / [folders] /
+  /// [hiddenFromFace]) are preserved unless overridden.
   SessionState copyWith({
     SessionStatus? status,
     SessionOutcome? outcome,
@@ -206,11 +225,13 @@ class SessionState extends Equatable {
     String? currentSessionName,
     List<SessionSummary>? sessions,
     List<String>? folders,
+    Set<SessionId>? hiddenFromFace,
     bool? bootRecoveryRequired,
     SessionConversionNotice? conversion,
     GuardKind? refusedBy,
     int? failureCount,
     bool trackNamesNotSaved = false,
+    String? keptSessionName,
   }) => SessionState(
     status: status ?? this.status,
     outcome: outcome,
@@ -221,11 +242,13 @@ class SessionState extends Equatable {
     currentSessionName: currentSessionName ?? this.currentSessionName,
     sessions: sessions ?? this.sessions,
     folders: folders ?? this.folders,
+    hiddenFromFace: hiddenFromFace ?? this.hiddenFromFace,
     bootRecoveryRequired: bootRecoveryRequired ?? this.bootRecoveryRequired,
     conversion: conversion,
     refusedBy: refusedBy,
     failureCount: failureCount ?? this.failureCount,
     trackNamesNotSaved: trackNamesNotSaved,
+    keptSessionName: keptSessionName,
   );
 
   @override
@@ -239,11 +262,13 @@ class SessionState extends Equatable {
     currentSessionName,
     sessions,
     folders,
+    hiddenFromFace,
     bootRecoveryRequired,
     conversion,
     refusedBy,
     failureCount,
     trackNamesNotSaved,
+    keptSessionName,
   ];
 }
 

@@ -30,26 +30,27 @@ void main() {
           status: SessionStatus.success,
           outcome: SessionOutcome.savedAs,
           currentSessionId: 's-1',
-          currentSessionName: 'New loop 2',
+          currentSessionName: 'New session 2',
         ),
       ),
       (
-        title: l10n.sessionSavedAs('New loop 2'),
+        title: l10n.sessionSavedAs('New session 2'),
         body: null,
         tone: NoticeTone.success,
       ),
     );
   });
 
-  test('a loaded session is a confirmation', () {
+  test('an opened session is a confirmation that names it (#1910)', () {
     expect(
       said(
         const SessionState(
           status: SessionStatus.success,
           outcome: SessionOutcome.loaded,
+          currentSessionName: 'Evening loop',
         ),
       )?.title,
-      l10n.sessionLoaded,
+      'Evening loop opened',
     );
   });
 
@@ -104,6 +105,24 @@ void main() {
       });
     }
 
+    test('an Open that fails names the session it could not open (#1910)', () {
+      expect(
+        said(
+          const SessionState(
+            status: SessionStatus.failure,
+            error: SessionError.unsupportedVersion,
+            failedSessionId: 'x',
+            sessions: [SessionSummary(id: 'x', name: 'Evening loop')],
+          ),
+        ),
+        (
+          title: 'Could not open Evening loop',
+          body: l10n.sessionLoadNewer,
+          tone: NoticeTone.warning,
+        ),
+      );
+    });
+
     test('a sample-rate mismatch offers Open setup', () {
       final notice = sessionOutcomeNotice(
         const SessionState(
@@ -135,9 +154,9 @@ void main() {
         const SessionState(
           status: SessionStatus.failure,
           error: SessionError.newLoopNotSaved,
-          currentSessionName: 'New loop 2',
+          currentSessionName: 'New session 2',
         ),
-        l10n.sessionNewLoopNotSaved('New loop 2'),
+        l10n.sessionNewLoopNotSaved('New session 2'),
       ),
       (
         const SessionState(
@@ -157,7 +176,7 @@ void main() {
         const SessionState(
           status: SessionStatus.success,
           outcome: SessionOutcome.newLoop,
-          currentSessionName: 'New loop 2',
+          currentSessionName: 'New session 2',
           trackNamesNotSaved: true,
         ),
         l10n.sessionTrackNamesNotSaved,
@@ -179,14 +198,51 @@ void main() {
     expect(notice?.title, 'The console is shutting down.');
   });
 
-  test('a new loop, a boot recovery and the Library catalog say nothing '
+  test('a new session asked by foot says which session it kept (#1910)', () {
+    expect(
+      said(
+        const SessionState(
+          status: SessionStatus.success,
+          outcome: SessionOutcome.newLoop,
+          currentSessionName: 'New session 2',
+          keptSessionName: 'Evening loop',
+        ),
+      ),
+      (
+        title: 'Evening loop stays in your Library.',
+        body: null,
+        tone: NoticeTone.neutral,
+      ),
+    );
+  });
+
+  test('a new session asked by foot that could not be saved still says which '
+      'session it kept (#1910)', () {
+    expect(
+      said(
+        const SessionState(
+          status: SessionStatus.failure,
+          error: SessionError.newLoopNotSaved,
+          currentSessionName: 'New session 2',
+          keptSessionName: 'Evening loop',
+        ),
+      ),
+      (
+        title: l10n.sessionNewLoopNotSaved('New session 2'),
+        body: 'Evening loop stays in your Library.',
+        tone: NoticeTone.warning,
+      ),
+    );
+  });
+
+  test('a new session, a boot recovery and the Library catalog say nothing '
       'here', () {
     expect(
       said(
         const SessionState(
           status: SessionStatus.success,
           outcome: SessionOutcome.newLoop,
-          currentSessionName: 'New loop 2',
+          currentSessionName: 'New session 2',
         ),
       ),
       isNull,
@@ -208,6 +264,7 @@ void main() {
       SessionOutcome.folderCreated,
       SessionOutcome.folderRenamed,
       SessionOutcome.folderDeleted,
+      SessionOutcome.faceListChanged,
     ]) {
       expect(
         said(SessionState(status: SessionStatus.success, outcome: outcome)),

@@ -1,7 +1,7 @@
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
 
-/// What a New loop sets up on top of the empty rig (#1513 D4): a chain for
+/// What a New session sets up on top of the empty rig (#1513 D4): a chain for
 /// some tracks and a name for each of them. Resolved above the session layer,
 /// which never sees where the chains came from.
 class NewLoopTemplate extends Equatable {

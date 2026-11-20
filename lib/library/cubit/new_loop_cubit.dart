@@ -4,9 +4,9 @@ import 'package:segno/session/session.dart';
 
 part 'new_loop_state.dart';
 
-/// The New loop sheet's choice of what the new loop starts with (#1513 D1),
-/// and, for Ed's setup, its sounds read and checked against the effects
-/// budget before Start new loop is offered (D3).
+/// The New session sheet's choice of what the new session starts with
+/// (#1513 D1), and, for Ed's setup, its sounds read and checked against the
+/// effects budget before Start new session is offered (D3).
 class NewLoopCubit extends Cubit<NewLoopState> {
   /// Creates the sheet's state, with Empty tracks chosen. [_loadEdsSetup]
   /// reads Ed's setup's sounds (null when one is missing) and [_fits] checks

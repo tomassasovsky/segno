@@ -32,6 +32,8 @@ class ControlState extends Equatable {
     this.assignedActionRefusal,
     this.assignedActionLowDisk = false,
     this.footTuner = const FootTunerSelection(),
+    this.footSessions = const FootSessionsSelection(),
+    this.sessionCatalogue = const FootSessionCatalogue(),
     this.tunerPreferences = const TunerPreferences(),
     this.footTunerFailure = 0,
     this.footTunerRefusal = FootTunerRefusal.armFailed,
@@ -183,6 +185,13 @@ class ControlState extends Equatable {
   /// The foot Tuner's transient page and mute while the mode is up (#1229).
   /// Reset on every Tuner entry; never stored.
   final FootTunerSelection footTuner;
+
+  /// The Sessions face's page and pending Open while the mode is up (#1910).
+  final FootSessionsSelection footSessions;
+
+  /// The session catalogue as the app last handed it over, for the Sessions
+  /// face. The session layer owns it; this is a copy to project from.
+  final FootSessionCatalogue sessionCatalogue;
 
   /// The stored tuner preferences (A4 reference, input), mirrored from
   /// `TunerSettings` so the Tuner face projects from one state. Derived,
@@ -364,6 +373,8 @@ class ControlState extends Equatable {
     ControlAction? assignedActionRefusal,
     bool? assignedActionLowDisk,
     FootTunerSelection? footTuner,
+    FootSessionsSelection? footSessions,
+    FootSessionCatalogue? sessionCatalogue,
     TunerPreferences? tunerPreferences,
     int? footTunerFailure,
     FootTunerRefusal? footTunerRefusal,
@@ -420,6 +431,8 @@ class ControlState extends Equatable {
     assignedActionRefusal: assignedActionRefusal ?? this.assignedActionRefusal,
     assignedActionLowDisk: assignedActionLowDisk ?? this.assignedActionLowDisk,
     footTuner: footTuner ?? this.footTuner,
+    footSessions: footSessions ?? this.footSessions,
+    sessionCatalogue: sessionCatalogue ?? this.sessionCatalogue,
     tunerPreferences: tunerPreferences ?? this.tunerPreferences,
     footTunerFailure: footTunerFailure ?? this.footTunerFailure,
     footTunerRefusal: footTunerRefusal ?? this.footTunerRefusal,
@@ -477,6 +490,8 @@ class ControlState extends Equatable {
     assignedActionRefusal,
     assignedActionLowDisk,
     footTuner,
+    footSessions,
+    sessionCatalogue,
     tunerPreferences,
     footTunerFailure,
     footTunerRefusal,

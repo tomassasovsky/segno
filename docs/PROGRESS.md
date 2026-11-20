@@ -66,6 +66,75 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 ---
 
+## November 2026 Sessions by foot (#1910, #1921)
+
+- **Sessions** is a performance function (`InteractionMode.sessions`,
+  `mode:sessions`), assignable to a Custom switch, an external pedal or a
+  MIDI control. The owner chose it over `Load previous session` and `Load
+  next session`, which are not built (plan
+  `docs/plan/2026-11-19-feat-foot-session-actions-plan.md`).
+- **The face lists every saved session** the player did not hide, whatever
+  folder it is in, four to a page, in name order: ignoring case, with
+  digits compared as numbers (`compareSessionNames`, `footSessionsListed`,
+  `lib/control/model/foot_sessions.dart`). The Library still lists newest
+  first: that order moves each time an Open saves the session it leaves.
+  The owner chose this list over a map of sessions to switches, which was
+  built and withdrawn before it was committed (plan
+  `docs/plan/2026-11-20-feat-sessions-face-map-preview-hold-plan.md`,
+  "Owner decisions on the list"). An order set by hand is not built.
+- **A press shows a session and a Hold opens it** (#1921). The press shows
+  it at once in a readout above the track switches, drawn like the Mixer's:
+  its loop mode, tempo, loop length, recorded tracks and effects, read from
+  the manifest by `SessionPreviewCubit` with no audio. The Hold fills the
+  switch's LED left to right in the `selected` colour, through the `STATE`
+  frame's `queuedButton` and `queuedProgress`, so the firmware and the link
+  did not change. One Hold at a time. The open session's switch shows it
+  and has no Hold.
+- **The other switches.** Clear is Previous page and Bank is Next page,
+  both on contact, both wrapping. Undo saves on its release and starts a
+  new session on a Hold, with the clearing Hold's fill. Rec/Play and Stop
+  keep the transport. MODE goes back to the mode the face was entered
+  from.
+- The face says what an Open would end (`Opening a session stops
+  playback`, `... ends the take`, `... ends the recording`) before any
+  press. There is no second press: the Hold is the confirmation. A failed
+  Open keeps the face, marks its switch and is named in the stage notice.
+- **A session can be hidden from the pedal.** Each row of the Library's
+  list has a three-dot button; its sheet says `Hide from pedal` or `Show on
+  pedal`. The ids are in `sessions-face.json` beside the bundles
+  (`SessionRepository.readHiddenFromFace`), in `SessionState.hiddenFromFace`
+  and set with `SessionCubit.setShownOnFace`. A hidden session is on no
+  switch; when it is the open one the face's readout names it.
+- `New session` (`command:new-loop`, #1229 Part 7; renamed from `New loop`
+  in #1927) and `Save session` (`session:save`) are commands in the
+  Sessions group of the catalogue.
+- `ControlCubit` owns the face and never reads `SessionCubit`. Four
+  injected functions reach the session layer (`startNewLoop`,
+  `saveSession`, `openSession`, `refreshSessions`, wired in `AppRuntime`),
+  and the catalogue comes back through `ControlCubit.setSessionCatalogue`,
+  which a listener in `app.dart` calls on every session state change. A
+  hidden session is handed over too, marked `onFace: false`.
+- A performance recording that an Open or a New session ends is finalized
+  through `PerformanceRepository.disarmForSessionChange()`. The stage says
+  `Recording saved` and opens no completion sheet over the new session; a
+  take that did not come out whole, or dropped frames, still opens it.
+- An Open and a New session end a Library Listen preview themselves,
+  whoever asked (`SessionCubit._endListen`).
+- The stage notices name the session: `<name> opened`, and `Could not open
+  <name>` with the reason.
+- The mode is `PedalMode.custom` on the pedal link, like the Tuner, so the
+  firmware did not change. It is not stored, so it is never a boot mode.
+- Adding an `InteractionMode` member needs a case in about twenty
+  switches; the analyzer lists them.
+- `bloc lint` finds no files when run inside `.claude/worktrees/`: run it
+  on a copy outside a hidden folder.
+- The design is Penpot page `19 Sessions · New session & recall`
+  (tomassasovsky/segno-design#25, #26 and #27 there).
+- Owed: the console checks (#1918): how long an Open takes, how long the
+  readout's list takes to appear after a press, whether the fill reads from
+  standing height, and the missing end-to-end test of an Open from the
+  face.
+
 ## November 2026 Take starts lighter on the memory bus (#1914 part 2)
 
 - What a take start does, measured in the app (Ed's Rack on 4 inputs + 6

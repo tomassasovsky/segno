@@ -20,6 +20,7 @@ import 'package:segno/looper/view/foot_length_view.dart';
 import 'package:segno/looper/view/foot_mixer_view.dart';
 import 'package:segno/looper/view/foot_peel_view.dart';
 import 'package:segno/looper/view/foot_reverse_view.dart';
+import 'package:segno/looper/view/foot_sessions_view.dart';
 import 'package:segno/looper/view/mixer_column.dart';
 import 'package:segno/looper/view/stage_db_scale.dart';
 import 'package:segno/looper/view/stage_footer.dart';
@@ -331,6 +332,8 @@ class _TracksViewState extends State<TracksView> {
                       ? const FootPeelView()
                       : mode == InteractionMode.tuner
                       ? const FootTunerView()
+                      : mode == InteractionMode.sessions
+                      ? const FootSessionsView()
                       : mode == InteractionMode.fx
                       ? const FootFxView()
                       : mode == InteractionMode.custom

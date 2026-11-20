@@ -104,7 +104,8 @@ class WaveTrackRow extends StatelessWidget {
         InteractionMode.peel ||
         InteractionMode.tuner => l10n.a11yTrackTileCustom(name, stateWord),
         InteractionMode.multiply ||
-        InteractionMode.divide => l10n.a11yTrackTileCustom(name, stateWord),
+        InteractionMode.divide ||
+        InteractionMode.sessions => l10n.a11yTrackTileCustom(name, stateWord),
       },
       selected: selected,
       borderRadius: 17,
@@ -122,6 +123,7 @@ class WaveTrackRow extends StatelessWidget {
           case InteractionMode.tuner:
           case InteractionMode.multiply:
           case InteractionMode.divide:
+          case InteractionMode.sessions:
           case InteractionMode.custom:
             // Selection only — see the track column's own arm.
             break;

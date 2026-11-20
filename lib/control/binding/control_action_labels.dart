@@ -81,6 +81,7 @@ String _modeLabel(AppLocalizations l10n, InteractionMode mode) =>
       InteractionMode.tuner => l10n.actionModeTuner,
       InteractionMode.multiply => l10n.actionModeMultiply,
       InteractionMode.divide => l10n.actionModeDivide,
+      InteractionMode.sessions => l10n.actionModeSessions,
     };
 
 String _commandLabel(AppLocalizations l10n, ControlCommand command) =>
@@ -96,6 +97,8 @@ String _commandLabel(AppLocalizations l10n, ControlCommand command) =>
       ControlCommand.tapTempo => l10n.actionTapTempo,
       ControlCommand.trackFxOff => l10n.actionTrackFxOff,
       ControlCommand.trackFxOn => l10n.actionTrackFxOn,
+      ControlCommand.newLoop => l10n.actionNewLoop,
+      ControlCommand.saveSession => l10n.actionSaveSession,
     };
 
 String _operationLabel(AppLocalizations l10n, TrackOperation operation) =>

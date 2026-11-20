@@ -403,7 +403,7 @@ void main() {
           ..run(const [_Pump(400, 0.5)], fa) // LONGER than the dead grid
           ..run(const [_Tap(PedalButton.recPlay)], fa)
           ..settle(fa);
-        // The new loop defines its own length instead of rounding to 256.
+        // The new session defines its own length instead of rounding to 256.
         expect(h.looper.transport.masterLengthFrames, 400);
       });
     });
