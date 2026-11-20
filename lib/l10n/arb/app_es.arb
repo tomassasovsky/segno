@@ -2581,6 +2581,7 @@
     "footSessionsOpen": "Abrir",
     "footSessionsHint": "Pisa un interruptor para ver su sesión. Mantenlo para abrirla.",
     "footSessionsNoTempo": "Sin tempo",
+    "footSessionsNoEffects": "Ninguno",
     "footSessionsMore": "+{count}",
     "footSessionsRecorded": "{count, plural, =0{Ninguna grabada} =1{1 grabada} other{{count} grabadas}}",
     "footSessionsSave": "Guardar",

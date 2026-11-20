@@ -8,6 +8,7 @@ import 'package:segno/control/binding/pedal_button_legend.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/control/model/foot_sessions.dart';
 import 'package:segno/control/view/console_pedal_layout.dart';
+import 'package:segno/control/view/pedal_setup/pedal_hardware_face.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
@@ -238,24 +239,27 @@ class _SessionsReadout extends StatelessWidget {
   final FootSessionsPedal? shown;
   final FootSessionsInterruption interruption;
 
-  /// A drawn pedal's face width (`PerformancePedal`).
-  static const double faceWidth = 156;
+  /// A drawn pedal's face width.
+  static const double faceWidth = PerformancePedal.faceWidth;
 
   /// The frame's height the readout may use: down to the track switches.
   static const double height = 460;
 
-  /// Where a rear pedal's face starts below the frame's top: the row's top
-  /// (56), its LED bar (12) and the gap under it (20).
-  static const double _faceTop = 88;
+  /// Where a rear pedal's face starts below the frame's top: the row's
+  /// top, its LED bar and the gap under it.
+  static const double _faceTop =
+      FootPedalRows.rearTop +
+      PerformancePedal.ledHeight +
+      PerformancePedal.ledGap;
 
-  /// Where a rear pedal's caption starts: under its face (drawn 84 by 114)
-  /// and the 16 px `PerformancePedal` leaves between the two. The last line
-  /// starts here with the caption's own font size as its strut, so the two
-  /// share a baseline whatever the font. A view test holds it there.
-  static const double _captionTop = _faceTop + faceWidth * 114 / 84 + 16;
-
-  /// The font size of a pedal's caption.
-  static const double _captionSize = 24;
+  /// Where a rear pedal's caption starts: under its face and the gap the
+  /// pedal leaves between the two. The last line starts here with the
+  /// caption's own font size as its strut, so the two share a baseline
+  /// whatever the font. A view test holds it there.
+  static const double _captionTop =
+      _faceTop +
+      faceWidth / PedalHardwareFace.aspectRatio +
+      PerformancePedal.captionGap;
 
   /// That caption's baseline in the app's display face, which the lines
   /// between the first and the last are spaced to.
@@ -313,6 +317,18 @@ class _SessionsReadout extends StatelessWidget {
               style: TextStyle(fontSize: 24, color: surface.textSecondary),
             ),
           ),
+          // Said before any press too: a hold gives little time to read.
+          if (!none && _interruptionLine(l10n, interruption) != null)
+            _ReadoutLine(
+              _baseline(_lines - 2),
+              AppText(
+                _interruptionLine(l10n, interruption)!,
+                key: const Key('foot_sessions_ends'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 22, color: surface.warning),
+              ),
+            ),
           if (!none)
             _ReadoutLastLine(
               AppText(
@@ -362,7 +378,7 @@ class _SessionsReadout extends StatelessWidget {
           l10n.fxTitle,
           _ReadoutValue(
             effects.isEmpty
-                ? l10n.actionNone
+                ? l10n.footSessionsNoEffects
                 : [
                     ...effects.take(_effectNames),
                     if (effects.length > _effectNames)
@@ -483,7 +499,7 @@ class _ReadoutLastLine extends StatelessWidget {
       children: [
         const AppText(
           '\u200B',
-          style: TextStyle(fontSize: _SessionsReadout._captionSize),
+          style: TextStyle(fontSize: PerformancePedal.captionSize),
         ),
         Expanded(child: child),
       ],

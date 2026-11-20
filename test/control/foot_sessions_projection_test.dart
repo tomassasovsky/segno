@@ -312,7 +312,6 @@ void main() {
         const FootSessionsSelection().previewing('b'),
       );
       expect(projection.previewId, 'b');
-      expect(projection.previewed?.name, 'b');
       expect(projection[PedalButton.track2].previewed, isTrue);
       expect(projection[PedalButton.track1].previewed, isFalse);
       expect(projection[PedalButton.track3].previewed, isFalse);
@@ -326,7 +325,6 @@ void main() {
         previewing,
       );
       expect(gone.previewId, isNull);
-      expect(gone.previewed, isNull);
       // On another page.
       final elsewhere = projectFootSessions(
         _catalogue(['a', 'b', 'c', 'd', 'e'], openId: 'a'),

@@ -423,6 +423,29 @@ void main() {
       }
     });
 
+    test('stops when the page turns under the held switch, and nothing '
+        'opens', () async {
+      final rig = await enter();
+      try {
+        rig.asked.clear();
+        rig.link.press(PedalButton.track2, down: true);
+        await _pump(const Duration(milliseconds: 150));
+        expect(frame(rig).queuedButton, PedalButton.track2);
+        // Bank with the other foot: switch 2 now stands for another session.
+        await rig.stomp(PedalButton.bank);
+        expect(rig.selection.page, 1);
+        await _pump(const Duration(milliseconds: 60));
+        expect(frame(rig).queuedButton, isNull);
+        await _pump(const Duration(milliseconds: 800));
+        expect(rig.asked, isEmpty);
+        rig.link.press(PedalButton.track2, down: false);
+        await _pump(const Duration(milliseconds: 30));
+        expect(rig.selection.openingId, isNull);
+      } finally {
+        await rig.close();
+      }
+    });
+
     test('stops when takes lock while the hold is pending', () async {
       final rig = await enter();
       try {

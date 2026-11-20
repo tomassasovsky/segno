@@ -211,6 +211,25 @@ void main() {
     verifyNever(() => sessions.readPreview(any()));
   });
 
+  testWidgets('with a loop playing and no session shown, the readout says '
+      'what an Open would end before any press', (tester) async {
+    rig(tracks: const [Track(state: TrackState.playing, lengthFrames: 48000)]);
+    given(_catalogue(const ['a', 'b'], openId: 'a'));
+    await pump(tester);
+
+    expect(find.byKey(const Key('foot_sessions_ends')), findsOneWidget);
+    expect(find.text('Opening a session stops playback'), findsOneWidget);
+    // With the hint, not in its place.
+    expect(find.byKey(const Key('foot_sessions_hint')), findsOneWidget);
+  });
+
+  testWidgets('with nothing playing, or no sessions, it says nothing about '
+      'an Open', (tester) async {
+    given(_catalogue(const ['a', 'b'], openId: 'a'));
+    await pump(tester);
+    expect(find.byKey(const Key('foot_sessions_ends')), findsNothing);
+  });
+
   testWidgets('the readout lines up with the pedals beside it: its last '
       "line on their captions' baseline, its left edge on the first track "
       "switch's face", (tester) async {

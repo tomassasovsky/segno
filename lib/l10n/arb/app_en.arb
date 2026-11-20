@@ -7059,6 +7059,10 @@
     "@footSessionsNoTempo": {
         "description": "Sessions face preview (#1921): in the setup line of a session saved without a tempo."
     },
+    "footSessionsNoEffects": "None",
+    "@footSessionsNoEffects": {
+        "description": "Sessions face readout (#1921): on the Effects line of a session with no effects."
+    },
     "footSessionsMore": "+{count}",
     "@footSessionsMore": {
         "description": "Sessions face readout (#1921): on the Effects line, after the names that are written, how many more there are.",

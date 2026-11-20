@@ -102,9 +102,9 @@ class FootSessionsSelection extends Equatable {
   /// until another Open is asked or the face is left.
   final String? failedId;
 
-  /// The session a tap on its switch previews (#1921), or null. A preview
-  /// opens nothing. Another page or folder has other sessions, so turning
-  /// to one drops it.
+  /// The session a press on its switch shows in the readout (#1921), or
+  /// null. Showing opens nothing. Another page or folder has other
+  /// sessions, so turning to one drops it.
   final String? previewId;
 
   /// Returns a copy on [page] of the same folder, with no preview.
@@ -203,7 +203,7 @@ FootSessionsInterruption footSessionsInterruption(
 
 /// What one switch does on the Sessions face.
 enum FootSessionsRole {
-  /// A track switch: a tap previews the session in this position of the
+  /// A track switch: a press shows the session in this position of the
   /// page, and a Hold opens it (#1921).
   open,
 
@@ -335,14 +335,6 @@ class FootSessionsProjection extends Equatable {
   /// The session the panel previews: the selection's, while it is on the
   /// page in view, or null.
   final String? previewId;
-
-  /// The previewed session, or null.
-  FootSessionEntry? get previewed {
-    for (final session in pageSessions) {
-      if (session.id == previewId) return session;
-    }
-    return null;
-  }
 
   /// All ten switches.
   final Map<PedalButton, FootSessionsPedal> pedals;

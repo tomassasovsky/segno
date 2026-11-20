@@ -371,7 +371,9 @@ As built, after the owner's review of the face on 2026-11-20:
   and its left and right edges are the first and last track switches'
   faces.
   - With no session shown: the folder, the page, and `Press a switch to
-    see its session. Hold it to open.`
+    see its session. Hold it to open.` While something plays or records,
+    the line above that says what an Open would end, so it is on screen
+    before any press.
   - With one shown: its name, then `Loop mode`, `Tempo`, `Loop length`
     (left out when none is set), `Tracks` (a strip of eight segments and
     how many are recorded) and `Effects` (names in signal order, four and
@@ -390,8 +392,9 @@ As built, after the owner's review of the face on 2026-11-20:
   `openFill`. A held switch over a session reads `selected`, not
   `pressed`, so nothing changes colour between the fill and the Open.
 - **One hold to open at a time.** A second track switch going down while
-  one is pending cancels both; a hold opens only if its switch still
-  stands for the same session when it fires.
+  one is pending cancels both. A hold opens only if its switch still
+  stands for the same session; when it no longer does (the page turned,
+  the session gone, takes locked) the hold and its fill end at once.
 - Nothing had to change to keep a waiting Song section off the face:
   `showsSectionQueue` already shows one only in Record mode and in Band's
   Mute mode. `song-queue-mirrors-engine` leaves the Sessions face to the
