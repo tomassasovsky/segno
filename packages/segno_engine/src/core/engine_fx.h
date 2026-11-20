@@ -505,6 +505,9 @@ typedef int (*le_fx_test_process_fn)(le_fx_state* fx, int slot, int32_t type,
                                      int sr, int cap, float* l, float* r,
                                      const float* p);
 extern le_fx_test_process_fn le_fx_test_process_hook;
+/* Non-zero runs the octaver family's two channels on a mono pair too
+ * (#1914), for the tests that check the mono path against it. */
+extern int le_fx_test_oct_stereo;
 /* Smart Tune's per-tick settings (engine_fx.c), for that copy. */
 void le_fx_test_st_tick(le_fx_state* fx, int slot, const float* p, float* q);
 #endif

@@ -583,6 +583,117 @@ static void test_dual_octaver_second_voice_is_steady(void) {
   do_sr = DO_SR;
 }
 
+/* #1914: on a mono pair the octaver family runs its left channel alone
+ * (le_oct_run_pair). Two chains on the same input, one free to do so and one
+ * held to both channels (le_fx_test_oct_stereo), must give the same output
+ * bit for bit, through a landing on the mono run (which keeps it), a setting
+ * change, a stereo stretch that ends it (the right's state brought up to the
+ * left's), a landing after it (the channels now differ, so the slot stays
+ * on both), and a retype to Smart Tune. */
+static int do_mono_bits(float a, float b) {
+  uint32_t x, y;
+  memcpy(&x, &a, 4);
+  memcpy(&y, &b, 4);
+  return x == y;
+}
+
+static le_fx_state* do_mono_state(int32_t type) {
+  le_fx_state* fx = (le_fx_state*)calloc(1, sizeof(le_fx_state));
+  CHECK(fx != NULL);
+  for (int s = 0; s < LE_FX_MAX; ++s) le_fx_enable_seed_settled(fx, s);
+  CHECK(le_fx_prepare(fx, 0, type, DO_SR) == LE_OK);
+  /* Smart Tune lands on the slot later; its buffers are the octaver's. */
+  CHECK(le_fx_prepare(fx, 0, LE_FX_SMART_TUNE, DO_SR) == LE_OK);
+  le_fx_entry_reset(fx, 0, type);
+  fx->clocked = 1;
+  return fx;
+}
+
+static void do_mono_pair_kind(int32_t type, const float* p0, const float* p1,
+                              const char* name) {
+  le_fx_state* a = do_mono_state(type);
+  le_fx_state* b = do_mono_state(type);
+  int32_t types[LE_FX_MAX];
+  float params[LE_FX_MAX][LE_FX_PARAMS];
+  for (int s = 0; s < LE_FX_MAX; ++s) types[s] = LE_FX_NONE;
+  memset(params, 0, sizeof(params));
+  types[0] = type;
+  for (int q = 0; q < LE_FX_PARAMS; ++q) params[0][q] = p0[q];
+  const int n = 4 * DO_SR;
+  int differ = 0, mono_before = 0, mono_after_landing = 0, mono_late = 0;
+  uint32_t seed = 12345u;
+  for (int i = 0; i < n; ++i) {
+    const double t = (double)i / DO_SR;
+    float x = 0.0f;
+    static const double hz[3] = {98.0, 146.83, 220.0};
+    for (int k = 0; k < 3; ++k) {
+      x += (float)(0.08 * sin(2.0 * 3.14159265358979 * hz[k] * (k + 1) * t));
+    }
+    seed = seed * 1664525u + 1013904223u;
+    x += (float)((int32_t)(seed >> 8) - (1 << 23)) * 1e-9f;
+    /* 2.5 to 3 s: a stereo pair, which ends the mono run. */
+    const float xr = t >= 2.5 && t < 3.0 ? 0.5f * x : x;
+    if (i == DO_SR || i == 3 * DO_SR) { /* a landing (an enable edge) */
+      le_fx_entry_reset(a, 0, type);
+      le_fx_entry_reset(b, 0, type);
+    }
+    if (i == 3 * DO_SR / 2) { /* a setting change: a switch or a mode */
+      for (int q = 0; q < LE_FX_PARAMS; ++q) params[0][q] = p1[q];
+    }
+    if (i == 7 * DO_SR / 2) { /* a retype to a kind that runs both */
+      types[0] = LE_FX_SMART_TUNE;
+      le_fx_defaults(LE_FX_SMART_TUNE, params[0]);
+      le_fx_entry_reset(a, 0, LE_FX_SMART_TUNE);
+      le_fx_entry_reset(b, 0, LE_FX_SMART_TUNE);
+    }
+    a->clock = (uint32_t)i;
+    b->clock = (uint32_t)i;
+    float al = x, ar = xr, bl = x, br = xr;
+    fx_apply_chain(a, DO_SR, DO_SR, &al, &ar, 1, types, params, NULL);
+    le_fx_test_oct_stereo = 1;
+    fx_apply_chain(b, DO_SR, DO_SR, &bl, &br, 1, types, params, NULL);
+    le_fx_test_oct_stereo = 0;
+    if (!do_mono_bits(al, bl) || !do_mono_bits(ar, br)) ++differ;
+    if (a->oct_mono[0] == LE_OCT_MONO) {
+      if (t < 1.0) ++mono_before;
+      if (t >= 1.0 && t < 2.5) ++mono_after_landing;
+      if (t >= 2.5) ++mono_late;
+    }
+  }
+  printf("  %s: %d samples differ; mono %.2f s before the landing, %.2f s "
+         "after it, %.2f s after the stereo stretch\n",
+         name, differ, (double)mono_before / DO_SR,
+         (double)mono_after_landing / DO_SR, (double)mono_late / DO_SR);
+  CHECK(differ == 0);
+  CHECK(mono_before > DO_SR * 9 / 10); /* the path under test ran */
+  CHECK(mono_after_landing == DO_SR * 3 / 2); /* the landing kept it */
+  CHECK(mono_late == 0); /* the channels differ from the stretch on */
+  CHECK(a->oct_mono[0] == LE_OCT_STEREO); /* Smart Tune runs both */
+  le_fx_state_free_buffers(a);
+  le_fx_state_free_buffers(b);
+  free(a);
+  free(b);
+}
+
+static void test_octaver_mono_pair_matches_stereo(void) {
+  printf("test_octaver_mono_pair_matches_stereo\n");
+  /* Ed's Rack's Dual Octaver, then high mode with Octave 2 off. */
+  const float d0[LE_FX_PARAMS] = {0.0f, 1.0f, 1.0f, 0.6f};
+  const float d1[LE_FX_PARAMS] = {1.0f, 1.0f, 0.7f, 0.0f};
+  do_mono_pair_kind(LE_FX_DUAL_OCTAVER, d0, d1, "Dual Octaver");
+  /* The Octaver from its phase vocoder to PSOLA (a mode switch's dip). */
+  float o0[LE_FX_PARAMS], o1[LE_FX_PARAMS];
+  le_fx_defaults(LE_FX_OCTAVER, o0);
+  le_fx_defaults(LE_FX_OCTAVER, o1);
+  o1[3] = 1.0f;
+  do_mono_pair_kind(LE_FX_OCTAVER, o0, o1, "Octaver");
+  float w0[LE_FX_PARAMS], w1[LE_FX_PARAMS];
+  le_fx_defaults(LE_FX_WHAMMY, w0);
+  le_fx_defaults(LE_FX_WHAMMY, w1);
+  w1[0] = 0.9f;
+  do_mono_pair_kind(LE_FX_WHAMMY, w0, w1, "Whammy");
+}
+
 static void run_dual_octaver_tests(void) {
   test_dual_octaver_hand_over_is_steady();
   test_dual_octaver_second_voice_is_steady();

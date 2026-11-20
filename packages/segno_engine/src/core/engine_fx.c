@@ -26,6 +26,7 @@
 #include <string.h>
 
 #include "engine_fx.h"
+#include "engine_prof.h" /* LE_PROF_OCT, measuring builds only (#1914) */
 #include "engine_fx_simd.h" /* le_f4, le_u4 (#1755) */
 #include "engine_hot.h"      /* LE_AUDIO_HOT_AT (#1718) */
 #include "engine_internal.h" /* le_psola_detect_band prototype (below) */
@@ -567,6 +568,7 @@ static int le_oct_seeded_ticks(const le_fx_state* fx, int slot) {
 static void le_pv_reset_runtime(le_fx_state* fx, int slot, int chan,
                                 int ticks);
 static void le_low_reset_runtime(le_oct_low* L);
+static void le_oct_leave_mono(le_fx_state* fx, int slot);
 
 /* Puts channel [chan] of octaver slot [slot] on [mode] with its runtime
  * reset, keeping its hop schedule: the new mode's heavy tick lands where the
@@ -2326,6 +2328,17 @@ void le_fx_entry_reset(le_fx_state* fx, int slot, int32_t type) {
    * octaver runtime is unread until a type of the family lands here, and
    * that landing resets it. */
   const int hops = le_fx_type_hops(type);
+  /* A slot on a mono pair keeps running its left channel alone through the
+   * landing of a kind that can (le_oct_run_pair): the reset below does the
+   * same to both channels, and the right's state is not read until it is
+   * brought up to the left's. Any other kind reads both. */
+  const int mono_ok = hops && type != LE_FX_SMART_TUNE;
+  if (fx->oct_mono[slot] == LE_OCT_MONO && !mono_ok) {
+    le_oct_leave_mono(fx, slot);
+  }
+  if (fx->oct_mono[slot] != LE_OCT_MONO) {
+    fx->oct_mono[slot] = mono_ok ? LE_OCT_TRY : LE_OCT_STEREO;
+  }
   /* The kind's rings were published with it: from here on they are known
    * to this thread whatever runs on the slot. */
   const int rings = le_fx_ring_count(type);
@@ -2482,6 +2495,7 @@ void le_fx_enable_force_bypass(le_fx_state* fx, int slot) {
  * retype so a retype-back reuses them; freeing on retype would race the audio
  * thread still processing the slot before the type-change command is observed. */
 void le_fx_free_octaver(le_fx_state* fx, int slot) {
+  fx->oct_mono[slot] = LE_OCT_STEREO; /* no state left to stand for */
   for (int chan = 0; chan < 2; ++chan) {
     le_octaver_state* o = &fx->oct[slot][chan];
     le_rt_free(o->out);
@@ -2504,6 +2518,7 @@ void le_fx_free_octaver(le_fx_state* fx, int slot) {
 }
 
 void le_fx_free_delay(le_fx_state* fx, int slot) {
+  fx->oct_mono[slot] = LE_OCT_STEREO; /* the right ring goes */
   le_rt_free(fx->delay[slot][0]);
   fx->delay[slot][0] = NULL;
   le_rt_free(fx->delay[slot][1]);
@@ -2720,6 +2735,240 @@ static inline float fx_sanitize(float x);
 typedef void (*le_oct_tick_fn)(le_fx_state* fx, int slot, const float* p,
                                float* q);
 
+/* ---- The octaver family on a mono pair (#1914) ----
+ *
+ * A monitored input reaches its chain as a mono pair, and the octaver's
+ * kernel treats its two channels alike: on equal inputs, from equal states,
+ * it gives equal outputs and leaves equal states. So while the pair is mono
+ * and the states are equal, the right channel's work repeats the left's.
+ * Its state is also the octaver's largest (a frame's arrays held across the
+ * hop's slots, the overlap-add and the phases, the low band), and ten of
+ * Ed's Racks held more of it than the console's caches: the effects then
+ * read about 0.5 MB a period from memory, which every other user of the
+ * memory bus slowed (#1914). On a mono pair the left channel alone runs
+ * (le_fx_state.oct_mono) and the right takes its output; the right's input
+ * ring is still written, so only the rest of its state is brought up to the
+ * left's when the pair stops being mono or something else reads it
+ * (le_oct_leave_mono). The output is the stereo path's, bit for bit
+ * (test_octaver_mono_pair_matches_stereo). Smart Tune is left out: one
+ * correction follows the more voiced channel (le_st_tick), which reads both
+ * states every tick. So is a resampled slot (away from 48 kHz). */
+
+#ifdef LE_NATIVE_TESTS
+int le_fx_test_oct_stereo;
+#endif
+
+#if LE_PROFILE_SECTIONS
+/* The section profiler's state (engine_prof.h), here because every target
+ * that runs the effects compiles this file (the engine, the benches, the
+ * VST3 plugin). */
+#include <sys/mman.h>
+__attribute__((visibility("default"), used)) le_prof le_prof_state;
+/* At load, so the callback never takes a first-touch fault on it. */
+__attribute__((constructor)) static void le_prof_lock(void) {
+  memset(&le_prof_state, 0, sizeof(le_prof_state));
+  (void)mlock(&le_prof_state, sizeof(le_prof_state));
+}
+#endif
+
+static int le_oct_bits_equal(float a, float b) {
+  uint32_t x;
+  uint32_t y;
+  memcpy(&x, &a, sizeof(x));
+  memcpy(&y, &b, sizeof(y));
+  return x == y;
+}
+
+/* [p] moved into [to]'s block when it points into the [n] bytes at [from]. */
+static const float* le_oct_rebase(const float* p, const void* from, size_t n,
+                                  void* to) {
+  const uintptr_t a = (uintptr_t)p;
+  const uintptr_t b = (uintptr_t)from;
+  return a >= b && a < b + n ? (const float*)((unsigned char*)to + (a - b)) : p;
+}
+
+/* A YIN pass's two pointers, moved from [from]'s [n]-byte block to [to]'s. */
+static void le_oct_rebase_yin(le_yin_pass* y, const void* from, size_t n,
+                              void* to) {
+  y->x = le_oct_rebase(y->x, from, n, to);
+  y->dp = (float*)le_oct_rebase(y->dp, from, n, to);
+}
+
+/* [s]'s fields into [d], but for the pointers: [d]'s buffers stay its own,
+ * and `low`, which the control thread may be publishing (fx_dual_octaver_
+ * prepare), is not written at all. */
+static void le_oct_copy_fields(le_octaver_state* d, const le_octaver_state* s) {
+  float* const out = d->out;
+  float* const last_phase = d->last_phase;
+  float* const sum_phase = d->sum_phase;
+  float* const scratch = d->scratch;
+  float* const rs_in = d->rs_in;
+  float* const rs_out = d->rs_out;
+  const size_t at = offsetof(le_octaver_state, low);
+  const size_t after = at + sizeof(d->low);
+  memcpy(d, s, at);
+  memcpy((unsigned char*)d + after, (const unsigned char*)s + after,
+         sizeof(*d) - after);
+  d->out = out;
+  d->last_phase = last_phase;
+  d->sum_phase = sum_phase;
+  d->scratch = scratch;
+  d->rs_in = rs_in;
+  d->rs_out = rs_out;
+}
+
+/* Whether [a] and [b] hold the same fields, their pointers aside. */
+static int le_oct_fields_equal(const le_octaver_state* a,
+                               const le_octaver_state* b) {
+  le_octaver_state x;
+  le_octaver_state y;
+  memset(&x, 0, sizeof(x));
+  memset(&y, 0, sizeof(y));
+  le_oct_copy_fields(&x, a);
+  le_oct_copy_fields(&y, b);
+  /* Until a reset's first sample the mix's gains are not read: they are
+   * worked out again (fx_octaver, ep_mix -1). */
+  if (x.ep_mix == -1.0f) x.ep_dry = x.ep_wet = 0.0f;
+  if (y.ep_mix == -1.0f) y.ep_dry = y.ep_wet = 0.0f;
+  return memcmp(&x, &y, sizeof(x)) == 0;
+}
+
+#define LE_OCT_SCRATCH_BYTES ((size_t)LE_PV_SCRATCH_ALLOC * sizeof(float))
+
+/* Whether the two scratches hold the same, PSOLA's pass compared by where
+ * its pointers point in each. */
+static int le_oct_scratch_equal(le_octaver_state* a, le_octaver_state* b) {
+  const size_t ps = (size_t)LE_PS_STATE_OFF * sizeof(float);
+  if (memcmp(a->scratch, b->scratch, ps) != 0) return 0;
+  le_psola_pass p = *le_ps(b);
+  le_oct_rebase_yin(&p.yin, b->scratch, LE_OCT_SCRATCH_BYTES, a->scratch);
+  if (memcmp(le_ps(a), &p, sizeof(p)) != 0) return 0;
+  const size_t aux = (size_t)LE_OCT_AUX_OFF * sizeof(float);
+  return memcmp((unsigned char*)a->scratch + aux,
+                (unsigned char*)b->scratch + aux,
+                LE_OCT_SCRATCH_BYTES - aux) == 0;
+}
+
+/* Whether the two low bands are the same, their passes compared by where
+ * their pointers point in each. */
+static int le_oct_low_equal(const le_oct_low* a, const le_oct_low* b) {
+  if (a == NULL || b == NULL) return a == b;
+  const size_t at = offsetof(le_oct_low, yin);
+  const size_t after = at + sizeof(a->yin);
+  if (memcmp(a, b, at) != 0) return 0;
+  le_yin_pass y = b->yin;
+  le_oct_rebase_yin(&y, b, sizeof(*b), (void*)a);
+  if (memcmp(&a->yin, &y, sizeof(y)) != 0) return 0;
+  return memcmp((const unsigned char*)a + after,
+                (const unsigned char*)b + after, sizeof(*a) - after) == 0;
+}
+
+/* 0 when slot [slot]'s two channels hold the same octaver state (what the
+ * kernel can still read of their input rings, [cap] long, and all the
+ * rest), else the first part that differs: 1 the buffers or the rings'
+ * places, 2 the rings, 3 the fields, 4 the overlap-add or the phases, 5 the
+ * scratch, 6 the low band. Run once a landing (LE_OCT_TRY). */
+static int le_oct_channels_differ(le_fx_state* fx, int slot, int cap) {
+  le_octaver_state* a = &fx->oct[slot][0];
+  le_octaver_state* b = &fx->oct[slot][1];
+  const float* ra = fx->delay[slot][0];
+  const float* rb = fx->delay[slot][1];
+  if (ra == NULL || rb == NULL || cap < LE_OCT_REACH ||
+      fx->delay_pos[slot][0] != fx->delay_pos[slot][1] ||
+      !le_oct_bits_equal(fx->fx_lp[slot][0], fx->fx_lp[slot][1])) {
+    return 1;
+  }
+  if (a->out == NULL || b->out == NULL || a->last_phase == NULL ||
+      b->last_phase == NULL || a->sum_phase == NULL || b->sum_phase == NULL ||
+      a->scratch == NULL || b->scratch == NULL) {
+    return 1;
+  }
+  /* The newest LE_OCT_REACH samples, the deepest any read goes. */
+  const int head = fx->delay_pos[slot][0];
+  for (int i = 1; i <= LE_OCT_REACH; ++i) {
+    int k = head - i;
+    if (k < 0) k += cap;
+    if (!le_oct_bits_equal(ra[k], rb[k])) return 2;
+  }
+  if (!le_oct_fields_equal(a, b)) return 3;
+  if (memcmp(a->out, b->out, sizeof(float) * LE_PV_OUT) != 0 ||
+      memcmp(a->last_phase, b->last_phase, sizeof(float) * LE_PV_BINS) != 0 ||
+      memcmp(a->sum_phase, b->sum_phase, sizeof(float) * LE_PV_BINS) != 0) {
+    return 4;
+  }
+  if (!le_oct_scratch_equal(a, b)) return 5;
+  if (!le_oct_low_equal(atomic_load_explicit(&a->low, memory_order_acquire),
+                        atomic_load_explicit(&b->low, memory_order_acquire))) {
+    return 6;
+  }
+  return 0;
+}
+
+/* Ends slot [slot]'s mono run: the right channel's state becomes the left's
+ * (its ring is already the same). Then both run again. */
+static void le_oct_leave_mono(le_fx_state* fx, int slot) {
+  if (fx->oct_mono[slot] != LE_OCT_MONO) {
+    fx->oct_mono[slot] = LE_OCT_STEREO;
+    return;
+  }
+  fx->oct_mono[slot] = LE_OCT_STEREO;
+  le_octaver_state* a = &fx->oct[slot][0];
+  le_octaver_state* b = &fx->oct[slot][1];
+  le_oct_copy_fields(b, a);
+  memcpy(b->out, a->out, sizeof(float) * LE_PV_OUT);
+  memcpy(b->last_phase, a->last_phase, sizeof(float) * LE_PV_BINS);
+  memcpy(b->sum_phase, a->sum_phase, sizeof(float) * LE_PV_BINS);
+  memcpy(b->scratch, a->scratch, LE_OCT_SCRATCH_BYTES);
+  le_oct_rebase_yin(&le_ps(b)->yin, a->scratch, LE_OCT_SCRATCH_BYTES,
+                    b->scratch);
+  le_oct_low* la = atomic_load_explicit(&a->low, memory_order_acquire);
+  le_oct_low* lb = atomic_load_explicit(&b->low, memory_order_acquire);
+  if (la != NULL && lb != NULL) {
+    memcpy(lb, la, sizeof(*lb));
+    le_oct_rebase_yin(&lb->yin, la, sizeof(*la), lb);
+  }
+  fx->fx_lp[slot][1] = fx->fx_lp[slot][0];
+}
+
+/* The 48 kHz kernel on [l] and [r]: on a mono pair, the left alone while
+ * the states allow (above). The right's ring takes its sample either way. */
+static void le_oct_run_pair(le_fx_state* fx, int slot, int cap, float* l,
+                            float* r, const float* q) {
+  int mono = fx->oct_mono[slot];
+#ifdef LE_NATIVE_TESTS
+  if (le_fx_test_oct_stereo && mono != LE_OCT_STEREO) {
+    le_oct_leave_mono(fx, slot);
+    mono = LE_OCT_STEREO;
+  }
+#endif
+  float* const rb = fx->delay[slot][1];
+  if (mono != LE_OCT_STEREO) {
+    if (rb == NULL || !le_oct_bits_equal(*l, *r)) {
+      LE_PROF_OCT(a_oct_left);
+      le_oct_leave_mono(fx, slot);
+      mono = LE_OCT_STEREO;
+    } else if (mono == LE_OCT_TRY) {
+      const int differ = le_oct_channels_differ(fx, slot, cap);
+      LE_PROF_OCT(a_oct_try[differ]);
+      mono = differ == 0 ? LE_OCT_MONO : LE_OCT_STEREO;
+      fx->oct_mono[slot] = (uint8_t)mono;
+    }
+  }
+  if (mono == LE_OCT_MONO) {
+    int head = fx->delay_pos[slot][1];
+    rb[head] = *r;
+    if (++head >= cap) head = 0;
+    fx->delay_pos[slot][1] = head;
+    *l = fx_octaver(fx, slot, 0, cap, *l, q);
+    *r = *l;
+    LE_PROF_OCT(a_oct_mono);
+    return;
+  }
+  *l = fx_octaver(fx, slot, 0, cap, *l, q);
+  *r = fx_octaver(fx, slot, 1, cap, *r, q);
+  LE_PROF_OCT(a_oct_stereo);
+}
+
 /* The octaver's kernel on its nine settings (le_fx_octaver_settings):
  * shift, tone, mix, mode, formants, the wet voice's cut (0: none), 1 for
  * the Dual Octaver (an equal-power mix, a switched shift, and a second
@@ -2734,11 +2983,16 @@ static void fx_octaver_run(le_fx_state* fx, int slot, int sr, int cap,
                            le_oct_tick_fn tick) {
   if (sr == LE_OCT_RATE || sr <= 0) {
     fx->oct_rs[slot] = 0;
-    if (tick != NULL) tick(fx, slot, p, q);
-    *l = fx_octaver(fx, slot, 0, cap, *l, q);
-    *r = fx_octaver(fx, slot, 1, cap, *r, q);
+    if (tick != NULL) {
+      tick(fx, slot, p, q);
+      *l = fx_octaver(fx, slot, 0, cap, *l, q);
+      *r = fx_octaver(fx, slot, 1, cap, *r, q);
+      return;
+    }
+    le_oct_run_pair(fx, slot, cap, l, r, q);
     return;
   }
+  if (fx->oct_mono[slot] != LE_OCT_STEREO) le_oct_leave_mono(fx, slot);
   const le_oct_rs* t = fx->oct_tab[slot];
   le_octaver_state* o = fx->oct[slot];
   if (t == NULL || t->sr != sr || o[0].rs_in == NULL || o[1].rs_in == NULL ||
