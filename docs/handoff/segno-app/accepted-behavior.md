@@ -335,7 +335,7 @@ Sources:
 | Bounce | Select sources across banks, then destination, then explicit Bounce/Replace & bounce. Keep/Clear sources and tail choice are visible; selection alone does nothing. One Undo restores the whole operation. |
 | Backing | Select prepared recordings by foot without interrupting current playback, then Play/Pause, Stop, seek/jump, page and Exit. Exit does not stop backing. |
 | Tuner | Select physical inputs by bank, mute only the selected live input/pair temporarily, adjust A4 420–460 Hz/reset 440, and Exit. Detector is before FX; tracks and capture stay independent. No signal clears the old reading. |
-| Sessions | Four sessions over the four track pedals, in name order (digits compared as numbers) inside one folder; a track pedal opens the session above it. Bank shows the next four; hold Bank shows the next folder, the sessions outside any folder last. Undo saves; hold Clear starts a New session. Record/Play and Stop keep the transport. Each session states what opening it would end (playback, a take, a performance recording); that statement is the confirmation, with no second press. The face closes after Open, Save or New session and returns to the mode it was entered from. A failed Open keeps the face, marks its session and is named in the notice. LED: the pedal under the open session. |
+| Sessions | Lists every saved session the player has not hidden from the pedal, whatever folder it is in, in name order (digits compared as numbers), four to a page over the four track pedals. A press on a track pedal shows that session in a readout above the pedals (loop mode, tempo, loop length, recorded tracks, effects) without opening it and without sound; a session saved with a setup and no recordings is shown as that setup, not as empty. A hold opens the session, and the pedal's LED fills left to right while the hold is pending. One hold at a time: a second track pedal going down cancels both. The open session's pedal shows it and has no hold. Clear shows the previous page and Bank the next, on contact, wrapping. Undo saves on release; hold Undo starts a New session. Record/Play and Stop keep the transport. The face states what opening a session would end (playback, a take, a performance recording) before any press; the hold is the confirmation, with no second press. The face closes after Open, Save or New session and returns to the mode it was entered from. A failed Open keeps the face, marks its session and is named in the notice. When the open session is hidden, the readout names it. LED: the pedal under the open session, and Bank past the first page. |
 | New session / Save session / Record performance | Preserve-and-start-fresh, save, and start/finish recording work directly by foot, including failure retry. New session and Save session are assignable on their own as well as on the Sessions face. A New session by foot says which session it kept. Save on a rig with no session takes the automatic name. A performance recording that a session change ends is finished and saved, and says so without a completion dialog over the new session; a take that did not come out whole still opens it. |
 
 6. External pedals configures CTRL 1/2 as Expression, Single or Dual switch using
@@ -444,10 +444,10 @@ Sources:
 1. Library is reachable from Tracks, with Sessions and Audio. Selecting a session
    previews it; Open loads explicitly, preserves outgoing work and confirms any
    playback interruption. From the Sessions performance function (§4.5) the
-   confirmation is the session's own statement of what the Open ends, read
-   before the press; there is no second press. Open and New session end an
-   audition (Listen) themselves, whoever asked. Restored transport starts
-   stopped. New session automatically
+   confirmation is the hold on the session's pedal, with what the Open ends
+   stated on the face before any press; there is no second press. Open and
+   New session end an audition (Listen) themselves, whoever asked. Restored
+   transport starts stopped. New session automatically
    preserves the current session, clears recorded tracks/history and retains the
    useful sound/tempo/pedal/instrument setup. It resets track performance transforms
    such as mute/fade/reverse/transpose/global Speed; prepared backing remains stopped.
@@ -455,7 +455,10 @@ Sources:
    Save as and Duplicate have distinct identity semantics. Delete protects the
    current session and never destroys shared audio still referenced elsewhere.
    Search and one-level folders organize sessions/audio without loading anything.
-   No artificial session-slot limit is implied by fixture lists.
+   No artificial session-slot limit is implied by fixture lists. A session's
+   row has options to hide it from the pedal or show it again: a hidden
+   session is left out of the Sessions performance function (§4.5) and its
+   row says so. It stays in the Library and opens from it as before.
 3. Session preview shows only populated tracks, real waveform/length/layer/mute/FX
    information and explicit Listen. Audition does not load the session, is isolated
    from the live rig and ends on navigation or performance/capture. It is not an

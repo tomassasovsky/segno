@@ -61,44 +61,66 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1755 | Every effect cheaper without changing its sound: pitch (#1764, #1770), drives (#1759), reverbs/delays/filters (#1762) and the Vinyl (#1904, part 4) bit-identical; part 5, the Degrade at 96 kHz, is next (scope on the issue) | build | auto | `claude/fx-opt-part5-1755` |
 | #1724 | Effects budget from the app's measured headroom: 10-minute untraced in-app ladder at 48 kHz / 32 (build 279); track job 200 → 300 ns, chains on the callback charged 2.5× (`kFxSerialFactor`); 4 inputs + 7 tracks or + 1 output rack fit | in-review | auto | `claude/fx-headroom-1724-p3` |
 | #1917 | Penpot writeback for the Sessions face and the session commands (#1910): pages 08, 10, 19, 20, 24, 25 and 26, and `pedal-action-catalogue.js` in segno-design. Owed: not written while other sessions held the one Penpot tab | build | merge-gate | none |
-| #1921 | Sessions face, revised: a press shows a session, a hold opens it with the LED fill, and (first plan) sessions assigned to a page and a switch; planned on top of #1910's stack; the owner answered R1 to R5 as recommended on 2026-11-20 (one map, assigned in the Library, nothing automatic, a silent setup-first preview, the fill left to right in the `selected` colour); Part 1 in review: a press shows a session in a labelled readout drawn like the Mixer's (the owner's choice of ten layouts, 2026-11-20), a hold opens it with the left-to-right fill; the Penpot writeback of Part 1 is in tomassasovsky/segno-design#25 (#1917); the owner withdrew the map on 2026-11-20 for one list of every session with Previous page on Clear, Next page on Bank, New loop on Undo's Hold and a per-session `Hide from pedal` in the Library; Part 2 (that list) in review as #1924, with its Penpot writeback in tomassasovsky/segno-design#26; an order set by hand is a later part | build | plan-gate | `claude/sessions-map-1921-p2` |
 | #1927 | Rename "New loop" to "New session" in the app's text (owner, 2026-11-20): the Library's button and sheet, the assignable action, the Sessions face, the lines that call the open session a loop, Spanish, and the automatic name (`New session N`); identifiers and the stored action id `command:new-loop` stay; in review as #1929, stacked on #1924, with the Penpot side in tomassasovsky/segno-design#27 | in-review | merge-gate | `claude/new-session-1927` |
 | #1515 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track and lane chains) is #1729 | build | plan-gate | `claude/fx-multicore-1515-p1b` |
 | #1816 | Console WiFi against an ASUS RT-AX89X with 802.11ax on: firmware already matches Pi OS; brcmfmac options aligned with Pi OS and a troubleshooting note; failure not reproduced, issue stays open until it recurs | in-review | auto | `claude/wifi-firmware-1816` |
 
 ---
 
-## November 2026 Sessions by foot (#1910)
+## November 2026 Sessions by foot (#1910, #1921)
 
 - **Sessions** is a performance function (`InteractionMode.sessions`,
   `mode:sessions`), assignable to a Custom switch, an external pedal or a
-  MIDI control. On its face the four track switches open the four sessions
-  drawn above them; Bank shows the next four and, held, the next folder;
-  Undo saves; a held Clear starts a new loop; Rec/Play and Stop keep the
-  transport; MODE goes back to the mode it was entered from. The owner
-  chose it over `Load previous session` and `Load next session`, which are
-  not built (plan `docs/plan/2026-11-19-feat-foot-session-actions-plan.md`,
-  Owner direction and decisions D1 to D6).
-- Sessions are in name order inside one folder, ignoring case, with digits
-  compared as numbers (`compareSessionNames`,
+  MIDI control. The owner chose it over `Load previous session` and `Load
+  next session`, which are not built (plan
+  `docs/plan/2026-11-19-feat-foot-session-actions-plan.md`).
+- **The face lists every saved session** the player did not hide, whatever
+  folder it is in, four to a page, in name order: ignoring case, with
+  digits compared as numbers (`compareSessionNames`, `footSessionsListed`,
   `lib/control/model/foot_sessions.dart`). The Library still lists newest
   first: that order moves each time an Open saves the session it leaves.
-- Each card says what opening it would end (`Stops playback`, `Ends the
-  take`, `Ends the recording`). There is no second press. A failed Open
-  keeps the face, marks its card and is named in the stage notice.
-- `New loop` (`command:new-loop`, #1229 Part 7) and `Save session`
-  (`session:save`) are commands in the Sessions group of the catalogue.
+  The owner chose this list over a map of sessions to switches, which was
+  built and withdrawn before it was committed (plan
+  `docs/plan/2026-11-20-feat-sessions-face-map-preview-hold-plan.md`,
+  "Owner decisions on the list"). An order set by hand is not built.
+- **A press shows a session and a Hold opens it** (#1921). The press shows
+  it at once in a readout above the track switches, drawn like the Mixer's:
+  its loop mode, tempo, loop length, recorded tracks and effects, read from
+  the manifest by `SessionPreviewCubit` with no audio. The Hold fills the
+  switch's LED left to right in the `selected` colour, through the `STATE`
+  frame's `queuedButton` and `queuedProgress`, so the firmware and the link
+  did not change. One Hold at a time. The open session's switch shows it
+  and has no Hold.
+- **The other switches.** Clear is Previous page and Bank is Next page,
+  both on contact, both wrapping. Undo saves on its release and starts a
+  new session on a Hold, with the clearing Hold's fill. Rec/Play and Stop
+  keep the transport. MODE goes back to the mode the face was entered
+  from.
+- The face says what an Open would end (`Opening a session stops
+  playback`, `... ends the take`, `... ends the recording`) before any
+  press. There is no second press: the Hold is the confirmation. A failed
+  Open keeps the face, marks its switch and is named in the stage notice.
+- **A session can be hidden from the pedal.** Each row of the Library's
+  list has a three-dot button; its sheet says `Hide from pedal` or `Show on
+  pedal`. The ids are in `sessions-face.json` beside the bundles
+  (`SessionRepository.readHiddenFromFace`), in `SessionState.hiddenFromFace`
+  and set with `SessionCubit.setShownOnFace`. A hidden session is on no
+  switch; when it is the open one the face's readout names it.
+- `New session` (`command:new-loop`, #1229 Part 7; renamed from `New loop`
+  in #1927) and `Save session` (`session:save`) are commands in the
+  Sessions group of the catalogue.
 - `ControlCubit` owns the face and never reads `SessionCubit`. Four
   injected functions reach the session layer (`startNewLoop`,
   `saveSession`, `openSession`, `refreshSessions`, wired in `AppRuntime`),
   and the catalogue comes back through `ControlCubit.setSessionCatalogue`,
-  which a listener in `app.dart` calls on every session state change.
-- A performance recording that an Open or a New loop ends is finalized
+  which a listener in `app.dart` calls on every session state change. A
+  hidden session is handed over too, marked `onFace: false`.
+- A performance recording that an Open or a New session ends is finalized
   through `PerformanceRepository.disarmForSessionChange()`. The stage says
   `Recording saved` and opens no completion sheet over the new session; a
   take that did not come out whole, or dropped frames, still opens it.
-- An Open and a New loop end a Library Listen preview themselves, whoever
-  asked (`SessionCubit._endListen`).
+- An Open and a New session end a Library Listen preview themselves,
+  whoever asked (`SessionCubit._endListen`).
 - The stage notices name the session: `<name> opened`, and `Could not open
   <name>` with the reason.
 - The mode is `PedalMode.custom` on the pedal link, like the Tuner, so the
@@ -107,8 +129,12 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   switches; the analyzer lists them.
 - `bloc lint` finds no files when run inside `.claude/worktrees/`: run it
   on a copy outside a hidden folder.
-- Owed: the Penpot writeback (#1917) and the console checks (#1918), which
-  also records the missing end-to-end test of an Open from the face.
+- The design is Penpot page `19 Sessions · New session & recall`
+  (tomassasovsky/segno-design#25, #26 and #27 there).
+- Owed: the console checks (#1918): how long an Open takes, how long the
+  readout's list takes to appear after a press, whether the fill reads from
+  standing height, and the missing end-to-end test of an Open from the
+  face.
 
 ## November 2026 The effects budget from the app (#1724)
 

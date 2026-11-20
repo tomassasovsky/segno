@@ -21,8 +21,9 @@ Tracking: [#1921](https://github.com/tomassasovsky/segno/issues/1921),
 [#1910](https://github.com/tomassasovsky/segno/issues/1910)
 ([`2026-11-19-feat-foot-session-actions-plan.md`](2026-11-19-feat-foot-session-actions-plan.md)),
 which is built and in review (#1911, #1912, #1913, #1915, #1916, #1919).
-Nothing here is built. The owner answered R1 to R5 on 2026-11-20, so
-Part 1 can start.
+Built: Part 1 (#1923), Part 2 as the list (#1924) and Part 4 (the
+contract). Part 3, an order set by hand, is not started and is built only
+if the owner wants it.
 
 ## Owner direction, 2026-11-19
 
@@ -524,6 +525,13 @@ Built as "Owner decisions on the list" says.
   end.
 
 ### Part 4: the contract, and closing the issue
+
+Done, stacked on the rename (#1927) because both edit the same lines of the
+contract: §4.5's Sessions row, §6.1's confirmation sentence and §6.2's
+row options are rewritten, and `docs/PROGRESS.md` has the status section
+and no Active threads row for this issue.
+
+As planned:
 
 - `docs/handoff/segno-app/accepted-behavior.md`: the Sessions row of §4.5
   (a press, a hold, the list and its pages, New loop on Undo's Hold), §6.1
