@@ -2814,27 +2814,32 @@ static void le_oct_rebase_yin(le_yin_pass* y, const void* from, size_t n,
   y->dp = (float*)le_oct_rebase(y->dp, from, n, to);
 }
 
-/* [s]'s fields into [d], but for the pointers: [d]'s buffers stay its own,
- * and `low`, which the control thread may be publishing (fx_dual_octaver_
- * prepare), is not written at all. */
+/* [s]'s fields into [d], but for the pointers, which are not written at
+ * all: [d]'s buffers stay its own, and the control thread may be reading
+ * them, or publishing `low`, while it prepares the slot (fx_octaver_prepare,
+ * fx_dual_octaver_prepare). The bytes between them are copied. */
 static void le_oct_copy_fields(le_octaver_state* d, const le_octaver_state* s) {
-  float* const out = d->out;
-  float* const last_phase = d->last_phase;
-  float* const sum_phase = d->sum_phase;
-  float* const scratch = d->scratch;
-  float* const rs_in = d->rs_in;
-  float* const rs_out = d->rs_out;
-  const size_t at = offsetof(le_octaver_state, low);
-  const size_t after = at + sizeof(d->low);
-  memcpy(d, s, at);
-  memcpy((unsigned char*)d + after, (const unsigned char*)s + after,
-         sizeof(*d) - after);
-  d->out = out;
-  d->last_phase = last_phase;
-  d->sum_phase = sum_phase;
-  d->scratch = scratch;
-  d->rs_in = rs_in;
-  d->rs_out = rs_out;
+  size_t skip[] = {
+      offsetof(le_octaver_state, out),   offsetof(le_octaver_state, last_phase),
+      offsetof(le_octaver_state, sum_phase), offsetof(le_octaver_state, scratch),
+      offsetof(le_octaver_state, rs_in), offsetof(le_octaver_state, rs_out),
+      offsetof(le_octaver_state, low)};
+  const size_t n = sizeof(skip) / sizeof(skip[0]);
+  for (size_t i = 1; i < n; ++i) { /* in their order in the struct */
+    for (size_t j = i; j > 0 && skip[j - 1] > skip[j]; --j) {
+      const size_t t = skip[j];
+      skip[j] = skip[j - 1];
+      skip[j - 1] = t;
+    }
+  }
+  size_t from = 0;
+  for (size_t i = 0; i < n; ++i) {
+    memcpy((unsigned char*)d + from, (const unsigned char*)s + from,
+           skip[i] - from);
+    from = skip[i] + sizeof(void*);
+  }
+  memcpy((unsigned char*)d + from, (const unsigned char*)s + from,
+         sizeof(*d) - from);
 }
 
 /* Whether [a] and [b] hold the same fields, their pointers aside. */
