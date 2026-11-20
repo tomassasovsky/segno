@@ -244,6 +244,87 @@ class PedalSetup extends Equatable {
     );
   }
 
+  /// The Custom map of a console that has never saved a pedal setup (#1908).
+  ///
+  /// The map the design draws on `02 / Performance / Custom`, with the
+  /// actions this build does not have (Transpose, Speed) replaced. Record /
+  /// Play and Stop carry no Hold: a Custom switch with a Hold moves its Press
+  /// to the release, and those two have to act on contact.
+  ///
+  /// Not `const`: [PedalBindingKey] is `Equatable`, and a const map key needs
+  /// primitive equality.
+  static final Map<PedalBindingKey, ControlGesturePair>
+  defaultCustom = Map.unmodifiable(<PedalBindingKey, ControlGesturePair>{
+    const PedalBindingKey(
+      button: PedalButton.recPlay,
+    ): const ControlGesturePair(
+      press: CommandAction(ControlCommand.recordPlay),
+    ),
+    const PedalBindingKey(button: PedalButton.stop): const ControlGesturePair(
+      press: CommandAction(ControlCommand.stop),
+    ),
+    const PedalBindingKey(button: PedalButton.undo): const ControlGesturePair(
+      press: CommandAction(ControlCommand.undo),
+      hold: CommandAction(ControlCommand.redo),
+    ),
+    const PedalBindingKey(button: PedalButton.clear): const ControlGesturePair(
+      press: ModeAction(InteractionMode.mute),
+      hold: CommandAction(ControlCommand.clearAll),
+    ),
+    const PedalBindingKey(button: PedalButton.track1, bank: 0):
+        const ControlGesturePair(press: ModeAction(InteractionMode.reverse)),
+    const PedalBindingKey(
+      button: PedalButton.track2,
+      bank: 0,
+    ): const ControlGesturePair(
+      press: ModeAction(InteractionMode.fx),
+      hold: ModeAction(InteractionMode.tuner),
+    ),
+    const PedalBindingKey(
+      button: PedalButton.track3,
+      bank: 0,
+    ): const ControlGesturePair(
+      press: ModeAction(InteractionMode.fade),
+      hold: ModeAction(InteractionMode.peel),
+    ),
+    const PedalBindingKey(
+      button: PedalButton.track4,
+      bank: 0,
+    ): const ControlGesturePair(
+      press: ModeAction(InteractionMode.mixer),
+      hold: CommandAction(ControlCommand.recordPerformance),
+    ),
+    const PedalBindingKey(button: PedalButton.track1, bank: 1):
+        const ControlGesturePair(press: CommandAction(ControlCommand.tapTempo)),
+    const PedalBindingKey(
+      button: PedalButton.track2,
+      bank: 1,
+    ): const ControlGesturePair(
+      press: ModeAction(InteractionMode.fx),
+      hold: ModeAction(InteractionMode.fade),
+    ),
+    const PedalBindingKey(
+      button: PedalButton.track3,
+      bank: 1,
+    ): const ControlGesturePair(
+      press: ModeAction(InteractionMode.multiply),
+      hold: ModeAction(InteractionMode.divide),
+    ),
+    const PedalBindingKey(
+      button: PedalButton.track4,
+      bank: 1,
+    ): const ControlGesturePair(
+      press: ModeAction(InteractionMode.peel),
+      hold: CommandAction(ControlCommand.undo),
+    ),
+  });
+
+  /// The setup a console with none stored starts with, and stores on that
+  /// boot: the accepted Track controls and [defaultCustom]. `PedalSetup()`
+  /// stays the setup with nothing on Custom, which is what Clear leaves and
+  /// what a stored setup without Custom assignments decodes to.
+  static final PedalSetup fresh = const PedalSetup().withDefaultCustom();
+
   /// The modes MODE can be assigned to reach.
   ///
   /// Every mode a foot can enter. `record` is in it because the accepted
@@ -317,6 +398,13 @@ class PedalSetup extends Equatable {
   /// gestures, and the fixed Track controls untouched.
   PedalSetup clearedCustom() =>
       copyWith(custom: const <PedalBindingKey, ControlGesturePair>{});
+
+  /// The setup with [defaultCustom] in place of its Custom assignments, and
+  /// everything else untouched.
+  PedalSetup withDefaultCustom() => copyWith(custom: defaultCustom);
+
+  /// Whether the Custom assignments are exactly [defaultCustom].
+  bool get hasDefaultCustom => this == withDefaultCustom();
 
   /// Returns a copy with the given fields replaced.
   ///

@@ -208,12 +208,6 @@ final _messages = <_Copy>[
     body: (l) => l.bootModeRetiredBody,
   ),
   _copy(
-    'tuner seeded',
-    (l) => l.footTunerSeeded,
-    tone: NoticeTone.neutral,
-    body: (l) => l.footTunerSeededBody,
-  ),
-  _copy(
     'undo clear all',
     (l) => l.undoClearAllToast,
     tone: NoticeTone.neutral,

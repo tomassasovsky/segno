@@ -256,7 +256,6 @@ class ControlCubit extends Cubit<ControlState> {
     required OwnedValueControl ownedValues,
     required FadeSettings fadeSettings,
     TunerSettings? tunerSettings,
-    bool seedTunerDefault = false,
     ControllerRepository? controller,
     MidiDeviceRepository? midiDevices,
     this._midiClock,
@@ -277,7 +276,6 @@ class ControlCubit extends Cubit<ControlState> {
        _footReverseActions = FootReverseActions(repository: looper),
        _footPeelActions = FootPeelActions(repository: looper),
        _ownsTunerSettings = tunerSettings == null,
-       _seedsTunerDefault = seedTunerDefault,
        _tunerSettings = tunerSettings ?? TunerSettings(settings: settings),
        _footLengthActions = FootLengthActions(repository: looper),
        _footFadeActions = FootFadeActions(
@@ -1193,10 +1191,6 @@ class ControlCubit extends Cubit<ControlState> {
   // app supplies them; a cubit built without them owns a private copy.
   final TunerSettings _tunerSettings;
   final bool _ownsTunerSettings;
-
-  // Whether boot adds the one-shot `Hold · Tuner` default (the app does;
-  // a cubit built for a narrower purpose leaves the setup alone).
-  final bool _seedsTunerDefault;
   late final FootTunerActions _footTunerActions = FootTunerActions(
     repository: _looper,
     settings: _tunerSettings,
@@ -1277,9 +1271,9 @@ class ControlCubit extends Cubit<ControlState> {
   bool _fxStopNoticeShown = true;
 
   // Whether [_fxStopNoticeShown] is already stored. A fresh install decides
-  // it is told in memory at boot and stores that before anything could make
-  // a later boot read it as an upgrade: its first FX entry, pedal setup or
-  // bindings save. Boot itself writes nothing.
+  // at boot that it is told, and stores that just before the default pedal
+  // setup (#1908), which would otherwise make a later boot read it as an
+  // upgrade. An upgraded install stores it at its first FX entry.
   bool _fxStopNoticeStored = true;
 
   // Stop's own press/hold gesture on the performance surfaces that give it a
@@ -1397,14 +1391,31 @@ class ControlCubit extends Cubit<ControlState> {
       fxStopNoticeShown = true;
     }
     _fxStopNoticeShown = fxStopNoticeShown;
-    try {
-      setup = encodedSetup == null
-          ? const PedalSetup()
-          : PedalSetup.decode(encodedSetup);
-    } on FormatException catch (error, stackTrace) {
-      // A corrupt explicit action must not become a default live command.
-      setupUnavailable = true;
-      addError(error, stackTrace);
+    var setupUncertain = false;
+    if (encodedSetup == null) {
+      // A console that never saved a setup starts with the default Custom
+      // map and stores it at once (#1908), so a later build with another
+      // default does not change the map this console already plays.
+      setup = PedalSetup.fresh;
+      // First, so a later boot cannot read the stored setup as an upgrade.
+      _storeFxStopNotice();
+      try {
+        await _settings.savePedalSetup(setup.encode());
+      } on PedalSetupSaveException catch (error, stackTrace) {
+        // The default is live either way. With nothing stored, the next
+        // boot stores it.
+        setupUncertain = !error.checkpointRestored;
+        addError(error, stackTrace);
+      }
+    } else {
+      try {
+        // A stored setup is taken as it is, an empty map included.
+        setup = PedalSetup.decode(encodedSetup);
+      } on FormatException catch (error, stackTrace) {
+        // A corrupt explicit action must not become a default live command.
+        setupUnavailable = true;
+        addError(error, stackTrace);
+      }
     }
     if (_inputRetired || _closing || isClosed) return;
     emit(
@@ -1413,45 +1424,13 @@ class ControlCubit extends Cubit<ControlState> {
         holdThreshold: _longPress,
         pedalSetup: setup,
         pedalSetupUnavailable: setupUnavailable,
+        pedalSetupPersistenceUncertain: setupUncertain,
         globalBindings: storedBindings,
       ),
     );
     await _loadMidiConfiguration();
     if (_inputRetired || _closing || isClosed) return;
     setMode(InteractionMode.record);
-    // After the restore completes: the seeding saves through setPedalSetup,
-    // which waits for this load.
-    if (_seedsTunerDefault) unawaited(_seedTunerDefault());
-  }
-
-  /// Gives a default install a way to the Tuner (#1229, D11): `Hold ·
-  /// Tuner` on Custom pedal 2, bank A, where the pedal study and pen 10
-  /// `uEukr` put it. One-shot: the flag is written at the first attempt,
-  /// whatever its outcome, and a Hold already assigned there is kept. A
-  /// malformed or uncertain stored setup is never overwritten; the flag stays
-  /// unset for a later boot.
-  Future<void> _seedTunerDefault() async {
-    try {
-      if (await _settings.loadTunerDefaultSeeded()) return;
-      if (isClosed ||
-          state.pedalSetupUnavailable ||
-          state.pedalSetupPersistenceUncertain) {
-        return;
-      }
-      await _settings.saveTunerDefaultSeeded();
-      final pair = state.pedalSetup.customFor(PedalButton.track2, bank: 0);
-      if (pair.hold != null || isClosed) return;
-      await setPedalSetup(
-        state.pedalSetup.withCustom(
-          PedalButton.track2,
-          bank: 0,
-          pair: pair.withHold(const ModeAction(InteractionMode.tuner)),
-        ),
-      );
-      if (!isClosed) emit(state.copyWith(tunerDefaultSeeded: true));
-    } on Object catch (error, stackTrace) {
-      addError(error, stackTrace);
-    }
   }
 
   // ---------------------------------------------------------------------------
@@ -1619,7 +1598,6 @@ class ControlCubit extends Cubit<ControlState> {
 
   /// Saves [setup] and makes it live.
   Future<void> _commitPedalSetup(PedalSetup setup) async {
-    _storeFxStopNotice();
     try {
       await _settings.savePedalSetup(setup.encode());
     } on PedalSetupSaveException catch (error) {
@@ -4031,7 +4009,6 @@ class ControlCubit extends Cubit<ControlState> {
     _invalidateGestures();
     emit(state.copyWith(globalBindings: next, sessionBindings: session));
     if (!saves) return;
-    _storeFxStopNotice();
     await _settings.savePedalBindings(next.encode());
   });
 

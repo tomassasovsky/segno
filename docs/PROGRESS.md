@@ -66,6 +66,44 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 ---
 
+## November 2026 Custom controls start with a default map (#1908)
+
+- A console that has never saved a pedal setup loads `PedalSetup.fresh`: the
+  accepted Track controls and `PedalSetup.defaultCustom`, the map Penpot
+  page 10 draws with the actions this build lacks replaced. Bank A: Record /
+  Play; Stop; Undo, Hold Redo; Clear as Mute, Hold Clear all; 1 Reverse; 2
+  FX, Hold Tuner; 3 Fade, Hold Peel; 4 Mixer, Hold Record performance. Bank
+  B changes the track switches: 1 Tap tempo; 2 FX, Hold Fade; 3 Multiply,
+  Hold Divide; 4 Peel, Hold Undo.
+- Record / Play and Stop carry no Hold, so both act on contact: a Custom
+  switch with a Hold moves its Press to the release.
+- That first boot stores the setup (the owner's call, 2026-11-20), so a
+  later build with another default does not change the map a console
+  already plays; `Use default assignments` gives the build's current
+  default. If the write is refused the default still plays, and the next
+  boot stores it. The fresh install's FX Stop notice decision (#1229) is
+  stored in the same boot, no longer at its first FX entry or save.
+- A stored setup is taken as it is, an empty Custom map included.
+  `PedalSetup()` stays the setup with nothing on Custom.
+- Settings > Pedals > Custom controls: the Clear custom assignments dialog
+  has a second action, `Use default assignments`. It replaces the draft's
+  Custom map; Restore puts back the map from before the latest Clear or
+  default; nothing reaches the rig until Save. The titlebar button is
+  always available in Custom controls, and each dialog action dims when it
+  has nothing to do.
+- The one-time `Hold · Tuner` seed on Custom pedal 2 (#1229, D11) is
+  removed with its settings flag, state field and notice: the default map
+  carries that Hold.
+- An install that already saved a setup keeps its map until the owner uses
+  `Use default assignments`.
+- Design: Penpot pages 08 and 10. The snapshot is on segno-design's main
+  (`c17df0c8c`): the Sessions exports were taken after these edits and
+  carry them, so segno-design#24 was closed with nothing left to merge.
+- Not checked on the console: the foot feel of each default assignment.
+- When Transpose and Speed ship (#1179), pedal 1 in bank A returns to
+  Transpose, Hold Reverse and the Hold on pedal 4 to Speed. Sessions by
+  foot (#1910) are not in the default map.
+
 ## November 2026 A recording take's heard lane starts on its image (#1914 part 4)
 
 - A lane that got its first heard image (#1713) faded to it over 10 ms
@@ -113,6 +151,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   that the ring was readable, a race with the control thread allocating
   one for a coming retype (#1522) that TSan's workers race test caught.
   The check comes first again.
+
 ## November 2026 Sessions by foot (#1910, #1921)
 
 - **Sessions** is a performance function (`InteractionMode.sessions`,

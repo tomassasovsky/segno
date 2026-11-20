@@ -37,7 +37,6 @@ class ControlState extends Equatable {
     this.tunerPreferences = const TunerPreferences(),
     this.footTunerFailure = 0,
     this.footTunerRefusal = FootTunerRefusal.armFailed,
-    this.tunerDefaultSeeded = false,
     this.pendingHolds = const <PedalButton>{},
     this.holdThreshold = const Duration(milliseconds: 800),
     this.footFxFailure = 0,
@@ -204,10 +203,6 @@ class ControlState extends Equatable {
 
   /// Why the latest refused foot Tuner press changed nothing.
   final FootTunerRefusal footTunerRefusal;
-
-  /// Set once when this boot added `Hold · Tuner` to Custom pedal 2 (#1229,
-  /// D11), so the app can say where the Tuner is.
-  final bool tunerDefaultSeeded;
 
   /// The pedals whose Hold is armed and not yet settled: the hold has neither
   /// fired, nor been released into its tap, nor been cancelled (#1229, the
@@ -378,7 +373,6 @@ class ControlState extends Equatable {
     TunerPreferences? tunerPreferences,
     int? footTunerFailure,
     FootTunerRefusal? footTunerRefusal,
-    bool? tunerDefaultSeeded,
     Set<PedalButton>? pendingHolds,
     Duration? holdThreshold,
     int? footFxFailure,
@@ -436,7 +430,6 @@ class ControlState extends Equatable {
     tunerPreferences: tunerPreferences ?? this.tunerPreferences,
     footTunerFailure: footTunerFailure ?? this.footTunerFailure,
     footTunerRefusal: footTunerRefusal ?? this.footTunerRefusal,
-    tunerDefaultSeeded: tunerDefaultSeeded ?? this.tunerDefaultSeeded,
     pendingHolds: pendingHolds ?? this.pendingHolds,
     holdThreshold: holdThreshold ?? this.holdThreshold,
     footFxFailure: footFxFailure ?? this.footFxFailure,
@@ -495,7 +488,6 @@ class ControlState extends Equatable {
     tunerPreferences,
     footTunerFailure,
     footTunerRefusal,
-    tunerDefaultSeeded,
     pendingHolds,
     holdThreshold,
     footFxFailure,

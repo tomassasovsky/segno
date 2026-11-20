@@ -654,42 +654,18 @@ void main() {
         );
       }
 
-      // A fresh install: never told, and boot writes nothing; the decision
-      // is stored before anything could make a later boot read it as an
-      // upgrade (#1229 review L1).
-      final freshStores = <String, Future<void> Function(ControlCubit)>{
-        'its first FX entry': (cubit) async =>
-            cubit.setMode(InteractionMode.fx),
-        'a pedal setup save': (cubit) => cubit.setPedalSetup(
-          const PedalSetup(modeHold: InteractionMode.mixer),
-        ),
-        'a bindings save': (cubit) => cubit.setGlobalBindings(
-          PedalBindingSet([
-            PedalBinding(
-              key: const PedalBindingKey(button: PedalButton.track1, bank: 0),
-              target: const FxChainTarget(FxAddress(stage: FxStage.track))
-                  .canonicalString(),
-            ),
-          ]),
-        ),
-      };
-      for (final MapEntry(key: what, value: act) in freshStores.entries) {
-        test('a fresh install never hears about the old Stop, and stores '
-            'that at $what', () async {
-          await cubit.load();
-          await pumpEventQueue();
-          expect(
-            await settings.loadFxStopChangeNoticeShown(),
-            isFalse,
-            reason: 'boot writes nothing',
-          );
-          await act(cubit);
-          await pumpEventQueue();
-          expect(await settings.loadFxStopChangeNoticeShown(), isTrue);
-          cubit.setMode(InteractionMode.fx);
-          expect(cubit.state.fxStopChangeNotice, isFalse);
-        });
-      }
+      // A fresh install is never told. Boot stores that with the default
+      // pedal setup, which would otherwise make the next boot read this
+      // install as an upgrade (#1229 review L1, #1908).
+      test('a fresh install never hears about the old Stop, and boot stores '
+          'that with the default setup', () async {
+        await cubit.load();
+        await pumpEventQueue();
+        expect(await settings.loadFxStopChangeNoticeShown(), isTrue);
+        expect(await settings.loadPedalSetup(), PedalSetup.fresh.encode());
+        cubit.setMode(InteractionMode.fx);
+        expect(cubit.state.fxStopChangeNotice, isFalse);
+      });
 
       test('an install already told hears nothing on FX entry', () async {
         await settings.saveFxStopChangeNoticeShown();
@@ -1812,6 +1788,7 @@ void main() {
       test(
         'hue-only Save retains a pending Mode gesture and FX return',
         () async {
+          await cubit.load();
           transport.press(PedalButton.mode, down: true);
           await pumpEventQueue();
           await cubit.setPedalSetup(
@@ -1877,6 +1854,7 @@ void main() {
       test(
         'storage refusal keeps the prior live setup and its gestures',
         () async {
+          await cubit.load();
           final prior = cubit.state.pedalSetup;
           setupStore.refuseSetup = true;
           await expectLater(
@@ -1884,11 +1862,20 @@ void main() {
             throwsException,
           );
           expect(cubit.state.pedalSetup, prior);
-          expect(await settings.loadPedalSetup(), isNull);
+          expect(await settings.loadPedalSetup(), prior.encode());
           await stomp(PedalButton.mode);
           expect(cubit.state.mode, InteractionMode.mute);
         },
       );
+
+      test('a boot that cannot store the default setup plays it anyway, and '
+          'leaves nothing stored for the next boot to read (#1908)', () async {
+        setupStore.refuseSetup = true;
+        await cubit.load();
+        expect(cubit.state.pedalSetup, PedalSetup.fresh);
+        expect(cubit.state.pedalSetupPersistenceUncertain, isFalse);
+        expect(await settings.loadPedalSetup(), isNull);
+      });
 
       test(
         'write-then-throw restores the saved setup without changing gestures',

@@ -1416,12 +1416,6 @@ void main() {
   });
 
   group('tuner preferences (#1229)', () {
-    test('the Hold · Tuner default is unattempted until marked', () async {
-      expect(await repository.loadTunerDefaultSeeded(), isFalse);
-      await repository.saveTunerDefaultSeeded();
-      expect(await repository.loadTunerDefaultSeeded(), isTrue);
-    });
-
     test('the A4 reference defaults to 440 Hz, round-trips and clamps to '
         '420-460', () async {
       expect(await repository.loadTunerReferenceHz(), 440);

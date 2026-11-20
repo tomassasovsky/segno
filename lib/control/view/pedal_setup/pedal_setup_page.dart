@@ -77,9 +77,9 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
   /// live one, and the first edit forks from whatever is current then.
   PedalSetup? _draft;
 
-  /// What Clear custom assignments took away, until the draft is saved or
-  /// cancelled.
-  PedalSetup? _cleared;
+  /// The setup from before the latest Clear custom assignments emptied or
+  /// replaced its Custom map, until the draft is saved or cancelled.
+  PedalSetup? _replaced;
 
   PedalSetupContext _context = PedalSetupContext.tracks;
 
@@ -176,13 +176,10 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
                     ledsEdited:
                         _context == PedalSetupContext.leds &&
                         setup.leds.isEdited(_ledMode),
-                    hasCustomAssignments:
-                        _context == PedalSetupContext.custom &&
-                        setup.hasCustomAssignments,
-                    canRestore: _cleared != null,
+                    canRestore: _replaced != null,
                     onResetLeds: _resetLeds,
                     onClearCustom: () => unawaited(_confirmClear(setup)),
-                    onRestoreCustom: _restoreCleared,
+                    onRestoreCustom: _restoreReplaced,
                     onExternal: () => unawaited(openExternalPedals()),
                     onCancel: _cancel,
                     onSave: () => unawaited(_save(control, setup)),
@@ -326,7 +323,7 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
 
   void _cancel() => setState(() {
     _draft = null;
-    _cleared = null;
+    _replaced = null;
     _saved = false;
     _saveFailed = false;
   });
@@ -346,7 +343,7 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
       if (!mounted) return;
       setState(() {
         _draft = null;
-        _cleared = null;
+        _replaced = null;
         _saved = true;
       });
     } on Object {
@@ -356,22 +353,30 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
     }
   }
 
-  void _restoreCleared() => setState(() {
+  void _restoreReplaced() => setState(() {
     _draft = (_draft ?? context.read<ControlCubit>().state.pedalSetup).copyWith(
-      custom: _cleared!.custom,
+      custom: _replaced!.custom,
     );
-    _cleared = null;
+    _replaced = null;
     _saved = false;
   });
 
   Future<void> _confirmClear(PedalSetup setup) async {
-    final confirmed = await showPedalClearDialog(context);
-    if (!confirmed || !mounted) return;
+    final choice = await showPedalClearDialog(
+      context,
+      canClear: setup.hasCustomAssignments,
+      canUseDefault: !setup.hasDefaultCustom,
+    );
+    if (choice == null || !mounted) return;
     setState(() {
-      // Restore keeps the Custom draft from before Clear. Later edits to
-      // Track controls remain independent of restoring this map.
-      _cleared = setup;
-      _draft = setup.clearedCustom();
+      // Restore keeps the Custom draft from before this Clear or default,
+      // edits made since an earlier one included. Later edits to Track
+      // controls remain independent of restoring this map.
+      _replaced = setup;
+      _draft = switch (choice) {
+        PedalClearChoice.clear => setup.clearedCustom(),
+        PedalClearChoice.useDefault => setup.withDefaultCustom(),
+      };
       _saved = false;
     });
   }
@@ -702,7 +707,6 @@ class _SetupActions extends StatelessWidget {
     required this.saved,
     required this.pending,
     required this.ledsEdited,
-    required this.hasCustomAssignments,
     required this.canRestore,
     required this.onResetLeds,
     required this.onClearCustom,
@@ -728,8 +732,6 @@ class _SetupActions extends StatelessWidget {
 
   /// Whether the shown mode's LED colours differ from the defaults.
   final bool ledsEdited;
-
-  final bool hasCustomAssignments;
 
   /// Whether Clear custom assignments has something to restore.
   final bool canRestore;
@@ -776,7 +778,7 @@ class _SetupActions extends StatelessWidget {
             key: const Key('pedal_setup_clear_custom'),
             width: 380,
             label: l10n.pedalSetupClearCustom,
-            onTap: hasCustomAssignments ? onClearCustom : null,
+            onTap: onClearCustom,
           ),
           const SizedBox(width: 16),
           if (canRestore) ...[
@@ -978,20 +980,40 @@ class _GestureEditor extends StatelessWidget {
   }
 }
 
+/// What the Clear custom assignments dialog was asked to do.
+enum PedalClearChoice {
+  /// Empty every Custom assignment.
+  clear,
+
+  /// Replace the Custom assignments with [PedalSetup.defaultCustom].
+  useDefault,
+}
+
 /// The accepted Clear custom assignments confirmation: what it covers, what
-/// it keeps, and that it is undoable until Save.
-Future<bool> showPedalClearDialog(BuildContext context) async {
+/// it keeps, and that it is undoable until Save. Its second action puts the
+/// default map back (#1908). Returns `null` when it is dismissed.
+///
+/// [canClear] is whether anything is assigned; [canUseDefault] is whether
+/// the map differs from the default. One of the two always holds.
+Future<PedalClearChoice?> showPedalClearDialog(
+  BuildContext context, {
+  required bool canClear,
+  required bool canUseDefault,
+}) {
   final surface = context.surface;
-  final confirmed = await showDialog<bool>(
+  return showDialog<PedalClearChoice>(
     context: context,
     barrierColor: surface.scrim.withValues(alpha: 0.86),
-    builder: (context) => const _PedalClearDialog(),
+    builder: (context) =>
+        _PedalClearDialog(canClear: canClear, canUseDefault: canUseDefault),
   );
-  return confirmed ?? false;
 }
 
 class _PedalClearDialog extends StatelessWidget {
-  const new();
+  const new({required this.canClear, required this.canUseDefault});
+
+  final bool canClear;
+  final bool canUseDefault;
 
   static const double _panelWidth = 1040;
   static const double _pad = 40;
@@ -1040,6 +1062,8 @@ class _PedalClearDialog extends StatelessWidget {
                       const SizedBox(height: 16),
                       AppText(l10n.pedalSetupClearKeeps, style: body),
                       const SizedBox(height: 16),
+                      AppText(l10n.pedalSetupClearDefault, style: body),
+                      const SizedBox(height: 16),
                       AppText(l10n.pedalSetupClearDraft, style: body),
                       const SizedBox(height: 36),
                       Row(
@@ -1049,15 +1073,38 @@ class _PedalClearDialog extends StatelessWidget {
                             key: const Key('pedal_setup_clear_cancel'),
                             width: 160,
                             label: l10n.pedalSetupCancel,
-                            onTap: () => Navigator.of(context).pop(false),
+                            onTap: () => Navigator.of(context).pop(),
                           ),
                           const SizedBox(width: 16),
-                          LoopOutlinedButton(
-                            key: const Key('pedal_setup_clear_confirm'),
-                            width: 300,
-                            tone: LoopButtonTone.accent,
-                            label: l10n.pedalSetupClearConfirm,
-                            onTap: () => Navigator.of(context).pop(true),
+                          Opacity(
+                            opacity: canUseDefault
+                                ? 1
+                                : surface.disabledOpacity,
+                            child: LoopOutlinedButton(
+                              key: const Key('pedal_setup_clear_default'),
+                              width: 440,
+                              label: l10n.pedalSetupUseDefault,
+                              onTap: canUseDefault
+                                  ? () =>
+                                        Navigator.of(context)
+                                            .pop(PedalClearChoice.useDefault)
+                                  : null,
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Opacity(
+                            opacity: canClear ? 1 : surface.disabledOpacity,
+                            child: LoopOutlinedButton(
+                              key: const Key('pedal_setup_clear_confirm'),
+                              width: 300,
+                              tone: LoopButtonTone.accent,
+                              label: l10n.pedalSetupClearConfirm,
+                              onTap: canClear
+                                  ? () =>
+                                        Navigator.of(context)
+                                            .pop(PedalClearChoice.clear)
+                                  : null,
+                            ),
                           ),
                         ],
                       ),

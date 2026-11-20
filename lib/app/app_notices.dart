@@ -57,7 +57,6 @@ abstract final class AppNoticeId {
   static const footPeelRefused = 'footPeelRefused';
   static const assignedActionRefused = 'assignedActionRefused';
   static const footTunerRefused = 'footTunerRefused';
-  static const tunerSeeded = 'tunerSeeded';
   static const interfaceSwitchRefused = 'interfaceSwitchRefused';
   static const footFxFailure = 'footFxFailure';
   static const footLengthRefused = 'footLengthRefused';

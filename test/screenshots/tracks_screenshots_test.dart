@@ -982,6 +982,44 @@ void main() {
     }, skip: !rendersScreenshots);
   }
 
+  // Foot Custom with the map a console starts with (#1908): both banks, and
+  // bank A in Spanish.
+  for (final scene in ['bank_a', 'bank_b', 'spanish']) {
+    testWidgets('Foot Custom default map, $scene', (tester) async {
+      seed(
+        LooperState(
+          status: const EngineStatus(
+            isConnected: true,
+            devicePresent: true,
+            deviceName: 'Segno',
+            inputChannels: 2,
+            outputChannels: 2,
+          ),
+          tracks: [
+            for (var channel = 0; channel < 8; channel++)
+              Track(
+                channel: channel,
+                state: channel < 3 ? TrackState.playing : TrackState.empty,
+                lengthFrames: channel < 3 ? 48000 : 0,
+              ),
+          ],
+        ),
+      );
+      await tester.runAsync(() => control.setPedalSetup(PedalSetup.fresh));
+      control.setMode(InteractionMode.custom);
+      if (scene == 'bank_b') control.toggleBankWithCursor();
+      await pump(
+        tester,
+        locale: scene == 'spanish' ? const Locale('es') : null,
+      );
+      expect(tester.takeException(), isNull);
+      await expectLater(
+        find.byType(TracksView),
+        matchesGoldenFile('goldens/foot_custom_default_$scene.png'),
+      );
+    }, skip: !rendersScreenshots);
+  }
+
   // The foot Tuner (pen 23/1 `o9d3X`, 23/2 `lDOKf`, 23/3 `d9CLS`, 23/4
   // `sMhKO`, 23/5 `ta3Fj`; #1229) and the Spanish probe.
   for (final scene in [

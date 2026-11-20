@@ -74,7 +74,11 @@ void main() {
     await looperStates.close();
   });
 
-  Future<void> pump(WidgetTester tester, {bool unreadable = false}) async {
+  Future<void> pump(
+    WidgetTester tester, {
+    bool unreadable = false,
+    Locale? locale,
+  }) async {
     final store = FakeKeyValueStore();
     if (unreadable) {
       store.values['pedal.setup'] = '{"trackHold":"unknown-hold"}';
@@ -126,6 +130,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         debugShowCheckedModeBanner: false,
+        locale: locale,
         localizationsDelegates: appLocalizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         theme: ThemeData(
@@ -219,6 +224,28 @@ void main() {
       matchesGoldenFile('goldens/pedal_setup_clear.png'),
     );
   }, skip: !rendersScreenshots);
+
+  // The default map (#1908): bank A as a console starts with it, and the
+  // dialog that puts it back, in Spanish for its longer labels.
+  testWidgets('Custom controls with the default map', (tester) async {
+    await pump(tester);
+    await tester.tap(find.byKey(const Key('pedal_setup_context_custom')));
+    await tester.pumpAndSettle();
+    await shot(tester, 'custom_default');
+  }, skip: !rendersScreenshots);
+
+  testWidgets('Clear custom assignments, Spanish', (tester) async {
+    await pump(tester, locale: const Locale('es'));
+    await tester.tap(find.byKey(const Key('pedal_setup_context_custom')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('pedal_setup_clear_custom')));
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(MaterialApp),
+      matchesGoldenFile('goldens/pedal_setup_clear_es.png'),
+    );
+  }, skip: !rendersScreenshots);
+
   testWidgets('LED colors: one mode, per group and state', (tester) async {
     await pump(tester);
     await tester.tap(find.byKey(const Key('pedal_setup_context_leds')));
