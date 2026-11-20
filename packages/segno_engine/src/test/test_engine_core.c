@@ -22262,7 +22262,10 @@ static void test_octaver_psola_engages_without_a_dip(void) {
       float r = l;
       fx_apply_chain(fx, OCT_SR, OCT_SR, &l, &r, 1, types, params, NULL);
       if (since < OCT_SR / 25) { /* the first 40 ms of each engage */
-        for (int ch = 0; ch < 2; ++ch) {
+        /* On a mono pair the right channel's state stands for the left's
+         * and is not kept (#1914): the left alone is the slot's. */
+        const int chans = fx->oct_mono[0] == LE_OCT_MONO ? 1 : 2;
+        for (int ch = 0; ch < chans; ++ch) {
           const le_octaver_state* o = &fx->oct[0][ch];
           min_xfade = fminf(min_xfade, o->xfade);
           on_mode &= o->cur_mode == (cases[c].late && since < 256 ? 0 : mode);
@@ -39533,6 +39536,7 @@ int main(void) {
   SHARD(run_rhythmic_tests);
   SHARD(run_mode_delay_tests);
   SHARD(run_dual_octaver_tests);
+  SHARD(test_octaver_mono_pair_matches_stereo);
   SHARD(run_amp_cab_tests);
   SHARD(run_modulation_tests);
   SHARD(run_room_verb_tests);
