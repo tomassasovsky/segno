@@ -820,29 +820,32 @@ void main() {
       expect(load(15), greaterThan(budget));
     });
 
-    // Before #1755 the console ran 5 tracks and 4 inputs with 1 track with
-    // no late period, 6 tracks and 4 inputs with 3 tracks with more than
-    // #1724's limit run (#1729). With #1755's pitch kernels it ran 7 and 8
-    // tracks with none (120 s each, the callback's worst service 441 and
-    // 432 us of 666). With the drives and the amp cheaper too (#1755),
-    // 8 tracks ran with none again (418 and 394 us); the rule admits 9,
-    // past the bench's 8-track rig.
-    test("at 48 kHz / 32 with two workers, nine of Ed's Racks fit on "
-        'tracks and ten do not; four on inputs leave room for six on '
-        'tracks, not seven (#1729, #1755)', () {
+    // On the console (build 278, 48 kHz / 32, two workers, bench_rt_faults,
+    // 120 s each, #1724): with a rack on each of the four inputs, racks on
+    // 6, 7 and 8 tracks ran with no late period and no xrun (the callback's
+    // worst service 542, 531 and 579 us of 666); 6 beside a rack on output
+    // pair 0 did too (632 us), and 8 beside it ran 2 late (723 us). Racks
+    // on the output alone, beside the four: 3 clean (636 us), 4 with 17
+    // late (808 us), 5 with 3046.
+    test("at 48 kHz / 32 with two workers, Ed's Racks on all four inputs "
+        'and all eight tracks fit; beside a rack on the output, six tracks '
+        'fit and seven do not (#1724)', () {
       final ns = fxChainCostNs(rack, period: 32, sampleRate: 48000);
       final budget = fxBudgetNs(48000, period: 32);
-      int load(int inputs, int tracks) => fxLoadNs(
-        serial: 0,
+      int load(int inputs, int tracks, {int outputs = 0}) => fxLoadNs(
+        serial: outputs * ns,
         jobs: List.filled(inputs + tracks, ns),
         workers: 2,
         period: 32,
         trackJobs: tracks,
       );
-      expect(load(0, 9), lessThanOrEqualTo(budget));
-      expect(load(0, 10), greaterThan(budget));
-      expect(load(4, 6), lessThanOrEqualTo(budget));
-      expect(load(4, 7), greaterThan(budget));
+      expect(load(0, 8), lessThanOrEqualTo(budget));
+      expect(load(4, 8), lessThanOrEqualTo(budget));
+      expect(load(4, 6, outputs: 1), lessThanOrEqualTo(budget));
+      expect(load(4, 7, outputs: 1), greaterThan(budget));
+      // On the output, beside the four on the inputs: three, not four.
+      expect(load(4, 0, outputs: 3), lessThanOrEqualTo(budget));
+      expect(load(4, 0, outputs: 4), greaterThan(budget));
       // On the callback alone, before #1729: five.
       expect(5 * ns, lessThanOrEqualTo(budget));
       expect(6 * ns, greaterThan(budget));
