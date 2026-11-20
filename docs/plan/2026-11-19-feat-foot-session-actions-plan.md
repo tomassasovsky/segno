@@ -31,9 +31,30 @@ tried a sketch of it and rejected it. Its faults:
 
 The owner accepted a second sketch: Sessions as a performance function with
 its own face, where the four track switches open the four sessions drawn
-above them. This plan builds that. It stops for the owner's answers to the
-six decisions below, which settle the details of the face. Nothing is built
-until they are answered.
+above them. This plan builds that.
+
+## Owner decisions, 2026-11-19
+
+All six decisions about the face were answered as recommended. The
+sections under "The decisions in detail" keep the reasoning and the
+alternatives that were not chosen.
+
+1. **Order.** Name order inside the folder, ignoring case, numbers compared
+   as numbers. No order set by hand, so Part 4 is not built.
+2. **Save and New loop.** Undo saves on a press. Clear starts a new loop on
+   a Hold, and a press of Clear does nothing. Both are also assignable
+   commands. Previous and next are not built.
+3. **Opening while something plays or records.** No second press and no
+   timer. Each card says what the press ends.
+4. **After each action.** The face closes after an Open, a Save or a New
+   loop and returns to the mode it was entered from. A failed Open keeps
+   the face up with the reason on its card.
+5. **Folders.** The face starts on the open session's folder and page. A
+   held Bank goes through the folders in name order, Unfiled last, and
+   skips empty ones.
+6. **The rest.** Save with no open session takes `New loop N`. The switch
+   under the open session is lit. The readout's footer shows `Sessions`
+   and the page.
 
 ## Where it stands
 
@@ -109,7 +130,7 @@ nothing.
 The drawn pedals take taps, as the Mixer face's do, so the face can be
 operated by touch as well.
 
-## Decisions for the owner
+## The decisions in detail
 
 ### D1. The order of the sessions on the face
 
@@ -126,8 +147,8 @@ the top, so every card would shift after each Open.
 The alternative is an order the player sets by hand: numbered rows in a
 folder with Move up and Move down in the Library, as the backing list has
 (§6.4), stored with the folder. Then switch N is always session N, whatever
-the names are. It is Part 4 below and is built only if the owner asks for
-it.
+the names are. It is Part 4 below. The owner chose name order, so it is not
+built.
 
 ### D2. Save and New loop on the face
 
@@ -363,12 +384,13 @@ Acceptance:
   confirmation of an interruption.
 - Removes the Active threads row and says `Closes #1910`.
 
-### Part 4, only if D1 asks for it: an order set by hand
+### Part 4, not built: an order set by hand
 
 - A stored order per folder in `packages/session_repository`, numbered
   rows in the Library's Sessions tab, and Move up and Move down in Manage
   (`lib/library/view/`). The face reads that order.
-- It comes before Part 3 if it is built.
+- D1 was answered with name order. This part is kept as a record of the
+  alternative, for a later issue if names turn out not to be enough.
 
 ## Design writeback
 
