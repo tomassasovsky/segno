@@ -176,17 +176,11 @@ const int kFxBenchPeriod = 64;
 ///
 /// The 1.16 came from a run whose sampling script read the sound card's
 /// status from /proc once a second, which delays the callback (see
-/// [kFxTrackJobNs]). Measured again on build 278 without it (#1724): with a
-/// rack on each of four inputs and on six tracks and four takes playing,
-/// the app's per-period service had a p99.9 of 579 us, 1.20 times the
-/// 482 us this file then charged, against the bench engine's 452 us for the
-/// same rig. Read as a factor, 1.20 would put the limit's p99.9 at 0.92 of
-/// the block, past the tenth kept; read as what it looks like, a constant
-/// the app adds (127 us here), it depends on the rig. The bench's engine
-/// itself crosses the line where this share puts it: beside the inputs'
-/// four racks, three on the output (91 %) ran clean and four (109 %) ran
-/// late. The share is unchanged until the app is measured at its limit
-/// with racks on the callback, which the 1.20 run did not have.
+/// [kFxTrackJobNs]), and with every core's context switches traced, which
+/// delays it too. The app's own limits are now set from runs with neither
+/// (#1724, build 279): ten minutes on the stage with four takes playing, a
+/// take recorded and a screen change, against the bar of no dropout. Those
+/// runs set [kFxTrackJobNs] and [kFxSerialFactor]; the share is unchanged.
 const double kFxBudgetShare = 0.77;
 
 /// The rate the charges default to.
@@ -287,31 +281,52 @@ const Map<int, double> kFxHandoffUs = {1: 4.48, 2: 5.184, 3: 6.208};
 /// sums every track onto the outputs, work the monitor jobs' handoff
 /// ([kFxHandoffUs]) does not have.
 ///
-/// Set from the console (build 278, 48 kHz / 32, two workers,
-/// `bench_rt_faults` from master 6115156ad, 120 s each, #1724): with Ed's
-/// Rack on the four inputs, racks on 6, 7 and 8 tracks ran with no late
-/// period and no xrun (the callback's worst service 542, 531 and 579 us of
-/// 666), and so did 6 beside a rack on output pair 0 (632 us); 8 beside it
-/// ran 2 late. None of the clean runs served a period more slowly than
-/// three racks on the output with the four on the inputs did (636 us),
-/// which the budget admits at 91 %, and their p99.9 was at most 7 us past
-/// its 502. A charge of up to 223 ns admits all of them; 8 beside the
-/// output's rack is refused even at none. This keeps most of that range as
-/// a margin for the app's own work on each lane. The work it pays for is
-/// per frame, so a longer block spends no more a frame on it; it was run
-/// only at 48 kHz / 32.
+/// Set from the app on the console (#1724, build 279, master 29cf36f6d,
+/// 48 kHz / 32, two workers), with the rule that what the budget admits
+/// must run with no dropout and that it admits one rig fewer than the
+/// heaviest that does. Each run was ten minutes on the stage with four
+/// takes playing, a take recorded at two minutes and another at seven and
+/// a half, and a screen change (Settings, the Device page, back) at five,
+/// with nothing traced; the engine's own counters were read from the app's
+/// memory. With Ed's Rack on the four inputs, racks on 7 tracks ran with
+/// no dropout (40 late periods) and on 8 with none either (144 late
+/// periods). So 7 is admitted and 8 refused: a charge from 277 to 441 ns
+/// does that, and 300 sits near the low end, the 8 refused by 1.3 %. The
+/// work it pays for is per frame, so a longer block spends no more a frame
+/// on it; it was run only at 48 kHz / 32.
 ///
-/// The 500 ns it replaces came from #1729's runs on build 238, whose late
-/// periods were the measurement's: the sampling script read the sound
-/// card's status from /proc once a second, which takes the lock the
-/// callback's own ALSA calls need, and resized the trace ring as the
-/// window began. Run without either, the rigs those runs failed ran clean.
-const int kFxTrackJobNs = 200;
+/// The 200 ns it replaces came from `bench_rt_faults` (build 278), which
+/// has none of the app's own work on the callback, and the 500 ns before it
+/// from #1729's runs on build 238, whose late periods were partly the
+/// measurement's (a sampling script that read the sound card's status from
+/// /proc once a second).
+const int kFxTrackJobNs = 300;
+
+/// What a chain that runs on the callback itself (All tracks and the
+/// outputs: [fxLoadNs]'s `serial`) charges for each nanosecond of its own
+/// cost, against a chain the workers share, which charges its cost.
+///
+/// In the app the callback also carries its own work and the transients of
+/// recording a take and changing the screen, which the workers do not, so
+/// effects that wait their turn on it end a period later than the same
+/// effects on a worker. Set from the same runs as [kFxTrackJobNs] (#1724,
+/// build 279, 48 kHz / 32, ten minutes each, nothing traced), with Ed's
+/// Rack on the four inputs and racks in series on output pair 0's chain:
+/// three racks there dropped out once, at the screen change (318 late
+/// periods), though the rule before this charged them at 91 %, under the
+/// eight tracks' 96 % that ran clean; two ran with no dropout. So one is
+/// admitted and two refused: a factor from 1.76 to 3.51 does that, and 2.5
+/// sits near the middle. The racks on the tracks fit beside one rack on
+/// the output's chain only up to [kFxTrackJobNs]'s margin less its charge.
+/// #1914 is removing the callback's own extra work in the app, after which
+/// this is measured again.
+const double kFxSerialFactor = 2.5;
 
 /// What the effects charge the audio thread's worst block, in nanoseconds
 /// per frame, at [period]-frame blocks with [workers] effects workers
 /// beside the callback (#1515): the chains that stay on the callback
-/// ([serial]) plus the critical path of the [jobs], the chains the workers
+/// ([serial], charged [kFxSerialFactor] times their cost) plus the critical
+/// path of the [jobs], the chains the workers
 /// share: one monitor input's non-empty chain each (#1515), and one track's
 /// lanes' and own chains each, when one of them is non-empty (#1729).
 ///
@@ -340,13 +355,14 @@ int fxLoadNs({
   // passthroughs): the engine releases a round for it all the same.
   final costs = jobs.toList();
   final sum = costs.fold(0, (a, b) => a + b);
+  final onCallback = (serial * kFxSerialFactor).ceil();
   final handoffUs = kFxHandoffUs[workers > 3 ? 3 : workers];
-  if (handoffUs == null || costs.length < 2) return serial + sum;
+  if (handoffUs == null || costs.length < 2) return onCallback + sum;
   final cores = workers + 1;
   final largest = costs.reduce((a, b) => a > b ? a : b);
   final handoff = (handoffUs * 1000 / _perBlock(period)).ceil();
   final path = (sum + (cores - 1) * largest + cores - 1) ~/ cores;
-  return serial + handoff + trackJobs * kFxTrackJobNs + path;
+  return onCallback + handoff + trackJobs * kFxTrackJobNs + path;
 }
 
 /// The frames a per-block cost spreads over: the block below the bench's
