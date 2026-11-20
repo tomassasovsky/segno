@@ -702,6 +702,30 @@ void main() {
     }
   });
 
+  test('with an Open asked while Undo is down, neither its release nor its '
+      'Hold does anything', () async {
+    for (final holdUndo in [false, true]) {
+      final rig = await enter();
+      try {
+        rig.asked.clear();
+        rig.link.press(PedalButton.track2, down: true);
+        await _pump(const Duration(milliseconds: 100));
+        rig.link.press(PedalButton.undo, down: true);
+        // Past the track switch's threshold, before Undo's.
+        await _pump(const Duration(milliseconds: 750));
+        expect(rig.asked, ['open b']);
+        if (holdUndo) await _pump(const Duration(milliseconds: 200));
+        rig.link.press(PedalButton.undo, down: false);
+        rig.link.press(PedalButton.track2, down: false);
+        await _pump(const Duration(milliseconds: 30));
+        expect(rig.asked, ['open b'], reason: 'held: $holdUndo');
+        expect(rig.control.state.mode, InteractionMode.sessions);
+      } finally {
+        await rig.close();
+      }
+    }
+  });
+
   test('a held Undo starts a new loop, does not also save, and closes the '
       'face', () async {
     final rig = await enter();

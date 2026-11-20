@@ -1360,13 +1360,9 @@ void main() {
       await openLibrary(tester, state: withHidden({'s-gig', 's-cur'}));
 
       expect(
-        inRow('s-gig', l10n.librarySessionMeta('7 Sep', '1 track')),
-        findsNothing,
-      );
-      expect(
         find.descendant(
           of: row('s-gig'),
-          matching: find.textContaining('· Hidden from pedal'),
+          matching: find.textContaining('1 track · Hidden from pedal'),
         ),
         findsOneWidget,
       );

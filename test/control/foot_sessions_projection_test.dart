@@ -225,6 +225,7 @@ void main() {
         const FootSessionsSelection(),
       );
       expect([for (final s in projection.sessions) s.id], ['a', 'c']);
+      expect(projection.hiddenCount, 1);
       expect(projection[PedalButton.track2].session?.id, 'c');
       expect(projection[PedalButton.track3].session, isNull);
       expect([for (final s in footSessionsListed(catalogue)) s.id], ['a', 'c']);

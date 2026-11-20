@@ -299,7 +299,11 @@ class _SessionsReadout extends StatelessWidget {
             _baseline(0),
             none
                 ? AppText(
-                    l10n.footSessionsNone,
+                    // Sessions the player hid are saved: say where they
+                    // are shown again.
+                    projection.hiddenCount > 0
+                        ? l10n.footSessionsAllHidden
+                        : l10n.footSessionsNone,
                     key: const Key('foot_sessions_none'),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,

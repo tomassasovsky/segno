@@ -321,8 +321,8 @@ void main() {
     expect(find.text('Hold · Open'), findsNothing);
   });
 
-  testWidgets('with every session hidden it says the same, and names the '
-      'open one', (tester) async {
+  testWidgets('with every session hidden it says so and where to show them, '
+      'and names the open one', (tester) async {
     given(
       const FootSessionCatalogue(
         sessions: [FootSessionEntry(id: 'x', name: 'Scratch', onFace: false)],
@@ -331,7 +331,16 @@ void main() {
     );
     await pump(tester);
 
-    expect(find.byKey(const Key('foot_sessions_none')), findsOneWidget);
+    expect(
+      find.text(
+        'Every session is hidden from the pedal. Show them in Library.',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.text('No sessions yet. Save or start a new loop.'),
+      findsNothing,
+    );
     expect(find.text('Open: Scratch'), findsOneWidget);
     expect(find.text('Empty'), findsNWidgets(4));
   });

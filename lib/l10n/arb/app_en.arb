@@ -7007,6 +7007,10 @@
     "@footSessionsNone": {
         "description": "Sessions face with no session to list: Undo saves, and a held Undo starts a new loop."
     },
+    "footSessionsAllHidden": "Every session is hidden from the pedal. Show them in Library.",
+    "@footSessionsAllHidden": {
+        "description": "Sessions face (#1921): sessions are saved and the player hid every one from the pedal in the Library, so the face lists none."
+    },
     "footSessionsOpenNotListed": "Open: {name}",
     "@footSessionsOpenNotListed": {
         "description": "Sessions face (#1921): names the open session in the readout when the face does not list it (the player hid it), so no switch is lit for it.",

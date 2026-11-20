@@ -1271,12 +1271,37 @@ class SessionRepository {
       return const {};
     }
     final raw = decoded is Map<String, dynamic> ? decoded['hidden'] : null;
-    if (raw is! List) return const {};
+    if (raw is! List || raw.isEmpty) return const {};
+    final saved = _bundleIds(root);
     return {
       for (final id in raw)
-        if (id is String && isValidSessionId(id) && _locate(root, id) != null)
-          id,
+        if (id is String && saved.contains(id)) id,
     };
+  }
+
+  /// The id of every bundle under [root] and one folder down, from one pass
+  /// over the directories, without reading a manifest.
+  static Set<SessionId> _bundleIds(String root) {
+    final dir = Directory(root);
+    if (!dir.existsSync()) return const {};
+    final ids = <SessionId>{};
+    for (final entity in dir.listSync()) {
+      if (entity is! Directory || _isTransient(_basename(entity.path))) {
+        continue;
+      }
+      if (_isBundle(entity.path)) {
+        ids.add(_basename(entity.path));
+        continue;
+      }
+      for (final child in entity.listSync()) {
+        if (child is Directory &&
+            !_isTransient(_basename(child.path)) &&
+            _isBundle(child.path)) {
+          ids.add(_basename(child.path));
+        }
+      }
+    }
+    return ids;
   }
 
   /// Writes [hidden] as the sessions kept off the Sessions face, through a

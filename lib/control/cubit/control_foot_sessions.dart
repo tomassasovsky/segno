@@ -61,17 +61,22 @@ extension _FootSessionsControl on ControlCubit {
       // Undo saves on a press and starts a new loop on a Hold (#1921), so
       // its press waits for the release. The fill is the one every clearing
       // Hold draws: a new loop ends what is playing.
+      // Asked again when the gesture settles: an Open asked from another
+      // switch while Undo is down takes Undo away, and neither a Save nor a
+      // new loop may land on a rig that is about to be replaced.
+      bool stillAnswers() =>
+          _sessionsEditable && _sessionsProjection()[button].available;
       _armGesture(
         _systemGesture(button)!,
         cue: button,
-        clears: () => _sessionsEditable,
+        clears: stillAnswers,
         onTap: () {
-          if (_sessionsEditable) _dispatchSessionsAction(pedal);
+          if (stillAnswers()) _dispatchSessionsAction(pedal);
         },
         // No confirming flash: the session layer has not accepted the New
         // loop yet, and says so itself if it refuses.
         onHold: () {
-          if (_sessionsEditable) _newLoopFromFace();
+          if (stillAnswers()) _newLoopFromFace();
         },
       );
       return;

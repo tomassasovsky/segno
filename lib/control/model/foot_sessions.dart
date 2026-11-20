@@ -280,6 +280,7 @@ class FootSessionsProjection extends Equatable {
   /// Creates a complete projection.
   const new({
     required this.sessions,
+    required this.hiddenCount,
     required this.page,
     required this.open,
     required this.openingId,
@@ -290,6 +291,9 @@ class FootSessionsProjection extends Equatable {
   /// The sessions the face lists, in its order: every saved session the
   /// player did not turn off, whatever folder it is in.
   final List<FootSessionEntry> sessions;
+
+  /// How many saved sessions the player keeps off the face.
+  final int hiddenCount;
 
   /// The page of four in view, within [pageCount].
   final int page;
@@ -333,6 +337,7 @@ class FootSessionsProjection extends Equatable {
   @override
   List<Object?> get props => [
     sessions,
+    hiddenCount,
     page,
     open,
     openingId,
@@ -480,6 +485,7 @@ FootSessionsProjection projectFootSessions(
 
   return FootSessionsProjection(
     sessions: List.unmodifiable(sessions),
+    hiddenCount: catalogue.sessions.length - sessions.length,
     page: page,
     open: open,
     openingId: openingId,

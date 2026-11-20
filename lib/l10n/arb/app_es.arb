@@ -2571,6 +2571,7 @@
     "actionModeSessions": "Sesiones",
     "footSessionsPage": "Página {page} de {pages}",
     "footSessionsCount": "{count, plural, =1{1 sesión} other{{count} sesiones}}",
+    "footSessionsAllHidden": "Todas las sesiones están ocultas en los pedales. Muéstralas en Biblioteca.",
     "footSessionsOpenNotListed": "Abierta: {name}",
     "footSessionsPreviousPage": "Anterior",
     "footSessionsNone": "Aún no hay sesiones. Guarda o empieza un nuevo loop.",
