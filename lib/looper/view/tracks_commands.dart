@@ -637,8 +637,8 @@ void onPerformanceRecorderState(
   // come back.
   // A take an Open or a New loop ended (#1229, #1910) is not drawn over the
   // new session either: the stage says it was saved once it is delivered.
-  // One that did not come out whole still opens the dialog, which is where
-  // the player reads what is missing.
+  // One that did not come out whole, or that dropped frames, still opens
+  // the dialog, which is where the player reads what is wrong with it.
   if (state is PerformanceRecorderRendering) {
     if (!state.stoppedOnItsOwn && !state.endedBySessionChange) {
       unawaited(showPerformanceCompletionSheet(context));
@@ -649,7 +649,8 @@ void onPerformanceRecorderState(
     if (state.discarded) {
       say((l10n) => l10n.perfDiscarded, tone: NoticeTone.neutral);
     } else if (state.endedBySessionChange &&
-        state.result is PerformanceRecordDone) {
+        state.result is PerformanceRecordDone &&
+        !state.hadGlitch) {
       context.read<NoticesCubit>().show(
         Notice(
           id: AppNoticeId.performance,

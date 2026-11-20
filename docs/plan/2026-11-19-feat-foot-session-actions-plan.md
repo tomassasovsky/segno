@@ -300,8 +300,8 @@ For an Open and a New loop from touch today, and from the foot after Part
   opens no completion sheet for such a take. Once it is delivered whole,
   the stage says `Recording saved` with `Find it in Library > Audio.`, as
   a notice the session's own notice cannot replace unread. A take that did
-  not come out whole still opens the sheet, which is where the player
-  reads what is missing.
+  not come out whole, or that dropped frames, still opens the sheet, which
+  is where the player reads what is wrong with it.
 
 Acceptance:
 

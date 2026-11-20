@@ -3865,6 +3865,29 @@ void main() {
       await tester.pump(const Duration(seconds: 10));
     });
 
+    testWidgets('a take a session change ended that dropped frames still '
+        'opens the completion sheet, which says so', (tester) async {
+      whenListen(
+        performanceRecorder,
+        Stream.fromIterable(const [
+          PerformanceRecorderRendering(percent: 10, endedBySessionChange: true),
+          PerformanceRecorderCompleted(
+            PerformanceRecordDone('/tmp/perf-1'),
+            hadGlitch: true,
+            endedBySessionChange: true,
+          ),
+        ]),
+        initialState: const PerformanceRecorderIdle(),
+      );
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.byKey(const Key('perfCompletion_sheet')), findsOneWidget);
+      expect(said.titles, isEmpty);
+    });
+
     testWidgets('a take a session change ended that did not come out whole '
         'still opens the completion sheet', (tester) async {
       whenListen(
