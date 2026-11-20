@@ -402,8 +402,14 @@ As built, after the owner's review of the face on 2026-11-20:
 - `SessionPreview` carries the looper mode, the loop length and the stored
   chains by place. It does not carry the count-in or the click, and the
   preview reads no audio.
-- The Penpot writeback is owed: page 19's boards for #1917 are not redrawn
-  yet.
+- The Penpot writeback is in tomassasovsky/segno-design#25 (#1917): page
+  19 draws the face in nine boards, `09 / Foot / Sessions` to
+  `17 / Foot / Sessions / Setup only`, with two `c/` notes (the owner's
+  decisions, and the face as built). Pages 08, 10, 20, 24, 25 and 26 have
+  `c/` notes for the picker, the LED map and the fill, the Custom
+  captions, the `Recording saved` notice and the readout's footer.
+  `.github/segno-design.sha` has not moved: the `design` job passes
+  against the commit it names.
 
 ### Part 2: the map
 
