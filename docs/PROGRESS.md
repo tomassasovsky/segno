@@ -59,6 +59,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1540 | Drive pedals' aliasing at 48 kHz: four kinds oversampled (#1552); the owner's blind pairs decide whether the built-in Drive is oversampled too | build | plan-gate | `claude/drive-alias-1540` |
 | #1498 | Restart and shut down also wait for RAUC's own install, after an app restart | in-review | blocked-verify | `claude/rauc-power-gate-1498` |
 | #1755 | Every effect cheaper without changing its sound: pitch (#1764, #1770), drives (#1759), reverbs/delays/filters (#1762) and the Vinyl (#1904, part 4) bit-identical; part 5, the Degrade at 96 kHz, is next (scope on the issue) | build | auto | `claude/fx-opt-part5-1755` |
+| #1914 | The app's audio callback runs late on screen changes and take starts: it waits on memory (Ed's Racks overflow the caches). Parts 1 (#1925, the octaver on a mono pair, a callback profiler) and 2 (#1926, the prefaulter paced, the octaver clears only what it reads) merged. Open: the screen-change bursts, which are the UI's and need the owner's call on page transitions; the lane racks' cold start at a take | build | plan-gate | none |
 | #1724 | Effects budget from the app's measured headroom: 10-minute untraced in-app ladder at 48 kHz / 32 (build 279); track job 200 → 300 ns, chains on the callback charged 2.5× (`kFxSerialFactor`); 4 inputs + 7 tracks or + 1 output rack fit | in-review | auto | `claude/fx-headroom-1724-p3` |
 | #1917 | Penpot writeback for the Sessions face and the session commands (#1910): pages 08, 10, 19, 20, 24, 25 and 26, and `pedal-action-catalogue.js` in segno-design. Owed: not written while other sessions held the one Penpot tab | build | merge-gate | none |
 | #1927 | Rename "New loop" to "New session" in the app's text (owner, 2026-11-20): the Library's button and sheet, the assignable action, the Sessions face, the lines that call the open session a loop, Spanish, and the automatic name (`New session N`); identifiers and the stored action id `command:new-loop` stay; in review as #1929, stacked on #1924, with the Penpot side in tomassasovsky/segno-design#27 | in-review | merge-gate | `claude/new-session-1927` |
@@ -135,6 +136,60 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   readout's list takes to appear after a press, whether the fill reads from
   standing height, and the missing end-to-end test of an Open from the
   face.
+
+## November 2026 Take starts lighter on the memory bus (#1914 part 2)
+
+- What a take start does, measured in the app (Ed's Rack on 4 inputs + 6
+  tracks, the profiled engine, every thread sampled each millisecond): the
+  press faults the take's first second in, then the prefaulter raced 4 s
+  ahead at gigabytes a second; the callback's first block applied the
+  lanes' frozen recipes, zeroing the Dual Octaver's two 1 s rings (375 KB)
+  and starting the lanes' racks cold; the main view's UI thread ran 20-30 ms
+  at about 80 %. The engine alone (`bench_take_start`, no sound card) pays
+  about 180 us in that block, and nothing a block afterwards.
+- The prefaulter now paces itself (64 MB/s, more with many follow jobs, so
+  each still runs 8x its write head), and while a take's follow job is
+  behind only the follow jobs run (`test_prefaulter_paces_and_follows_first`).
+  The octaver family clears only the `LE_OCT_REACH` of its rings it can read
+  (14 KB a channel instead of 188); the next kind on the slot clears the
+  rings it reads as it lands.
+- In the app, four takes a run, three A/B pairs on one boot each: periods
+  past the deadline in the 60 ms after each record press 12 a run (mean of
+  six master runs) to 5, the worst there 1027-1359 us to 948-1005.
+- Screen changes (Settings, the Device page, back) each give a few late
+  periods, with every section of the callback slower: the UI's bursts while
+  a page changes, not the Device page's polling and not engine work.
+
+## November 2026 The octaver family on a mono pair (#1914 part 1)
+
+- Where the app's callback time goes, measured with a section profiler
+  built into the engine (`src/core/engine_prof.h`, only with
+  `-DLE_PROFILE_SECTIONS=1`; read with `tool/engine_prof/proftel.py` and
+  `profan.py`, no tracing). The callback takes no page faults and is almost
+  never preempted. It waits on memory: ten of Ed's Racks hold more state than
+  the Pi 5's caches (512 KB L2 a core, 2 MB L3), so the effects read about
+  0.5 MB a period from DRAM, and every other user of the memory bus slows
+  them (one thread streaming memory on core 0 made the bench's callback 1.8x
+  slower). The UI's Flutter threads are around 97 % of the slow periods; the
+  displays' scanout costs nothing measurable.
+- The Dual Octaver is 92 % of those misses (10 racks, two workers: 350 MB/s
+  with it, 30 without). On a mono pair (a monitored input; a track whose
+  lanes are mono and centred) the octaver family now runs its left channel
+  alone and copies it to the right (`le_oct_run_pair`, `le_fx_state.oct_mono`):
+  its kernel treats the channels alike, so the output is the stereo path's
+  bit for bit (`test_octaver_mono_pair_matches_stereo`). It tries once a
+  landing, only when the two channels' states are equal; a stereo sample
+  brings the right's state up to the left's. Not Smart Tune (its tick reads
+  both channels), nor away from 48 kHz.
+- Console, 10 of Ed's Racks in `bench_fx_parallel`: DRAM misses 295-322 to
+  127-140 MB/s, p50 312 to 275 us, p99 327 to 284. In the app (Ed's Rack on
+  4 inputs + 6 tracks, four takes recorded and the Device page opened three
+  times in each window, A/B on one boot): effects jobs 74 to 68 us, service
+  p50 420 to 398, p99 552 to 524, periods past the 77 % share 70 % fewer,
+  periods past the deadline 126 to 97. The four tracks playing takes stay
+  stereo (their heard image is the rack's stereo output).
+- Still late: the take start (the press prefaults the take's first seconds)
+  and the screen change. Next parts of #1914.
 
 ## November 2026 The effects budget from the app (#1724)
 

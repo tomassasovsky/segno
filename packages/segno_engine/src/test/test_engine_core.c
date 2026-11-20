@@ -22262,7 +22262,10 @@ static void test_octaver_psola_engages_without_a_dip(void) {
       float r = l;
       fx_apply_chain(fx, OCT_SR, OCT_SR, &l, &r, 1, types, params, NULL);
       if (since < OCT_SR / 25) { /* the first 40 ms of each engage */
-        for (int ch = 0; ch < 2; ++ch) {
+        /* On a mono pair the right channel's state stands for the left's
+         * and is not kept (#1914): the left alone is the slot's. */
+        const int chans = fx->oct_mono[0] == LE_OCT_MONO ? 1 : 2;
+        for (int ch = 0; ch < chans; ++ch) {
           const le_octaver_state* o = &fx->oct[0][ch];
           min_xfade = fminf(min_xfade, o->xfade);
           on_mode &= o->cur_mode == (cases[c].late && since < 256 ? 0 : mode);
@@ -34615,14 +34618,23 @@ static void test_fx_slot_touches_only_published_buffers(void) {
   le_fx_entry_reset(fx, 1, LE_FX_DRIVE);
   CHECK(le_fx_prepare(fx, 1, LE_FX_OCTAVER, sr) == LE_OK);
   fx->delay[1][0][7] = 0.5f;
+  fx->delay[1][0][sr - 1] = 0.5f;
   fx->oct[1][0].out[7] = 0.5f;
   le_fx_entry_reset(fx, 1, LE_FX_DRIVE);
   le_fx_entry_clear_rings(fx, 1, sr, LE_FX_DRIVE);
   CHECK(fx->delay[1][0][7] == 0.5f);
+  CHECK(fx->delay[1][0][sr - 1] == 0.5f);
   CHECK(fx->oct[1][0].out[7] == 0.5f);
   le_fx_entry_reset(fx, 1, LE_FX_OCTAVER);
   CHECK(fx->oct[1][0].out[7] == 0.0f);
   le_fx_entry_clear_rings(fx, 1, sr, LE_FX_OCTAVER);
+  /* The Octaver clears what it can read, LE_OCT_REACH behind its head
+   * (#1914), and leaves the rest of its 1 s ring: a Delay landing after it
+   * clears all of it. */
+  CHECK(fx->delay[1][0][sr - 1] == 0.0f);
+  CHECK(fx->delay[1][0][7] == 0.5f);
+  le_fx_entry_reset(fx, 1, LE_FX_DELAY);
+  le_fx_entry_clear_rings(fx, 1, sr, LE_FX_DELAY);
   CHECK(fx->delay[1][0][7] == 0.0f);
   /* A Reverb runs on its first ring alone: a second one prepared for a
    * Delay to come is left alone. */
@@ -39533,6 +39545,7 @@ int main(void) {
   SHARD(run_rhythmic_tests);
   SHARD(run_mode_delay_tests);
   SHARD(run_dual_octaver_tests);
+  SHARD(test_octaver_mono_pair_matches_stereo);
   SHARD(run_amp_cab_tests);
   SHARD(run_modulation_tests);
   SHARD(run_room_verb_tests);

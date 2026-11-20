@@ -24,6 +24,7 @@
 #include "engine_platform.h"  /* le_platform_backends / _before_context_init */
 #include "engine_private.h"   /* struct le_engine, le_find_loopback, le_resolve_device_id */
 #include "engine_telemetry.h" /* le_now_ns, LE_CALLBACK_TELEMETRY (#722) */
+#include "engine_prof.h"      /* the section profiler, measuring builds only (#1914) */
 #include "le_device_backend.h"
 #include "rt_alloc.h" /* le_rt_prefault_stack */
 #include "segno_engine_api.h"
@@ -61,7 +62,14 @@ static void data_callback(ma_device* device, void* output, const void* input,
     le_rt_prefault_stack(LE_RT_STACK_PREFAULT_BYTES);
     e->rt_stack_ready = 1;
   }
-#if LE_CALLBACK_TELEMETRY
+#if LE_PROFILE_SECTIONS
+  const uint64_t prof_entry_ns = le_now_ns();
+  le_prof_begin(prof_entry_ns);
+  le_engine_process(e, (float*)output, (const float*)input, frame_count);
+  const uint64_t prof_exit_ns = le_now_ns();
+  le_prof_end(prof_exit_ns, frame_count);
+  le_engine_note_callback_span(e, prof_entry_ns, prof_exit_ns, frame_count);
+#elif LE_CALLBACK_TELEMETRY
   const uint64_t entry_ns = le_now_ns();
   le_engine_process(e, (float*)output, (const float*)input, frame_count);
   /* frame_count is passed because this loop delivers min(capture, playback)
