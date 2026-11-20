@@ -277,12 +277,13 @@ void main() {
       ], period: period);
       expect(repo.fxCostNs, cost);
       expect(repo.fxRoomNs, room - cost);
-      // An edit is weighed by what it adds.
+      // An edit is weighed by what it adds: on the output, on the callback
+      // (kFxSerialFactor).
       expect(
         repo.fxGrowthNs({
           const FxAddress(stage: FxStage.output): [_fx(TrackEffectType.reverb)],
         }),
-        _cost(TrackEffectType.reverb),
+        (_cost(TrackEffectType.reverb) * kFxSerialFactor).ceil(),
       );
       expect(
         repo.fxGrowthNs({const FxAddress(stage: FxStage.track): const []}),
@@ -820,16 +821,16 @@ void main() {
       expect(load(15), greaterThan(budget));
     });
 
-    // On the console (build 278, 48 kHz / 32, two workers, bench_rt_faults,
-    // 120 s each, #1724): with a rack on each of the four inputs, racks on
-    // 6, 7 and 8 tracks ran with no late period and no xrun (the callback's
-    // worst service 542, 531 and 579 us of 666); 6 beside a rack on output
-    // pair 0 did too (632 us), and 8 beside it ran 2 late (723 us). Racks
-    // on the output alone, beside the four: 3 clean (636 us), 4 with 17
-    // late (808 us), 5 with 3046.
-    test("at 48 kHz / 32 with two workers, Ed's Racks on all four inputs "
-        'and all eight tracks fit; beside a rack on the output, six tracks '
-        'fit and seven do not (#1724)', () {
+    // In the app on the console (build 279, 48 kHz / 32, two workers, ten
+    // minutes each with a take recorded and a screen change, nothing traced,
+    // #1724): with a rack on each of the four inputs, racks on 7 and on 8
+    // tracks ran with no dropout; three racks in series on output pair 0
+    // dropped out once, and so did six tracks beside one there; two there
+    // ran clean. The budget admits one rig fewer than the heaviest that ran
+    // clean on each: 7 tracks, not 8; one rack on the output, not two.
+    test("at 48 kHz / 32 with two workers, beside Ed's Racks on all four "
+        'inputs, racks on seven tracks fit and on eight do not; one on the '
+        'output fits and two do not (#1724)', () {
       final ns = fxChainCostNs(rack, period: 32, sampleRate: 48000);
       final budget = fxBudgetNs(48000, period: 32);
       int load(int inputs, int tracks, {int outputs = 0}) => fxLoadNs(
@@ -840,15 +841,31 @@ void main() {
         trackJobs: tracks,
       );
       expect(load(0, 8), lessThanOrEqualTo(budget));
-      expect(load(4, 8), lessThanOrEqualTo(budget));
-      expect(load(4, 6, outputs: 1), lessThanOrEqualTo(budget));
-      expect(load(4, 7, outputs: 1), greaterThan(budget));
-      // On the output, beside the four on the inputs: three, not four.
-      expect(load(4, 0, outputs: 3), lessThanOrEqualTo(budget));
-      expect(load(4, 0, outputs: 4), greaterThan(budget));
-      // On the callback alone, before #1729: five.
-      expect(5 * ns, lessThanOrEqualTo(budget));
-      expect(6 * ns, greaterThan(budget));
+      expect(load(4, 7), lessThanOrEqualTo(budget));
+      expect(load(4, 8), greaterThan(budget));
+      expect(load(4, 0, outputs: 1), lessThanOrEqualTo(budget));
+      expect(load(4, 0, outputs: 2), greaterThan(budget));
+      // Beside the four and one on the output: two tracks, not three.
+      expect(load(4, 2, outputs: 1), lessThanOrEqualTo(budget));
+      expect(load(4, 3, outputs: 1), greaterThan(budget));
+      // The rigs that dropped out are refused too.
+      expect(load(4, 0, outputs: 3), greaterThan(budget));
+      expect(load(4, 6, outputs: 1), greaterThan(budget));
+      // On the output with nothing on the workers: two, not three.
+      expect(load(0, 0, outputs: 2), lessThanOrEqualTo(budget));
+      expect(load(0, 0, outputs: 3), greaterThan(budget));
+    });
+
+    test('a chain on the callback charges kFxSerialFactor times its cost, '
+        'workers or not (#1724)', () {
+      expect(kFxSerialFactor, 2.5);
+      expect(fxLoadNs(serial: 1000, jobs: const []), 2500);
+      expect(fxLoadNs(serial: 1000, jobs: [rackNs], workers: 2), 2500 + rackNs);
+      expect(
+        fxLoadNs(serial: 1001, jobs: [rackNs, rackNs], workers: 2) -
+            fxLoadNs(serial: 0, jobs: [rackNs, rackNs], workers: 2),
+        2503,
+      );
     });
 
     // With no effects workers the mixer runs every track's chains on the
@@ -884,9 +901,9 @@ void main() {
     });
 
     test('with no workers the load is every chain summed', () {
-      expect(fxLoadNs(serial: 500, jobs: [rackNs, rackNs]), 500 + 2 * rackNs);
+      expect(fxLoadNs(serial: 500, jobs: [rackNs, rackNs]), 1250 + 2 * rackNs);
       // One job is run on the callback, workers or not: no handoff.
-      expect(fxLoadNs(serial: 500, jobs: [rackNs], workers: 2), 500 + rackNs);
+      expect(fxLoadNs(serial: 500, jobs: [rackNs], workers: 2), 1250 + rackNs);
       // A chain that charges nothing is still a job the engine releases a
       // round for: the handoff is paid.
       expect(
@@ -899,7 +916,7 @@ void main() {
       // Two workers, three cores: (J + 2p) / 3 plus 81 ns of handoff.
       expect(
         fxLoadNs(serial: 1000, jobs: [rackNs, rackNs, rackNs], workers: 2),
-        1000 + 81 + ((3 * rackNs + 2 * rackNs) / 3).ceil(),
+        2500 + 81 + ((3 * rackNs + 2 * rackNs) / 3).ceil(),
       );
       // The largest job never splits: one big chain costs nearly all of it.
       final big = fxLoadNs(serial: 0, jobs: [6000, 100], workers: 2);
@@ -977,7 +994,7 @@ void main() {
         // The callback records and sums a track's job (kFxTrackJobNs).
         expect(onTrack, onInput + kFxTrackJobNs);
         expect(onLane, onInput + kFxTrackJobNs);
-        expect(onOutput, rackNs);
+        expect(onOutput, (rackNs * kFxSerialFactor).ceil());
         expect(onInput, lessThan(onOutput));
         // A track's lanes and its own chain are one job: a second rack on
         // the same track grows the job, not the number of jobs.
