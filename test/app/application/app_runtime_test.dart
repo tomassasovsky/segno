@@ -276,7 +276,8 @@ void main() {
   });
 
   test('the Sessions face reaches the session cubit: entering re-lists the '
-      'catalogue, and a track switch opens its session (#1910)', () async {
+      'catalogue, a tap on a track switch opens nothing, and its Hold opens '
+      'its session (#1910, #1921)', () async {
     await runtime.start();
     clearInteractions(sessions);
     runtime.control
@@ -292,7 +293,12 @@ void main() {
     await pumpEventQueue();
     verify(sessions.listSessions).called(1);
 
+    // A tap previews: the session layer is not asked for anything.
     runtime.control.activateFootSessionsPedal(PedalButton.track2);
+    await pumpEventQueue();
+    verifyNever(() => sessions.bundlePathOf(any()));
+
+    runtime.control.activateFootSessionsPedal(PedalButton.track2, hold: true);
     await pumpEventQueue();
     // An Open's first step: it reads the target's bundle.
     verify(() => sessions.bundlePathOf('b')).called(1);

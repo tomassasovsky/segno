@@ -6,6 +6,7 @@ import 'package:looper_repository/looper_repository.dart' show TrackState;
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:segno/common/console_surface.dart';
+import 'package:segno/common/peaks_painter.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/library/cubit/library_cubit.dart';
 import 'package:segno/library/view/library_backup_view.dart';
@@ -565,10 +566,7 @@ class _Lane extends StatelessWidget {
               ? null
               : CustomPaint(
                   key: const Key('library_track_peaks'),
-                  painter: LibraryPeaksPainter(
-                    peaks: peaks!,
-                    color: surface.accent,
-                  ),
+                  painter: PeaksPainter(peaks: peaks!, color: surface.accent),
                 ),
         ),
       ),
@@ -747,37 +745,4 @@ class LibraryListenControl extends StatelessWidget {
     final seconds = sampleRate > 0 ? frames ~/ sampleRate : 0;
     return '${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}';
   }
-}
-
-/// A recorded clip's waveform: one bar per peak, mirrored about the centre,
-/// filled in [color] (pen `Recorded audio waveform`).
-class LibraryPeaksPainter extends CustomPainter {
-  /// Creates the painter for [peaks] (0..1) in [color].
-  const new({required this.peaks, required this.color});
-
-  /// Absolute peaks across the clip, left to right.
-  final List<double> peaks;
-
-  /// The fill.
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (peaks.isEmpty || size.isEmpty) return;
-    final paint = Paint()..color = color;
-    final step = size.width / peaks.length;
-    final mid = size.height / 2;
-    for (var i = 0; i < peaks.length; i++) {
-      final half = peaks[i].clamp(0.0, 1.0) * mid;
-      if (half <= 0) continue;
-      canvas.drawRect(
-        Rect.fromLTRB(i * step, mid - half, (i + 1) * step, mid + half),
-        paint,
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(LibraryPeaksPainter oldDelegate) =>
-      !identical(oldDelegate.peaks, peaks) || oldDelegate.color != color;
 }

@@ -245,9 +245,12 @@ PedalStateFrame projectFrame(
   Map<PedalButton, bool> physicalCustomStates = const {},
   Map<PedalButton, bool> tunerStates = const {},
   Map<PedalButton, bool> sessionStates = const {},
+  ({PedalButton button, int? progress})? openHold,
   Set<PedalButton> pressed = const {},
   Set<PedalButton> clearFilling = const {},
 }) {
+  // A hold to open belongs to the Sessions face alone (#1921).
+  final opening = overlay.mode == InteractionMode.sessions ? openHold : null;
   final leds = <PedalTrackLed>[
     for (var channel = 0; channel < PedalStateFrame.trackCount; channel++)
       projectTrackLed(
@@ -288,6 +291,7 @@ PedalStateFrame projectFrame(
     physicalCustomStates: physicalCustomStates,
     tunerStates: tunerStates,
     sessionStates: sessionStates,
+    openHold: opening?.button,
     boundSwitches: boundSwitches,
     pressed: pressed,
     clearFilling: clearFilling,
@@ -305,6 +309,14 @@ PedalStateFrame projectFrame(
       ? (looper.transport.masterLengthFrames * 1000000 / sampleRate).round()
       : 0;
   final queued = queuedSongPill(looper, overlay);
+  // The frame has one left-to-right fill. A waiting section is never shown
+  // on the Sessions face ([showsSectionQueue]), so there the field is the
+  // pending hold's: the board fills that switch in its own colour, and
+  // lights it whole once a frame no longer names it.
+  final fillProgress = opening?.progress;
+  final fill = fillProgress == null
+      ? queued
+      : (button: opening?.button, progress: fillProgress);
   final frame = PedalStateFrame(
     globalColor: global,
     trackLeds: leds,
@@ -348,8 +360,8 @@ PedalStateFrame projectFrame(
         ),
     ],
     activeButtonMask: activeButtonMask,
-    queuedButton: queued.button,
-    queuedProgress: queued.progress,
+    queuedButton: fill.button,
+    queuedProgress: fill.progress,
   );
   // The control-surface invariant spec runs on every projection in debug
   // builds — the same predicates the sequence fuzzer checks. assert() only:
@@ -376,10 +388,12 @@ PedalStateFrame projectFrame(
 ///
 /// A held pedal reads [PedalLedState.pressed] whatever else it shows, MODE
 /// included, unless it is in [clearFilling]: a clear hold's fill is running
-/// on it, and the fill draws over its own state (#1534). [pressed] is the
-/// cubit's set of held contacts, updated on the press event itself and
-/// projected in the same call, so the light never waits for the engine to
-/// answer.
+/// on it, and the fill draws over its own state (#1534). [openHold] is the
+/// Sessions face's switch with a hold to open pending or just fired: it
+/// reads [PedalLedState.selected], the colour of its fill (#1921).
+/// [pressed] is the cubit's set of held contacts, updated on the press event
+/// itself and projected in the same call, so the light never waits for the
+/// engine to answer.
 List<PedalLedState?> projectPedalLights(
   LooperState looper,
   ControlState overlay,
@@ -389,6 +403,7 @@ List<PedalLedState?> projectPedalLights(
   Map<PedalButton, bool> physicalCustomStates = const {},
   Map<PedalButton, bool> tunerStates = const {},
   Map<PedalButton, bool> sessionStates = const {},
+  PedalButton? openHold,
   Map<PedalButton, FxSwitchReading> boundSwitches = const {},
   Set<PedalButton> pressed = const {},
   Set<PedalButton> clearFilling = const {},
@@ -498,6 +513,9 @@ List<PedalLedState?> projectPedalLights(
   // (#1534): there the fill draws over the pill's own state colour (playing
   // green, recording red), or pressed when that state is dark.
   PedalLedState? state(PedalButton button) {
+    // A hold to open fills in the colour of the open session's switch, and
+    // stays in it while the switch is held after the hold fired (#1921).
+    if (button == openHold) return PedalLedState.selected;
     if (!pressed.contains(button)) return own(button);
     if (!clearFilling.contains(button)) return PedalLedState.pressed;
     return own(button) ?? PedalLedState.pressed;

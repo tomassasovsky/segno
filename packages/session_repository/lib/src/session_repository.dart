@@ -595,7 +595,17 @@ class SessionRepository {
       tsNum: _intOf(json['tsNum'], 4),
       tsDen: _intOf(json['tsDen'], 4),
       fxCount: _fxCountOf(json),
+      looperMode: _looperModeOf(json['looperMode']),
     );
+  }
+
+  /// The looper mode a manifest names, or null for a name this build does
+  /// not know: the row then says nothing about the mode.
+  static LooperMode? _looperModeOf(Object? raw) {
+    for (final mode in LooperMode.values) {
+      if (mode.name == raw) return mode;
+    }
+    return null;
   }
 
   static String _displayName(Object? raw, String fallback) {
@@ -674,8 +684,9 @@ class SessionRepository {
     }
   }
 
-  /// The decoded manifest and derived facts for the Library's preview panel
-  /// — populated tracks, bars, layers, mutes, effect counts — with no audio
+  /// The decoded manifest and derived facts for a preview panel — the
+  /// setup (looper mode, grid, click, the stored chains by place) and the
+  /// populated tracks, bars, layers, mutes, effect counts — with no audio
   /// read. Throws the typed [SessionException]s a load would, and
   /// [StateError] for an id with no bundle.
   Future<SessionPreview> readPreview(SessionId id) async {
@@ -731,6 +742,36 @@ class SessionRepository {
       fxCount: summary.fxCount,
       sampleRate: session.sampleRate,
       hasMixdown: File('$path/$mixdownName').existsSync(),
+      looperMode: session.looperMode,
+      loopBars: session.loopBars,
+      countInBars: session.countInBars,
+      clickMode: session.clickMode,
+      inputChains: [
+        for (final monitor in [
+          ...session.monitors,
+        ]..sort((a, b) => a.input.compareTo(b.input)))
+          if (monitor.encoded.isNotEmpty) monitor.encoded,
+      ],
+      trackChains: [
+        for (final chain
+            in [...session.laneChains]..sort(
+              (a, b) => a.channel != b.channel
+                  ? a.channel.compareTo(b.channel)
+                  : a.lane.compareTo(b.lane),
+            ))
+          if (chain.encoded.isNotEmpty) chain.encoded,
+        for (final chain in [
+          ...session.trackChains,
+        ]..sort((a, b) => a.channel.compareTo(b.channel)))
+          if (chain.encoded.isNotEmpty) chain.encoded,
+      ],
+      allTracksChain: session.allTracksChain,
+      outputChains: [
+        for (final chain in [
+          ...session.outputChains,
+        ]..sort((a, b) => a.bus.compareTo(b.bus)))
+          if (chain.encoded.isNotEmpty) chain.encoded,
+      ],
     );
   }
 

@@ -435,6 +435,74 @@ void main() {
     expect(lights[PedalButton.undo], PedalLedState.pressed);
   });
 
+  group('the hold to open on the Sessions face (#1921)', () {
+    const overlay = ControlState(mode: InteractionMode.sessions);
+    const held = PedalButton.track3;
+
+    test('fills the held switch left to right in the colour of the open '
+        "session's switch", () {
+      final frame = projectFrame(
+        _empty,
+        overlay,
+        sessionStates: const {PedalButton.track1: true},
+        openHold: (button: held, progress: 100),
+        pressed: const {held},
+      );
+      expect(frame.queuedButton, held);
+      expect(frame.queuedProgress, 100);
+      // The board fills a switch only while the frame lights it.
+      expect(frame.isLit(held), isTrue);
+      expect(
+        frame.pedalColors[held.index],
+        frame.pedalColors[PedalButton.track1.index],
+      );
+    });
+
+    test('once it has fired there is no fill, and the switch is lit whole '
+        'while it is still held', () {
+      final frame = projectFrame(
+        _empty,
+        overlay,
+        sessionStates: const {PedalButton.track1: true, held: true},
+        openHold: (button: held, progress: null),
+        pressed: const {held},
+      );
+      expect(frame.queuedButton, isNull);
+      expect(frame.queuedProgress, 0);
+      expect(frame.isLit(held), isTrue);
+      expect(
+        frame.pedalColors[held.index],
+        frame.pedalColors[PedalButton.track1.index],
+      );
+    });
+
+    test('belongs to the Sessions face alone', () {
+      final frame = projectFrame(
+        _empty,
+        const ControlState(),
+        openHold: (button: held, progress: 100),
+        pressed: const {held},
+      );
+      expect(frame.queuedButton, isNull);
+    });
+
+    test('a waiting Song section is not drawn on the face, so the one fill '
+        'the frame has is free for the hold', () {
+      expect(showsSectionQueue(_empty, InteractionMode.sessions), isFalse);
+    });
+
+    test('a fill on a switch that is not held breaks the invariant', () {
+      expect(
+        () => projectFrame(
+          _empty,
+          overlay,
+          openHold: (button: held, progress: 100),
+        ),
+        throwsStateError,
+      );
+    });
+  });
+
   group('Custom mode', () {
     final setup = const PedalSetup().withCustom(
       PedalButton.stop,

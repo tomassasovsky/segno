@@ -86,6 +86,19 @@ void main() {
       expect(sessions.singleWhere((s) => s.id == 's-b').folder, 'Gigs');
     });
 
+    test('a row carries the looper mode the manifest names, and none for a '
+        'name this build does not know (#1921)', () async {
+      makeBundle('s-song', extra: {'looperMode': 'song'});
+      makeBundle('s-future', extra: {'looperMode': 'orbit'});
+      makeBundle('s-none');
+
+      final byId = {for (final s in await repo().listSessions()) s.id: s};
+
+      expect(byId['s-song']!.looperMode, LooperMode.song);
+      expect(byId['s-future']!.looperMode, isNull);
+      expect(byId['s-none']!.looperMode, isNull);
+    });
+
     test('a legacy bundle lists under its directory name', () async {
       makeBundle('Evening loop');
 
@@ -900,6 +913,73 @@ void main() {
       expect(third.muted, isTrue);
       expect(third.fxCount, 1);
       expect(third.lengthFrames, 192000);
+    });
+
+    test('carries the setup: the looper mode, the grid, the count-in, the '
+        'click and the stored chains by place (#1921)', () async {
+      // Nothing recorded: the session is a setup.
+      final engine = FakeSessionEngine()
+        ..tempoBpm = 120
+        ..tempoSource = TempoSource.manual
+        ..looperMode = LooperMode.song;
+      final dir = await repo().bundlePathOf('s-a');
+      await repo(engine: engine).save(
+        dir,
+        settings: const SessionSettings(
+          tempoBpm: 120,
+          tempoSource: TempoSource.manual,
+          clickMode: ClickMode.rec,
+          countInBars: 2,
+        ),
+        chains: SessionChains(
+          monitors: [
+            SessionMonitor(
+              input: 1,
+              mode: 'auto',
+              outputMask: 1,
+              volume: 1,
+              muted: false,
+              encoded: chain(2),
+            ),
+            SessionMonitor(
+              input: 0,
+              mode: 'auto',
+              outputMask: 1,
+              volume: 1,
+              muted: false,
+              encoded: chain(1),
+            ),
+            // An input with no effects is not a chain to name.
+            const SessionMonitor(
+              input: 2,
+              mode: 'auto',
+              outputMask: 1,
+              volume: 1,
+              muted: false,
+              encoded: '',
+            ),
+          ],
+          laneChains: [
+            SessionLaneChain(channel: 3, lane: 0, encoded: chain(3)),
+          ],
+          trackChains: [SessionTrackChain(channel: 1, encoded: chain(4))],
+          outputChains: [SessionOutputChain(bus: 0, encoded: chain(5))],
+          allTracksChain: chain(6),
+        ),
+      );
+
+      final preview = await repo().readPreview('s-a');
+
+      expect(preview.tracks, isEmpty);
+      expect(preview.looperMode, LooperMode.song);
+      expect(preview.countInBars, 2);
+      expect(preview.clickMode, ClickMode.rec);
+      expect(preview.summary.looperMode, LooperMode.song);
+      // Inputs in input order; lanes before tracks.
+      expect(preview.inputChains, [chain(1), chain(2)]);
+      expect(preview.trackChains, [chain(3), chain(4)]);
+      expect(preview.outputChains, [chain(5)]);
+      expect(preview.allTracksChain, chain(6));
     });
 
     test('reports 0 bars without a tempo', () async {

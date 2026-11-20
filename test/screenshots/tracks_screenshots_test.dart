@@ -33,6 +33,7 @@ import 'package:segno/session/session.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/tuner/cubit/tuner_cubit.dart';
 import 'package:segno/tuner/pitch.dart';
+import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/helpers.dart';
@@ -43,6 +44,10 @@ class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
 class _MockLooperRepository extends Mock implements LooperRepository;
 
 class _MockSessionCubit extends MockCubit<SessionState> implements SessionCubit;
+
+class _MockSessionRepository extends Mock implements SessionRepository;
+
+class _FakePreviewTrack extends Fake implements SessionPreviewTrack;
 
 class _MockPerformanceRecorderCubit extends MockCubit<PerformanceRecorderState>
     implements PerformanceRecorderCubit;
@@ -102,6 +107,7 @@ void main() {
   late LooperRepository repository;
   late SettingsRepository settings;
   late SessionCubit session;
+  late SessionRepository sessionRepository;
   late _ScenePerformance performance;
   late PerformanceRecorderCubit performanceRecorder;
   late TransportClockCubit transportClock;
@@ -212,6 +218,9 @@ void main() {
     addTearDown(control.close);
     session = _MockSessionCubit();
     when(() => session.state).thenReturn(const SessionState());
+    // The Sessions face's preview (#1921) reads a saved session from here.
+    sessionRepository = _MockSessionRepository();
+    registerFallbackValue(_FakePreviewTrack());
     performanceRecorder = _MockPerformanceRecorderCubit();
     when(() => performanceRecorder.state)
         .thenReturn(const PerformanceRecorderIdle());
@@ -294,6 +303,9 @@ void main() {
             // the same store.
             RepositoryProvider<SettingsRepository>.value(value: settings),
             RepositoryProvider<FadeSettings>.value(value: fade),
+            RepositoryProvider<SessionRepository>.value(
+              value: sessionRepository,
+            ),
           ],
           child: MultiBlocProvider(
             providers: [
@@ -601,7 +613,10 @@ void main() {
   // second page, with two empty positions. `opening`: an Open asked from the
   // face and not settled. `failed`: one that did not open. `folders`: a
   // folder in view, with Bank's Hold. `stopped`: nothing playing. `none`: no
-  // saved session.
+  // saved session. A tap previews and a Hold opens (#1921): `preview` shows a
+  // session with recordings, `preview_setup` one that holds a setup and no
+  // recordings, `preview_unreadable` one that does not read, and `hold` a
+  // Hold to open halfway through.
   for (final scene in [
     'default',
     'page',
@@ -611,6 +626,10 @@ void main() {
     'stopped',
     'none',
     'spanish',
+    'preview',
+    'preview_setup',
+    'preview_unreadable',
+    'hold',
   ]) {
     testWidgets('Sessions face: $scene', (tester) async {
       seed(
@@ -648,23 +667,123 @@ void main() {
         );
       }
       const sessions = [
-        FootSessionEntry(id: 'a', name: 'Intro', trackCount: 2, tempoBpm: 84),
+        FootSessionEntry(
+          id: 'a',
+          name: 'Intro',
+          trackCount: 2,
+          tempoBpm: 84,
+          looperMode: LooperMode.multi,
+        ),
         FootSessionEntry(
           id: 'b',
           name: 'Evening loop',
           trackCount: 3,
           tempoBpm: 84,
+          looperMode: LooperMode.song,
         ),
         FootSessionEntry(
           id: 'c',
           name: 'Slow one',
           trackCount: 2,
           tempoBpm: 72,
+          looperMode: LooperMode.sync,
         ),
-        FootSessionEntry(id: 'd', name: 'Stomp', trackCount: 4, tempoBpm: 120),
-        FootSessionEntry(id: 'e', name: 'Encore', trackCount: 3, tempoBpm: 96),
-        FootSessionEntry(id: 'f', name: 'Outro', trackCount: 1),
+        FootSessionEntry(
+          id: 'd',
+          name: 'Stomp',
+          trackCount: 4,
+          tempoBpm: 120,
+          looperMode: LooperMode.band,
+        ),
+        FootSessionEntry(
+          id: 'e',
+          name: 'Encore',
+          trackCount: 3,
+          tempoBpm: 96,
+          looperMode: LooperMode.multi,
+        ),
+        // A prepared setup with nothing recorded.
+        FootSessionEntry(
+          id: 'f',
+          name: 'Outro',
+          tempoBpm: 96,
+          looperMode: LooperMode.band,
+        ),
       ];
+      String chainOf(List<TrackEffectType> types) => encodeFxChain(
+        FxChainEnvelope(
+          entries: [for (final type in types) BuiltInEffect(type: type)],
+        ),
+      );
+      SessionPreviewTrack recorded(int channel, int layers) =>
+          SessionPreviewTrack(
+            channel: channel,
+            lengthFrames: 96000,
+            baseLengthFrames: 96000,
+            bars: 4,
+            layers: layers,
+            muted: false,
+            fxCount: 0,
+            liveLayerFile: 'track${channel}_lane0_L0.wav',
+          );
+      when(() => sessionRepository.readPreview(any())).thenAnswer((call) async {
+        switch (call.positionalArguments.first as String) {
+          case 'b':
+            return SessionPreview(
+              summary: SessionSummary(
+                id: 'b',
+                name: 'Evening loop',
+                tempoBpm: 84,
+                modifiedAt: DateTime(2020, 9, 7),
+              ),
+              tracks: [recorded(0, 2), recorded(1, 1), recorded(3, 4)],
+              fxCount: 3,
+              sampleRate: 48000,
+              looperMode: LooperMode.song,
+              loopBars: 4,
+              countInBars: 1,
+              inputChains: [
+                chainOf(const [TrackEffectType.drive, TrackEffectType.delay]),
+              ],
+              allTracksChain: chainOf(const [TrackEffectType.compressor]),
+            );
+          case 'f':
+            return SessionPreview(
+              summary: SessionSummary(
+                id: 'f',
+                name: 'Outro',
+                tempoBpm: 96,
+                modifiedAt: DateTime(2020, 9, 7),
+              ),
+              tracks: const [],
+              fxCount: 6,
+              sampleRate: 48000,
+              looperMode: LooperMode.band,
+              loopBars: 8,
+              countInBars: 2,
+              clickMode: ClickMode.rec,
+              inputChains: [
+                chainOf(const [TrackEffectType.chorus, TrackEffectType.reverb]),
+              ],
+              trackChains: [
+                chainOf(const [TrackEffectType.delay]),
+              ],
+              outputChains: [
+                chainOf(const [TrackEffectType.eq, TrackEffectType.compressor]),
+              ],
+            );
+          default:
+            throw StateError('unreadable');
+        }
+      });
+      when(() => sessionRepository.readPeaks(any(), any()))
+          .thenAnswer((call) async {
+            final track = call.positionalArguments[1] as SessionPreviewTrack;
+            return Float32List.fromList([
+              for (var i = 0; i < 96; i++)
+                0.15 + 0.8 * ((i * (7 + track.channel * 4) % 23) / 23),
+            ]);
+          });
       // Name order: Encore, Evening loop, Intro, Outro, Slow one, Stomp.
       final catalogue = FootSessionCatalogue(
         sessions: switch (scene) {
@@ -690,7 +809,7 @@ void main() {
       if (scene == 'failed') {
         // Encore is asked for and the session layer reports a failure.
         control
-          ..activateFootSessionsPedal(PedalButton.track1)
+          ..activateFootSessionsPedal(PedalButton.track1, hold: true)
           ..setSessionCatalogue(
             FootSessionCatalogue(
               sessions: catalogue.sessions,
@@ -703,17 +822,39 @@ void main() {
         control.activateFootSessionsPedal(PedalButton.bank);
       }
       if (scene == 'opening') {
-        control.activateFootSessionsPedal(PedalButton.track1);
+        control.activateFootSessionsPedal(PedalButton.track1, hold: true);
       }
+      // A tap: Evening loop, the setup-only Outro, and Encore, which the
+      // repository cannot read.
+      final tapped = switch (scene) {
+        'preview' => PedalButton.track2,
+        'preview_setup' => PedalButton.track4,
+        'preview_unreadable' => PedalButton.track1,
+        _ => null,
+      };
+      if (tapped != null) control.activateFootSessionsPedal(tapped);
       await pump(
         tester,
         locale: scene == 'spanish' ? const Locale('es') : null,
       );
+      // The preview's manifest, then its waveforms.
+      await tester.pump();
+      await tester.pump();
+      const contact = Object();
+      if (scene == 'hold') {
+        control.footSessionsPressed(PedalButton.track2, contact);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 400));
+      }
       expect(tester.takeException(), isNull);
       await expectLater(
         find.byType(TracksView),
         matchesGoldenFile('goldens/foot_sessions_$scene.png'),
       );
+      if (scene == 'hold') {
+        control.footSessionsCancelled(PedalButton.track2, contact);
+        await tester.pump();
+      }
     }, skip: !rendersScreenshots);
   }
 

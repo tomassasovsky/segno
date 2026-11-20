@@ -177,6 +177,17 @@ class _ClearFill {
   final bool Function() stillValid;
 }
 
+/// A pending Hold to open on the Sessions face, as its fill tracks it
+/// (#1921): the switch, its own clock from the press, and the time the
+/// fill runs.
+class _OpenFill {
+  new({required this.button, required this.fillTime});
+
+  final PedalButton button;
+  final Stopwatch clock = Stopwatch()..start();
+  final Duration fillTime;
+}
+
 /// The ONE control-surface interpreter and the ONE owner of stored user
 /// intent ([ControlState]) — a single business-logic-layer unit, per the
 /// layered architecture: repositories are composed at the bloc level, so
@@ -1248,6 +1259,15 @@ class ControlCubit extends Cubit<ControlState> {
 
   // The face's last projection and what it was made from: the LED frame
   // asks for it on every push, and ordering the catalogue is not free.
+  /// The pending Hold to open on the Sessions face, and the ticker that
+  /// pushes its fill (#1921).
+  _OpenFill? _openFill;
+  Timer? _openFillTicker;
+
+  /// How often the fill's frame goes out. A `STATE` frame takes about 5 ms
+  /// on the link, and the board blends the leading LED, so 30 ms is smooth.
+  static const _openFillInterval = Duration(milliseconds: 30);
+
   FootSessionsProjection? _sessionsProjected;
   (FootSessionCatalogue, FootSessionsSelection)? _sessionsProjectedFrom;
 
@@ -3606,12 +3626,14 @@ class ControlCubit extends Cubit<ControlState> {
   /// action itself calls [_meetClearFill] once the clear is accepted, which
   /// the board confirms with its flash. A [clearPause] delays the fill and
   /// lengthens the hold by the same time, so the fill still runs the whole
-  /// threshold and meets the centre as the hold fires.
+  /// threshold and meets the centre as the hold fires. [onSettled] runs once
+  /// when the hold stops being pending, whichever way it ends.
   void _armGesture(
     _HoldGesture gesture, {
     required PedalButton? cue,
     required void Function() onHold,
     void Function()? onTap,
+    void Function()? onSettled,
     bool Function()? clears,
     Duration clearPause = Duration.zero,
   }) {
@@ -3626,8 +3648,11 @@ class ControlCubit extends Cubit<ControlState> {
       onHold: onHold,
       onTap: onTap,
       onSettled: cue == null
-          ? null
+          ? onSettled
           : () {
+              // First: the cue's own state change projects a frame, which
+              // must already be without what the caller ends here.
+              onSettled?.call();
               _setHoldPending(cue, false);
               if (clears != null) _endClearFill(cue);
             },
@@ -4544,6 +4569,7 @@ class ControlCubit extends Cubit<ControlState> {
       physicalCustomStates: physicalCustom,
       tunerStates: _tunerStates(),
       sessionStates: _sessionsStates(),
+      openHold: _sessionsOpenHold(),
       pressed: _pressedButtons.keys.toSet(),
       clearFilling: _clearFills.keys.toSet(),
     );
@@ -4773,6 +4799,8 @@ class ControlCubit extends Cubit<ControlState> {
     // Every gesture has settled, and each settle sends its own end.
     _clearFillTicker?.cancel();
     _clearFillTicker = null;
+    _openFillTicker?.cancel();
+    _openFillTicker = null;
     await _looperSub.cancel();
     await _eventsSub.cancel();
     await _statusSub.cancel();

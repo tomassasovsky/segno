@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/app/foot_session_catalogue.dart';
 import 'package:segno/control/model/foot_sessions.dart';
 import 'package:segno/session/session.dart';
@@ -17,6 +18,7 @@ void main() {
             folder: 'Friday set',
             trackCount: 2,
             tempoBpm: 84,
+            looperMode: LooperMode.song,
           ),
           SessionSummary(id: 'b', name: 'Outro'),
         ],
@@ -33,6 +35,7 @@ void main() {
             folder: 'Friday set',
             trackCount: 2,
             tempoBpm: 84,
+            looperMode: LooperMode.song,
           ),
           FootSessionEntry(id: 'b', name: 'Outro'),
         ],

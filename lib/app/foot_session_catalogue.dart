@@ -17,6 +17,7 @@ FootSessionCatalogue footSessionCatalogueOf(SessionState state) =>
             folder: summary.folder,
             trackCount: summary.trackCount,
             tempoBpm: summary.tempoBpm,
+            looperMode: summary.looperMode,
           ),
       ],
       openId: state.currentSessionId,

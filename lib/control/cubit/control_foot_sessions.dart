@@ -1,8 +1,9 @@
 part of 'control_cubit.dart';
 
-/// The Sessions face (#1910): the track switches open the sessions drawn
-/// above them. Control owns the page and the pending Open; the session
-/// layer owns the sessions and is reached through the injected functions.
+/// The Sessions face (#1910): a tap on a track switch previews the session
+/// drawn above it and a Hold opens it (#1921). Control owns the page, the
+/// preview and the pending Open; the session layer owns the sessions and is
+/// reached through the injected functions.
 extension _FootSessionsControl on ControlCubit {
   bool get _sessionsEditable =>
       !isClosed &&
@@ -77,6 +78,31 @@ extension _FootSessionsControl on ControlCubit {
       );
       return;
     }
+    if (pedal.role == FootSessionsRole.open) {
+      final session = pedal.session;
+      if (session == null) return;
+      // Nothing to open: the tap acts on contact, as a switch with no Hold
+      // does everywhere.
+      if (!pedal.opens) {
+        _previewSession(session.id);
+        return;
+      }
+      final gesture = _trackHoldGestures.putIfAbsent(button, _HoldGesture.new);
+      if (gesture._active) return;
+      _armGesture(
+        gesture,
+        cue: button,
+        onSettled: () => _endOpenFill(button),
+        onTap: () {
+          if (_sessionsEditable) _previewSession(session.id);
+        },
+        onHold: () {
+          if (_sessionsEditable) _openSessionFromFace(session.id);
+        },
+      );
+      if (gesture._active) _startOpenFill(button);
+      return;
+    }
     if (pedal.role == FootSessionsRole.nextPage &&
         _sessionsProjection().hasOtherFolders) {
       // With another folder to show, Bank has a Hold, so its page turn
@@ -97,7 +123,7 @@ extension _FootSessionsControl on ControlCubit {
   }
 
   /// The semantic activation of [button]: its press, or its Hold (Clear's
-  /// New loop, Bank's next folder).
+  /// New loop, Bank's next folder, a track switch's Open).
   void _activateSessionsPedal(PedalButton button, {required bool hold}) {
     if (state.mode != InteractionMode.sessions || isClosed) return;
     final pedal = _sessionsProjection()[button];
@@ -111,11 +137,81 @@ extension _FootSessionsControl on ControlCubit {
         _dispatchSessionsAction(pedal);
       } else if (pedal.role == FootSessionsRole.nextPage) {
         _showNextSessionsFolder();
+      } else if (pedal.role == FootSessionsRole.open && pedal.opens) {
+        _openSessionFromFace(pedal.session!.id);
       }
       return;
     }
     // Clear acts on its Hold only.
     if (pedal.role != FootSessionsRole.newLoop) _dispatchSessionsAction(pedal);
+  }
+
+  /// Shows [id]'s preview. Opens nothing.
+  void _previewSession(String id) {
+    if (state.footSessions.previewId == id) return;
+    emit(state.copyWith(footSessions: state.footSessions.previewing(id)));
+  }
+
+  /// Asks the session layer to open [id] and waits for the catalogue to
+  /// say how it went ([_onSessionCatalogue]).
+  void _openSessionFromFace(String id) {
+    emit(
+      state.copyWith(
+        footSessions: state.footSessions.opening(
+          id,
+          state.sessionCatalogue.failureCount,
+        ),
+      ),
+    );
+    _openSession(id);
+  }
+
+  /// Starts the left-to-right fill of [button]'s LEDs for its pending Hold
+  /// to open (#1921): a frame now and one per [_openFillInterval], each
+  /// carrying how far the hold has run, until the gesture settles.
+  void _startOpenFill(PedalButton button) {
+    _openFill = _OpenFill(button: button, fillTime: _longPress);
+    _openFillTicker?.cancel();
+    _openFillTicker = Timer.periodic(ControlCubit._openFillInterval, (_) {
+      // A hold that can no longer open anything stops filling at once.
+      if (!_sessionsEditable) {
+        _endOpenFill(button);
+        return;
+      }
+      _pushProjected();
+    });
+    _pushProjected();
+  }
+
+  /// Ends [button]'s fill: its hold fired, was released or was cancelled.
+  void _endOpenFill(PedalButton button) {
+    if (_openFill?.button != button) return;
+    _openFill = null;
+    _openFillTicker?.cancel();
+    _openFillTicker = null;
+    if (!_closing && !isClosed) _pushProjected();
+  }
+
+  /// The track switch the frame draws as the hold to open: the one whose
+  /// hold is pending, with how far it has run, or the held switch of the
+  /// session being opened, lit whole (a null progress).
+  ({PedalButton button, int? progress})? _sessionsOpenHold() {
+    if (state.mode != InteractionMode.sessions) return null;
+    final fill = _openFill;
+    // Only while the switch is down: a release ends the fill with it.
+    if (fill != null && _pressedButtons.containsKey(fill.button)) {
+      return (
+        button: fill.button,
+        progress: clearHoldProgress(
+          fill.clock.elapsed,
+          fill.fillTime,
+        ).clamp(0, 254),
+      );
+    }
+    for (final pedal in _sessionsProjection().pedals.values) {
+      if (pedal.opening) return (button: pedal.button, progress: null);
+    }
+    return null;
   }
 
   void _showNextSessionsFolder() {
@@ -131,22 +227,9 @@ extension _FootSessionsControl on ControlCubit {
   void _dispatchSessionsAction(FootSessionsPedal pedal) {
     switch (pedal.role) {
       case FootSessionsRole.open:
+        // A press previews. The Open is the switch's Hold.
         final session = pedal.session;
-        if (session == null) return;
-        // The open session has nothing to open: the press is the way back.
-        if (session.id == state.sessionCatalogue.openId) {
-          _leaveSessions();
-          return;
-        }
-        emit(
-          state.copyWith(
-            footSessions: state.footSessions.opening(
-              session.id,
-              state.sessionCatalogue.failureCount,
-            ),
-          ),
-        );
-        _openSession(session.id);
+        if (session != null) _previewSession(session.id);
       case FootSessionsRole.save:
         _saveSession();
         _leaveSessions();

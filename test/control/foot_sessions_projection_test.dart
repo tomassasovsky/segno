@@ -288,6 +288,85 @@ void main() {
     });
   });
 
+  group('a tap previews and a hold opens (#1921)', () {
+    test('a switch with a session that is not the open one has a Hold that '
+        'opens it', () {
+      final projection = projectFootSessions(
+        _catalogue(['a', 'b'], openId: 'a'),
+        const FootSessionsSelection(),
+      );
+      // The open session: a tap is taken, and there is nothing to open.
+      expect(projection[PedalButton.track1].available, isTrue);
+      expect(projection[PedalButton.track1].opens, isFalse);
+      expect(projection[PedalButton.track1].current, isTrue);
+      expect(projection[PedalButton.track2].opens, isTrue);
+      expect(projection[PedalButton.track2].current, isFalse);
+      // An empty position has neither.
+      expect(projection[PedalButton.track3].available, isFalse);
+      expect(projection[PedalButton.track3].opens, isFalse);
+    });
+
+    test('the previewed session is marked on its switch alone', () {
+      final projection = projectFootSessions(
+        _catalogue(['a', 'b', 'c'], openId: 'a'),
+        const FootSessionsSelection().previewing('b'),
+      );
+      expect(projection.previewId, 'b');
+      expect(projection.previewed?.name, 'b');
+      expect(projection[PedalButton.track2].previewed, isTrue);
+      expect(projection[PedalButton.track1].previewed, isFalse);
+      expect(projection[PedalButton.track3].previewed, isFalse);
+    });
+
+    test('a preview ends when its session is no longer on the page', () {
+      const previewing = FootSessionsSelection(previewId: 'b');
+      // Deleted.
+      final gone = projectFootSessions(
+        _catalogue(['a', 'c'], openId: 'a'),
+        previewing,
+      );
+      expect(gone.previewId, isNull);
+      expect(gone.previewed, isNull);
+      // On another page.
+      final elsewhere = projectFootSessions(
+        _catalogue(['a', 'b', 'c', 'd', 'e'], openId: 'a'),
+        const FootSessionsSelection(page: 1, previewId: 'b'),
+      );
+      expect(elsewhere.previewId, isNull);
+    });
+
+    test('a page turn and another folder drop the preview; an Open previews '
+        'what it opens and keeps it when it settles', () {
+      final previewing = const FootSessionsSelection().previewing('b');
+      expect(previewing.onPage(1).previewId, isNull);
+      expect(previewing.inFolder('Set').previewId, isNull);
+      final opening = previewing.opening('c', 0);
+      expect(opening.previewId, 'c');
+      expect(opening.settled(failed: 'c').previewId, 'c');
+    });
+
+    test('the switch of the session being opened is lit, and is not the '
+        'open one yet', () {
+      final projection = projectFootSessions(
+        _catalogue(['a', 'b', 'c'], openId: 'a'),
+        const FootSessionsSelection().opening('c', 0),
+      );
+      expect(projection[PedalButton.track3].lit, isTrue);
+      expect(projection[PedalButton.track3].current, isFalse);
+      expect(projection[PedalButton.track3].opens, isFalse);
+      expect(projection[PedalButton.track1].lit, isTrue);
+      expect(projection[PedalButton.track1].current, isTrue);
+      expect(projection[PedalButton.track2].lit, isFalse);
+    });
+
+    test('a session saved in another looper mode is a changed catalogue', () {
+      FootSessionCatalogue saved(LooperMode mode) => FootSessionCatalogue(
+        sessions: [FootSessionEntry(id: 'a', name: 'a', looperMode: mode)],
+      );
+      expect(saved(LooperMode.song), isNot(saved(LooperMode.band)));
+    });
+  });
+
   test('the session whose Open failed is marked on its switch', () {
     final projection = projectFootSessions(
       _catalogue(['a', 'b', 'c'], openId: 'a'),

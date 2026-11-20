@@ -96,6 +96,10 @@ class _Rig {
     await _pump(const Duration(milliseconds: 30));
   }
 
+  /// A Hold: longer than the long-press threshold (800 ms by default).
+  Future<void> hold(PedalButton button) =>
+      stomp(button, hold: const Duration(milliseconds: 900));
+
   bool lit(PedalButton button) =>
       link.lastFrame!.activeButtonMask & (1 << button.index) != 0;
 
@@ -160,18 +164,64 @@ void main() {
     }
   });
 
-  test('a track switch asks to open the session in its position, once, and '
-      'waits for it', () async {
+  test('a tap on a track switch previews its session and opens '
+      'nothing', () async {
     final rig = await enter();
     try {
       rig.asked.clear();
       await rig.stomp(PedalButton.track3);
+      expect(rig.selection.previewId, 'c');
+      expect(rig.selection.openingId, isNull);
+      await rig.stomp(PedalButton.track2);
+      expect(rig.selection.previewId, 'b');
+      expect(rig.asked, isEmpty);
+      expect(rig.control.state.mode, InteractionMode.sessions);
+    } finally {
+      await rig.close();
+    }
+  });
+
+  test('a release before the long-press threshold is a tap', () async {
+    final rig = await enter();
+    try {
+      rig.asked.clear();
+      await rig.stomp(
+        PedalButton.track3,
+        hold: const Duration(milliseconds: 300),
+      );
+      expect(rig.asked, isEmpty);
+      expect(rig.selection.previewId, 'c');
+    } finally {
+      await rig.close();
+    }
+  });
+
+  test('turning the page drops the preview', () async {
+    final rig = await enter();
+    try {
+      await rig.stomp(PedalButton.track2);
+      expect(rig.selection.previewId, 'b');
+      await rig.stomp(PedalButton.bank);
+      expect(rig.selection.previewId, isNull);
+    } finally {
+      await rig.close();
+    }
+  });
+
+  test('a held track switch asks to open the session in its position, once, '
+      'and waits for it', () async {
+    final rig = await enter();
+    try {
+      rig.asked.clear();
+      await rig.hold(PedalButton.track3);
       expect(rig.asked, ['open c']);
       expect(rig.selection.openingId, 'c');
+      // The panel shows what is being opened.
+      expect(rig.selection.previewId, 'c');
       expect(rig.control.state.mode, InteractionMode.sessions);
 
       // Nothing else is asked while that Open is in flight.
-      await rig.stomp(PedalButton.track2);
+      await rig.hold(PedalButton.track2);
       await rig.stomp(PedalButton.undo);
       await rig.stomp(PedalButton.bank);
       await rig.stomp(
@@ -189,7 +239,7 @@ void main() {
       'goes back to the mode it was entered from', () async {
     final rig = await enter(from: InteractionMode.custom);
     try {
-      await rig.stomp(PedalButton.track2);
+      await rig.hold(PedalButton.track2);
       expect(rig.selection.openingId, 'b');
       // The session layer reports its progress: still the old session.
       rig.control.setSessionCatalogue(_catalogue(_six, openId: 'a'));
@@ -211,15 +261,17 @@ void main() {
       final rig = await enter();
       try {
         rig.asked.clear();
-        await rig.stomp(PedalButton.track2);
+        await rig.hold(PedalButton.track2);
         rig.control.setSessionCatalogue(
           _catalogue(_six, openId: 'a', failureCount: 1),
         );
         await _pump();
         expect(rig.control.state.mode, InteractionMode.sessions);
         expect(rig.selection.openingId, isNull);
+        // Its switch is dark again: the Open did not happen.
+        expect(rig.lit(PedalButton.track2), isFalse);
 
-        await rig.stomp(PedalButton.track4);
+        await rig.hold(PedalButton.track4);
         expect(rig.asked, ['open b', 'open d']);
       } finally {
         await rig.close();
@@ -227,17 +279,115 @@ void main() {
     },
   );
 
-  test('the switch under the open session closes the face and asks for '
-      'nothing', () async {
+  test('the switch under the open session previews it, and neither a tap '
+      'nor a hold opens it or closes the face', () async {
     final rig = await enter(from: InteractionMode.mute);
     try {
       rig.asked.clear();
       await rig.stomp(PedalButton.track1);
+      expect(rig.selection.previewId, 'a');
+      await rig.hold(PedalButton.track1);
       expect(rig.asked, isEmpty);
-      expect(rig.control.state.mode, InteractionMode.mute);
+      expect(rig.selection.openingId, isNull);
+      expect(rig.control.state.mode, InteractionMode.sessions);
     } finally {
       await rig.close();
     }
+  });
+
+  group('the fill of a hold to open', () {
+    PedalStateFrame frame(_Rig rig) => rig.link.lastFrame!;
+
+    test('runs left to right on the held switch, in the frame, and ends as '
+        'a lit switch when the hold fires', () async {
+      final rig = await enter();
+      try {
+        expect(frame(rig).queuedButton, isNull);
+        rig.link.press(PedalButton.track3, down: true);
+        await _pump(const Duration(milliseconds: 60));
+        // The board fills a lit switch in its colour.
+        expect(frame(rig).queuedButton, PedalButton.track3);
+        expect(rig.lit(PedalButton.track3), isTrue);
+        final early = frame(rig).queuedProgress;
+        expect(early, lessThan(64));
+
+        await _pump(const Duration(milliseconds: 400));
+        expect(frame(rig).queuedButton, PedalButton.track3);
+        expect(frame(rig).queuedProgress, greaterThan(early));
+        expect(rig.asked, isNot(contains('open c')));
+
+        // Past the threshold the hold has fired: no fill, the whole switch.
+        await _pump(const Duration(milliseconds: 500));
+        expect(rig.asked, contains('open c'));
+        expect(frame(rig).queuedButton, isNull);
+        expect(rig.lit(PedalButton.track3), isTrue);
+
+        // It stays lit after the release, until the Open settles.
+        rig.link.press(PedalButton.track3, down: false);
+        await _pump(const Duration(milliseconds: 30));
+        expect(frame(rig).queuedButton, isNull);
+        expect(rig.lit(PedalButton.track3), isTrue);
+      } finally {
+        await rig.close();
+      }
+    });
+
+    test('ends with a dark switch on a release before the threshold', () async {
+      final rig = await enter();
+      try {
+        rig.link.press(PedalButton.track3, down: true);
+        await _pump(const Duration(milliseconds: 200));
+        expect(frame(rig).queuedButton, PedalButton.track3);
+        rig.link.press(PedalButton.track3, down: false);
+        await _pump(const Duration(milliseconds: 30));
+        expect(frame(rig).queuedButton, isNull);
+        expect(frame(rig).queuedProgress, 0);
+        expect(rig.lit(PedalButton.track3), isFalse);
+      } finally {
+        await rig.close();
+      }
+    });
+
+    test('never starts on the open session, an empty position or a locked '
+        'take', () async {
+      final rig = await enter(names: const ['a', 'b']);
+      try {
+        for (final button in [PedalButton.track1, PedalButton.track3]) {
+          rig.link.press(button, down: true);
+          await _pump(const Duration(milliseconds: 60));
+          expect(frame(rig).queuedButton, isNull, reason: button.name);
+          rig.link.press(button, down: false);
+          await _pump(const Duration(milliseconds: 30));
+        }
+        rig.locked = true;
+        rig.link.press(PedalButton.track2, down: true);
+        await _pump(const Duration(milliseconds: 60));
+        expect(frame(rig).queuedButton, isNull);
+        rig.link.press(PedalButton.track2, down: false);
+        await _pump(const Duration(milliseconds: 30));
+      } finally {
+        await rig.close();
+      }
+    });
+
+    test('stops when takes lock while the hold is pending', () async {
+      final rig = await enter();
+      try {
+        rig.asked.clear();
+        rig.link.press(PedalButton.track3, down: true);
+        await _pump(const Duration(milliseconds: 200));
+        expect(frame(rig).queuedButton, PedalButton.track3);
+        rig.locked = true;
+        await _pump(const Duration(milliseconds: 100));
+        expect(frame(rig).queuedButton, isNull);
+        await _pump(const Duration(milliseconds: 700));
+        expect(rig.asked, isEmpty);
+        rig.link.press(PedalButton.track3, down: false);
+        await _pump(const Duration(milliseconds: 30));
+      } finally {
+        await rig.close();
+      }
+    });
   });
 
   test('an empty position does nothing', () async {
@@ -261,7 +411,7 @@ void main() {
       await rig.stomp(PedalButton.bank);
       expect(rig.selection.page, 1);
       expect(rig.lit(PedalButton.bank), isTrue);
-      await rig.stomp(PedalButton.track1);
+      await rig.hold(PedalButton.track1);
       expect(rig.asked, ['open e']);
 
       final again = await enter();
@@ -307,7 +457,7 @@ void main() {
       try {
         expect(rig.selection.folder, 'Friday set');
         expect(rig.lit(PedalButton.track2), isTrue);
-        await rig.stomp(PedalButton.track1);
+        await rig.hold(PedalButton.track1);
         expect(rig.asked, ['open b1']);
       } finally {
         await rig.close();
@@ -320,7 +470,7 @@ void main() {
         final rig = await enterFolders(openId: null);
         try {
           expect(rig.selection.folder, isNull);
-          await rig.stomp(PedalButton.track1);
+          await rig.hold(PedalButton.track1);
           expect(rig.asked, ['open loose']);
         } finally {
           await rig.close();
@@ -348,7 +498,7 @@ void main() {
             hold: const Duration(milliseconds: 900),
           );
           expect(rig.selection.folder, 'Archive');
-          await rig.stomp(PedalButton.track1);
+          await rig.hold(PedalButton.track1);
           expect(rig.asked, ['open a1']);
         } finally {
           await rig.close();
@@ -406,7 +556,7 @@ void main() {
     () async {
       final rig = await enter();
       try {
-        await rig.stomp(PedalButton.track2);
+        await rig.hold(PedalButton.track2);
         rig.control.setSessionCatalogue(
           _catalogue(_six, openId: 'a', failureCount: 1),
         );
@@ -414,7 +564,7 @@ void main() {
         expect(rig.selection.failedId, 'b');
         expect(rig.selection.openingId, isNull);
 
-        await rig.stomp(PedalButton.track3);
+        await rig.hold(PedalButton.track3);
         expect(rig.selection.failedId, isNull);
         expect(rig.selection.openingId, 'c');
       } finally {
@@ -525,6 +675,8 @@ void main() {
       rig.asked.clear();
       rig.locked = true;
       await rig.stomp(PedalButton.track2);
+      await rig.hold(PedalButton.track2);
+      expect(rig.selection.previewId, isNull);
       await rig.stomp(PedalButton.undo);
       await rig.stomp(
         PedalButton.clear,
@@ -557,16 +709,20 @@ void main() {
     },
   );
 
-  test('the semantic activation runs the same roles: a tap for everything '
-      'but New loop, which takes its Hold', () async {
+  test('the semantic activation runs the same roles: a tap previews, and '
+      'New loop and an Open take their Hold', () async {
     final rig = await enter();
     try {
       rig.asked.clear();
       rig.control.activateFootSessionsPedal(PedalButton.clear);
       expect(rig.asked, isEmpty);
-      rig.control.activateFootSessionsPedal(PedalButton.track2, hold: true);
-      expect(rig.asked, isEmpty);
       rig.control.activateFootSessionsPedal(PedalButton.track2);
+      expect(rig.asked, isEmpty);
+      expect(rig.selection.previewId, 'b');
+      // The open session has nothing to open.
+      rig.control.activateFootSessionsPedal(PedalButton.track1, hold: true);
+      expect(rig.asked, isEmpty);
+      rig.control.activateFootSessionsPedal(PedalButton.track2, hold: true);
       expect(rig.asked, ['open b']);
     } finally {
       await rig.close();

@@ -5,6 +5,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:segno/common/console_rename_sheet.dart';
 import 'package:segno/common/console_surface.dart';
+import 'package:segno/common/peaks_painter.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/library/cubit/library_audio_cubit.dart';
 import 'package:segno/library/cubit/library_cubit.dart';
@@ -517,7 +518,7 @@ class LibraryAudioPreviewBody extends StatelessWidget {
           child: switch (state.peaks) {
             final peaks? => CustomPaint(
               key: const Key('library_audio_peaks'),
-              painter: LibraryPeaksPainter(peaks: peaks, color: surface.accent),
+              painter: PeaksPainter(peaks: peaks, color: surface.accent),
             ),
             null => const SizedBox.shrink(),
           },

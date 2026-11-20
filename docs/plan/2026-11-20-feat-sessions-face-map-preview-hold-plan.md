@@ -257,7 +257,7 @@ board lights the whole switch when the hold fires, and the card says
   as Clear says `New loop` with `Hold`. An empty position's caption is
   dimmed.
 - **Touch.** A tap on a card or on a drawn switch previews. A long press
-  opens, with the same progress bar.
+  opens; the drawn switch shows the progress bar, and a card does not.
 - **LEDs.** Unchanged apart from the fill: the switch under the open
   session is lit, the others are dark. Clear's Hold for New loop keeps the
   red fill from both ends: it is the clearing Hold.
@@ -355,8 +355,29 @@ On the face as built (name order, folders).
 - Penpot: page 19, the boards drawn for #1917 redrawn with the panel, plus
   a board for a pending Hold; a `c/` note with R4 and R5 as answered.
 
-If the PR is too large to review, the setup on the cards and in the panel
-goes in a PR of its own after the gestures.
+As built:
+
+- The setup stayed in this PR.
+- The fill goes out every 30 ms while the hold is pending
+  (`ControlCubit._openFillInterval`). `projectFrame` takes it as
+  `openHold`: the switch, and how far the hold has run, or no progress
+  once it has fired. The held switch then reads `selected` and no longer
+  `pressed`, so the board lights it whole.
+- Nothing had to change to keep a waiting Song section off the face:
+  `showsSectionQueue` already shows one only in Record mode and in Band's
+  Mute mode. `song-queue-mirrors-engine` now leaves the Sessions face to
+  the new invariant `sessions-fill-is-a-held-switch`.
+- The panel is 852 by 250 above the cards, with an accent outline, and the
+  cards are 196 high (they were 250), so a name takes two lines and not
+  three. The setup side has the mode, tempo and loop length on one line
+  and the count-in and click on the next.
+- A long press on a card opens with Flutter's own long-press timing and
+  draws no bar. The drawn switch keeps the bar, timed by the pedal's
+  long-press setting.
+- `PeaksPainter` and `savedDateLabel` moved from the Library to
+  `lib/common/`, since the face now uses both.
+- The Penpot writeback is owed: page 19's boards for #1917 are not redrawn
+  yet.
 
 ### Part 2: the map
 

@@ -6988,9 +6988,9 @@
     "@footSessionsOpening": {
         "description": "Sessions face: the card of the session an Open was asked for, until it has opened."
     },
-    "footSessionsTracks": "{count, plural, =0{No tracks} =1{1 track} other{{count} tracks}}",
+    "footSessionsTracks": "{count, plural, =0{No recordings} =1{1 track} other{{count} tracks}}",
     "@footSessionsTracks": {
-        "description": "Sessions face: how many recorded tracks a session's card shows.",
+        "description": "Sessions face: how many recorded tracks a session's card and its preview show. A session with none is a prepared setup, not an empty one, so it says there are no recordings (#1921).",
         "placeholders": {
             "count": {
                 "type": "int"
@@ -7049,7 +7049,52 @@
     },
     "footSessionsOpen": "Open",
     "@footSessionsOpen": {
-        "description": "Sessions face: the caption of a track switch with a session above it."
+        "description": "Sessions face: the caption of a track switch with a session above it. The Open is the switch's Hold; a tap previews (#1921)."
+    },
+    "footSessionsHint": "Tap to preview · Hold to open",
+    "@footSessionsHint": {
+        "description": "Sessions face (#1921): the line beside the cards that says what a tap and a Hold on a track switch do."
+    },
+    "footSessionsNoTempo": "No tempo",
+    "@footSessionsNoTempo": {
+        "description": "Sessions face preview (#1921): in the setup line of a session saved without a tempo."
+    },
+    "footSessionsCountIn": "Count-in {bars}",
+    "@footSessionsCountIn": {
+        "description": "Sessions face preview (#1921): the count-in a session is saved with, when it has one.",
+        "placeholders": {
+            "bars": {
+                "type": "String",
+                "example": "1 bar"
+            }
+        }
+    },
+    "footSessionsClickOn": "Click on",
+    "@footSessionsClickOn": {
+        "description": "Sessions face preview (#1921): in the setup, when the session's click is set to sound."
+    },
+    "footSessionsSaved": "Saved {date}",
+    "@footSessionsSaved": {
+        "description": "Sessions face preview (#1921): when the previewed session was last saved.",
+        "placeholders": {
+            "date": {
+                "type": "String",
+                "example": "today 14:02"
+            }
+        }
+    },
+    "footSessionsMore": "+{count}",
+    "@footSessionsMore": {
+        "description": "Sessions face preview (#1921): after the effects that fit on a line, how many more there are.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "footSessionsSetup": "Setup",
+    "@footSessionsSetup": {
+        "description": "Sessions face preview (#1921): the label of the line with the looper mode, the tempo and the loop length."
     },
     "footSessionsSave": "Save",
     "@footSessionsSave": {

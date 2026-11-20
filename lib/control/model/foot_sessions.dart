@@ -16,6 +16,7 @@ class FootSessionEntry extends Equatable {
     this.folder,
     this.trackCount = 0,
     this.tempoBpm = 0,
+    this.looperMode,
   });
 
   /// The session's identity: what an Open is asked with.
@@ -33,8 +34,20 @@ class FootSessionEntry extends Equatable {
   /// The saved tempo in BPM; 0 when the session has none.
   final double tempoBpm;
 
+  /// The looper mode the session was saved in, or null when its manifest
+  /// does not say. A session can hold a setup and no recordings (#1921), so
+  /// the card names the setup first.
+  final LooperMode? looperMode;
+
   @override
-  List<Object?> get props => [id, name, folder, trackCount, tempoBpm];
+  List<Object?> get props => [
+    id,
+    name,
+    folder,
+    trackCount,
+    tempoBpm,
+    looperMode,
+  ];
 }
 
 /// The session catalogue as the session layer last reported it. The control
@@ -59,9 +72,9 @@ class FootSessionCatalogue extends Equatable {
 }
 
 /// The Sessions face's transient choices while the mode is up: the folder
-/// and the page of four the track switches show, the session an Open was
-/// asked for and has not settled, and the one whose Open failed. Never
-/// stored.
+/// and the page of four the track switches show, the session a tap
+/// previews, the session an Open was asked for and has not settled, and the
+/// one whose Open failed. Never stored.
 class FootSessionsSelection extends Equatable {
   /// Creates a selection.
   const new({
@@ -70,6 +83,7 @@ class FootSessionsSelection extends Equatable {
     this.openingId,
     this.failuresAtOpen = 0,
     this.failedId,
+    this.previewId,
   });
 
   /// The folder in view, or null for the sessions outside any folder.
@@ -88,7 +102,12 @@ class FootSessionsSelection extends Equatable {
   /// until another Open is asked or the face is left.
   final String? failedId;
 
-  /// Returns a copy on [page] of the same folder.
+  /// The session a tap on its switch previews (#1921), or null. A preview
+  /// opens nothing. Another page or folder has other sessions, so turning
+  /// to one drops it.
+  final String? previewId;
+
+  /// Returns a copy on [page] of the same folder, with no preview.
   FootSessionsSelection onPage(int page) => FootSessionsSelection(
     folder: folder,
     page: page,
@@ -97,7 +116,7 @@ class FootSessionsSelection extends Equatable {
     failedId: failedId,
   );
 
-  /// Returns a copy on the first page of [folder].
+  /// Returns a copy on the first page of [folder], with no preview.
   FootSessionsSelection inFolder(String? folder) => FootSessionsSelection(
     folder: folder,
     openingId: openingId,
@@ -105,19 +124,35 @@ class FootSessionsSelection extends Equatable {
     failedId: failedId,
   );
 
-  /// Returns a copy that waits for [id] to open.
+  /// Returns a copy that previews [id].
+  FootSessionsSelection previewing(String id) => FootSessionsSelection(
+    folder: folder,
+    page: page,
+    openingId: openingId,
+    failuresAtOpen: failuresAtOpen,
+    failedId: failedId,
+    previewId: id,
+  );
+
+  /// Returns a copy that waits for [id] to open, and previews it: the panel
+  /// then shows what is being opened.
   FootSessionsSelection opening(String id, int failures) =>
       FootSessionsSelection(
         folder: folder,
         page: page,
         openingId: id,
         failuresAtOpen: failures,
+        previewId: id,
       );
 
   /// Returns a copy with no pending Open, and [failed] as the session whose
   /// Open failed, if it did.
-  FootSessionsSelection settled({String? failed}) =>
-      FootSessionsSelection(folder: folder, page: page, failedId: failed);
+  FootSessionsSelection settled({String? failed}) => FootSessionsSelection(
+    folder: folder,
+    page: page,
+    failedId: failed,
+    previewId: previewId,
+  );
 
   @override
   List<Object?> get props => [
@@ -126,6 +161,7 @@ class FootSessionsSelection extends Equatable {
     openingId,
     failuresAtOpen,
     failedId,
+    previewId,
   ];
 }
 
@@ -167,7 +203,8 @@ FootSessionsInterruption footSessionsInterruption(
 
 /// What one switch does on the Sessions face.
 enum FootSessionsRole {
-  /// Opens the session in this position of the page (a track switch).
+  /// A track switch: a tap previews the session in this position of the
+  /// page, and a Hold opens it (#1921).
   open,
 
   /// Saves the session (Undo).
@@ -200,6 +237,8 @@ class FootSessionsPedal extends Equatable {
     this.available = true,
     this.opening = false,
     this.failed = false,
+    this.previewed = false,
+    this.opens = false,
   });
 
   /// The physical switch.
@@ -208,11 +247,12 @@ class FootSessionsPedal extends Equatable {
   /// What it does.
   final FootSessionsRole role;
 
-  /// The session a [FootSessionsRole.open] switch opens, or null for an
-  /// empty position.
+  /// The session a [FootSessionsRole.open] switch previews and opens, or
+  /// null for an empty position.
   final FootSessionEntry? session;
 
-  /// Whether its LED is lit.
+  /// Whether its LED is lit: the switch under the open session, and the one
+  /// under the session being opened.
   final bool lit;
 
   /// Whether a press does anything. False for an empty position, for Bank
@@ -226,6 +266,16 @@ class FootSessionsPedal extends Equatable {
   /// Whether this switch's session is the one whose Open failed.
   final bool failed;
 
+  /// Whether this switch's session is the one the panel previews.
+  final bool previewed;
+
+  /// Whether a Hold on this switch opens its session: it holds one, a press
+  /// is taken, and the session is not the open one.
+  final bool opens;
+
+  /// Whether this switch's session is the open one.
+  bool get current => lit && !opening;
+
   @override
   List<Object?> get props => [
     button,
@@ -235,6 +285,8 @@ class FootSessionsPedal extends Equatable {
     available,
     opening,
     failed,
+    previewed,
+    opens,
   ];
 }
 
@@ -249,6 +301,7 @@ class FootSessionsProjection extends Equatable {
     required this.page,
     required this.openId,
     required this.openingId,
+    required this.previewId,
     required this.pedals,
   });
 
@@ -278,6 +331,18 @@ class FootSessionsProjection extends Equatable {
 
   /// The session an Open was asked for and has not settled, or null.
   final String? openingId;
+
+  /// The session the panel previews: the selection's, while it is on the
+  /// page in view, or null.
+  final String? previewId;
+
+  /// The previewed session, or null.
+  FootSessionEntry? get previewed {
+    for (final session in pageSessions) {
+      if (session.id == previewId) return session;
+    }
+    return null;
+  }
 
   /// All ten switches.
   final Map<PedalButton, FootSessionsPedal> pedals;
@@ -313,6 +378,7 @@ class FootSessionsProjection extends Equatable {
     page,
     openId,
     openingId,
+    previewId,
     pedals,
   ];
 }
@@ -406,6 +472,11 @@ FootSessionsProjection projectFootSessions(
       .take(FootSessionsProjection.pageSize)
       .toList();
   final openingId = selection.openingId;
+  // A preview of a session that is no longer on the page (moved, deleted,
+  // renamed onto another page) is over.
+  final previewId = onPage.any((session) => session.id == selection.previewId)
+      ? selection.previewId
+      : null;
   // While an Open is in flight only the transport and Exit answer: the rig
   // is about to be replaced.
   final idle = openingId == null;
@@ -449,14 +520,20 @@ FootSessionsProjection projectFootSessions(
           PedalButton.track4:
         final slot = button.index - PedalButton.track1.index;
         final session = slot < onPage.length ? onPage[slot] : null;
+        final current = session != null && session.id == catalogue.openId;
+        final opening = session != null && session.id == openingId;
         return FootSessionsPedal(
           button: button,
           role: FootSessionsRole.open,
           session: session,
-          lit: session != null && session.id == catalogue.openId,
+          // The switch of the session being opened is lit whole: its fill
+          // ended there (#1921).
+          lit: current || opening,
           available: idle && session != null,
-          opening: session != null && session.id == openingId,
+          opening: opening,
           failed: session != null && session.id == selection.failedId,
+          previewed: session != null && session.id == previewId,
+          opens: idle && session != null && !current,
         );
     }
   }
@@ -468,6 +545,7 @@ FootSessionsProjection projectFootSessions(
     page: page,
     openId: catalogue.openId,
     openingId: openingId,
+    previewId: previewId,
     pedals: Map.unmodifiable({
       for (final button in PedalButton.values) button: read(button),
     }),

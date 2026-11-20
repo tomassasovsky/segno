@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -11,8 +13,14 @@ import 'package:segno/control/view/pedal_setup/pedal_hardware_face.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/view/foot_sessions_view.dart';
 import 'package:segno/performance/cubit/performance_recorder_cubit.dart';
+import 'package:segno/theme/theme.dart';
+import 'package:session_repository/session_repository.dart';
 
 import '../../helpers/helpers.dart';
+
+class _Sessions extends Mock implements SessionRepository;
+
+class _FakeTrack extends Fake implements SessionPreviewTrack;
 
 class _Control extends MockCubit<ControlState> implements ControlCubit;
 
@@ -39,6 +47,7 @@ FootSessionCatalogue _catalogue(List<String> names, {String? openId}) =>
             name: name,
             trackCount: index + 1,
             tempoBpm: index.isEven ? 84 : 0,
+            looperMode: index.isEven ? LooperMode.song : null,
           ),
       ],
       openId: openId,
@@ -49,8 +58,22 @@ void main() {
   late _Tracks tracks;
   late _Looper looper;
   late _Recorder recorder;
+  late _Sessions sessions;
 
-  setUpAll(() => registerFallbackValue(Object()));
+  setUpAll(() {
+    registerFallbackValue(Object());
+    registerFallbackValue(_FakeTrack());
+  });
+
+  /// What the repository says about a previewed session.
+  void previewIs(SessionPreview preview, {Map<int, List<double>>? peaks}) {
+    when(() => sessions.readPreview(any())).thenAnswer((_) async => preview);
+    when(() => sessions.readPeaks(any(), any())).thenAnswer((call) async {
+      final track = call.positionalArguments[1] as SessionPreviewTrack;
+      final read = peaks?[track.channel];
+      return read == null ? null : Float32List.fromList(read);
+    });
+  }
 
   /// The rig under the face: [tracks] on the looper, and a performance
   /// recording [recording] or not.
@@ -77,6 +100,15 @@ void main() {
     tracks = _Tracks();
     looper = _Looper();
     recorder = _Recorder();
+    sessions = _Sessions();
+    previewIs(
+      const SessionPreview(
+        summary: SessionSummary(id: 'x', name: 'x'),
+        tracks: [],
+        fxCount: 0,
+        sampleRate: 48000,
+      ),
+    );
     whenListen(
       tracks,
       const Stream<TracksState>.empty(),
@@ -104,17 +136,25 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpApp(
-      MultiBlocProvider(
-        providers: [
-          BlocProvider<ControlCubit>.value(value: control),
-          BlocProvider<TracksCubit>.value(value: tracks),
-          BlocProvider<LooperBloc>.value(value: looper),
-          BlocProvider<PerformanceRecorderCubit>.value(value: recorder),
-        ],
-        child: const Scaffold(body: FootSessionsView()),
+      RepositoryProvider<SessionRepository>.value(
+        value: sessions,
+        child: MultiBlocProvider(
+          providers: [
+            BlocProvider<ControlCubit>.value(value: control),
+            BlocProvider<TracksCubit>.value(value: tracks),
+            BlocProvider<LooperBloc>.value(value: looper),
+            BlocProvider<PerformanceRecorderCubit>.value(value: recorder),
+          ],
+          child: const Scaffold(body: FootSessionsView()),
+        ),
       ),
     );
   }
+
+  const panel = Key('foot_sessions_preview');
+
+  Finder inPanel(String text) =>
+      find.descendant(of: find.byKey(panel), matching: find.text(text));
 
   Finder pedal(PedalButton button) =>
       find.byKey(Key('foot_sessions_pedal_${button.name}'));
@@ -148,12 +188,24 @@ void main() {
         reason: name,
       );
     }
-    expect(onCard(PedalButton.track1, '1 track · 84 BPM'), findsOneWidget);
-    // A session with no tempo says its tracks alone.
+    // The setup first, then the recordings.
+    expect(onCard(PedalButton.track1, 'Song · 84 BPM'), findsOneWidget);
+    expect(onCard(PedalButton.track1, '1 track'), findsOneWidget);
+    // A session whose manifest names no mode or tempo says its tracks alone.
     expect(onCard(PedalButton.track2, '2 tracks'), findsOneWidget);
+    expect(
+      find.byKey(const Key('foot_sessions_card_setup_track2')),
+      findsNothing,
+    );
     expect(onCard(PedalButton.track2, 'Open now'), findsOneWidget);
     expect(find.text('Open now'), findsOneWidget);
     expect(find.text('Open'), findsNWidgets(4));
+    expect(find.text('Tap to preview · Hold to open'), findsOneWidget);
+    // Clear's Hold, and the Hold of the three switches that can open.
+    expect(find.text('Hold'), findsNWidgets(4));
+    // Nothing is previewed until a tap.
+    expect(find.byKey(panel), findsNothing);
+    verifyNever(() => sessions.readPreview(any()));
     expect(find.text('Save'), findsOneWidget);
     expect(find.text('New loop'), findsOneWidget);
     expect(find.text('Next page'), findsOneWidget);
@@ -367,6 +419,327 @@ void main() {
         .called(1);
     await tester.tap(card(PedalButton.track3), warnIfMissed: false);
     verifyNever(() => control.activateFootSessionsPedal(PedalButton.track3));
+  });
+
+  testWidgets("a long press on a card is its switch's Hold, except on the "
+      'open session', (tester) async {
+    given(_catalogue(const ['a', 'b'], openId: 'a'));
+    await pump(tester);
+
+    await tester.longPress(card(PedalButton.track2));
+    verify(
+      () => control.activateFootSessionsPedal(PedalButton.track2, hold: true),
+    ).called(1);
+    await tester.longPress(card(PedalButton.track1));
+    verifyNever(
+      () => control.activateFootSessionsPedal(PedalButton.track1, hold: true),
+    );
+  });
+
+  testWidgets('a session with no recordings is not called empty', (
+    tester,
+  ) async {
+    given(
+      const FootSessionCatalogue(
+        sessions: [
+          FootSessionEntry(
+            id: 'a',
+            name: 'Verse setup',
+            tempoBpm: 84,
+            looperMode: LooperMode.band,
+          ),
+        ],
+      ),
+    );
+    await pump(tester);
+
+    expect(onCard(PedalButton.track1, 'Band · 84 BPM'), findsOneWidget);
+    expect(onCard(PedalButton.track1, 'No recordings'), findsOneWidget);
+    expect(find.text('No tracks'), findsNothing);
+  });
+
+  group('the preview of the session a tap chose', () {
+    String chainOf(List<TrackEffectType> types) => encodeFxChain(
+      FxChainEnvelope(
+        entries: [for (final type in types) BuiltInEffect(type: type)],
+      ),
+    );
+
+    SessionPreviewTrack track(
+      int channel, {
+      int layers = 1,
+      bool muted = false,
+    }) => SessionPreviewTrack(
+      channel: channel,
+      lengthFrames: 96000,
+      baseLengthFrames: 96000,
+      bars: 1,
+      layers: layers,
+      muted: muted,
+      fxCount: 0,
+      liveLayerFile: 'layers/$channel.wav',
+    );
+
+    testWidgets('sits above the cards, as wide as the four of them, with the '
+        'previewed card the one it shows', (tester) async {
+      given(
+        _catalogue(const ['a', 'b', 'c', 'd'], openId: 'a'),
+        selection: const FootSessionsSelection().previewing('b'),
+      );
+      await pump(tester);
+      await tester.pump();
+
+      final rect = tester.getRect(find.byKey(panel));
+      expect(
+        rect.left,
+        moreOrLessEquals(tester.getRect(card(PedalButton.track1)).left),
+      );
+      expect(
+        rect.right,
+        moreOrLessEquals(tester.getRect(card(PedalButton.track4)).right),
+      );
+      expect(
+        rect.bottom,
+        lessThanOrEqualTo(tester.getRect(card(PedalButton.track1)).top),
+      );
+      expect(
+        tester
+            .widget<AppText>(
+              find.byKey(const Key('foot_sessions_preview_name')),
+            )
+            .data,
+        'b',
+      );
+      verify(() => sessions.readPreview('b')).called(1);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('shows the setup first: mode, tempo, loop length, count-in, '
+        'click, and the effects by place', (tester) async {
+      previewIs(
+        SessionPreview(
+          summary: SessionSummary(
+            id: 'b',
+            name: 'b',
+            tempoBpm: 84,
+            tsNum: 6,
+            tsDen: 8,
+            modifiedAt: DateTime(2020, 3, 4),
+          ),
+          tracks: const [],
+          fxCount: 0,
+          sampleRate: 48000,
+          looperMode: LooperMode.song,
+          loopBars: 8,
+          countInBars: 1,
+          clickMode: ClickMode.rec,
+          inputChains: [
+            chainOf(const [TrackEffectType.delay, TrackEffectType.reverb]),
+            // The same effect on a second input is named once.
+            chainOf(const [TrackEffectType.delay]),
+          ],
+          allTracksChain: chainOf(const [TrackEffectType.reverb]),
+        ),
+      );
+      given(
+        _catalogue(const ['a', 'b'], openId: 'a'),
+        selection: const FootSessionsSelection().previewing('b'),
+      );
+      await pump(tester);
+      await tester.pump();
+
+      expect(inPanel('Song · 84 BPM · 6/8 · 8 bars'), findsOneWidget);
+      // The count-in and the click, on a line of their own.
+      expect(inPanel('Count-in 1 bar · Click on'), findsOneWidget);
+      expect(inPanel('Inputs'), findsOneWidget);
+      expect(inPanel('Delay, Reverb'), findsOneWidget);
+      expect(inPanel('All tracks'), findsOneWidget);
+      expect(inPanel('Reverb'), findsOneWidget);
+      // A place with no effects is left out.
+      expect(inPanel('Outputs'), findsNothing);
+      expect(inPanel('Tracks'), findsNothing);
+      expect(inPanel('Saved 4 Mar'), findsOneWidget);
+      // Nothing recorded is said in one line, not as an empty session.
+      expect(inPanel('No recordings'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('a session saved with no tempo says so, and a long list of '
+        'effects says how many more', (tester) async {
+      previewIs(
+        SessionPreview(
+          summary: const SessionSummary(id: 'b', name: 'b'),
+          tracks: const [],
+          fxCount: 0,
+          sampleRate: 48000,
+          looperMode: LooperMode.free,
+          outputChains: [
+            chainOf(const [
+              TrackEffectType.delay,
+              TrackEffectType.reverb,
+              TrackEffectType.chorus,
+              TrackEffectType.tremolo,
+              TrackEffectType.wah,
+            ]),
+          ],
+        ),
+      );
+      given(
+        _catalogue(const ['a', 'b'], openId: 'a'),
+        selection: const FootSessionsSelection().previewing('b'),
+      );
+      await pump(tester);
+      await tester.pump();
+
+      expect(inPanel('Free · No tempo'), findsOneWidget);
+      // Nothing to say about how a take starts: no second line.
+      expect(
+        find.byKey(const Key('foot_sessions_preview_start')),
+        findsNothing,
+      );
+      expect(inPanel('Delay, Reverb, Chorus, +2'), findsOneWidget);
+    });
+
+    testWidgets('then the recordings: a row per recorded track with its '
+        'waveform and its layers', (tester) async {
+      previewIs(
+        SessionPreview(
+          summary: const SessionSummary(id: 'b', name: 'b', tempoBpm: 120),
+          tracks: [track(0, layers: 3), track(2, muted: true)],
+          fxCount: 0,
+          sampleRate: 48000,
+        ),
+        peaks: const {
+          0: [0.2, 0.8, 0.4],
+        },
+      );
+      given(
+        _catalogue(const ['a', 'b'], openId: 'a'),
+        selection: const FootSessionsSelection().previewing('b'),
+      );
+      await pump(tester);
+      await tester.pump();
+      await tester.pump();
+
+      expect(inPanel('Track 1'), findsOneWidget);
+      expect(inPanel('3 layers'), findsOneWidget);
+      expect(inPanel('Track 3'), findsOneWidget);
+      expect(inPanel('Muted'), findsOneWidget);
+      expect(inPanel('No recordings'), findsNothing);
+      // The waveform of the track whose audio read; the other draws none.
+      expect(
+        find.byKey(const Key('foot_sessions_preview_peaks_0')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('foot_sessions_preview_peaks_2')),
+        findsNothing,
+      );
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('eight recorded tracks and four places of effects fit', (
+      tester,
+    ) async {
+      final chain = chainOf(const [
+        TrackEffectType.delay,
+        TrackEffectType.reverb,
+        TrackEffectType.chorus,
+        TrackEffectType.tremolo,
+      ]);
+      previewIs(
+        SessionPreview(
+          summary: const SessionSummary(
+            id: 'b',
+            name: 'A long name for the eight track session of the night',
+            tempoBpm: 132.5,
+          ),
+          tracks: [for (var c = 0; c < 8; c++) track(c, layers: c + 1)],
+          fxCount: 0,
+          sampleRate: 48000,
+          looperMode: LooperMode.band,
+          loopBars: 16,
+          countInBars: 2,
+          clickMode: ClickMode.playRec,
+          inputChains: [chain],
+          trackChains: [chain],
+          allTracksChain: chain,
+          outputChains: [chain],
+        ),
+      );
+      rig(
+        tracks: const [Track(state: TrackState.playing, lengthFrames: 48000)],
+      );
+      given(
+        const FootSessionCatalogue(
+          sessions: [
+            FootSessionEntry(id: 'a', name: 'a'),
+            FootSessionEntry(
+              id: 'b',
+              name: 'A long name for the eight track session of the night',
+            ),
+          ],
+          openId: 'a',
+        ),
+        selection: const FootSessionsSelection().previewing('b'),
+      );
+      await pump(tester);
+      await tester.pump();
+
+      expect(inPanel('Track 8'), findsOneWidget);
+      expect(inPanel('Outputs'), findsOneWidget);
+      // What opening it would end is the last line of the setup side.
+      expect(inPanel('Stops playback'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('the open session reads Open now', (tester) async {
+      given(
+        _catalogue(const ['a', 'b'], openId: 'a'),
+        selection: const FootSessionsSelection().previewing('a'),
+      );
+      await pump(tester);
+      await tester.pump();
+
+      expect(inPanel('Open now'), findsOneWidget);
+    });
+
+    testWidgets('with the rig stopped it says nothing about an Open', (
+      tester,
+    ) async {
+      given(
+        _catalogue(const ['a', 'b'], openId: 'a'),
+        selection: const FootSessionsSelection().previewing('b'),
+      );
+      await pump(tester);
+      await tester.pump();
+
+      expect(find.byKey(panel), findsOneWidget);
+      expect(find.byKey(const Key('foot_sessions_preview_ends')), findsNothing);
+    });
+
+    testWidgets('a session that cannot be read says so and keeps its name', (
+      tester,
+    ) async {
+      when(() => sessions.readPreview(any())).thenThrow(StateError('gone'));
+      given(
+        _catalogue(const ['a', 'b'], openId: 'a'),
+        selection: const FootSessionsSelection().previewing('b'),
+      );
+      await pump(tester);
+      await tester.pump();
+
+      expect(inPanel('This session could not be read.'), findsOneWidget);
+      expect(
+        tester
+            .widget<AppText>(
+              find.byKey(const Key('foot_sessions_preview_name')),
+            )
+            .data,
+        'b',
+      );
+      expect(tester.takeException(), isNull);
+    });
   });
 
   testWidgets('a 40-character name stays inside its card', (tester) async {
