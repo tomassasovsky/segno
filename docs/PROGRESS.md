@@ -59,7 +59,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1540 | Drive pedals' aliasing at 48 kHz: four kinds oversampled (#1552); the owner's blind pairs decide whether the built-in Drive is oversampled too | build | plan-gate | `claude/drive-alias-1540` |
 | #1498 | Restart and shut down also wait for RAUC's own install, after an app restart | in-review | blocked-verify | `claude/rauc-power-gate-1498` |
 | #1755 | Every effect cheaper without changing its sound: pitch (#1764, #1770), drives (#1759), reverbs/delays/filters (#1762) and the Vinyl (#1904, part 4) bit-identical; part 5, the Degrade at 96 kHz, is next (scope on the issue) | build | auto | `claude/fx-opt-part5-1755` |
-| #1914 | The app's audio callback runs late on screen changes and take starts: it waits on memory (Ed's Racks overflow the caches). Parts 1 (#1925) and 2 (#1926) merged; part 3 in review (the oversamplers' designs made once). Steady playback is clean on master. Open, each waiting on the owner: the page transition (all of the screen-change late periods), and the take's heard-lane crossfade (most of what a take start costs) | in-review | plan-gate | `claude/cb-overhead-1914-p3` |
+| #1914 | The app's audio callback runs late on screen changes and take starts: it waits on memory (Ed's Racks overflow the caches). Parts 1 (#1925) and 2 (#1926) merged; part 3 in review (the oversamplers' designs made once); part 4 next (a recording take's heard lane starts on its image). Steady playback is clean on master. Open: the page transition, which gives all of the screen-change late periods (shorter and raster-drawn variants being measured, the owner decides) | in-review | plan-gate | `claude/cb-overhead-1914-p3` |
 | #1724 | Effects budget from the app's measured headroom: 10-minute untraced in-app ladder at 48 kHz / 32 (build 279); track job 200 → 300 ns, chains on the callback charged 2.5× (`kFxSerialFactor`); 4 inputs + 7 tracks or + 1 output rack fit | in-review | auto | `claude/fx-headroom-1724-p3` |
 | #1515 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track and lane chains) is #1729 | build | plan-gate | `claude/fx-multicore-1515-p1b` |
 | #1816 | Console WiFi against an ASUS RT-AX89X with 802.11ax on: firmware already matches Pi OS; brcmfmac options aligned with Pi OS and a troubleshooting note; failure not reproduced, issue stays open until it recurs | in-review | auto | `claude/wifi-firmware-1816` |
@@ -88,9 +88,13 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   `le_os_coefs`, bit-identical; `test_drive_design_made_once`): 22 to 54 us
   of libm at each take start down to 1 to 5.
 - The crossfade at a take start blends silence (a recording track's play
-  gain is 0) with the Pre run of silence. Starting a fresh take's lane on
-  its image, or moving the fade into the track's job, is a design decision
-  of the heard image's, for the owner.
+  gain is 0) with the Pre run of silence. The owner chose to start a
+  recording take's lane on its image, as the performance render already
+  does: part 4.
+- Part 2's narrowed octaver clear read a ring's pointer before checking
+  that the ring was readable, a race with the control thread allocating
+  one for a coming retype (#1522) that TSan's workers race test caught.
+  The check comes first again.
 ## November 2026 Sessions by foot (#1910, #1921)
 
 - **Sessions** is a performance function (`InteractionMode.sessions`,
