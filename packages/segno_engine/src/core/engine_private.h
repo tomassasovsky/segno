@@ -1554,6 +1554,11 @@ typedef struct le_track {
    * read index for the last frame of the block, or the write head while
    * RECORDING. Published once per block beside the level above. */
   _Atomic int32_t a_play_pos;
+  /* The take in flight (le_track_snapshot.capture_frames and
+   * capture_target_frames, #1936): published once per block beside
+   * a_play_pos, 0 unless RECORDING. */
+  _Atomic int32_t a_capture_frames;
+  _Atomic int32_t a_capture_target;
   /* The engine frame (mod 2^32) the track's current lap began at, published
    * by the audio thread while it plays or overdubs a forward lap at an
    * integral rate, whenever it moves (a lap top, a launch, a relaunch). The
@@ -3431,6 +3436,20 @@ struct le_engine {
    * -1 means no bucket accumulated yet; content removal resets the cursor,
    * accumulator and published shape. Stopped tracks retain their last shape. */
   int32_t track_viz_bucket[LE_MAX_TRACKS];
+  /* #1936: the take in flight's shape, drawn into a_track_viz while a track
+   * RECORDS (le_capture_viz_tap) and mapped onto the finished loop when the
+   * take closes (le_capture_viz_settle). cap_viz_width is the frames each
+   * bucket covers: the target's 512th toward a known end, else
+   * LE_CAP_VIZ_WIDTH0, doubling as a free take outgrows the buckets.
+   * cap_viz_seen is the captured frames already drawn, cap_viz_target the
+   * target the take started with, cap_viz_on 1 while a take is drawn.
+   * Audio thread only; a_cap_viz_filled publishes the buckets drawn so far
+   * (le_track_snapshot.capture_viz_points). */
+  int32_t cap_viz_on[LE_MAX_TRACKS];
+  double cap_viz_width[LE_MAX_TRACKS];
+  int32_t cap_viz_seen[LE_MAX_TRACKS];
+  int32_t cap_viz_target[LE_MAX_TRACKS];
+  _Atomic int32_t a_cap_viz_filled[LE_MAX_TRACKS];
   /* Audio-thread scratch: each track's read index for the frame most recently
    * mixed (seg_base + trk_pos — multiples, divisions and Free/Song clocks all
    * applied). Published to a_play_pos once per block; stale (held) for a track
@@ -3494,6 +3513,20 @@ struct le_engine {
   int rt_stack_ready;
   /* The background prefaulter (engine_prefault.c); NULL until its first job. */
   struct le_prefaulter* prefaulter;
+  /* #1936: the beat analysis of a free first take (engine_analysis.h),
+   * made by le_engine_configure; NULL when it could not be. The audio thread
+   * owns the rest: ana_on while it feeds a defining take (track ana_track)
+   * to the analysis, ana_wait while a closed take's answer is awaited,
+   * counting ana_wait_frames against a second, for the loop of
+   * ana_wait_len frames. a_tempo_settling publishes ana_wait. */
+  struct le_analysis* analysis;
+  int32_t ana_on;
+  int32_t ana_track;
+  int32_t ana_wait;
+  int32_t ana_wait_len;
+  int32_t ana_wait_frames;
+  _Atomic int32_t a_tempo_settling;
+  _Atomic int32_t a_ana_track; /* ana_track while ana_on, else -1 */
   /* Buffers the callback may still name, waiting to be freed until the
    * command posted after them has published (le_retire_buffer). */
   float* retired_buf[LE_RETIRED_MAX];

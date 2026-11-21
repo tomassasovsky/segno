@@ -72,7 +72,7 @@ class MeterLevels extends Equatable {
 /// One track's levels.
 class TrackLevels extends Equatable {
   /// Creates [TrackLevels].
-  const new({this.peak = 0, this.peakL = 0, this.peakR = 0});
+  const new({this.peak = 0, this.peakL = 0, this.peakR = 0, this.input = 0});
 
   /// No signal.
   static const silent = TrackLevels();
@@ -87,6 +87,11 @@ class TrackLevels extends Equatable {
   /// The right side; see [peakL].
   final double peakR;
 
+  /// The loudest of the inputs the track's lanes record from, after each
+  /// input's trim: what a take started now would capture (#1936). `0` when
+  /// no lane has an input.
+  final double input;
+
   @override
-  List<Object?> get props => [peak, peakL, peakR];
+  List<Object?> get props => [peak, peakL, peakR, input];
 }

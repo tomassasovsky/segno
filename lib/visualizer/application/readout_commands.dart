@@ -91,6 +91,10 @@ class ReadoutCommands {
         // No lock check here: the engine's tempo lock decides, as it does
         // for the main screen's Clear tempo.
         unawaited(_clearTempo());
+      case TempoScaleBars(:final double):
+        // The engine decides, as for the main screen's ÷2 and ×2 (#1936).
+        _tempo.scaleLoopBars(double: double);
+        _pending = null;
       case SignatureSet(:final num, :final den):
         // Only before the first take, as on the RC-600 (D6).
         if (_repository.lastState.tempoFollow != TempoFollowState.free) return;

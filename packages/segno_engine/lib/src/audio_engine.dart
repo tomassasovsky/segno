@@ -744,6 +744,16 @@ abstract interface class TempoControl {
   /// applies.
   EngineResult clearTempo();
 
+  /// Reads the master loop as twice ([double]) or half its bars, keeping the
+  /// audio (#1936): the derived tempo doubles or halves with them and is the
+  /// recorded tempo from then on, so nothing retimes. The engine applies it
+  /// only to a tempo derived from the loop and not retimed since, with no
+  /// take recording and no external clock, in a mode with one shared loop;
+  /// halving needs an even bar count and the tempo must stay in range.
+  /// Otherwise the loop is left as it is; the answer is [EngineResult.ok]
+  /// once the request is queued.
+  EngineResult scaleLoopBars({required bool double});
+
   /// Sets the time signature to [num]/[den]. Only the 17 Sheeran-verified
   /// signatures are valid — `num` 2..7 for `den == 4`, `num` 5..15 for
   /// `den == 8` — anything else returns [EngineResult.invalid] without

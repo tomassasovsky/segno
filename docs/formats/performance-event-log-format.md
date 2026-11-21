@@ -207,6 +207,12 @@ Clear tempo, `LE_CMD_CLEAR_TEMPO` (142, #1653), is not logged either, like
 applies it only while the tempo lock is open. The effect chains' musical
 time it moves reaches the log as the next `LE_PLOG_FX_TEMPO` anchor.
 
+Reading the loop as half or twice its bars, `LE_CMD_SCALE_LOOP_BARS` (146,
+#1936), is not logged for the same reason: the audio and its length stay as
+they are, and only the derived tempo and bar count move. The beat analysis
+that does the same when a free first take closes is not a command and is not
+logged either.
+
 Recording images retain source balance and position separately from live
 lane level and track pan. The volume/pan events contain their effective
 composition at application time, so replay does not apply the image twice.

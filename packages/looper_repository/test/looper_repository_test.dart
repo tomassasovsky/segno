@@ -167,6 +167,9 @@ EngineSnapshot _playingAt(
   double peak = 0.5,
   TrackState state = TrackState.playing,
   int lengthFrames = 96000,
+  int captureFrames = 0,
+  int captureTargetFrames = 0,
+  int captureVizPoints = 0,
 }) => EngineSnapshot(
   isRunning: true,
   sampleRate: 48000,
@@ -189,6 +192,9 @@ EngineSnapshot _playingAt(
       muted: false,
       lengthFrames: lengthFrames,
       positionFrames: masterPositionFrames,
+      captureFrames: captureFrames,
+      captureTargetFrames: captureTargetFrames,
+      captureVizPoints: captureVizPoints,
       undoDepth: 1,
       rms: 0.3,
       peak: peak,
@@ -2367,6 +2373,69 @@ void main() {
 
       expect(repo.playhead.track(0), 0);
       expect(repo.playhead.track(1), 0);
+      expect(repo.playhead.capture(0), TakeCapture.none);
+    });
+
+    test('a recording take toward a target reports its share of it, and '
+        'its capture (#1936)', () async {
+      engine.nextSnapshot = _playingAt(
+        4800,
+        state: TrackState.recording,
+        lengthFrames: 4800,
+        captureFrames: 2000,
+        captureTargetFrames: 8000,
+      );
+      final repo = buildRepo();
+      addTearDown(repo.dispose);
+      final sub = repo.looperState.listen((_) {});
+      addTearDown(sub.cancel);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(repo.playhead.track(0), 0.25);
+      expect(
+        repo.playhead.capture(0),
+        const TakeCapture(frames: 2000, targetFrames: 8000),
+      );
+      expect(repo.playhead.capture(1), TakeCapture.none);
+
+      // The take closes: the capture goes, the playhead is the play position.
+      engine.nextSnapshot = _playingAt(24000);
+      ticker.add(null);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(repo.playhead.capture(0), TakeCapture.none);
+      expect(repo.playhead.track(0), 0.25);
+    });
+
+    group("a recording take's shape (#1936)", () {
+      Future<LooperRepository> recording({required int target}) async {
+        engine
+          ..visual = Float32List.fromList(List.filled(512, 0.5))
+          ..nextSnapshot = _playingAt(
+            4800,
+            state: TrackState.recording,
+            lengthFrames: 4800,
+            captureFrames: 4800,
+            captureTargetFrames: target,
+            captureVizPoints: 19,
+          );
+        final repo = buildRepo();
+        addTearDown(repo.dispose);
+        final sub = repo.looperState.listen((_) {});
+        addTearDown(sub.cancel);
+        await Future<void>.delayed(Duration.zero);
+        return repo;
+      }
+
+      test('is every bucket toward a target', () async {
+        final repo = await recording(target: 8000);
+        expect(repo.readTrackWaveform(0), hasLength(512));
+      });
+
+      test('is the drawn buckets without one', () async {
+        final repo = await recording(target: 0);
+        expect(repo.readTrackWaveform(0), hasLength(19));
+      });
     });
 
     test('meters carry the master, input, monitor and output levels', () async {
@@ -2391,6 +2460,30 @@ void main() {
       // Out of range reads as silence rather than throwing.
       expect(meters.inputPeak(7), 0);
       expect(meters.track(99), TrackLevels.silent);
+    });
+
+    test("a track's input level is its lanes' input after the trim "
+        '(#1936)', () async {
+      engine.nextSnapshot = _laneSnapshot.copyWith(inputPeaks: [0.5, 0.9]);
+      final repo = buildRepo();
+      addTearDown(repo.dispose);
+      final sub = repo.looperState.listen((_) {});
+      addTearDown(sub.cancel);
+      await Future<void>.delayed(Duration.zero);
+
+      // The lane records input 0; input 1 is louder and not its own.
+      expect(repo.meters.track(0).input, 0.5);
+      // A track with no lane input reads silence.
+      expect(repo.meters.track(1).input, 0);
+
+      repo.setInputTrimDb(input: 0, db: -6);
+      ticker.add(null);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        repo.meters.track(0).input,
+        closeTo(0.5 * inputTrimGainOfDb(-6), 1e-6),
+      );
     });
 
     test('emits a projected state on each tick, distinctly', () async {
@@ -6200,6 +6293,43 @@ void main() {
         ..stopEngine()
         ..startEngine(const EngineConfig());
       expect(engine.tempoRestores, [(bpm: 128.0, source: TempoSource.manual)]);
+    });
+
+    test('scaleLoopBars reaches the running engine (#1936)', () {
+      final repo = buildRepo();
+      expect(repo.scaleLoopBars(double: true), EngineResult.notRunning);
+      expect(engine.scaledLoopBars, isEmpty);
+      repo.startEngine(const EngineConfig());
+      expect(repo.scaleLoopBars(double: true), EngineResult.ok);
+      expect(repo.scaleLoopBars(double: false), EngineResult.ok);
+      expect(engine.scaledLoopBars, [true, false]);
+    });
+
+    test('the transport says when the tempo is settling, and the playheads '
+        "carry the take's estimate (#1936)", () async {
+      engine.nextSnapshot = _playingSnapshot.copyWith(
+        tempoSettling: true,
+        tempoBpm: 140,
+        tempoSource: TempoSource.derived,
+        loopBars: 4,
+        loopBeats: 16,
+        tempoEstimateBpm: 92.5,
+        tempoConfidence: 0.8,
+      );
+      final repo = buildRepo();
+      addTearDown(repo.dispose);
+      final sub = repo.looperState.listen((_) {});
+      addTearDown(sub.cancel);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(repo.lastState.transport.tempoSettling, isTrue);
+      // The provisional reading is not shown while it settles.
+      expect(repo.lastState.transport.tempoBpm, 0);
+      expect(repo.lastState.transport.tempoSource, TempoSource.none);
+      expect(repo.lastState.transport.loopBars, 0);
+      expect(repo.lastState.transport.loopBeats, 0);
+      expect(repo.playhead.tempoEstimateBpm, 92.5);
+      expect(repo.playhead.tempoConfidence, closeTo(0.8, 1e-6));
     });
 
     test('clearTempo needs the running engine', () {

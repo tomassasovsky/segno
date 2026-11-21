@@ -51,6 +51,8 @@
 #include <unistd.h>     /* close, unlink, getpid */
 #endif
 
+#include "le_aubio.h"
+#include "engine_analysis.h"
 #include "audio_ring.h"       /* le_audio_ring (performance-recording capture) */
 #include "engine_core.h"      /* le_push (raw ring pushes for the tempo tests) */
 #include "engine_digest.h"    /* le_sha256_ctx (#1198 streaming digests) */
@@ -5624,20 +5626,27 @@ static void test_tempo_grid_derive_bpm(void) {
   CHECK(fabsf(le_grid_derive_bpm(100, 4, 1000, &bars) - 300.0f) < 0.01f);
   CHECK(bars == 1);
 
-  /* A slow loop walks up into the window: 12000 frames -> 20*b bpm, and b=6
-   * lands exactly on 120. */
-  CHECK(fabsf(le_grid_derive_bpm(12000, 4, 1000, &bars) - 120.0f) < 0.01f);
-  CHECK(bars == 6);
+  /* A slow loop takes the power of two nearest 120 (#1936): 12000 frames ->
+   * 20*b bpm; 4 bars (80) and 8 (160) are equidistant, and the slower wins.
+   * Any whole count read it as 6 bars at 120. */
+  CHECK(fabsf(le_grid_derive_bpm(12000, 4, 1000, &bars) - 80.0f) < 0.01f);
+  CHECK(bars == 4);
 
   /* Signature-generic: 7/8 changes the bar size (7 beat units per bar). A
    * 7000-frame loop at sr 1000: bpm(b) = 60*b -> 120 at 2 bars. */
   CHECK(fabsf(le_grid_derive_bpm(7000, 7, 1000, &bars) - 120.0f) < 0.01f);
   CHECK(bars == 2);
 
-  /* One more nearest-120 spot check for the closed form: 6000 frames gives
-   * 40*b candidates; b=3 lands exactly on 120. */
-  CHECK(fabsf(le_grid_derive_bpm(6000, 4, 1000, &bars) - 120.0f) < 0.01f);
-  CHECK(bars == 3);
+  /* 6000 frames gives 40*b candidates: 3 bars would be exactly 120, but the
+   * powers of two come first, 2 bars (80) and 4 (160) equidistant, and the
+   * slower wins (#1936). */
+  CHECK(fabsf(le_grid_derive_bpm(6000, 4, 1000, &bars) - 80.0f) < 0.01f);
+  CHECK(bars == 2);
+
+  /* With no power of two between 60 and 200, any whole count nearest 120:
+   * 1100 frames gives 218.2*b, so 1 bar at 218.2 (the old rule). */
+  CHECK(fabsf(le_grid_derive_bpm(1100, 4, 1000, &bars) - 218.18f) < 0.01f);
+  CHECK(bars == 1);
 
   /* Extreme-but-valid arguments terminate (the old walk's int32 candidate
    * index overflowed here) and still land in the window near 120. */
@@ -6482,6 +6491,541 @@ static void test_length_preset_n_bars_click_on_auto_finalizes(void) {
   CHECK(s.loop_bars == 4);
   CHECK(fabsf(s.tempo_bpm - 120.0f) < 0.01f); /* untouched, not re-derived */
   CHECK(s.tempo_source == LE_TEMPO_SOURCE_MANUAL);
+
+  le_engine_destroy(e);
+}
+
+/* #1936: the take in flight. A defining take with an armed preset counts
+ * from 0 toward the preset's frames; the fields read 0 once it closes. The
+ * snapshot publishes at block end, so the count trails the press by at most
+ * one block. */
+static void test_capture_progress_preset_take(void) {
+  printf("test_capture_progress_preset_take\n");
+  le_engine* e = tg_make_engine_cap(1000, 100000);
+  le_snapshot s;
+
+  le_engine_set_tempo(e, 120.0f);
+  CHECK(le_engine_set_click_mode(e, LE_CLICK_REC) == LE_OK);
+  CHECK(le_engine_set_track_length_preset(e, 0, 4) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].capture_frames == 0);
+  CHECK(s.tracks[0].capture_target_frames == 0);
+
+  le_engine_record(e, 0);
+  tg_advance(e, 3000);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_RECORDING);
+  CHECK(s.tracks[0].capture_target_frames == 8000); /* 4 bars at 120 */
+  CHECK(s.tracks[0].capture_frames > 3000 - 64);
+  CHECK(s.tracks[0].capture_frames <= 3000);
+
+  tg_advance(e, 5000 + 1000 / 100); /* the target and the seam crossfade */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_OVERDUBBING);
+  CHECK(s.tracks[0].capture_frames == 0);
+  CHECK(s.tracks[0].capture_target_frames == 0);
+
+  le_engine_destroy(e);
+}
+
+/* #1936: a free defining take (no tempo, no preset) counts its frames and
+ * has no target: only the press ends it. */
+static void test_capture_progress_free_take(void) {
+  printf("test_capture_progress_free_take\n");
+  le_engine* e = tg_make_engine_cap(1000, 100000);
+  le_snapshot s;
+
+  le_engine_record(e, 0);
+  tg_advance(e, 2000);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_RECORDING);
+  CHECK(s.tracks[0].capture_target_frames == 0);
+  CHECK(s.tracks[0].capture_frames > 2000 - 64);
+  CHECK(s.tracks[0].capture_frames <= 2000);
+
+  le_engine_destroy(e);
+}
+
+/* #1936: a take over a master counts from its own press, not from the
+ * master's phase, and targets its fixed multiple of the master loop; an
+ * Auto multiple has no target. */
+static void test_capture_progress_over_master(void) {
+  printf("test_capture_progress_over_master\n");
+  le_engine* e = tg_make_engine_cap(1000, 100000);
+  le_snapshot s;
+
+  tg_record_defining_loop(e, 4000);
+  CHECK(le_engine_set_track_multiple(e, 1, 2) == LE_OK);
+  tg_advance(e, 1000); /* the press lands mid-cycle */
+
+  le_engine_record(e, 1);
+  tg_advance(e, 1500);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_RECORDING);
+  CHECK(s.tracks[1].capture_target_frames == 8000);
+  CHECK(s.tracks[1].capture_frames > 1500 - 64);
+  CHECK(s.tracks[1].capture_frames <= 1500);
+  /* The write head is phase-locked to the master: not frames captured. */
+  CHECK(s.tracks[1].position_frames > s.tracks[1].capture_frames);
+  le_engine_record(e, 1);
+  tg_advance(e, 64);
+
+  le_engine_record(e, 2); /* Auto: grows until the press */
+  tg_advance(e, 640);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[2].state == LE_TRACK_RECORDING);
+  CHECK(s.tracks[2].capture_target_frames == 0);
+  CHECK(s.tracks[2].capture_frames > 640 - 64);
+  CHECK(s.tracks[2].capture_frames <= 640);
+
+  le_engine_destroy(e);
+}
+
+/* #1936: the take's shape while it records. Reads the track's buckets and
+ * its snapshot's count of drawn ones. */
+static int cap_viz_read(le_engine* e, int ch, float* viz) {
+  le_engine_read_track_visual(e, ch, viz, LE_VIZ_POINTS);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  return s.tracks[ch].capture_viz_points;
+}
+
+/* A free take draws 256-frame buckets from the left, at its input's level. */
+static void test_capture_viz_free_take(void) {
+  printf("test_capture_viz_free_take\n");
+  le_engine* e = tg_make_engine_cap(1000, 200000);
+  float viz[LE_VIZ_POINTS];
+
+  le_engine_record(e, 0);
+  tg_feed(e, 0.5f, 2048);
+  const int drawn = cap_viz_read(e, 0, viz);
+  CHECK(drawn >= 7 && drawn <= 8); /* 2048 frames of 256, less a block */
+  CHECK(fabsf(viz[0] - 0.5f) < 1e-6f);
+  CHECK(fabsf(viz[drawn - 1] - 0.5f) < 1e-6f);
+  CHECK(viz[drawn] == 0.0f);
+
+  le_engine_destroy(e);
+}
+
+/* A free take that outgrows the buckets merges pairs and keeps spanning
+ * what it captured: quiet first, loud after. */
+static void test_capture_viz_free_take_compresses(void) {
+  printf("test_capture_viz_free_take_compresses\n");
+  le_engine* e = tg_make_engine_cap(1000, 400000);
+  float viz[LE_VIZ_POINTS];
+
+  le_engine_record(e, 0);
+  tg_feed(e, 0.0f, 100000);
+  tg_feed(e, 0.6f, 100000); /* 200000 frames: twice 512 x 256 */
+  const int drawn = cap_viz_read(e, 0, viz);
+  CHECK(drawn > 256 && drawn <= LE_VIZ_POINTS);
+  /* Width 512 now: frame 50000 is bucket ~97, frame 150000 bucket ~292. */
+  CHECK(viz[97] == 0.0f);
+  CHECK(fabsf(viz[292] - 0.6f) < 1e-6f);
+
+  le_engine_destroy(e);
+}
+
+/* Toward a target the buckets span the target and fill from the left. */
+static void test_capture_viz_target_take(void) {
+  printf("test_capture_viz_target_take\n");
+  le_engine* e = tg_make_engine_cap(1000, 100000);
+  float viz[LE_VIZ_POINTS];
+
+  le_engine_set_tempo(e, 120.0f);
+  CHECK(le_engine_set_click_mode(e, LE_CLICK_REC) == LE_OK);
+  CHECK(le_engine_set_track_length_preset(e, 0, 4) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_record(e, 0);
+  tg_feed(e, 0.5f, 4000); /* half of the 8000-frame target */
+  const int drawn = cap_viz_read(e, 0, viz);
+  CHECK(drawn > 240 && drawn <= 256);
+  CHECK(fabsf(viz[100] - 0.5f) < 1e-6f);
+  CHECK(viz[300] == 0.0f);
+
+  le_engine_destroy(e);
+}
+
+/* Compares the settled buckets with [buf]'s own: every bucket whose frames,
+ * and [slack] frames either side, are all at [level] or all silent in the
+ * buffer reads the same in the buckets. The shape is as fine as the coarser
+ * of a block (the tap draws once per block, and skips the take's last
+ * partial block) and a capture bucket, so a bucket that close to a level
+ * change may read either. */
+static void cap_viz_check_settled(const float* viz, const float* buf, int len,
+                                  float level, int slack) {
+  const int block = slack;
+  int compared = 0;
+  for (int j = 0; j < LE_VIZ_POINTS; ++j) {
+    const int l0 = (int)((int64_t)j * len / LE_VIZ_POINTS);
+    int l1 = (int)((int64_t)(j + 1) * len / LE_VIZ_POINTS);
+    if (l1 <= l0) l1 = l0 + 1;
+    int loud = 1;
+    int quiet = 1;
+    for (int i = l0 - block; i < l1 + block; ++i) {
+      const float a = fabsf(buf[((i % len) + len) % len]);
+      if (fabsf(a - level) >= 1e-4f) loud = 0;
+      if (a != 0.0f) quiet = 0;
+    }
+    if (loud) {
+      CHECK(fabsf(viz[j] - level) < 1e-4f);
+      ++compared;
+    } else if (quiet) {
+      CHECK(viz[j] == 0.0f);
+      ++compared;
+    }
+  }
+  CHECK(compared > LE_VIZ_POINTS / 2);
+}
+
+/* A defining take closes with its shape already mapped onto the loop. */
+static void test_capture_viz_settles_defining_take(void) {
+  printf("test_capture_viz_settles_defining_take\n");
+  le_engine* e = tg_make_engine_cap(1000, 100000);
+  float viz[LE_VIZ_POINTS];
+
+  le_engine_record(e, 0);
+  tg_feed(e, 0.0f, 2000);
+  tg_feed(e, 0.8f, 2000);
+  le_engine_record(e, 0); /* close: the seam defers 10 frames */
+  tg_feed(e, 0.0f, 1000 / 100);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[0].capture_viz_points == 0);
+  const int len = s.tracks[0].length_frames;
+  CHECK(len == 4000);
+
+  le_engine_read_track_visual(e, 0, viz, LE_VIZ_POINTS);
+  float* buf = (float*)calloc((size_t)len, sizeof(float));
+  CHECK(le_engine_export_track(e, 0, buf, len) == len);
+  /* A free take's buckets are 256 frames, plus a block. */
+  cap_viz_check_settled(viz, buf, len, 0.8f, 256 + 64);
+  free(buf);
+
+  le_engine_destroy(e);
+}
+
+/* A take over a master starts mid-cycle: its shape lands where its audio
+ * plays in the loop. */
+static void test_capture_viz_settles_over_master(void) {
+  printf("test_capture_viz_settles_over_master\n");
+  le_engine* e = tg_make_engine_cap(1000, 100000);
+  float viz[LE_VIZ_POINTS];
+
+  tg_record_defining_loop(e, 4000);
+  CHECK(le_engine_set_track_multiple(e, 1, 1) == LE_OK);
+  tg_advance(e, 1000); /* the press lands a quarter into the cycle */
+  le_engine_record(e, 1);
+  tg_feed(e, 0.0f, 1000);
+  tg_feed(e, 0.8f, 3000); /* reaches the auto-finalize at 4000 */
+  tg_feed(e, 0.0f, 200);  /* the overdub that follows adds nothing */
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state != LE_TRACK_RECORDING);
+  CHECK(s.tracks[1].capture_viz_points == 0);
+  const int len = s.tracks[1].length_frames;
+  CHECK(len == 4000);
+
+  le_engine_read_track_visual(e, 1, viz, LE_VIZ_POINTS);
+  float* buf = (float*)calloc((size_t)len, sizeof(float));
+  CHECK(le_engine_export_track(e, 1, buf, len) == len);
+  /* Toward a target the buckets are the loop's own: a block of slack. */
+  cap_viz_check_settled(viz, buf, len, 0.8f, 64);
+  free(buf);
+
+  le_engine_destroy(e);
+}
+
+/* An Auto take over a master grows past one cycle and rounds up to two:
+ * its shape still lands where its audio plays. */
+static void test_capture_viz_settles_auto_multiple(void) {
+  printf("test_capture_viz_settles_auto_multiple\n");
+  le_engine* e = tg_make_engine_cap(1000, 100000);
+  float viz[LE_VIZ_POINTS];
+
+  tg_record_defining_loop(e, 4000);
+  tg_advance(e, 1000);
+  le_engine_record(e, 1);
+  tg_feed(e, 0.0f, 1000);
+  tg_feed(e, 0.8f, 5000);
+  le_engine_record(e, 1); /* close at 6000: rounds up to 2 cycles */
+  tg_feed(e, 0.0f, 64);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state != LE_TRACK_RECORDING);
+  const int len = s.tracks[1].length_frames;
+  CHECK(len == 8000);
+
+  le_engine_read_track_visual(e, 1, viz, LE_VIZ_POINTS);
+  float* buf = (float*)calloc((size_t)len, sizeof(float));
+  CHECK(le_engine_export_track(e, 1, buf, len) == len);
+  /* A free take's buckets are 256 frames, plus a block. */
+  cap_viz_check_settled(viz, buf, len, 0.8f, 256 + 64);
+  free(buf);
+
+  le_engine_destroy(e);
+}
+
+/* Sleeps [us] microseconds: the analysis worker's turn. */
+static void ana_sleep_us(long us) {
+  const struct timespec ts = {us / 1000000L, (us % 1000000L) * 1000L};
+  nanosleep(&ts, NULL);
+}
+
+/* #1936 part 4: the bar choice. A click track at [bpm] in 4/4: a 10 ms
+ * 2 kHz burst on every beat, for [bars] bars at [sr]. */
+static float* ana_clicks(int sr, double bpm, int bars, int* out_len) {
+  const int len = (int)llround(60.0 * sr * bars * 4 / bpm);
+  float* x = (float*)calloc((size_t)len, sizeof(float));
+  const double beat = 60.0 * sr / bpm;
+  for (int b = 0; b < bars * 4; ++b) {
+    const int at = (int)llround(b * beat);
+    for (int i = 0; i < sr / 100 && at + i < len; ++i) {
+      x[at + i] = 0.8f * (float)exp(-i / (sr / 400.0)) *
+                  (float)sin(2.0 * 3.14159265358979323846 * 2000.0 * i / sr);
+    }
+  }
+  *out_len = len;
+  return x;
+}
+
+/* The onset strengths of [x] at 48 kHz's hop, as the worker computes them. */
+static int32_t ana_choose(const float* x, int len, int sr) {
+  const int hop = 512, win = 1024;
+  le_onset_odf* o = le_onset_odf_new(win, hop);
+  const int n = len / hop;
+  float* odf = (float*)calloc((size_t)n, sizeof(float));
+  for (int i = 0; i < n; ++i) odf[i] = le_onset_odf_step(o, x + i * hop);
+  const int32_t bars = le_analysis_choose_bars(odf, n, hop, len, 4, sr);
+  free(odf);
+  le_onset_odf_free(o);
+  return bars;
+}
+
+static void test_analysis_chooses_bars(void) {
+  printf("test_analysis_chooses_bars\n");
+  const int sr = 48000;
+  const struct { double bpm; int bars; } cases[] = {
+      {70.0, 2}, {140.0, 4}, {95.0, 4}, {180.0, 8}, {120.0, 2}};
+  for (size_t c = 0; c < sizeof(cases) / sizeof(cases[0]); ++c) {
+    int len = 0;
+    float* x = ana_clicks(sr, cases[c].bpm, cases[c].bars, &len);
+    const int32_t chosen = ana_choose(x, len, sr);
+    printf("  %.0f BPM, %d bars: chose %d\n", cases[c].bpm, cases[c].bars,
+           chosen);
+    CHECK(chosen == cases[c].bars);
+    free(x);
+  }
+}
+
+/* No beat, no choice: silence and a held tone answer 0. */
+static void test_analysis_no_beat(void) {
+  printf("test_analysis_no_beat\n");
+  const int sr = 48000;
+  const int len = sr * 6;
+  float* x = (float*)calloc((size_t)len, sizeof(float));
+  CHECK(ana_choose(x, len, sr) == 0);
+  for (int i = 0; i < len; ++i) {
+    x[i] = 0.5f * (float)sin(2.0 * 3.14159265358979323846 * 220.0 * i / sr);
+  }
+  CHECK(ana_choose(x, len, sr) == 0);
+  free(x);
+}
+
+/* Feeds [x] to [e] as its input, in blocks, pausing now and then so the
+ * analysis worker drains its ring as it would in real time. */
+static void ana_feed(le_engine* e, const float* x, int len) {
+  float out[512];
+  for (int f = 0; f < len; f += 512) {
+    const int n = len - f < 512 ? len - f : 512;
+    le_engine_process(e, out, x + f, (uint32_t)n);
+    /* 8192 frames (0.17 s) between pauses: a sixteenth of the ring, so a
+     * worker slow to wake still has room before the ring fills. */
+    if ((f / 512) % 16 == 15) ana_sleep_us(5000);
+  }
+}
+
+/* Processes silence until the analysis has answered (or [ms] pass). */
+static int ana_wait_settled(le_engine* e, int ms) {
+  float in[512] = {0}, out[512];
+  le_snapshot s;
+  for (int i = 0; i < ms; ++i) {
+    le_engine_get_snapshot(e, &s);
+    if (!s.tempo_settling) return 1;
+    le_engine_process(e, out, in, 64);
+    ana_sleep_us(1000);
+  }
+  return 0;
+}
+
+/* A free first take of 2 bars at 70 BPM: its length alone reads as 4 bars
+ * at 140 (the power of two nearest 120), and the same length holds 2 bars at
+ * 70; the onsets repeat at 70's beat, so the analysis reads 2 bars at 70, the
+ * audio as it was. */
+static void test_analysis_first_take(void) {
+  printf("test_analysis_first_take\n");
+  const int sr = 48000;
+  le_engine* e = tg_make_engine_cap(sr, sr * 20);
+  int len = 0;
+  float* x = ana_clicks(sr, 70.0, 2, &len);
+  le_snapshot s;
+
+  le_engine_record(e, 0);
+  ana_feed(e, x, len);
+  le_engine_record(e, 0); /* close (the seam defers sr/100 frames) */
+  float zero[512] = {0}, out[512];
+  le_engine_process(e, out, zero, (uint32_t)(sr / 100));
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_length_frames == len);
+  CHECK(s.tempo_settling == 1);
+  CHECK(s.loop_bars == 4); /* the length's reading, until the answer */
+  CHECK(ana_wait_settled(e, 2000));
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.loop_bars == 2);
+  CHECK(fabsf(s.tempo_bpm - 70.0f) < 0.1f);
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_DERIVED);
+  CHECK(fabsf(s.recorded_tempo_bpm - s.tempo_bpm) < 1e-3f); /* no retime */
+  CHECK(s.master_length_frames == len);
+
+  free(x);
+  le_engine_destroy(e);
+}
+
+/* A take with a tempo set is never analysed: its bars come from the tempo. */
+static void test_analysis_skips_set_tempo(void) {
+  printf("test_analysis_skips_set_tempo\n");
+  const int sr = 48000;
+  le_engine* e = tg_make_engine_cap(sr, sr * 20);
+  int len = 0;
+  float* x = ana_clicks(sr, 140.0, 4, &len);
+  le_snapshot s;
+
+  le_engine_set_tempo(e, 105.0f);
+  le_engine_record(e, 0);
+  ana_feed(e, x, len);
+  le_engine_record(e, 0);
+  float zero[512] = {0}, out[512];
+  le_engine_process(e, out, zero, (uint32_t)(sr / 100));
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tempo_settling == 0);
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_MANUAL);
+  CHECK(fabsf(s.tempo_bpm - 105.0f) < 0.01f);
+
+  free(x);
+  le_engine_destroy(e);
+}
+
+/* #1936 part 5: the live estimate. A free take of clicks at 120 shows a
+ * tempo near it once the tracker is sure and steady; silence shows none; the
+ * estimate goes when the take closes. */
+static void test_analysis_live_estimate(void) {
+  printf("test_analysis_live_estimate\n");
+  const int sr = 48000;
+  le_engine* e = tg_make_engine_cap(sr, sr * 30);
+  int len = 0;
+  float* x = ana_clicks(sr, 120.0, 7, &len); /* 14 s */
+  le_snapshot s;
+
+  le_engine_record(e, 0);
+  ana_feed(e, x, len);
+  ana_sleep_us(50000); /* the worker drains what is left */
+  le_engine_get_snapshot(e, &s);
+  printf("  estimate %.1f BPM, confidence %.2f\n",
+         (double)s.tempo_estimate_bpm, (double)s.tempo_estimate_confidence);
+  CHECK(s.tempo_estimate_bpm > 115.0f && s.tempo_estimate_bpm < 125.0f);
+  CHECK(s.tempo_estimate_confidence > 0.0f);
+  CHECK(s.tempo_estimate_track == 0); /* the take it is of */
+
+  le_engine_record(e, 0);
+  float zero[512] = {0}, out[512];
+  le_engine_process(e, out, zero, (uint32_t)(sr / 100));
+  CHECK(ana_wait_settled(e, 2000));
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tempo_estimate_bpm == 0.0f);
+  CHECK(s.tempo_estimate_track == -1);
+  free(x);
+  le_engine_destroy(e);
+
+  /* Silence: the tracker is never sure, so there is no estimate. */
+  e = tg_make_engine_cap(sr, sr * 30);
+  float* quiet = (float*)calloc((size_t)(sr * 12), sizeof(float));
+  le_engine_record(e, 0);
+  ana_feed(e, quiet, sr * 12);
+  ana_sleep_us(50000);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tempo_estimate_bpm == 0.0f);
+  free(quiet);
+  le_engine_destroy(e);
+}
+
+/* ÷2 and ×2 (D4): the loop reads as half or twice the bars, the tempo with
+ * them, the audio and its length untouched; halving an odd count, and any
+ * change to a tempo that was set rather than derived, is refused. */
+static void test_scale_loop_bars(void) {
+  printf("test_scale_loop_bars\n");
+  le_engine* e = tg_make_engine_cap(1000, 100000);
+  le_snapshot s;
+
+  tg_record_defining_loop(e, 8000); /* 4 bars at 120 */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.loop_bars == 4);
+  CHECK(fabsf(s.tempo_bpm - 120.0f) < 0.01f);
+
+  CHECK(le_engine_scale_loop_bars(e, -1) == LE_OK);
+  tg_advance(e, 64);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.loop_bars == 2);
+  CHECK(fabsf(s.tempo_bpm - 60.0f) < 0.01f);
+  CHECK(fabsf(s.recorded_tempo_bpm - 60.0f) < 0.01f);
+  CHECK(s.master_length_frames == 8000);
+
+  le_engine_scale_loop_bars(e, 1);
+  le_engine_scale_loop_bars(e, 1);
+  tg_advance(e, 64);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.loop_bars == 8);
+  CHECK(fabsf(s.tempo_bpm - 240.0f) < 0.01f);
+
+  /* 16 bars would be 480 BPM: out of range, nothing changes. */
+  le_engine_scale_loop_bars(e, 1);
+  tg_advance(e, 64);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.loop_bars == 8);
+
+  le_engine_destroy(e);
+
+  /* An odd bar count does not halve: a 3-bar length preset with the click
+   * off derives 3 bars at 120 from the take's length. */
+  e = tg_make_engine_cap(1000, 100000);
+  CHECK(le_engine_set_track_length_preset(e, 0, 3) == LE_OK);
+  tg_advance(e, 1);
+  tg_record_defining_loop(e, 6000);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.loop_bars == 3);
+  le_engine_scale_loop_bars(e, -1);
+  tg_advance(e, 64);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.loop_bars == 3);
+  le_engine_destroy(e);
+
+  CHECK(le_engine_scale_loop_bars(NULL, 1) == LE_ERR_INVALID);
+}
+
+/* Clearing a recording track drops its shape and its drawn count. */
+static void test_capture_viz_cleared(void) {
+  printf("test_capture_viz_cleared\n");
+  le_engine* e = tg_make_engine_cap(1000, 100000);
+  float viz[LE_VIZ_POINTS];
+
+  le_engine_record(e, 0);
+  tg_feed(e, 0.5f, 1024);
+  CHECK(cap_viz_read(e, 0, viz) > 0);
+  le_engine_clear(e, 0);
+  tg_feed(e, 0.5f, 64);
+  CHECK(cap_viz_read(e, 0, viz) == 0);
+  CHECK(viz[0] == 0.0f);
 
   le_engine_destroy(e);
 }
@@ -39984,6 +40528,22 @@ int main(void) {
   SHARD(test_length_preset_auto_click_on_no_tempo_falls_back);
   SHARD(test_length_preset_n_bars_click_off_derives_tempo);
   SHARD(test_length_preset_n_bars_click_on_auto_finalizes);
+  SHARD(test_capture_progress_preset_take);
+  SHARD(test_capture_progress_free_take);
+  SHARD(test_capture_progress_over_master);
+  SHARD(test_capture_viz_free_take);
+  SHARD(test_capture_viz_free_take_compresses);
+  SHARD(test_capture_viz_target_take);
+  SHARD(test_capture_viz_settles_defining_take);
+  SHARD(test_capture_viz_settles_over_master);
+  SHARD(test_capture_viz_settles_auto_multiple);
+  SHARD(test_analysis_chooses_bars);
+  SHARD(test_analysis_no_beat);
+  SHARD(test_analysis_first_take);
+  SHARD(test_analysis_skips_set_tempo);
+  SHARD(test_scale_loop_bars);
+  SHARD(test_analysis_live_estimate);
+  SHARD(test_capture_viz_cleared);
   SHARD(test_length_preset_n_bars_click_on_arms_through_count_in);
   SHARD(test_length_preset_n_bars_click_on_early_press_disarms);
   SHARD(test_length_preset_n_bars_click_on_handoff_before_target);

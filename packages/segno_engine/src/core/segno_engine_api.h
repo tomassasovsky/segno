@@ -603,6 +603,9 @@ typedef enum le_command_code {
    * track is stopped, spares the Post tail (#1773; le_engine_spare_tail).
    * Never perf-logged. */
   LE_CMD_SPARE_TAIL = 145,
+  /* Read the master loop as twice (arg_i > 0) or half (arg_i < 0) its bars,
+   * keeping the audio (#1936, le_engine_scale_loop_bars). Never logged. */
+  LE_CMD_SCALE_LOOP_BARS = 146,
   LE_CMD_RENDER_FREEZE = 112, /* render recipe (#1202): the callback records
                                * every source's read law; never raw-posted */
   LE_CMD_BOUNCE = 113,         /* Bounce (#1202): installs a rendered result on
@@ -1380,6 +1383,21 @@ typedef struct le_track_snapshot {
    * means newer, across every track, so the host can tell whether this
    * track's Undo would take back something newer than a given edit. */
   int32_t history_seq;
+  /* Trailing (#1936): the take in flight while RECORDING, 0 otherwise.
+   * capture_frames counts the frames captured since the press (a take over a
+   * master counts from its own start, not from the master's phase).
+   * capture_target_frames is where the take ends by itself: a length preset
+   * armed on a defining take, or a fixed multiple of the master loop; 0 when
+   * nothing ends it but a press (Auto, Sync, a free take). Published once per
+   * block beside position_frames. */
+  int32_t capture_frames;
+  int32_t capture_target_frames;
+  /* Trailing (#1936): how many of the track's LE_VIZ_POINTS waveform buckets
+   * hold the take in flight while RECORDING, 0 otherwise. Toward a target
+   * the buckets span the target and fill from the left; without one they
+   * span what is captured so far, the take compressing as it grows. When the
+   * take closes, its shape is mapped onto the finished loop. */
+  int32_t capture_viz_points;
 } le_track_snapshot;
 
 /* ===================== Audio-callback telemetry (#722) =====================
@@ -1985,6 +2003,18 @@ typedef struct le_snapshot {
   uint64_t fx_draining_track[LE_MAX_TRACKS];
   uint64_t fx_draining_all_tracks;
   uint64_t fx_draining_output[LE_MAX_OUTPUT_BUSES];
+  /* Trailing (#1936): 1 while the beat analysis decides a free first take's
+   * bar count; the tempo and bars may still change until it reads 0 (at
+   * most a second). */
+  int32_t tempo_settling;
+  /* Trailing (#1936): while a free first take records, the analysis's live
+   * tempo estimate in BPM and its confidence (larger is surer); both 0 with
+   * none. The take's bar count is not decided by these. */
+  float tempo_estimate_bpm;
+  float tempo_estimate_confidence;
+  /* Trailing (#1936): the track whose take the estimate is of, -1 with
+   * none; another track recording at the same time has no estimate. */
+  int32_t tempo_estimate_track;
 } le_snapshot;
 
 /* What a song-tempo change does now (le_snapshot.tempo_follow, #1179 Part
@@ -2512,7 +2542,9 @@ LE_EXPORT int32_t le_engine_read_visual(le_engine* engine, float* out,
 /* Copies a single track's waveform over its full recorded length (channel
  * 0..track_count-1). Pair with the track snapshot's position_frames and
  * length_frames. The shape is retained while stopped and cleared when its
- * take is removed; a first recording gains its shape as playback sweeps it. */
+ * take is removed. While a take records, the buckets hold the take so far
+ * (capture_viz_points of them, #1936); when it closes they are mapped onto
+ * the loop, and playback rewrites each as the playhead passes it. */
 LE_EXPORT int32_t le_engine_read_track_visual(le_engine* engine,
                                               int32_t channel, float* out,
                                               int32_t max_points);
@@ -2921,6 +2953,19 @@ LE_EXPORT int32_t le_engine_restore_tempo(le_engine* engine, float bpm,
  * applying. Not perf-logged: the effect chains' musical time picks up the
  * change through their own anchor (LE_PLOG_FX_TEMPO). */
 LE_EXPORT int32_t le_engine_clear_tempo(le_engine* engine);
+
+/* Reads the master loop as twice ([direction] > 0) or half ([direction] < 0)
+ * its bars, keeping the audio: the derived tempo doubles or halves with them
+ * and is latched as the recorded one, so nothing retimes (#1936, D4). The
+ * callback applies it only while the tempo is derived from the loop and not
+ * retimed since, no take is recording, no count-in runs, no external clock
+ * owns the tempo and the mode has one shared loop (not Free or Song);
+ * halving needs an even bar count, and the new tempo must stay inside the
+ * grid's range. Anything else leaves the loop as it is. LE_ERR_INVALID for
+ * a null handle or a 0 direction. Not perf-logged: no recorded material
+ * changes. */
+LE_EXPORT int32_t le_engine_scale_loop_bars(le_engine* engine,
+                                            int32_t direction);
 
 /* Sets the time signature. Only the 17 Sheeran signatures are valid — x/4 for
  * num 2..7 and x/8 for num 5..15 — anything else returns LE_ERR_INVALID

@@ -1,4 +1,4 @@
-<!-- cspell:words heatsinks Omron lofi powf -->
+<!-- cspell:words heatsinks Omron lofi powf aubio -->
 # Segno — Progress & Roadmap
 
 <!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs multicore -->
@@ -84,6 +84,37 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   principles).
 - Not checked on the console: a September take's DAW package after the
   update.
+
+## November 2026 A recording take shows its input, waveform, progress and bars (#1936)
+
+- Plan: `docs/plan/2026-11-21-feat-recording-visuals-plan.md` (decisions
+  D1 to D6 approved as recommended on 2026-11-21; "As built" lists the
+  departures). Five stacked PRs, #1938 to the one closing #1936, each with
+  its design half on Penpot pages 05 and 25 (segno-design #28 to #32).
+- A track meters its input while it records or overdubs, and while it is
+  the empty track Record/Play records next; the input bar of an empty
+  track is grey (`TrackLevels.input`, the lanes' inputs after trim).
+- The engine publishes each recording take's captured frames and its
+  target (`capture_frames`, `capture_target_frames`): the progress bar
+  fills toward a known end, and the bars slot reads `2 / 4` bars, `3` bars,
+  or `0:07` with no grid, in the Tracks and Wave views and on the readout.
+- A recording take draws its waveform as it records (`le_capture_viz_tap`:
+  per block, toward the target or compressing as a free take grows) and is
+  mapped onto the loop when it closes, so the first lap has its shape.
+- A free first take's bar count comes from its beat: aubio 0.4.9 (vendored,
+  `third_party/aubio`) computes spectral flux on an analysis worker
+  (`engine_analysis.c`); at the take's end the power-of-two bar count (1 to
+  64) with a tempo in 60 to 200 BPM whose beat the onsets clearly repeat at
+  wins. Without a clear beat, the length's reading stands: the power of two
+  nearest 120 in that window (`le_grid_derive_bpm`, which no longer picks
+  any whole count first), else any whole count nearest 120. The app shows
+  no tempo for the few milliseconds the analysis takes. ÷2 / ×2
+  (`LE_CMD_SCALE_LOOP_BARS`, 146) read a derived loop as half or twice its
+  bars, on Tempo & click and the readout's Loop panel.
+- While a free take records, `≈ N bars` follows the time once the analysis
+  has been sure of a steady tempo for two seconds.
+- Not checked on the console: the worker's CPU, the callback's added copy,
+  and the bar choice on real guitar and voice takes.
 
 ## November 2026 Custom controls start with a default map (#1908)
 

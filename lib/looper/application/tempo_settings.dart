@@ -209,6 +209,12 @@ class TempoSettings {
     return result;
   }
 
+  /// Reads the loop as twice ([double]) or half its bars (#1936, D4); the
+  /// derived tempo moves with them and the audio is untouched. Not saved as
+  /// a tempo intent: a derived tempo belongs to the loop, as before.
+  EngineResult scaleLoopBars({required bool double}) =>
+      _repository.scaleLoopBars(double: double);
+
   /// Sets and persists the time signature, applying it now. [num]/[den] must
   /// be one of [kValidTimeSignatures] — the picker only offers valid choices,
   /// and the engine itself rejects anything else without applying it.

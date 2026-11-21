@@ -1946,6 +1946,14 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  EngineResult scaleLoopBars({required bool double}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      le_engine_scale_loop_bars(_engine, double ? 1 : -1),
+    );
+  }
+
+  @override
   EngineResult setTimeSignature(int num, int den) {
     _checkAlive();
     return EngineResult.fromCode(

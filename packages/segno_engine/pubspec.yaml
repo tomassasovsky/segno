@@ -28,6 +28,7 @@ flutter:
   # The vendored native code's license texts, verbatim, for the app's
   # open source notices (registerVendoredLicenses).
   assets:
+    - third_party/aubio/COPYING
     - third_party/clap/LICENSE
     - src/miniaudio/LICENSE
     - third_party/signalsmith-stretch/dsp/LICENSE.txt

@@ -1950,6 +1950,49 @@ void main() {
         );
       });
 
+      testWidgets('÷2 and ×2 read a derived loop as half or twice its bars '
+          '(#1936)', (tester) async {
+        when(() => repository.scaleLoopBars(double: any(named: 'double')))
+            .thenReturn(EngineResult.ok);
+        await pump(tester, initial: LoopSettingsTab.tempo);
+        // A set tempo: neither applies.
+        expect(
+          tester
+              .widget<LoopOutlinedButton>(
+                find.descendant(
+                  of: find.byKey(const Key('loop_tempo_halve')),
+                  matching: find.byType(LoopOutlinedButton),
+                ),
+              )
+              .onTap,
+          isNull,
+        );
+
+        states.add(
+          const LooperState(
+            recordedTempoBpm: 120,
+            tracks: [
+              Track(state: TrackState.playing, lengthFrames: 96000),
+              Track(channel: 1),
+              Track(channel: 2),
+            ],
+            transport: TransportState(
+              deviceRunning: true,
+              masterLengthFrames: 96000,
+              tempoBpm: 120,
+              tempoSource: TempoSource.derived,
+              loopBars: 4,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('loop_tempo_halve')));
+        await tester.tap(find.byKey(const Key('loop_tempo_double')));
+        await tester.pumpAndSettle();
+        verify(() => repository.scaleLoopBars(double: false)).called(1);
+        verify(() => repository.scaleLoopBars(double: true)).called(1);
+      });
+
       testWidgets('a locked tempo refuses Clear with a notice', (tester) async {
         when(repository.clearTempo).thenReturn(EngineResult.notReady);
         await pump(tester, initial: LoopSettingsTab.tempo);

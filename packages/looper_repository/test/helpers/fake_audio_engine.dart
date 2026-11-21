@@ -930,6 +930,16 @@ class FakeAudioEngine with SimulatedInstruments implements AudioEngine {
     return clearTempoResult;
   }
 
+  /// The [scaleLoopBars] calls, as `double` flags.
+  final List<bool> scaledLoopBars = [];
+
+  @override
+  EngineResult scaleLoopBars({required bool double}) {
+    calls.add('scaleLoopBars');
+    scaledLoopBars.add(double);
+    return EngineResult.ok;
+  }
+
   @override
   EngineResult setTempo(double bpm) {
     lastTempoBpm = bpm;
@@ -2421,6 +2431,10 @@ class _LengthSnapshot extends EngineSnapshot {
         syncTempo: source.syncTempo,
         quantizeDiv: engine.lastQuantizeDiv ?? source.quantizeDiv,
         loopBars: source.loopBars,
+        tempoSettling: source.tempoSettling,
+        tempoEstimateBpm: source.tempoEstimateBpm,
+        tempoConfidence: source.tempoConfidence,
+        tempoEstimateTrack: source.tempoEstimateTrack,
         loopBeats: source.loopBeats,
         currentBeat: source.currentBeat,
         clickMode: source.clickMode,
@@ -2503,6 +2517,9 @@ class _LengthTrack extends TrackSnapshot {
         oneShot: engine.trackOneShot[channel] ?? source.oneShot,
         settledTakeId: source.settledTakeId,
         positionFrames: source.positionFrames,
+        captureFrames: source.captureFrames,
+        captureTargetFrames: source.captureTargetFrames,
+        captureVizPoints: source.captureVizPoints,
         pendingTrigger: source.pendingTrigger,
         quantizeOverride: engine.lastQuantize == null
             ? source.quantizeOverride
