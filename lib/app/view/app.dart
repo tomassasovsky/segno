@@ -229,6 +229,7 @@ class _AppState extends State<App> {
   StreamSubscription<int>? _recordingInputRequiredSubscription;
   StreamSubscription<int>? _recordRefusedSubscription;
   StreamSubscription<int>? _overdubRefusedSubscription;
+  StreamSubscription<int>? _fxTakePrintedSubscription;
   StreamSubscription<int>? _lengthHistoryRefusedSubscription;
   late final PlaybackOptionsCubit _playbackView;
   late final RecordTimingCubit _timingView;
@@ -288,6 +289,12 @@ class _AppState extends State<App> {
     _overdubRefusedSubscription = widget.repository.overdubRefusals.listen(
       (channel) => _showTrackRefused(channel, _overdubRefused),
     );
+    // A take that recorded its input's Post effects into itself, since there
+    // was no room to run them live (#1713): it sounds as heard, but they stop
+    // with it on Stop, so its track says so.
+    _fxTakePrintedSubscription = widget.repository.fxTakePrinted.listen(
+      (channel) => _showTrackRefused(channel, _fxTakePrinted),
+    );
     // An Undo or Redo of a length edit that did nothing (#1168): refused at
     // the tap or after it was posted, or queued taps that stopped at the
     // edit. From any surface, so a tap that did nothing is never silent.
@@ -317,6 +324,7 @@ class _AppState extends State<App> {
     unawaited(_recordingInputRequiredSubscription?.cancel());
     unawaited(_recordRefusedSubscription?.cancel());
     unawaited(_overdubRefusedSubscription?.cancel());
+    unawaited(_fxTakePrintedSubscription?.cancel());
     unawaited(_lengthHistoryRefusedSubscription?.cancel());
     unawaited(_notices.close());
     unawaited(
@@ -482,6 +490,13 @@ class _AppState extends State<App> {
     tone: NoticeTone.warning,
     overline: (l10n) => l10n.noticeOverdubRefused,
     title: (l10n) => l10n.footReverseOverdubRefused,
+  );
+
+  static final _fxTakePrinted = Notice(
+    id: AppNoticeId.fxTakePrinted,
+    overline: (l10n) => l10n.noticeEffectsRecorded,
+    title: (l10n) => l10n.fxTakePrintedTitle,
+    body: (l10n) => l10n.fxTakePrintedBody,
   );
 
   static final _lengthHistoryRefused = Notice(
