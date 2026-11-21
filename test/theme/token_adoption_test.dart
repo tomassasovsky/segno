@@ -15,6 +15,9 @@ const _allowed = <String, String>{
   'lib/control/view/pedal_setup/pedal_hardware_face.dart':
       'Fusion pedal artwork — hardware replica',
 
+  'lib/app/view/offscreen_pass_warmup.dart':
+      'an invisible warm-up pass at startup: its colour is never seen (#1914)',
+
   'lib/looper/view/fx/stomp/fx_stomp_pedal.dart':
       'stomp pedal artwork — the approved pedal design, drawn in code (#1501)',
 

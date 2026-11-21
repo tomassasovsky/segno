@@ -24,6 +24,7 @@ import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/app/view/encoder_navigation.dart';
+import 'package:segno/app/view/offscreen_pass_warmup.dart';
 import 'package:segno/app/view/standing_notices.dart';
 import 'package:segno/appliance/display_brightness_cubit.dart';
 import 'package:segno/appliance/idle_dim_cubit.dart';
@@ -1575,6 +1576,7 @@ class _AppViewState extends State<_AppView> {
                   fit: StackFit.expand,
                   children: [
                     dimmed,
+                    const OffscreenPassWarmup(),
                     PowerGoodbye(
                       state: power,
                       stagedUpdate: context.select<UpdateCubit, String?>(
