@@ -79,8 +79,9 @@ class TransportState extends Equatable {
   final int loopBars;
 
   /// Whether the beat analysis is still deciding a free first take's bars
-  /// (#1936): the tempo and [loopBars] may change until this is false, at
-  /// most a second after the take closes.
+  /// (#1936), a few milliseconds after the take closes (a second at most).
+  /// The tempo, [loopBars] and [loopBeats] read as none meanwhile: the
+  /// length's provisional reading is not shown, so they never flip.
   final bool tempoSettling;
 
   /// Whole beats (denominator notes) in the master loop, the grid's own

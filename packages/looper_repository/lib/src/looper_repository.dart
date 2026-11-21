@@ -2764,15 +2764,18 @@ class LooperRepository {
     transport: TransportState(
       deviceRunning: s.isRunning,
       masterLengthFrames: s.masterLengthFrames,
-      tempoBpm: s.tempoBpm,
-      tempoSource: s.tempoSource,
+      // While the beat analysis decides a free take's bars (#1936), the
+      // length's reading is provisional: no tempo and no bars until the
+      // answer, a few milliseconds later, so the figures never flip.
+      tempoBpm: s.tempoSettling ? 0 : s.tempoBpm,
+      tempoSource: s.tempoSettling ? TempoSource.none : s.tempoSource,
       tsNum: s.tsNum,
       tsDen: s.tsDen,
       syncTempo: s.syncTempo,
       quantizeDiv: s.quantizeDiv,
-      loopBars: s.loopBars,
+      loopBars: s.tempoSettling ? 0 : s.loopBars,
       tempoSettling: s.tempoSettling,
-      loopBeats: s.loopBeats,
+      loopBeats: s.tempoSettling ? 0 : s.loopBeats,
       currentBeat: s.currentBeat,
       // Raw mode may change before the callback publishes its command fence.
       // Every repository consumer observes the same receipt-confirmed choice.

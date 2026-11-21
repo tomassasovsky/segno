@@ -95,6 +95,27 @@ float le_grid_derive_bpm(int32_t loop_frames, int32_t ts_num,
   const double per_bar = 60.0 * (double)sample_rate * (double)ts_num /
                          (double)loop_frames; /* bpm(1) */
   if (!(per_bar > 0.0)) return 0.0f;
+  /* #1936: a power-of-two bar count at a likely tempo first. Ascending, so a
+   * tie keeps the slower (fewer bars). */
+  {
+    int32_t likely = 0;
+    double likely_d = 0.0;
+    for (int32_t b = 1; b <= LE_GRID_LIKELY_MAX_BARS; b *= 2) {
+      const double bpm = per_bar * (double)b;
+      if (bpm < LE_GRID_LIKELY_TEMPO_MIN || bpm > LE_GRID_LIKELY_TEMPO_MAX) {
+        continue;
+      }
+      const double d = fabs(bpm - 120.0);
+      if (likely == 0 || d < likely_d) {
+        likely = b;
+        likely_d = d;
+      }
+    }
+    if (likely > 0) {
+      *out_bars = likely;
+      return (float)(per_bar * (double)likely);
+    }
+  }
   int64_t bmin = (int64_t)ceil((double)LE_GRID_TEMPO_MIN / per_bar - 1e-9);
   if (bmin < 1) bmin = 1;
   const int64_t bmax =

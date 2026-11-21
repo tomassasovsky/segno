@@ -12,6 +12,7 @@
 
 #include "audio_ring.h"
 #include "le_aubio.h"
+#include "tempo_grid.h"
 #include "rt_alloc.h"
 
 /* The ring holds about 2.7 s at 48 kHz: the worker drains it every
@@ -23,9 +24,9 @@
 
 /* The tempo window the bar choice considers (the plan's D6), and the bar
  * counts. */
-#define LE_ANALYSIS_BPM_MIN 60.0
-#define LE_ANALYSIS_BPM_MAX 200.0
-static const int32_t kBarCandidates[] = {1, 2, 4, 8, 16};
+#define LE_ANALYSIS_BPM_MIN LE_GRID_LIKELY_TEMPO_MIN
+#define LE_ANALYSIS_BPM_MAX LE_GRID_LIKELY_TEMPO_MAX
+static const int32_t kBarCandidates[] = {1, 2, 4, 8, 16, 32, 64};
 #define LE_ANALYSIS_CANDIDATES \
   ((int)(sizeof(kBarCandidates) / sizeof(kBarCandidates[0])))
 /* A winner must score at least this, and beat the runner-up by this much;
