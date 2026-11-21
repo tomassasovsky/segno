@@ -10,6 +10,8 @@ void main() {
       TempoSet(92.5),
       TempoTap(),
       TempoClear(),
+      TempoScaleBars(double: true),
+      TempoScaleBars(double: false),
       SignatureSet(6, 8),
       LengthSet(0),
       LengthSet(8),

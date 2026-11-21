@@ -51,6 +51,8 @@
 #include <unistd.h>     /* close, unlink, getpid */
 #endif
 
+#include "le_aubio.h"
+#include "engine_analysis.h"
 #include "audio_ring.h"       /* le_audio_ring (performance-recording capture) */
 #include "engine_core.h"      /* le_push (raw ring pushes for the tempo tests) */
 #include "engine_digest.h"    /* le_sha256_ctx (#1198 streaming digests) */
@@ -6757,6 +6759,204 @@ static void test_capture_viz_settles_auto_multiple(void) {
   free(buf);
 
   le_engine_destroy(e);
+}
+
+/* Sleeps [us] microseconds: the analysis worker's turn. */
+static void ana_sleep_us(long us) {
+  const struct timespec ts = {us / 1000000L, (us % 1000000L) * 1000L};
+  nanosleep(&ts, NULL);
+}
+
+/* #1936 part 4: the bar choice. A click track at [bpm] in 4/4: a 10 ms
+ * 2 kHz burst on every beat, for [bars] bars at [sr]. */
+static float* ana_clicks(int sr, double bpm, int bars, int* out_len) {
+  const int len = (int)llround(60.0 * sr * bars * 4 / bpm);
+  float* x = (float*)calloc((size_t)len, sizeof(float));
+  const double beat = 60.0 * sr / bpm;
+  for (int b = 0; b < bars * 4; ++b) {
+    const int at = (int)llround(b * beat);
+    for (int i = 0; i < sr / 100 && at + i < len; ++i) {
+      x[at + i] = 0.8f * (float)exp(-i / (sr / 400.0)) *
+                  (float)sin(2.0 * 3.14159265358979323846 * 2000.0 * i / sr);
+    }
+  }
+  *out_len = len;
+  return x;
+}
+
+/* The onset strengths of [x] at 48 kHz's hop, as the worker computes them. */
+static int32_t ana_choose(const float* x, int len, int sr) {
+  const int hop = 512, win = 1024;
+  le_onset_odf* o = le_onset_odf_new(win, hop);
+  const int n = len / hop;
+  float* odf = (float*)calloc((size_t)n, sizeof(float));
+  for (int i = 0; i < n; ++i) odf[i] = le_onset_odf_step(o, x + i * hop);
+  const int32_t bars = le_analysis_choose_bars(odf, n, hop, len, 4, sr);
+  free(odf);
+  le_onset_odf_free(o);
+  return bars;
+}
+
+static void test_analysis_chooses_bars(void) {
+  printf("test_analysis_chooses_bars\n");
+  const int sr = 48000;
+  const struct { double bpm; int bars; } cases[] = {
+      {70.0, 2}, {140.0, 4}, {95.0, 4}, {180.0, 8}, {120.0, 2}};
+  for (size_t c = 0; c < sizeof(cases) / sizeof(cases[0]); ++c) {
+    int len = 0;
+    float* x = ana_clicks(sr, cases[c].bpm, cases[c].bars, &len);
+    const int32_t chosen = ana_choose(x, len, sr);
+    printf("  %.0f BPM, %d bars: chose %d\n", cases[c].bpm, cases[c].bars,
+           chosen);
+    CHECK(chosen == cases[c].bars);
+    free(x);
+  }
+}
+
+/* No beat, no choice: silence and a held tone answer 0. */
+static void test_analysis_no_beat(void) {
+  printf("test_analysis_no_beat\n");
+  const int sr = 48000;
+  const int len = sr * 6;
+  float* x = (float*)calloc((size_t)len, sizeof(float));
+  CHECK(ana_choose(x, len, sr) == 0);
+  for (int i = 0; i < len; ++i) {
+    x[i] = 0.5f * (float)sin(2.0 * 3.14159265358979323846 * 220.0 * i / sr);
+  }
+  CHECK(ana_choose(x, len, sr) == 0);
+  free(x);
+}
+
+/* Feeds [x] to [e] as its input, in blocks, pausing now and then so the
+ * analysis worker drains its ring as it would in real time. */
+static void ana_feed(le_engine* e, const float* x, int len) {
+  float out[512];
+  for (int f = 0; f < len; f += 512) {
+    const int n = len - f < 512 ? len - f : 512;
+    le_engine_process(e, out, x + f, (uint32_t)n);
+    /* 8192 frames (0.17 s) between pauses: a sixteenth of the ring, so a
+     * worker slow to wake still has room before the ring fills. */
+    if ((f / 512) % 16 == 15) ana_sleep_us(5000);
+  }
+}
+
+/* Processes silence until the analysis has answered (or [ms] pass). */
+static int ana_wait_settled(le_engine* e, int ms) {
+  float in[512] = {0}, out[512];
+  le_snapshot s;
+  for (int i = 0; i < ms; ++i) {
+    le_engine_get_snapshot(e, &s);
+    if (!s.tempo_settling) return 1;
+    le_engine_process(e, out, in, 64);
+    ana_sleep_us(1000);
+  }
+  return 0;
+}
+
+/* A free first take of 4 bars at 140 BPM: its length alone reads as 3 bars
+ * at 105 (nearest 120); the analysis reads 4 bars at 140, the audio as it
+ * was. */
+static void test_analysis_first_take(void) {
+  printf("test_analysis_first_take\n");
+  const int sr = 48000;
+  le_engine* e = tg_make_engine_cap(sr, sr * 20);
+  int len = 0;
+  float* x = ana_clicks(sr, 140.0, 4, &len);
+  le_snapshot s;
+
+  le_engine_record(e, 0);
+  ana_feed(e, x, len);
+  le_engine_record(e, 0); /* close (the seam defers sr/100 frames) */
+  float zero[512] = {0}, out[512];
+  le_engine_process(e, out, zero, (uint32_t)(sr / 100));
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_length_frames == len);
+  CHECK(s.tempo_settling == 1);
+  CHECK(s.loop_bars == 3); /* the nearest-120 reading, until the answer */
+  CHECK(ana_wait_settled(e, 2000));
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.loop_bars == 4);
+  CHECK(fabsf(s.tempo_bpm - 140.0f) < 0.1f);
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_DERIVED);
+  CHECK(fabsf(s.recorded_tempo_bpm - s.tempo_bpm) < 1e-3f); /* no retime */
+  CHECK(s.master_length_frames == len);
+
+  free(x);
+  le_engine_destroy(e);
+}
+
+/* A take with a tempo set is never analysed: its bars come from the tempo. */
+static void test_analysis_skips_set_tempo(void) {
+  printf("test_analysis_skips_set_tempo\n");
+  const int sr = 48000;
+  le_engine* e = tg_make_engine_cap(sr, sr * 20);
+  int len = 0;
+  float* x = ana_clicks(sr, 140.0, 4, &len);
+  le_snapshot s;
+
+  le_engine_set_tempo(e, 105.0f);
+  le_engine_record(e, 0);
+  ana_feed(e, x, len);
+  le_engine_record(e, 0);
+  float zero[512] = {0}, out[512];
+  le_engine_process(e, out, zero, (uint32_t)(sr / 100));
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tempo_settling == 0);
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_MANUAL);
+  CHECK(fabsf(s.tempo_bpm - 105.0f) < 0.01f);
+
+  free(x);
+  le_engine_destroy(e);
+}
+
+/* ÷2 and ×2 (D4): the loop reads as half or twice the bars, the tempo with
+ * them, the audio and its length untouched; halving an odd count, and any
+ * change to a tempo that was set rather than derived, is refused. */
+static void test_scale_loop_bars(void) {
+  printf("test_scale_loop_bars\n");
+  le_engine* e = tg_make_engine_cap(1000, 100000);
+  le_snapshot s;
+
+  tg_record_defining_loop(e, 8000); /* 4 bars at 120 */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.loop_bars == 4);
+  CHECK(fabsf(s.tempo_bpm - 120.0f) < 0.01f);
+
+  CHECK(le_engine_scale_loop_bars(e, -1) == LE_OK);
+  tg_advance(e, 64);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.loop_bars == 2);
+  CHECK(fabsf(s.tempo_bpm - 60.0f) < 0.01f);
+  CHECK(fabsf(s.recorded_tempo_bpm - 60.0f) < 0.01f);
+  CHECK(s.master_length_frames == 8000);
+
+  le_engine_scale_loop_bars(e, 1);
+  le_engine_scale_loop_bars(e, 1);
+  tg_advance(e, 64);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.loop_bars == 8);
+  CHECK(fabsf(s.tempo_bpm - 240.0f) < 0.01f);
+
+  /* 16 bars would be 480 BPM: out of range, nothing changes. */
+  le_engine_scale_loop_bars(e, 1);
+  tg_advance(e, 64);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.loop_bars == 8);
+
+  le_engine_destroy(e);
+
+  /* An odd bar count does not halve. */
+  e = tg_make_engine_cap(1000, 100000);
+  tg_record_defining_loop(e, 6000); /* 3 bars at 120 */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.loop_bars == 3);
+  le_engine_scale_loop_bars(e, -1);
+  tg_advance(e, 64);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.loop_bars == 3);
+  le_engine_destroy(e);
+
+  CHECK(le_engine_scale_loop_bars(NULL, 1) == LE_ERR_INVALID);
 }
 
 /* Clearing a recording track drops its shape and its drawn count. */
@@ -40250,6 +40450,11 @@ int main(void) {
   SHARD(test_capture_viz_settles_defining_take);
   SHARD(test_capture_viz_settles_over_master);
   SHARD(test_capture_viz_settles_auto_multiple);
+  SHARD(test_analysis_chooses_bars);
+  SHARD(test_analysis_no_beat);
+  SHARD(test_analysis_first_take);
+  SHARD(test_analysis_skips_set_tempo);
+  SHARD(test_scale_loop_bars);
   SHARD(test_capture_viz_cleared);
   SHARD(test_length_preset_n_bars_click_on_arms_through_count_in);
   SHARD(test_length_preset_n_bars_click_on_early_press_disarms);

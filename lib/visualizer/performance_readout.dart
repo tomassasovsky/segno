@@ -273,6 +273,8 @@ class PerformanceReadout extends Equatable {
     this.selected,
     this.tempoBpm = 0,
     this.hasTempo = false,
+    this.canHalveBars = false,
+    this.canDoubleBars = false,
     this.tsNum = 4,
     this.tsDen = 4,
     this.mode = 'record',
@@ -300,6 +302,8 @@ class PerformanceReadout extends Equatable {
       // An older main window never sends `hasTempo`; its own readout treated
       // "tempo > 0" as having one, so the fallback preserves that reading.
       hasTempo: map['hasTempo'] as bool? ?? tempoBpm > 0,
+      canHalveBars: map['canHalveBars'] as bool? ?? false,
+      canDoubleBars: map['canDoubleBars'] as bool? ?? false,
       tsNum: map['tsNum'] as int? ?? 4,
       tsDen: map['tsDen'] as int? ?? 4,
       mode: map['mode'] as String? ?? 'record',
@@ -333,6 +337,12 @@ class PerformanceReadout extends Equatable {
   /// shows `—` for the bpm figure on the tempo-free path rather than stating
   /// `0` over a grid that does not exist.
   final bool hasTempo;
+
+  /// Whether ÷2 would read the loop as half its bars now (#1936, D4).
+  final bool canHalveBars;
+
+  /// Whether ×2 would read the loop as twice its bars now (#1936, D4).
+  final bool canDoubleBars;
 
   /// Time-signature numerator.
   final int tsNum;
@@ -387,6 +397,8 @@ class PerformanceReadout extends Equatable {
     'selected': selected?.toMap(),
     'tempoBpm': tempoBpm,
     'hasTempo': hasTempo,
+    'canHalveBars': canHalveBars,
+    'canDoubleBars': canDoubleBars,
     'tsNum': tsNum,
     'tsDen': tsDen,
     'mode': mode,
@@ -407,6 +419,8 @@ class PerformanceReadout extends Equatable {
     selected,
     tempoBpm,
     hasTempo,
+    canHalveBars,
+    canDoubleBars,
     tsNum,
     tsDen,
     mode,

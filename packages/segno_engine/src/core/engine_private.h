@@ -3513,6 +3513,19 @@ struct le_engine {
   int rt_stack_ready;
   /* The background prefaulter (engine_prefault.c); NULL until its first job. */
   struct le_prefaulter* prefaulter;
+  /* #1936: the beat analysis of a free first take (engine_analysis.h),
+   * made by le_engine_configure; NULL when it could not be. The audio thread
+   * owns the rest: ana_on while it feeds a defining take (track ana_track)
+   * to the analysis, ana_wait while a closed take's answer is awaited,
+   * counting ana_wait_frames against a second, for the loop of
+   * ana_wait_len frames. a_tempo_settling publishes ana_wait. */
+  struct le_analysis* analysis;
+  int32_t ana_on;
+  int32_t ana_track;
+  int32_t ana_wait;
+  int32_t ana_wait_len;
+  int32_t ana_wait_frames;
+  _Atomic int32_t a_tempo_settling;
   /* Buffers the callback may still name, waiting to be freed until the
    * command posted after them has published (le_retire_buffer). */
   float* retired_buf[LE_RETIRED_MAX];

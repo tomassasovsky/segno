@@ -39,6 +39,11 @@ add_library(segno_engine SHARED
   core/engine_audition.c     # Library audition voice control API (#1178)
   core/engine_instruments.c  # instrument slots, note rings, synth in the callback (#1197)
   core/engine_prefault.c    # background prefaulter ahead of the write head (#900)
+  core/engine_analysis.c     # beat analysis of a free first take (#1936)
+  # The vendored aubio subset (third_party/aubio, GPL-3.0-or-later) as one
+  # TU behind le_aubio.h (#1936). Listed explicitly in ENGINE_SRC
+  # (src/test/engine_build.sh) too.
+  core/le_aubio.c
   # The decoder's 2:1 half-band resampler (#697 S8) — a pure TU, no engine
   # state. NOT matched by ENGINE_SRC's engine*.c glob (src/test/
   # engine_build.sh) — it is listed explicitly there; keep the two in sync.

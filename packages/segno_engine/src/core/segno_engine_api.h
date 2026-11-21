@@ -603,6 +603,9 @@ typedef enum le_command_code {
    * track is stopped, spares the Post tail (#1773; le_engine_spare_tail).
    * Never perf-logged. */
   LE_CMD_SPARE_TAIL = 145,
+  /* Read the master loop as twice (arg_i > 0) or half (arg_i < 0) its bars,
+   * keeping the audio (#1936, le_engine_scale_loop_bars). Never logged. */
+  LE_CMD_SCALE_LOOP_BARS = 146,
   LE_CMD_RENDER_FREEZE = 112, /* render recipe (#1202): the callback records
                                * every source's read law; never raw-posted */
   LE_CMD_BOUNCE = 113,         /* Bounce (#1202): installs a rendered result on
@@ -2000,6 +2003,15 @@ typedef struct le_snapshot {
   uint64_t fx_draining_track[LE_MAX_TRACKS];
   uint64_t fx_draining_all_tracks;
   uint64_t fx_draining_output[LE_MAX_OUTPUT_BUSES];
+  /* Trailing (#1936): 1 while the beat analysis decides a free first take's
+   * bar count; the tempo and bars may still change until it reads 0 (at
+   * most a second). */
+  int32_t tempo_settling;
+  /* Trailing (#1936): while a free first take records, the analysis's live
+   * tempo estimate in BPM and its confidence (larger is surer); both 0 with
+   * none. The take's bar count is not decided by these. */
+  float tempo_estimate_bpm;
+  float tempo_estimate_confidence;
 } le_snapshot;
 
 /* What a song-tempo change does now (le_snapshot.tempo_follow, #1179 Part
@@ -2938,6 +2950,19 @@ LE_EXPORT int32_t le_engine_restore_tempo(le_engine* engine, float bpm,
  * applying. Not perf-logged: the effect chains' musical time picks up the
  * change through their own anchor (LE_PLOG_FX_TEMPO). */
 LE_EXPORT int32_t le_engine_clear_tempo(le_engine* engine);
+
+/* Reads the master loop as twice ([direction] > 0) or half ([direction] < 0)
+ * its bars, keeping the audio: the derived tempo doubles or halves with them
+ * and is latched as the recorded one, so nothing retimes (#1936, D4). The
+ * callback applies it only while the tempo is derived from the loop and not
+ * retimed since, no take is recording, no count-in runs, no external clock
+ * owns the tempo and the mode has one shared loop (not Free or Song);
+ * halving needs an even bar count, and the new tempo must stay inside the
+ * grid's range. Anything else leaves the loop as it is. LE_ERR_INVALID for
+ * a null handle or a 0 direction. Not perf-logged: no recorded material
+ * changes. */
+LE_EXPORT int32_t le_engine_scale_loop_bars(le_engine* engine,
+                                            int32_t direction);
 
 /* Sets the time signature. Only the 17 Sheeran signatures are valid — x/4 for
  * num 2..7 and x/8 for num 5..15 — anything else returns LE_ERR_INVALID

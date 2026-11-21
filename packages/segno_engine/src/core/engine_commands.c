@@ -4324,6 +4324,15 @@ int32_t le_engine_clear_tempo(le_engine* engine) {
   return le_push(engine, LE_CMD_CLEAR_TEMPO, 0, 0.0f);
 }
 
+int32_t le_engine_scale_loop_bars(le_engine* engine, int32_t direction) {
+  if (engine == NULL || direction == 0) return LE_ERR_INVALID;
+  if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire)) {
+    return LE_ERR_NOT_RUNNING;
+  }
+  if (le_clock_external_requested(engine)) return LE_ERR_EXTERNAL_CLOCK;
+  return le_push(engine, LE_CMD_SCALE_LOOP_BARS, direction > 0 ? 1 : -1, 0.0f);
+}
+
 int32_t le_engine_set_time_signature(le_engine* engine, int32_t num,
                                      int32_t den) {
   /* Reject unsupported signatures outright (the audio thread re-validates so
