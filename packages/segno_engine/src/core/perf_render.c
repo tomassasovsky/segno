@@ -3451,7 +3451,8 @@ static void le_pr_channel_open(le_pr_channel_run* c, const char* dir,
    * wet stem itself is written, so master.wav never holds audio for a
    * channel the render reports as failed. */
   c->ok = dry_ok && c->wet != NULL;
-  c->in_master = c->ok;
+  /* With no master to rebuild (#1855), nothing is summed. */
+  c->in_master = c->ok && m->rebuilds_master;
 }
 
 /* Frees what le_pr_channel_open set up; stems still open are dropped. */

@@ -323,6 +323,9 @@ class PerformanceRepository {
   /// native fields while armed). Deleted once finalize folds it in.
   static const String _armSnapshotFileName = 'arm-snapshot.json';
 
+  /// The master the render rebuilds from the lanes, beside their stems.
+  static const String _rebuiltMasterPath = 'stems/wet/master.wav';
+
   /// Total and free bytes of the volume holding [path], or `null` when the
   /// platform cannot answer.
   ///
@@ -1013,7 +1016,7 @@ class PerformanceRepository {
       return;
     }
     _finishDeletes(root);
-    await _reattachArmSnapshots(root);
+    await _repairSeptemberTakes(root);
     final List<UnfinalizedCapture> unfinalized;
     try {
       unfinalized = await findUnfinalized();
@@ -1083,14 +1086,11 @@ class PerformanceRepository {
     }
   }
 
-  /// Puts back the arm snapshot of every finished take in [root] or its
-  /// recovered area that a build with #1844 finalized without it: its
-  /// manifest has no `armSnapshot`, and its `arm-snapshot.json`, kept in
-  /// the bundle, was written before capture destinations (#1853). The
-  /// snapshot reads with the take's channel layout, as a recovery does, and
-  /// the file is removed once the manifest holds it. A take whose files do
-  /// not read stays as it is, logged.
-  Future<void> _reattachArmSnapshots(String root) async {
+  /// Repairs what earlier builds left in the finished takes in [root] or
+  /// its recovered area whose arm snapshot was written before capture
+  /// destinations (#1853): [_reattachArmSnapshot] and
+  /// [_removeRebuiltMaster].
+  Future<void> _repairSeptemberTakes(String root) async {
     for (final parent in [root, '$root/$recoveredDirName']) {
       final List<FileSystemEntity> entries;
       try {
@@ -1101,47 +1101,81 @@ class PerformanceRepository {
       for (final entity in entries) {
         final dir = entity.path;
         final armFile = File('$dir/$_armSnapshotFileName');
+        final rebuilt = File('$dir/$_rebuiltMasterPath');
         // A hidden directory is a delete in progress, never a take; an
         // unfinalized one is the salvage's.
         if (entity is! Directory ||
             _basename(dir).startsWith('.') ||
             dir == _armedDir ||
-            !armFile.existsSync() ||
+            (!armFile.existsSync() && !rebuilt.existsSync()) ||
             !_sidecarFinalized(dir)) {
           continue;
         }
-        try {
-          final json = jsonDecode(
-            File('$dir/$manifestName').readAsStringSync(),
-          ) as Map<String, dynamic>;
-          if (json.containsKey('armSnapshot')) continue;
-          final arm =
-              jsonDecode(armFile.readAsStringSync()) as Map<String, dynamic>;
-          if (!PerformanceArmSnapshot.writtenBeforeDestinations(arm)) {
-            continue;
-          }
-          // Read first, so one that does not read stays in its file. Only
-          // the one key is added, as it was written; the rest of the
-          // manifest is written back as it was read.
-          PerformanceArmSnapshot.fromJson(
-            arm,
-            channelLayout: json['channel_layout'],
-          );
-          json['armSnapshot'] = arm;
-          await _publishManifest(dir, json);
-        } on Object catch (error) {
-          _warn(dir, 'keeps $_armSnapshotFileName unread: $error');
-          continue;
-        }
-        _warn(dir, 'has its arm snapshot back from $_armSnapshotFileName');
-        try {
-          armFile.deleteSync();
-        } on FileSystemException {
-          // Read and kept in the manifest: a leftover file is never read
-          // again, since the manifest now has its snapshot.
-        }
+        if (armFile.existsSync()) await _reattachArmSnapshot(dir, armFile);
+        if (rebuilt.existsSync()) _removeRebuiltMaster(dir, rebuilt);
       }
     }
+  }
+
+  /// Puts back the arm snapshot of a finished take that a build with #1844
+  /// finalized without it: its manifest has no `armSnapshot`, and its
+  /// [armFile], kept in the bundle, was written before capture
+  /// destinations. The snapshot reads with the take's channel layout, as a
+  /// recovery does, and the file is removed once the manifest holds it. A
+  /// take whose files do not read stays as it is, logged.
+  Future<void> _reattachArmSnapshot(String dir, File armFile) async {
+    try {
+      final json = jsonDecode(
+        File('$dir/$manifestName').readAsStringSync(),
+      ) as Map<String, dynamic>;
+      if (json.containsKey('armSnapshot')) return;
+      final arm =
+          jsonDecode(armFile.readAsStringSync()) as Map<String, dynamic>;
+      if (!PerformanceArmSnapshot.writtenBeforeDestinations(arm)) return;
+      // Read first, so one that does not read stays in its file. Only the
+      // one key is added, as it was written; the rest of the manifest is
+      // written back as it was read.
+      PerformanceArmSnapshot.fromJson(
+        arm,
+        channelLayout: json['channel_layout'],
+      );
+      json['armSnapshot'] = arm;
+      await _publishManifest(dir, json);
+    } on Object catch (error) {
+      _warn(dir, 'keeps $_armSnapshotFileName unread: $error');
+      return;
+    }
+    _warn(dir, 'has its arm snapshot back from $_armSnapshotFileName');
+    try {
+      armFile.deleteSync();
+    } on FileSystemException {
+      // Read and kept in the manifest: a leftover file is never read
+      // again, since the manifest now has its snapshot.
+    }
+  }
+
+  /// Removes the [rebuilt] master of a finished take whose arm snapshot was
+  /// written before capture destinations (#1855). The render no longer
+  /// writes one for such a take: it was captured after the master gain and
+  /// limiter, with lane routes it did not record, so a master rebuilt from
+  /// its lanes, as a build with #1854 rendered it, is not the take's master.
+  /// The take is never rendered again once it has its stems, and the DAW
+  /// package and Segno Transfer copy every WAV in it, so the file goes here.
+  void _removeRebuiltMaster(String dir, File rebuilt) {
+    try {
+      final arm = (jsonDecode(
+        File('$dir/$manifestName').readAsStringSync(),
+      ) as Map<String, dynamic>)['armSnapshot'];
+      if (arm is! Map<String, dynamic> ||
+          !PerformanceArmSnapshot.writtenBeforeDestinations(arm)) {
+        return;
+      }
+      rebuilt.deleteSync();
+    } on Object catch (error) {
+      _warn(dir, 'keeps $_rebuiltMasterPath: $error');
+      return;
+    }
+    _warn(dir, 'has no rebuilt master: removed $_rebuiltMasterPath');
   }
 
   /// Whether [runBootRecovery] would have real salvage work this boot:
@@ -1573,12 +1607,6 @@ class PerformanceRepository {
   /// then the [dawProjectFiles]. The Library copies them keeping these
   /// paths, so the Live Set opens on the drive with none of its media
   /// missing (#1799).
-  ///
-  /// A take armed before capture destinations (#1853) has no rebuilt master
-  /// (#1855): it was captured after the master gain and limiter, with lane
-  /// routes it did not record, so its package carries the captured master
-  /// alone, and a `stems/wet/master.wav` an earlier build rendered is left
-  /// out.
   List<String> dawPackageFiles(CaptureSummary capture) {
     final dir = capture.path;
     final stems = <String>[];
@@ -1597,7 +1625,6 @@ class PerformanceRepository {
         ]..sort(),
       );
     }
-    if (_armedBeforeDestinations(dir)) stems.remove('stems/wet/master.wav');
     return [
       for (final part in capture.parts)
         if (File('$dir/${part.file}').existsSync()) part.file,
@@ -1605,22 +1632,6 @@ class PerformanceRepository {
       for (final file in dawProjectFiles)
         if (File('$dir/$file').existsSync()) file,
     ];
-  }
-
-  /// Whether the arm snapshot in [dir]'s sidecar was written before capture
-  /// destinations ([PerformanceArmSnapshot.writtenBeforeDestinations]).
-  /// False when the sidecar does not read: the Library lists no such take.
-  bool _armedBeforeDestinations(String dir) {
-    try {
-      final json = jsonDecode(
-        File('$dir/$manifestName').readAsStringSync(),
-      ) as Map<String, dynamic>;
-      final arm = json['armSnapshot'];
-      return arm is Map<String, dynamic> &&
-          PerformanceArmSnapshot.writtenBeforeDestinations(arm);
-    } on Object {
-      return false;
-    }
   }
 
   /// Deletes the finished recording [capture] from internal storage (the

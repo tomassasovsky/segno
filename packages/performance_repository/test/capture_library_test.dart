@@ -340,52 +340,58 @@ void main() {
       },
     );
 
-    test(
-      'leaves out the rebuilt master of a take armed before capture '
-      'destinations, whose captured master it does not match (#1855)',
-      () async {
-        // The console's own manifest of a September take.
-        const slug = 'perf-20260911-220056';
-        final dir = '$root/$slug';
-        Directory(dir).createSync();
-        File('$dir/performance.json').writeAsStringSync(
-          File('test/fixtures/september/$slug.performance.json')
-              .readAsStringSync(),
-        );
-        for (final file in [
-          'master.wav',
-          'stems/dry/track0-lane0.wav',
-          'stems/wet/track0-lane0.wav',
-          'stems/wet/master.wav',
-          'project.als',
-        ]) {
-          File('$dir/$file')
-            ..parent.createSync(recursive: true)
-            ..writeAsBytesSync(Uint8List(64));
-        }
-        final capture = (await repo.listCaptures()).single;
-
-        expect(repo.dawPackageFiles(capture), [
-          'master.wav',
-          'stems/dry/track0-lane0.wav',
-          'stems/wet/track0-lane0.wav',
-          'project.als',
-        ]);
-      },
-    );
-
-    test('keeps the rebuilt master when the sidecar no longer reads', () async {
-      final dir = take(
+    test('a start removes the rebuilt master of a take armed before capture '
+        'destinations, which an earlier build rendered and which is not its '
+        'captured master, and keeps every other file (#1855)', () async {
+      // The console's own manifest of a September take.
+      const slug = 'perf-20260911-220056';
+      final dir = '$root/$slug';
+      Directory(dir).createSync();
+      final manifest = File('test/fixtures/september/$slug.performance.json')
+          .readAsStringSync();
+      File('$dir/performance.json').writeAsStringSync(manifest);
+      for (final file in [
+        'master.wav',
+        'stems/dry/track0-lane0.wav',
+        'stems/wet/track0-lane0.wav',
+        'stems/wet/master.wav',
+        'project.als',
+      ]) {
+        File('$dir/$file')
+          ..parent.createSync(recursive: true)
+          ..writeAsBytesSync(Uint8List(64));
+      }
+      // A current take keeps its rebuilt master.
+      final current = take(
         'perf-20261006-201500',
         parts: [part(0, 1, 'master-001.wav')],
         files: {'master-001.wav': 10, 'stems/wet/master.wav': 4},
       );
-      final capture = (await repo.listCaptures()).single;
-      File('$dir/performance.json').writeAsStringSync('{');
+      final lines = <String>[];
+      final local = PerformanceRepository(
+        storageIo: fakeStorageIo,
+        guards: guards,
+        engine: engine,
+        exportsRoot: () async => root,
+        log: lines.add,
+      );
+      addTearDown(local.dispose);
 
-      expect(repo.dawPackageFiles(capture), [
-        'master-001.wav',
-        'stems/wet/master.wav',
+      await local.runBootRecovery();
+
+      expect(File('$dir/stems/wet/master.wav').existsSync(), isFalse);
+      expect(File('$dir/performance.json').readAsStringSync(), manifest);
+      expect(File('$current/stems/wet/master.wav').existsSync(), isTrue);
+      const removed =
+          'performance: $slug has no rebuilt master: removed '
+          'stems/wet/master.wav';
+      expect(lines, [removed]);
+      final listed = await local.listCaptures();
+      expect(local.dawPackageFiles(listed.singleWhere((c) => c.path == dir)), [
+        'master.wav',
+        'stems/dry/track0-lane0.wav',
+        'stems/wet/track0-lane0.wav',
+        'project.als',
       ]);
     });
   });

@@ -74,10 +74,12 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   September was set before the arm). No master rebuilt from its lanes can
   match the captured one.
 - The renderer (`perf_render.c`) writes no `stems/wet/master.wav` for such a
-  take; its lane stems and index are rendered as before, and a re-render
-  removes a rebuilt master an earlier build left. `dawPackageFiles` leaves
-  out one already on disk, so the DAW package carries the captured
-  `master.wav` alone.
+  take, and sums no lane into a master; its lane stems and index are
+  rendered as before. A take a build with #1854 rendered keeps its stems
+  and is not rendered again, so each start removes its rebuilt master (the
+  pass that re-attaches #1844's arm snapshots, now `_repairSeptemberTakes`,
+  logged). The DAW package and Segno Transfer, which copies every WAV in a
+  take, carry the captured `master.wav` alone.
 - Not checked on the console: a September take's DAW package after the
   update.
 
