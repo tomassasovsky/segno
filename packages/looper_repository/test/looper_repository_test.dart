@@ -6295,6 +6295,43 @@ void main() {
       expect(engine.tempoRestores, [(bpm: 128.0, source: TempoSource.manual)]);
     });
 
+    test('scaleLoopBars reaches the running engine (#1936)', () {
+      final repo = buildRepo();
+      expect(repo.scaleLoopBars(double: true), EngineResult.notRunning);
+      expect(engine.scaledLoopBars, isEmpty);
+      repo.startEngine(const EngineConfig());
+      expect(repo.scaleLoopBars(double: true), EngineResult.ok);
+      expect(repo.scaleLoopBars(double: false), EngineResult.ok);
+      expect(engine.scaledLoopBars, [true, false]);
+    });
+
+    test('the transport says when the tempo is settling, and the playheads '
+        "carry the take's estimate (#1936)", () async {
+      engine.nextSnapshot = _playingSnapshot.copyWith(
+        tempoSettling: true,
+        tempoBpm: 140,
+        tempoSource: TempoSource.derived,
+        loopBars: 4,
+        loopBeats: 16,
+        tempoEstimateBpm: 92.5,
+        tempoConfidence: 0.8,
+      );
+      final repo = buildRepo();
+      addTearDown(repo.dispose);
+      final sub = repo.looperState.listen((_) {});
+      addTearDown(sub.cancel);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(repo.lastState.transport.tempoSettling, isTrue);
+      // The provisional reading is not shown while it settles.
+      expect(repo.lastState.transport.tempoBpm, 0);
+      expect(repo.lastState.transport.tempoSource, TempoSource.none);
+      expect(repo.lastState.transport.loopBars, 0);
+      expect(repo.lastState.transport.loopBeats, 0);
+      expect(repo.playhead.tempoEstimateBpm, 92.5);
+      expect(repo.playhead.tempoConfidence, closeTo(0.8, 1e-6));
+    });
+
     test('clearTempo needs the running engine', () {
       final repo = buildRepo()..setTempo(140);
       expect(repo.clearTempo(), EngineResult.notRunning);

@@ -10,7 +10,12 @@ import 'package:equatable/equatable.dart';
 /// draws a playhead: the progress bars and the waveforms.
 class Playhead extends Equatable {
   /// Creates a [Playhead].
-  const new({this.tracks = const [], this.captures = const []});
+  const new({
+    this.tracks = const [],
+    this.captures = const [],
+    this.tempoEstimateBpm = 0,
+    this.tempoConfidence = 0,
+  });
 
   /// Each track's play position as a share of its loop, `0..1`, indexed by
   /// channel. `0` while the track has no length or is recording its take:
@@ -22,6 +27,15 @@ class Playhead extends Equatable {
   /// [TakeCapture.none] unless the track is recording.
   final List<TakeCapture> captures;
 
+  /// While a free first take records, the beat analysis's live tempo
+  /// estimate in BPM (#1936); `0` with none. Like the position, it moves on
+  /// every poll.
+  final double tempoEstimateBpm;
+
+  /// How sure the analysis is of [tempoEstimateBpm] (larger is surer); `0`
+  /// with none.
+  final double tempoConfidence;
+
   /// [channel]'s position, or `0` when the rig has no such track.
   double track(int channel) =>
       channel >= 0 && channel < tracks.length ? tracks[channel] : 0;
@@ -32,7 +46,12 @@ class Playhead extends Equatable {
       : TakeCapture.none;
 
   @override
-  List<Object?> get props => [tracks, captures];
+  List<Object?> get props => [
+    tracks,
+    captures,
+    tempoEstimateBpm,
+    tempoConfidence,
+  ];
 }
 
 /// A recording take's progress (#1936): the frames captured since its press,

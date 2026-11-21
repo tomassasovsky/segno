@@ -1750,6 +1750,9 @@ class EngineSnapshot {
     this.syncTempo = true,
     this.quantizeDiv = GridDivision.off,
     this.loopBars = 0,
+    this.tempoSettling = false,
+    this.tempoEstimateBpm = 0,
+    this.tempoConfidence = 0,
     this.loopBeats = 0,
     this.currentBeat = 0,
     this.clickMode = ClickMode.off,
@@ -1849,6 +1852,9 @@ class EngineSnapshot {
       syncTempo = true,
       quantizeDiv = GridDivision.off,
       loopBars = 0,
+      tempoSettling = false,
+      tempoEstimateBpm = 0,
+      tempoConfidence = 0,
       loopBeats = 0,
       currentBeat = 0,
       clickMode = ClickMode.off,
@@ -1960,6 +1966,9 @@ class EngineSnapshot {
       syncTempo: native.sync_tempo != 0,
       quantizeDiv: GridDivision.fromCode(native.quantize_div),
       loopBars: native.loop_bars,
+      tempoSettling: native.tempo_settling != 0,
+      tempoEstimateBpm: native.tempo_estimate_bpm,
+      tempoConfidence: native.tempo_estimate_confidence,
       loopBeats: native.loop_beats,
       currentBeat: native.current_beat,
       clickMode: ClickMode.fromCode(native.click_mode),
@@ -2067,6 +2076,9 @@ class EngineSnapshot {
     bool? syncTempo,
     GridDivision? quantizeDiv,
     int? loopBars,
+    bool? tempoSettling,
+    double? tempoEstimateBpm,
+    double? tempoConfidence,
     int? loopBeats,
     int? currentBeat,
     ClickMode? clickMode,
@@ -2163,6 +2175,9 @@ class EngineSnapshot {
     syncTempo: syncTempo ?? this.syncTempo,
     quantizeDiv: quantizeDiv ?? this.quantizeDiv,
     loopBars: loopBars ?? this.loopBars,
+    tempoSettling: tempoSettling ?? this.tempoSettling,
+    tempoEstimateBpm: tempoEstimateBpm ?? this.tempoEstimateBpm,
+    tempoConfidence: tempoConfidence ?? this.tempoConfidence,
     loopBeats: loopBeats ?? this.loopBeats,
     currentBeat: currentBeat ?? this.currentBeat,
     clickMode: clickMode ?? this.clickMode,
@@ -2422,6 +2437,19 @@ class EngineSnapshot {
   /// do not make whole bars ([loopBeats]). The loop's audio length is never
   /// altered by the grid — this is a derived count.
   final int loopBars;
+
+  /// Whether the beat analysis is still deciding a free first take's bar
+  /// count (#1936): the tempo and bars may change until this reads false,
+  /// at most a second after the take closes.
+  final bool tempoSettling;
+
+  /// While a free first take records, the analysis's live tempo estimate in
+  /// BPM (#1936); `0` with none.
+  final double tempoEstimateBpm;
+
+  /// How sure the analysis is of [tempoEstimateBpm] (larger is surer); `0`
+  /// with none.
+  final double tempoConfidence;
 
   /// Whole beats (denominator notes) in the master loop, the grid's own
   /// count, or `0` with no grid (#1168). [loopBars] × [tsNum] for a
@@ -2717,6 +2745,9 @@ class EngineSnapshot {
           syncTempo == other.syncTempo &&
           quantizeDiv == other.quantizeDiv &&
           loopBars == other.loopBars &&
+          tempoSettling == other.tempoSettling &&
+          tempoEstimateBpm == other.tempoEstimateBpm &&
+          tempoConfidence == other.tempoConfidence &&
           loopBeats == other.loopBeats &&
           currentBeat == other.currentBeat &&
           clickMode == other.clickMode &&
@@ -2815,6 +2846,9 @@ class EngineSnapshot {
     syncTempo,
     quantizeDiv,
     loopBars,
+    tempoSettling,
+    tempoEstimateBpm,
+    tempoConfidence,
     loopBeats,
     currentBeat,
     clickMode,

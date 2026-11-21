@@ -231,6 +231,8 @@ class LooperRepository {
         else
           for (final track in s.tracks) _captureOf(track),
       ],
+      tempoEstimateBpm: s.tempoEstimateBpm,
+      tempoConfidence: s.tempoConfidence,
     );
   }
 
@@ -2762,14 +2764,18 @@ class LooperRepository {
     transport: TransportState(
       deviceRunning: s.isRunning,
       masterLengthFrames: s.masterLengthFrames,
-      tempoBpm: s.tempoBpm,
-      tempoSource: s.tempoSource,
+      // While the beat analysis decides a free take's bars (#1936), the
+      // length's reading is provisional: no tempo and no bars until the
+      // answer, a few milliseconds later, so the figures never flip.
+      tempoBpm: s.tempoSettling ? 0 : s.tempoBpm,
+      tempoSource: s.tempoSettling ? TempoSource.none : s.tempoSource,
       tsNum: s.tsNum,
       tsDen: s.tsDen,
       syncTempo: s.syncTempo,
       quantizeDiv: s.quantizeDiv,
-      loopBars: s.loopBars,
-      loopBeats: s.loopBeats,
+      loopBars: s.tempoSettling ? 0 : s.loopBars,
+      tempoSettling: s.tempoSettling,
+      loopBeats: s.tempoSettling ? 0 : s.loopBeats,
       currentBeat: s.currentBeat,
       // Raw mode may change before the callback publishes its command fence.
       // Every repository consumer observes the same receipt-confirmed choice.
@@ -9912,6 +9918,19 @@ class LooperRepository {
     _tempoSource = TempoSource.none;
     _reproject();
     return EngineResult.ok;
+  }
+
+  /// Reads the loop as twice ([double]) or half its bars, keeping the audio
+  /// (#1936, D4): the derived tempo doubles or halves with them, and nothing
+  /// retimes. The engine decides whether it applies (a derived tempo not
+  /// retimed since, no take recording, one shared loop, an even count to
+  /// halve, a tempo in range); otherwise the loop stays as it is. Stopped,
+  /// it answers [EngineResult.notRunning].
+  EngineResult scaleLoopBars({required bool double}) {
+    if (!_intendRunning) return EngineResult.notRunning;
+    final result = _engine.scaleLoopBars(double: double);
+    if (result.isOk) _reproject();
+    return result;
   }
 
   /// Sets the time signature to [num]/[den] (only the 17 Sheeran-verified

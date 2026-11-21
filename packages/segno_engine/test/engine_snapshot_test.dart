@@ -996,6 +996,9 @@ void main() {
           ..quantize_div = 3
           ..tempo_source = 2
           ..loop_bars = 4
+          ..tempo_settling = 1
+          ..tempo_estimate_bpm = 92.5
+          ..tempo_estimate_confidence = 0.5
           ..current_beat = 3
           ..click_mode = 1
           ..click_mask = 0x5
@@ -1077,6 +1080,9 @@ void main() {
         expect(snapshot.quantizeDiv, GridDivision.quarter);
         expect(snapshot.tempoSource, TempoSource.tapped);
         expect(snapshot.loopBars, 4);
+        expect(snapshot.tempoSettling, isTrue);
+        expect(snapshot.tempoEstimateBpm, 92.5);
+        expect(snapshot.tempoConfidence, 0.5);
         expect(snapshot.currentBeat, 3);
         expect(snapshot.clickMode, ClickMode.rec);
         expect(snapshot.clickMask, 0x5);
@@ -1864,6 +1870,9 @@ void main() {
         'syncTempo',
         'quantizeDiv',
         'loopBars',
+        'tempoSettling',
+        'tempoEstimateBpm',
+        'tempoConfidence',
         'loopBeats',
         'currentBeat',
         'clickMode',

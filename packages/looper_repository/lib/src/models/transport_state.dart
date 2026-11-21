@@ -19,6 +19,7 @@ class TransportState extends Equatable {
     this.syncTempo = true,
     this.quantizeDiv = GridDivision.off,
     this.loopBars = 0,
+    this.tempoSettling = false,
     this.loopBeats = 0,
     this.currentBeat = 0,
     this.clickMode = ClickMode.off,
@@ -76,6 +77,12 @@ class TransportState extends Equatable {
   /// Whole bars in the master loop, or `0` when no grid relationship exists
   /// or its beats do not make whole bars ([loopBeats]).
   final int loopBars;
+
+  /// Whether the beat analysis is still deciding a free first take's bars
+  /// (#1936), a few milliseconds after the take closes (a second at most).
+  /// The tempo, [loopBars] and [loopBeats] read as none meanwhile: the
+  /// length's provisional reading is not shown, so they never flip.
+  final bool tempoSettling;
 
   /// Whole beats (denominator notes) in the master loop, the grid's own
   /// count, or `0` with no grid. A Divide of a sole 1- or 3-bar loop keeps
@@ -218,6 +225,7 @@ class TransportState extends Equatable {
     syncTempo,
     quantizeDiv,
     loopBars,
+    tempoSettling,
     loopBeats,
     currentBeat,
     clickMode,
