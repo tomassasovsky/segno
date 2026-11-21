@@ -225,6 +225,15 @@ class LooperRepository {
         else
           for (final track in s.tracks) _progressOf(track),
       ],
+      captures: [
+        if (importing != null)
+          for (final _ in importing) TakeCapture.none
+        else
+          for (final track in s.tracks) _captureOf(track),
+      ],
+      tempoEstimateBpm: s.tempoEstimateBpm,
+      tempoConfidence: s.tempoConfidence,
+      tempoEstimateTrack: s.tempoEstimateTrack,
     );
   }
 
@@ -235,12 +244,25 @@ class LooperRepository {
     _playheads.add(next);
   }
 
-  /// [track]'s position as a share of its length, `0` with no length or
-  /// while the take records ([Playhead.tracks]).
-  static double _progressOf(TrackSnapshot track) =>
-      track.lengthFrames > 0 && track.state != TrackState.recording
-      ? (track.positionFrames / track.lengthFrames).clamp(0.0, 1.0)
-      : 0;
+  /// [track]'s position as a share of its length ([Playhead.tracks]). While
+  /// the take records it is the share of the take's target, `0` with none
+  /// (#1936): the write head is no position to play against.
+  static double _progressOf(TrackSnapshot track) {
+    if (track.state == TrackState.recording) return _captureOf(track).progress;
+    return track.lengthFrames > 0
+        ? (track.positionFrames / track.lengthFrames).clamp(0.0, 1.0)
+        : 0;
+  }
+
+  /// [track]'s take in flight ([Playhead.captures]).
+  static TakeCapture _captureOf(TrackSnapshot track) =>
+      track.state == TrackState.recording
+      ? TakeCapture(
+          frames: track.captureFrames,
+          targetFrames: track.captureTargetFrames,
+          vizPoints: track.captureVizPoints,
+        )
+      : TakeCapture.none;
 
   void _publishMeters(EngineSnapshot s) {
     final next = MeterLevels(
@@ -250,12 +272,33 @@ class LooperRepository {
       outputPeaks: s.outputPeaks,
       tracks: [
         for (final track in s.tracks)
-          TrackLevels(peak: track.peak, peakL: track.peakL, peakR: track.peakR),
+          TrackLevels(
+            peak: track.peak,
+            peakL: track.peakL,
+            peakR: track.peakR,
+            input: _trackInputPeak(track, s.inputPeaks),
+          ),
       ],
     );
     if (next == _meters) return;
     _meters = next;
     _meterLevels.add(next);
+  }
+
+  /// The loudest input [track]'s lanes record from, after each input's trim
+  /// (#1936). [inputPeaks] are the raw peaks the engine reports; the capture
+  /// multiplies each input by its trim before it reaches a lane, so the level
+  /// shown is the level recorded.
+  double _trackInputPeak(TrackSnapshot track, List<double> inputPeaks) {
+    var loudest = 0.0;
+    for (final lane in track.lanes) {
+      final input = lane.inputChannel;
+      if (input < 0 || input >= inputPeaks.length) continue;
+      final level =
+          inputPeaks[input] * inputTrimGainOfDb(_inputSetup.trimDbOf(input));
+      if (level > loudest) loudest = level;
+    }
+    return loudest;
   }
 
   /// Fired when the repository changes a lane's chain or resets a remembered
@@ -2722,14 +2765,18 @@ class LooperRepository {
     transport: TransportState(
       deviceRunning: s.isRunning,
       masterLengthFrames: s.masterLengthFrames,
-      tempoBpm: s.tempoBpm,
-      tempoSource: s.tempoSource,
+      // While the beat analysis decides a free take's bars (#1936), the
+      // length's reading is provisional: no tempo and no bars until the
+      // answer, a few milliseconds later, so the figures never flip.
+      tempoBpm: s.tempoSettling ? 0 : s.tempoBpm,
+      tempoSource: s.tempoSettling ? TempoSource.none : s.tempoSource,
       tsNum: s.tsNum,
       tsDen: s.tsDen,
       syncTempo: s.syncTempo,
       quantizeDiv: s.quantizeDiv,
-      loopBars: s.loopBars,
-      loopBeats: s.loopBeats,
+      loopBars: s.tempoSettling ? 0 : s.loopBars,
+      tempoSettling: s.tempoSettling,
+      loopBeats: s.tempoSettling ? 0 : s.loopBeats,
       currentBeat: s.currentBeat,
       // Raw mode may change before the callback publishes its command fence.
       // Every repository consumer observes the same receipt-confirmed choice.
@@ -6795,6 +6842,9 @@ class LooperRepository {
   /// - once per track lap thereafter, at the wrap, while the track plays;
   /// - never while the track stands still (its last shape is kept).
   ///
+  /// While a take records, the buckets hold the take so far (#1936): all of
+  /// them toward a target, else only the ones drawn.
+  ///
   /// The native tap and playhead both span this track's entire loop, including
   /// multiples, divisions and independent Free/Song clocks.
   Float32List readTrackWaveform(int channel) {
@@ -6810,9 +6860,15 @@ class LooperRepository {
     final progress = playhead.track(channel);
     final entry = _waveforms[channel];
     if (entry == null || entry.key != key) {
-      final samples = _engine.readTrackVisual(channel);
-      _waveforms[channel] = _WaveformRead(key, samples, sweepFrom: progress);
-      return samples;
+      final read = _WaveformRead(
+        key,
+        _engine.readTrackVisual(channel),
+        sweepFrom: progress,
+      );
+      _waveforms[channel] = read;
+      return track.state == TrackState.recording
+          ? _takeShape(channel, read)
+          : read.samples;
     }
     final wrapped = progress < entry.lastProgress;
     if (wrapped) entry.wraps++;
@@ -6827,7 +6883,18 @@ class LooperRepository {
     if (track.isCapturing || (playing && (!swept || justSwept || wrapped))) {
       entry.samples = _engine.readTrackVisual(channel);
     }
+    if (track.state == TrackState.recording) return _takeShape(channel, entry);
     return entry.samples;
+  }
+
+  /// A recording take's shape (#1936): toward a target, every bucket (the
+  /// target's span, filled from the left); without one, the buckets drawn so
+  /// far, which a painter spreads across the row as the take grows.
+  Float32List _takeShape(int channel, _WaveformRead entry) {
+    final capture = playhead.capture(channel);
+    if (capture.targetFrames > 0) return entry.samples;
+    final drawn = capture.vizPoints.clamp(0, entry.samples.length);
+    return Float32List.sublistView(entry.samples, 0, drawn);
   }
 
   /// One copy of each track's waveform, see [readTrackWaveform].
@@ -9852,6 +9919,19 @@ class LooperRepository {
     _tempoSource = TempoSource.none;
     _reproject();
     return EngineResult.ok;
+  }
+
+  /// Reads the loop as twice ([double]) or half its bars, keeping the audio
+  /// (#1936, D4): the derived tempo doubles or halves with them, and nothing
+  /// retimes. The engine decides whether it applies (a derived tempo not
+  /// retimed since, no take recording, one shared loop, an even count to
+  /// halve, a tempo in range); otherwise the loop stays as it is. Stopped,
+  /// it answers [EngineResult.notRunning].
+  EngineResult scaleLoopBars({required bool double}) {
+    if (!_intendRunning) return EngineResult.notRunning;
+    final result = _engine.scaleLoopBars(double: double);
+    if (result.isOk) _reproject();
+    return result;
   }
 
   /// Sets the time signature to [num]/[den] (only the 17 Sheeran-verified

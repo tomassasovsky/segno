@@ -744,6 +744,9 @@ class TrackSnapshot {
     this.oneShot = false,
     this.settledTakeId = 0,
     this.positionFrames = 0,
+    this.captureFrames = 0,
+    this.captureTargetFrames = 0,
+    this.captureVizPoints = 0,
     this.pendingTrigger = -1,
     this.quantizeOverride,
     this.quantizeDivOverride,
@@ -791,6 +794,9 @@ class TrackSnapshot {
       oneShot = false,
       settledTakeId = 0,
       positionFrames = 0,
+      captureFrames = 0,
+      captureTargetFrames = 0,
+      captureVizPoints = 0,
       pendingTrigger = -1,
       quantizeOverride = null,
       quantizeDivOverride = null,
@@ -850,6 +856,9 @@ class TrackSnapshot {
     oneShot: native.one_shot != 0,
     settledTakeId: native.settled_take_id,
     positionFrames: native.position_frames,
+    captureFrames: native.capture_frames,
+    captureTargetFrames: native.capture_target_frames,
+    captureVizPoints: native.capture_viz_points,
     pendingTrigger: native.pending_trigger,
     quantizeOverride: native.quantize_override < 0
         ? null
@@ -1025,6 +1034,21 @@ class TrackSnapshot {
   /// it is the write head instead. `0` for an empty or never-played track.
   final int positionFrames;
 
+  /// Frames captured by the take in flight since its press (#1936); 0 unless
+  /// the track is recording. A take over a master counts from its own start,
+  /// where [positionFrames] is the write head locked to the master's phase.
+  final int captureFrames;
+
+  /// Where the take in flight ends by itself (#1936): an armed length preset
+  /// or a fixed multiple of the master loop, in frames. 0 when only a press
+  /// ends it (Auto, Sync, a free take) and when the track is not recording.
+  final int captureTargetFrames;
+
+  /// How many of the track's waveform buckets hold the take in flight
+  /// (#1936); 0 unless recording. Toward a target the buckets span the
+  /// target; without one they span what is captured so far.
+  final int captureVizPoints;
+
   /// What the arm reported by [pending] waits for: `0` the quantize grid,
   /// `1` a signal at the recording input (Sound start), `2` a Band section
   /// toggle at the primary's loop top; `-1` while nothing is pending.
@@ -1112,6 +1136,9 @@ class TrackSnapshot {
           oneShot == other.oneShot &&
           settledTakeId == other.settledTakeId &&
           positionFrames == other.positionFrames &&
+          captureFrames == other.captureFrames &&
+          captureTargetFrames == other.captureTargetFrames &&
+          captureVizPoints == other.captureVizPoints &&
           pendingTrigger == other.pendingTrigger &&
           quantizeOverride == other.quantizeOverride &&
           quantizeDivOverride == other.quantizeDivOverride &&
@@ -1155,6 +1182,9 @@ class TrackSnapshot {
     oneShot,
     settledTakeId,
     positionFrames,
+    captureFrames,
+    captureTargetFrames,
+    captureVizPoints,
     pendingTrigger,
     quantizeOverride,
     quantizeDivOverride,
@@ -1720,6 +1750,10 @@ class EngineSnapshot {
     this.syncTempo = true,
     this.quantizeDiv = GridDivision.off,
     this.loopBars = 0,
+    this.tempoSettling = false,
+    this.tempoEstimateBpm = 0,
+    this.tempoConfidence = 0,
+    this.tempoEstimateTrack = -1,
     this.loopBeats = 0,
     this.currentBeat = 0,
     this.clickMode = ClickMode.off,
@@ -1819,6 +1853,10 @@ class EngineSnapshot {
       syncTempo = true,
       quantizeDiv = GridDivision.off,
       loopBars = 0,
+      tempoSettling = false,
+      tempoEstimateBpm = 0,
+      tempoConfidence = 0,
+      tempoEstimateTrack = -1,
       loopBeats = 0,
       currentBeat = 0,
       clickMode = ClickMode.off,
@@ -1930,6 +1968,10 @@ class EngineSnapshot {
       syncTempo: native.sync_tempo != 0,
       quantizeDiv: GridDivision.fromCode(native.quantize_div),
       loopBars: native.loop_bars,
+      tempoSettling: native.tempo_settling != 0,
+      tempoEstimateBpm: native.tempo_estimate_bpm,
+      tempoConfidence: native.tempo_estimate_confidence,
+      tempoEstimateTrack: native.tempo_estimate_track,
       loopBeats: native.loop_beats,
       currentBeat: native.current_beat,
       clickMode: ClickMode.fromCode(native.click_mode),
@@ -2037,6 +2079,10 @@ class EngineSnapshot {
     bool? syncTempo,
     GridDivision? quantizeDiv,
     int? loopBars,
+    bool? tempoSettling,
+    double? tempoEstimateBpm,
+    double? tempoConfidence,
+    int? tempoEstimateTrack,
     int? loopBeats,
     int? currentBeat,
     ClickMode? clickMode,
@@ -2133,6 +2179,10 @@ class EngineSnapshot {
     syncTempo: syncTempo ?? this.syncTempo,
     quantizeDiv: quantizeDiv ?? this.quantizeDiv,
     loopBars: loopBars ?? this.loopBars,
+    tempoSettling: tempoSettling ?? this.tempoSettling,
+    tempoEstimateBpm: tempoEstimateBpm ?? this.tempoEstimateBpm,
+    tempoConfidence: tempoConfidence ?? this.tempoConfidence,
+    tempoEstimateTrack: tempoEstimateTrack ?? this.tempoEstimateTrack,
     loopBeats: loopBeats ?? this.loopBeats,
     currentBeat: currentBeat ?? this.currentBeat,
     clickMode: clickMode ?? this.clickMode,
@@ -2392,6 +2442,23 @@ class EngineSnapshot {
   /// do not make whole bars ([loopBeats]). The loop's audio length is never
   /// altered by the grid — this is a derived count.
   final int loopBars;
+
+  /// Whether the beat analysis is still deciding a free first take's bar
+  /// count (#1936): the tempo and bars may change until this reads false,
+  /// at most a second after the take closes.
+  final bool tempoSettling;
+
+  /// While a free first take records, the analysis's live tempo estimate in
+  /// BPM (#1936); `0` with none.
+  final double tempoEstimateBpm;
+
+  /// How sure the analysis is of [tempoEstimateBpm] (larger is surer); `0`
+  /// with none.
+  final double tempoConfidence;
+
+  /// The track whose take [tempoEstimateBpm] is of (#1936), `-1` with none:
+  /// another track recording at the same time has no estimate.
+  final int tempoEstimateTrack;
 
   /// Whole beats (denominator notes) in the master loop, the grid's own
   /// count, or `0` with no grid (#1168). [loopBars] × [tsNum] for a
@@ -2687,6 +2754,10 @@ class EngineSnapshot {
           syncTempo == other.syncTempo &&
           quantizeDiv == other.quantizeDiv &&
           loopBars == other.loopBars &&
+          tempoSettling == other.tempoSettling &&
+          tempoEstimateBpm == other.tempoEstimateBpm &&
+          tempoConfidence == other.tempoConfidence &&
+          tempoEstimateTrack == other.tempoEstimateTrack &&
           loopBeats == other.loopBeats &&
           currentBeat == other.currentBeat &&
           clickMode == other.clickMode &&
@@ -2785,6 +2856,10 @@ class EngineSnapshot {
     syncTempo,
     quantizeDiv,
     loopBars,
+    tempoSettling,
+    tempoEstimateBpm,
+    tempoConfidence,
+    tempoEstimateTrack,
     loopBeats,
     currentBeat,
     clickMode,

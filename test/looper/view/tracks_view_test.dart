@@ -39,6 +39,7 @@ import 'package:segno/looper/view/stage_db_scale.dart';
 import 'package:segno/looper/view/stage_top_bar.dart';
 import 'package:segno/looper/view/track_column.dart';
 import 'package:segno/looper/view/track_meters.dart';
+import 'package:segno/looper/view/wave_track_row.dart';
 import 'package:segno/notices/notices.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
@@ -1274,6 +1275,69 @@ void main() {
     await tester.pumpAndSettle();
   });
 
+  group('a recording Wave row (#1936)', () {
+    Future<void> pumpWave(WidgetTester tester, LooperMeterState state) =>
+        tester.pumpWidget(
+          MaterialApp(
+            theme: AppTheme.neon,
+            home: RepositoryProvider<LooperRepository>.value(
+              value: repository,
+              child: BlocProvider<LooperBloc>.value(
+                value: bloc,
+                child: Scaffold(
+                  body: SizedBox(
+                    width: 800,
+                    height: 200,
+                    child: TrackWaveform(
+                      channel: 0,
+                      state: state,
+                      hasContent: true,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+
+    double drawn(WidgetTester tester) =>
+        tester.widget<WaveformView>(find.byType(WaveformView)).progress;
+
+    testWidgets('draws no playhead over a take that is still recording', (
+      tester,
+    ) async {
+      seed(const LooperState());
+      when(() => repository.playhead).thenReturn(const Playhead(tracks: [0.4]));
+      await pumpWave(tester, LooperMeterState.recording);
+      expect(drawn(tester), 0);
+
+      await pumpWave(tester, LooperMeterState.playing);
+      expect(drawn(tester), 0.4);
+    });
+
+    testWidgets("draws the target's bar ruler while recording toward it", (
+      tester,
+    ) async {
+      // 120 BPM at 1 kHz: 2000-frame bars, a 4-bar target.
+      seed(
+        const LooperState(
+          status: EngineStatus(sampleRate: 1000),
+          transport: TransportState(
+            tempoBpm: 120,
+            tempoSource: TempoSource.manual,
+          ),
+        ),
+      );
+      when(() => repository.playhead).thenReturn(
+        const Playhead(
+          captures: [TakeCapture(frames: 3000, targetFrames: 8000)],
+        ),
+      );
+      await pumpWave(tester, LooperMeterState.recording);
+      expect(tester.widget<WaveformView>(find.byType(WaveformView)).bars, 4);
+    });
+  });
+
   group('the footer opens the Loop settings tabs (#1653, #1659)', () {
     Future<LoopSettingsTab> opened(WidgetTester tester, String key) async {
       seed(const LooperState(tracks: [Track()]));
@@ -1537,6 +1601,7 @@ void main() {
       required String name,
       required InteractionMode mode,
       Track? liveTrack,
+      bool selected = false,
     }) {
       // [track] is seeded as the bloc's OWN track for its channel, not just
       // handed to the widget. A column is a live view: its meter reads the
@@ -1570,7 +1635,7 @@ void main() {
                     child: TrackColumn(
                       track: track,
                       name: name,
-                      selected: false,
+                      selected: selected,
                       mode: mode,
                     ),
                   ),
@@ -1581,6 +1646,92 @@ void main() {
         ),
       );
     }
+
+    group('the meter follows the input (#1936)', () {
+      bool followsInput(WidgetTester tester) =>
+          tester.widget<TrackPeakMeter>(find.byType(TrackPeakMeter)).input;
+
+      Future<void> pumpState(
+        WidgetTester tester,
+        TrackState state, {
+        bool selected = false,
+        bool pending = false,
+      }) => pumpColumn(
+        tester,
+        track: Track(
+          state: state,
+          lengthFrames: state == TrackState.empty ? 0 : 48000,
+          pending: pending,
+          lanes: const [Lane(inputChannel: 0)],
+        ),
+        name: 'Track 1',
+        mode: InteractionMode.record,
+        selected: selected,
+      );
+
+      testWidgets('on the selected empty track', (tester) async {
+        await pumpState(tester, TrackState.empty, selected: true);
+        expect(followsInput(tester), isTrue);
+      });
+
+      testWidgets('on an empty track with a record arm waiting', (
+        tester,
+      ) async {
+        await pumpState(tester, TrackState.empty, pending: true);
+        expect(followsInput(tester), isTrue);
+      });
+
+      testWidgets("a recording take's bars slot counts the take", (
+        tester,
+      ) async {
+        await pumpState(tester, TrackState.recording, selected: true);
+        expect(find.byKey(const Key('tracks_capture_0')), findsOneWidget);
+        expect(find.byKey(const Key('tracks_bars_0')), findsNothing);
+
+        await pumpState(tester, TrackState.playing, selected: true);
+        expect(find.byKey(const Key('tracks_capture_0')), findsNothing);
+        expect(find.byKey(const Key('tracks_bars_0')), findsOneWidget);
+      });
+
+      testWidgets('not on another empty track', (tester) async {
+        await pumpState(tester, TrackState.empty);
+        expect(followsInput(tester), isFalse);
+      });
+
+      testWidgets('while recording and overdubbing', (tester) async {
+        await pumpState(tester, TrackState.recording);
+        expect(followsInput(tester), isTrue);
+        await pumpState(tester, TrackState.overdubbing);
+        expect(followsInput(tester), isTrue);
+      });
+
+      testWidgets('not while playing or stopped, selected or not', (
+        tester,
+      ) async {
+        await pumpState(tester, TrackState.playing, selected: true);
+        expect(followsInput(tester), isFalse);
+        await pumpState(tester, TrackState.stopped, selected: true);
+        expect(followsInput(tester), isFalse);
+      });
+
+      testWidgets('draws the input in the record colour while recording', (
+        tester,
+      ) async {
+        setLevels(
+          const MeterLevels(tracks: [TrackLevels(peak: 0, input: 0.5)]),
+        );
+        await pumpState(tester, TrackState.recording);
+        final bar = tester.widget<PeakMeterBar>(find.byType(PeakMeterBar));
+        expect(bar.peak, closeTo(0.5, 0.01));
+        expect(
+          bar.color,
+          AppTheme.neon.extension<LooperTheme>()!.meterColor(
+            LooperMeterState.recording,
+            mode: InteractionMode.record,
+          ),
+        );
+      });
+    });
 
     testWidgets('a value-equal Track from an EARLIER poll is accepted', (
       tester,
@@ -4532,13 +4683,10 @@ void main() {
         isTrue,
       );
       expect(identical(other, tester.widget<TrackColumn>(_column(1))), isTrue);
-      expect(
-        find.descendant(
-          of: find.byKey(const Key('tracks_bars_0')),
-          matching: find.text('—'),
-        ),
-        findsOneWidget,
-      );
+      // The growing length is no count: the slot counts the take from its
+      // capture on the playheads instead (#1936).
+      expect(find.byKey(const Key('tracks_capture_0')), findsOneWidget);
+      expect(find.byKey(const Key('tracks_bars_0')), findsNothing);
     });
 
     testWidgets('a level-only change does not rebuild the chrome', (
@@ -4686,7 +4834,11 @@ void main() {
         final meter = tester.widget<PeakMeterBar>(
           find.descendant(of: _column(0), matching: find.byType(PeakMeterBar)),
         );
-        expect(meter.hasContent, change.after.hasContent);
+        // A capturing track, and the selected empty one (channel 0 here),
+        // meter their input, which shows whatever the track holds (#1936).
+        final followsInput =
+            change.after.isCapturing || change.after.state == TrackState.empty;
+        expect(meter.hasContent, change.after.hasContent || followsInput);
       });
     }
 

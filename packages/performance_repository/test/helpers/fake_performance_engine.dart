@@ -746,6 +746,9 @@ class FakePerformanceEngine with SimulatedInstruments implements AudioEngine {
 
   @override
   EngineResult clearTempo() => EngineResult.ok;
+
+  @override
+  EngineResult scaleLoopBars({required bool double}) => EngineResult.ok;
   @override
   EngineResult setTempo(double bpm) => EngineResult.ok;
   @override

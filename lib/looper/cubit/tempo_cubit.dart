@@ -45,6 +45,16 @@ class TempoCubit extends Cubit<TempoState> {
     _settings.tapTempo();
   }
 
+  /// Reads the loop as half its bars, at half the tempo (#1936).
+  void halveLoopBars() {
+    _settings.scaleLoopBars(double: false);
+  }
+
+  /// Reads the loop as twice its bars, at twice the tempo (#1936).
+  void doubleLoopBars() {
+    _settings.scaleLoopBars(double: true);
+  }
+
   @override
   Future<void> close() async {
     await _subscription.cancel();

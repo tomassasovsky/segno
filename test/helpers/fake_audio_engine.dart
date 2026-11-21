@@ -887,6 +887,9 @@ class FakeAudioEngine with SimulatedInstruments implements AudioEngine {
   EngineResult clearTempo() => EngineResult.ok;
 
   @override
+  EngineResult scaleLoopBars({required bool double}) => EngineResult.ok;
+
+  @override
   EngineResult setTempo(double bpm) {
     lastTempoBpm = bpm;
     return EngineResult.ok;
@@ -2110,6 +2113,10 @@ class _LengthSnapshot extends EngineSnapshot {
          syncTempo: source.syncTempo,
          quantizeDiv: engine.lastQuantizeDiv ?? source.quantizeDiv,
          loopBars: source.loopBars,
+         tempoSettling: source.tempoSettling,
+         tempoEstimateBpm: source.tempoEstimateBpm,
+         tempoConfidence: source.tempoConfidence,
+         tempoEstimateTrack: source.tempoEstimateTrack,
          loopBeats: source.loopBeats,
          currentBeat: source.currentBeat,
          clickMode: source.clickMode,
@@ -2207,6 +2214,9 @@ class _LengthTrack extends TrackSnapshot {
          oneShot: oneShot ?? source.oneShot,
          settledTakeId: source.settledTakeId,
          positionFrames: source.positionFrames,
+         captureFrames: source.captureFrames,
+         captureTargetFrames: source.captureTargetFrames,
+         captureVizPoints: source.captureVizPoints,
          pendingTrigger: source.pendingTrigger,
          quantizeOverride: timing == null
              ? source.quantizeOverride

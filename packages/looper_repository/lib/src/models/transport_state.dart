@@ -19,6 +19,7 @@ class TransportState extends Equatable {
     this.syncTempo = true,
     this.quantizeDiv = GridDivision.off,
     this.loopBars = 0,
+    this.tempoSettling = false,
     this.loopBeats = 0,
     this.currentBeat = 0,
     this.clickMode = ClickMode.off,
@@ -76,6 +77,12 @@ class TransportState extends Equatable {
   /// Whole bars in the master loop, or `0` when no grid relationship exists
   /// or its beats do not make whole bars ([loopBeats]).
   final int loopBars;
+
+  /// Whether the beat analysis is still deciding a free first take's bars
+  /// (#1936), a few milliseconds after the take closes (a second at most).
+  /// The tempo, [loopBars] and [loopBeats] read as none meanwhile: the
+  /// length's provisional reading is not shown, so they never flip.
+  final bool tempoSettling;
 
   /// Whole beats (denominator notes) in the master loop, the grid's own
   /// count, or `0` with no grid. A Divide of a sole 1- or 3-bar loop keeps
@@ -178,6 +185,32 @@ class TransportState extends Equatable {
   /// engine is stopped and has nothing to report.
   final RecordTiming recordTiming;
 
+  /// One beat (a denominator note) in frames: the master grid's own when it
+  /// exists, else the nominal tempo's at [sampleRate]; null without either.
+  /// A take that is still recording counts its bars on this grid (#1936).
+  double? framesPerBeat(int sampleRate) {
+    if (masterLengthFrames > 0 && loopBeats > 0) {
+      return masterLengthFrames / loopBeats;
+    }
+    if (masterLengthFrames > 0 && loopBars > 0 && tsNum > 0) {
+      return masterLengthFrames / (loopBars * tsNum);
+    }
+    if (sampleRate <= 0 ||
+        tempoSource == TempoSource.none ||
+        !tempoBpm.isFinite ||
+        tempoBpm <= 0) {
+      return null;
+    }
+    return sampleRate * 60 / tempoBpm;
+  }
+
+  /// One bar ([tsNum] beats) in frames, on [framesPerBeat]'s grid; null
+  /// without one.
+  double? framesPerBar(int sampleRate) {
+    final perBeat = framesPerBeat(sampleRate);
+    return perBeat == null || tsNum <= 0 ? null : perBeat * tsNum;
+  }
+
   /// Whether a master loop length has been established.
   bool get hasLoop => masterLengthFrames > 0;
 
@@ -192,6 +225,7 @@ class TransportState extends Equatable {
     syncTempo,
     quantizeDiv,
     loopBars,
+    tempoSettling,
     loopBeats,
     currentBeat,
     clickMode,

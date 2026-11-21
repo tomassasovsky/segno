@@ -27,6 +27,11 @@ extern "C" {
  * 30–280: segno keeps its historical 30–300 range (documented plan deviation). */
 #define LE_GRID_TEMPO_MIN 30.0f
 #define LE_GRID_TEMPO_MAX 300.0f
+/* The tempo window a free loop's bar count is read in first (#1936): a loop
+ * is almost always 1, 2, 4, 8, 16, 32 or 64 bars, at a tempo players use. */
+#define LE_GRID_LIKELY_TEMPO_MIN 60.0
+#define LE_GRID_LIKELY_TEMPO_MAX 200.0
+#define LE_GRID_LIKELY_MAX_BARS 64
 
 /* Musical quantization granularity (the value of the engine's a_quantize_div /
  * le_snapshot.quantize_div and of LE_CMD_SET_QUANTIZE_DIV's arg_i). OFF (0) is
@@ -91,10 +96,14 @@ int64_t le_grid_next_boundary(const le_tempo_grid* g, int64_t pos, int32_t div);
  * audio length is never altered). Returns 0 for a degenerate grid or length. */
 int32_t le_grid_bars_for_loop(const le_tempo_grid* g, int32_t loop_frames);
 
-/* Derives a tempo from a freshly recorded loop (D7, TempoSource.none only):
- * picks the BPM in [LE_GRID_TEMPO_MIN, LE_GRID_TEMPO_MAX] that gives the loop
- * a whole number of bars in the current signature, tie-break nearest 120; if
- * two candidates are equidistant from 120 the SLOWER one (fewer bars) wins.
+/* Derives a tempo from a freshly recorded loop (D7, TempoSource.none only).
+ * First a power-of-two bar count (1 to LE_GRID_LIKELY_MAX_BARS) whose tempo
+ * falls in [LE_GRID_LIKELY_TEMPO_MIN, LE_GRID_LIKELY_TEMPO_MAX], nearest 120
+ * (#1936: loops are almost always 1, 2, 4 or 8 bars, and any whole count let
+ * a 4-bar take at 140 read as 3 bars at 105). With none in that window, the
+ * BPM in [LE_GRID_TEMPO_MIN, LE_GRID_TEMPO_MAX] that gives the loop a whole
+ * number of bars in the current signature, nearest 120. Either way, if two
+ * candidates are equidistant from 120 the SLOWER one (fewer bars) wins.
  * A loop too short for even one bar at the max tempo clamps to the max with
  * one bar. Writes the chosen bar count to *out_bars. The beat unit is the
  * denominator note, so ts_den cancels out and is not a parameter. Returns
