@@ -364,11 +364,10 @@ current policy includes, and their lanes do not record an output route
 (`outputMask` reads as `3`; on 13 September a lane was routed to no output,
 set before the arm and so in no take file). No master rebuilt from the lanes
 can match the captured one, so the renderer writes no `stems/wet/master.wav`
-for such a take (#1855). A take that a build with #1854 rendered has one, and
-is not rendered again once it has its stems, so each start removes it (see
-"Crash consistency"). The DAW package and Segno Transfer then carry the
-captured `master.wav` alone. The Live set, the Library's playback and the
-lane stems use the captured master and the lanes, as for any take.
+for such a take (#1855), and a render of it removes one an earlier build
+wrote. The DAW package and Segno Transfer then carry the captured
+`master.wav` alone. The Live set, the Library's playback and the lane stems
+use the captured master and the lanes, as for any take.
 
 ### FX stages and the presence-keyed version marker
 
@@ -504,12 +503,6 @@ gets that snapshot in its manifest, as it was written, and the file is
 removed. A take whose files do not
 read keeps them, its reason logged. The take's stems are rendered when the
 Library first needs them.
-
-A build with #1854 rendered such a take's stems with a rebuilt master,
-`stems/wet/master.wav`, that is not its captured master (#1855). Each start
-also removes that file from a finalized take whose manifest holds a
-September-shape `armSnapshot`, and logs it once. Nothing else of the take
-changes. A file that cannot be removed stays, with the reason logged.
 
 ## Checkpoints (`checkpoint-a.json`, `checkpoint-b.json`; #1198 D4, #727)
 
