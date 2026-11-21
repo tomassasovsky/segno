@@ -2991,8 +2991,14 @@ static void le_pr_wet_render(le_pr_wet_run* w, const le_pr_manifest* m,
       w->heard_mix = 0.0f;
     } else {
       if (!to_image && w->heard_mix >= 1.0f) le_pr_settle_chain(fx, post_from);
-      w->heard_mix += to_image ? heard_step : -heard_step;
-      w->heard_mix = w->heard_mix > 1.0f ? 1.0f : w->heard_mix < 0.0f ? 0.0f : w->heard_mix;
+      if (!fed) {
+        /* Nothing of the lane is heard: it goes to its target at once, as
+         * the callback's does (le_heard_lane_wet, #1914). */
+        w->heard_mix = to_image ? 1.0f : 0.0f;
+      } else {
+        w->heard_mix += to_image ? heard_step : -heard_step;
+        w->heard_mix = w->heard_mix > 1.0f ? 1.0f : w->heard_mix < 0.0f ? 0.0f : w->heard_mix;
+      }
     }
     const float heard_mix = w->heard_mix;
     if (heard_mix < 1.0f) {
