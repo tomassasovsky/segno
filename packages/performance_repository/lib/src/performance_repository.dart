@@ -1573,6 +1573,12 @@ class PerformanceRepository {
   /// then the [dawProjectFiles]. The Library copies them keeping these
   /// paths, so the Live Set opens on the drive with none of its media
   /// missing (#1799).
+  ///
+  /// A take armed before capture destinations (#1853) has no rebuilt master
+  /// (#1855): it was captured after the master gain and limiter, with lane
+  /// routes it did not record, so its package carries the captured master
+  /// alone, and a `stems/wet/master.wav` an earlier build rendered is left
+  /// out.
   List<String> dawPackageFiles(CaptureSummary capture) {
     final dir = capture.path;
     final stems = <String>[];
@@ -1591,6 +1597,7 @@ class PerformanceRepository {
         ]..sort(),
       );
     }
+    if (_armedBeforeDestinations(dir)) stems.remove('stems/wet/master.wav');
     return [
       for (final part in capture.parts)
         if (File('$dir/${part.file}').existsSync()) part.file,
@@ -1598,6 +1605,22 @@ class PerformanceRepository {
       for (final file in dawProjectFiles)
         if (File('$dir/$file').existsSync()) file,
     ];
+  }
+
+  /// Whether the arm snapshot in [dir]'s sidecar was written before capture
+  /// destinations ([PerformanceArmSnapshot.writtenBeforeDestinations]).
+  /// False when the sidecar does not read: the Library lists no such take.
+  bool _armedBeforeDestinations(String dir) {
+    try {
+      final json = jsonDecode(
+        File('$dir/$manifestName').readAsStringSync(),
+      ) as Map<String, dynamic>;
+      final arm = json['armSnapshot'];
+      return arm is Map<String, dynamic> &&
+          PerformanceArmSnapshot.writtenBeforeDestinations(arm);
+    } on Object {
+      return false;
+    }
   }
 
   /// Deletes the finished recording [capture] from internal storage (the

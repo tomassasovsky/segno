@@ -66,6 +66,21 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 ---
 
+## November 2026 September takes ship their captured master (SEG-76, #1855)
+
+- A take armed before capture destinations (#1853, the console's September
+  takes) was captured after the master gain and limiter, and its lanes'
+  output routes are in no take file (a lane routed to no output on 13
+  September was set before the arm). No master rebuilt from its lanes can
+  match the captured one.
+- The renderer (`perf_render.c`) writes no `stems/wet/master.wav` for such a
+  take; its lane stems and index are rendered as before, and a re-render
+  removes a rebuilt master an earlier build left. `dawPackageFiles` leaves
+  out one already on disk, so the DAW package carries the captured
+  `master.wav` alone.
+- Not checked on the console: a September take's DAW package after the
+  update.
+
 ## November 2026 Custom controls start with a default map (#1908)
 
 - A console that has never saved a pedal setup loads `PedalSetup.fresh`: the

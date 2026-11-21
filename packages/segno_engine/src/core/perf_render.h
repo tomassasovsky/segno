@@ -5,9 +5,11 @@
  * lane<lane>.wav`, part 7, #1824), per-lane wet stems with the logged FX
  * chain and mix applied (`stems/wet/track<channel>-lane<lane>.wav`, part 8),
  * their index (`stems/stems.json`), and a reconstructed master bus
- * (`stems/wet/master.wav`, part 8: track sum + master gain + limiter) that
- * is this feature's golden-parity guardrail against the live-captured
- * master.
+ * (`stems/wet/master.wav`, part 8: the lanes' routed sum + the captured
+ * output's stages) that is this feature's golden-parity guardrail against
+ * the live-captured master. A take armed before capture destinations
+ * (#1853) gets no master (#1855): it was captured after the master gain
+ * and limiter, with lane routes it did not record.
  *
  * Reads exclusively from the capture directory — `performance.json`
  * (sample rate, channel layout, arm/disarm snapshots including the master

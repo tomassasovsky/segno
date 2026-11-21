@@ -229,7 +229,7 @@ float WAV the length of the take:
 |---|---|
 | `stems/dry/track<c>-lane<l>.wav` | The lane's loop as it played, at unity: its own layers and images, with the overdub passes placed where they were heard (#1808), the Stop and Play fades, Reverse, Speed and Transpose. No volume, mute or effects. Silent wherever the track did not mix the lane (past its logged lane count). |
 | `stems/wet/track<c>-lane<l>.wav` | The same lane after its volume, its effect chain (or its heard image, #1713), its mute, the track's solo, gain and fade, and Cut: what the lane sent to the output, before its pan, folded to mono `(L + R) / 2`. |
-| `stems/wet/master.wav` | Every lane's routed contribution (after its pan and output routing) summed, then the captured destination's output chain, and under Follow output its level and mute. |
+| `stems/wet/master.wav` | Every lane's routed contribution (after its pan and output routing) summed, then the captured destination's output chain, and under Follow output its level and mute. Not written for a take armed before capture destinations (see below). |
 | `stems/stems.json` | The index of the lane stems this render published. |
 
 ```jsonc
@@ -361,11 +361,14 @@ was written, so every take of this kind keeps the September shape.
 
 These takes were captured after the master gain and limiter, which neither
 current policy includes, and their lanes do not record an output route
-(`outputMask` reads as `3`). A reconstructed master (`stems/wet/master.wav`)
-of such a take is therefore not the captured master when the master gain was
-not unity or a lane was routed elsewhere. It is copied only into the DAW
-package; the Live set, the Library's playback and the lane stems use the
-captured master and are not affected.
+(`outputMask` reads as `3`; on 13 September a lane was routed to no output,
+set before the arm and so in no take file). No master rebuilt from the lanes
+can match the captured one, so the renderer writes no `stems/wet/master.wav`
+for such a take, and removes one an earlier build wrote when it renders the
+take again (#1855). The DAW package carries the captured `master.wav` alone,
+and leaves out a rebuilt master already on disk. The Live set, the Library's
+playback and the lane stems use the captured master and the lanes, as for
+any take.
 
 ### FX stages and the presence-keyed version marker
 

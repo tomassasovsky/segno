@@ -314,6 +314,7 @@ void main() {
             'input-raw-0-001.wav': 10,
             'stems/wet/track1.wav': 4,
             'stems/wet/track0.wav': 4,
+            'stems/wet/master.wav': 4,
             'stems/dry/track0.wav': 4,
             'stems/dry/notes.txt': 4,
             'loops/track0-lane1.wav': 4,
@@ -329,6 +330,7 @@ void main() {
           'input-0-001.wav',
           'input-raw-0-001.wav',
           'stems/dry/track0.wav',
+          'stems/wet/master.wav',
           'stems/wet/track0.wav',
           'stems/wet/track1.wav',
           'loops/track0-lane0-heard.wav',
@@ -337,6 +339,55 @@ void main() {
         ]);
       },
     );
+
+    test(
+      'leaves out the rebuilt master of a take armed before capture '
+      'destinations, whose captured master it does not match (#1855)',
+      () async {
+        // The console's own manifest of a September take.
+        const slug = 'perf-20260911-220056';
+        final dir = '$root/$slug';
+        Directory(dir).createSync();
+        File('$dir/performance.json').writeAsStringSync(
+          File('test/fixtures/september/$slug.performance.json')
+              .readAsStringSync(),
+        );
+        for (final file in [
+          'master.wav',
+          'stems/dry/track0-lane0.wav',
+          'stems/wet/track0-lane0.wav',
+          'stems/wet/master.wav',
+          'project.als',
+        ]) {
+          File('$dir/$file')
+            ..parent.createSync(recursive: true)
+            ..writeAsBytesSync(Uint8List(64));
+        }
+        final capture = (await repo.listCaptures()).single;
+
+        expect(repo.dawPackageFiles(capture), [
+          'master.wav',
+          'stems/dry/track0-lane0.wav',
+          'stems/wet/track0-lane0.wav',
+          'project.als',
+        ]);
+      },
+    );
+
+    test('keeps the rebuilt master when the sidecar no longer reads', () async {
+      final dir = take(
+        'perf-20261006-201500',
+        parts: [part(0, 1, 'master-001.wav')],
+        files: {'master-001.wav': 10, 'stems/wet/master.wav': 4},
+      );
+      final capture = (await repo.listCaptures()).single;
+      File('$dir/performance.json').writeAsStringSync('{');
+
+      expect(repo.dawPackageFiles(capture), [
+        'master-001.wav',
+        'stems/wet/master.wav',
+      ]);
+    });
   });
 
   test(

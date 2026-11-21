@@ -4372,16 +4372,17 @@ LE_EXPORT int32_t le_wav_patch_sizes(const char* path, uint64_t max_frames,
  * (FX-applied) stems and a reconstructed master bus (part 8,
  * `stems/wet/track<channel>-lane<lane>.wav` + `stems/wet/master.wav`: the
  * lanes' sum + the captured output's stages — this feature's golden-parity
- * guardrail against the live-captured master), listed in
- * `stems/stems.json`.
+ * guardrail against the live-captured master; none for a take armed
+ * before capture destinations, #1855), listed in `stems/stems.json`.
  * Reads exclusively from disk — no live-engine dependency — so a render can
  * run concurrently with live looping, and a crash-salvage render is free. */
 
 /* Starts an offline render of the finalized capture at `capture_dir`: spawns
  * a worker thread that writes `stems/dry/track<channel>-lane<lane>.wav` +
  * `stems/wet/track<channel>-lane<lane>.wav` under `capture_dir` for every
- * lane of every non-empty track (#1824), `stems/wet/master.wav` and the
- * index `stems/stems.json`, all a block at a time together (#1747),
+ * lane of every non-empty track (#1824), `stems/wet/master.wav` (none
+ * for a take armed before capture destinations, #1855) and the index
+ * `stems/stems.json`, all a block at a time together (#1747),
  * each published at its path once it seals, with poll-based progress.
  * Returns LE_OK once the worker thread is launched (this call never blocks
  * on the render itself), LE_ERR_INVALID

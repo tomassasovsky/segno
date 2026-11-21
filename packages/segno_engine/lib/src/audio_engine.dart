@@ -1709,8 +1709,9 @@ abstract interface class EnginePerformanceCapture {
   /// capture's snapshots and retired-layer files, and writes
   /// `stems/dry/track<channel>-lane<lane>.wav`,
   /// `stems/wet/track<channel>-lane<lane>.wav`, their index
-  /// `stems/stems.json` and the master `stems/wet/master.wav`
-  /// (docs/formats/performance-manifest-format.md, #1824). A track's status
+  /// `stems/stems.json` and the master `stems/wet/master.wav`, which a take
+  /// armed before capture destinations does not get (#1855;
+  /// docs/formats/performance-manifest-format.md, #1824). A track's status
   /// below succeeds when all its lanes do. Reads only from disk — no
   /// live-engine dependency, so a render runs correctly whether or not this
   /// engine is currently armed or looping. Returns [EngineResult.ok] once the
