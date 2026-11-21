@@ -6486,6 +6486,93 @@ static void test_length_preset_n_bars_click_on_auto_finalizes(void) {
   le_engine_destroy(e);
 }
 
+/* #1936: the take in flight. A defining take with an armed preset counts
+ * from 0 toward the preset's frames; the fields read 0 once it closes. The
+ * snapshot publishes at block end, so the count trails the press by at most
+ * one block. */
+static void test_capture_progress_preset_take(void) {
+  printf("test_capture_progress_preset_take\n");
+  le_engine* e = tg_make_engine_cap(1000, 100000);
+  le_snapshot s;
+
+  le_engine_set_tempo(e, 120.0f);
+  CHECK(le_engine_set_click_mode(e, LE_CLICK_REC) == LE_OK);
+  CHECK(le_engine_set_track_length_preset(e, 0, 4) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].capture_frames == 0);
+  CHECK(s.tracks[0].capture_target_frames == 0);
+
+  le_engine_record(e, 0);
+  tg_advance(e, 3000);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_RECORDING);
+  CHECK(s.tracks[0].capture_target_frames == 8000); /* 4 bars at 120 */
+  CHECK(s.tracks[0].capture_frames > 3000 - 64);
+  CHECK(s.tracks[0].capture_frames <= 3000);
+
+  tg_advance(e, 5000 + 1000 / 100); /* the target and the seam crossfade */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_OVERDUBBING);
+  CHECK(s.tracks[0].capture_frames == 0);
+  CHECK(s.tracks[0].capture_target_frames == 0);
+
+  le_engine_destroy(e);
+}
+
+/* #1936: a free defining take (no tempo, no preset) counts its frames and
+ * has no target: only the press ends it. */
+static void test_capture_progress_free_take(void) {
+  printf("test_capture_progress_free_take\n");
+  le_engine* e = tg_make_engine_cap(1000, 100000);
+  le_snapshot s;
+
+  le_engine_record(e, 0);
+  tg_advance(e, 2000);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_RECORDING);
+  CHECK(s.tracks[0].capture_target_frames == 0);
+  CHECK(s.tracks[0].capture_frames > 2000 - 64);
+  CHECK(s.tracks[0].capture_frames <= 2000);
+
+  le_engine_destroy(e);
+}
+
+/* #1936: a take over a master counts from its own press, not from the
+ * master's phase, and targets its fixed multiple of the master loop; an
+ * Auto multiple has no target. */
+static void test_capture_progress_over_master(void) {
+  printf("test_capture_progress_over_master\n");
+  le_engine* e = tg_make_engine_cap(1000, 100000);
+  le_snapshot s;
+
+  tg_record_defining_loop(e, 4000);
+  CHECK(le_engine_set_track_multiple(e, 1, 2) == LE_OK);
+  tg_advance(e, 1000); /* the press lands mid-cycle */
+
+  le_engine_record(e, 1);
+  tg_advance(e, 1500);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_RECORDING);
+  CHECK(s.tracks[1].capture_target_frames == 8000);
+  CHECK(s.tracks[1].capture_frames > 1500 - 64);
+  CHECK(s.tracks[1].capture_frames <= 1500);
+  /* The write head is phase-locked to the master: not frames captured. */
+  CHECK(s.tracks[1].position_frames > s.tracks[1].capture_frames);
+  le_engine_record(e, 1);
+  tg_advance(e, 64);
+
+  le_engine_record(e, 2); /* Auto: grows until the press */
+  tg_advance(e, 640);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[2].state == LE_TRACK_RECORDING);
+  CHECK(s.tracks[2].capture_target_frames == 0);
+  CHECK(s.tracks[2].capture_frames > 640 - 64);
+  CHECK(s.tracks[2].capture_frames <= 640);
+
+  le_engine_destroy(e);
+}
+
 static void test_length_preset_n_bars_click_on_arms_through_count_in(void) {
   printf("test_length_preset_n_bars_click_on_arms_through_count_in\n");
   /* Code-review coverage gap: le_arm_length_preset_target has TWO call
@@ -39951,6 +40038,9 @@ int main(void) {
   SHARD(test_length_preset_auto_click_on_no_tempo_falls_back);
   SHARD(test_length_preset_n_bars_click_off_derives_tempo);
   SHARD(test_length_preset_n_bars_click_on_auto_finalizes);
+  SHARD(test_capture_progress_preset_take);
+  SHARD(test_capture_progress_free_take);
+  SHARD(test_capture_progress_over_master);
   SHARD(test_length_preset_n_bars_click_on_arms_through_count_in);
   SHARD(test_length_preset_n_bars_click_on_early_press_disarms);
   SHARD(test_length_preset_n_bars_click_on_handoff_before_target);

@@ -167,6 +167,8 @@ EngineSnapshot _playingAt(
   double peak = 0.5,
   TrackState state = TrackState.playing,
   int lengthFrames = 96000,
+  int captureFrames = 0,
+  int captureTargetFrames = 0,
 }) => EngineSnapshot(
   isRunning: true,
   sampleRate: 48000,
@@ -189,6 +191,8 @@ EngineSnapshot _playingAt(
       muted: false,
       lengthFrames: lengthFrames,
       positionFrames: masterPositionFrames,
+      captureFrames: captureFrames,
+      captureTargetFrames: captureTargetFrames,
       undoDepth: 1,
       rms: 0.3,
       peak: peak,
@@ -2367,6 +2371,38 @@ void main() {
 
       expect(repo.playhead.track(0), 0);
       expect(repo.playhead.track(1), 0);
+      expect(repo.playhead.capture(0), TakeCapture.none);
+    });
+
+    test('a recording take toward a target reports its share of it, and '
+        'its capture (#1936)', () async {
+      engine.nextSnapshot = _playingAt(
+        4800,
+        state: TrackState.recording,
+        lengthFrames: 4800,
+        captureFrames: 2000,
+        captureTargetFrames: 8000,
+      );
+      final repo = buildRepo();
+      addTearDown(repo.dispose);
+      final sub = repo.looperState.listen((_) {});
+      addTearDown(sub.cancel);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(repo.playhead.track(0), 0.25);
+      expect(
+        repo.playhead.capture(0),
+        const TakeCapture(frames: 2000, targetFrames: 8000),
+      );
+      expect(repo.playhead.capture(1), TakeCapture.none);
+
+      // The take closes: the capture goes, the playhead is the play position.
+      engine.nextSnapshot = _playingAt(24000);
+      ticker.add(null);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(repo.playhead.capture(0), TakeCapture.none);
+      expect(repo.playhead.track(0), 0.25);
     });
 
     test('meters carry the master, input, monitor and output levels', () async {

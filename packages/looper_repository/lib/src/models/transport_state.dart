@@ -178,6 +178,25 @@ class TransportState extends Equatable {
   /// engine is stopped and has nothing to report.
   final RecordTiming recordTiming;
 
+  /// One beat (a denominator note) in frames: the master grid's own when it
+  /// exists, else the nominal tempo's at [sampleRate]; null without either.
+  /// A take that is still recording counts its bars on this grid (#1936).
+  double? framesPerBeat(int sampleRate) {
+    if (masterLengthFrames > 0 && loopBeats > 0) {
+      return masterLengthFrames / loopBeats;
+    }
+    if (masterLengthFrames > 0 && loopBars > 0 && tsNum > 0) {
+      return masterLengthFrames / (loopBars * tsNum);
+    }
+    if (sampleRate <= 0 ||
+        tempoSource == TempoSource.none ||
+        !tempoBpm.isFinite ||
+        tempoBpm <= 0) {
+      return null;
+    }
+    return sampleRate * 60 / tempoBpm;
+  }
+
   /// Whether a master loop length has been established.
   bool get hasLoop => masterLengthFrames > 0;
 

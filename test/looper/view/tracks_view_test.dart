@@ -1617,6 +1617,18 @@ void main() {
         expect(followsInput(tester), isTrue);
       });
 
+      testWidgets("a recording take's bars slot counts the take", (
+        tester,
+      ) async {
+        await pumpState(tester, TrackState.recording, selected: true);
+        expect(find.byKey(const Key('tracks_capture_0')), findsOneWidget);
+        expect(find.byKey(const Key('tracks_bars_0')), findsNothing);
+
+        await pumpState(tester, TrackState.playing, selected: true);
+        expect(find.byKey(const Key('tracks_capture_0')), findsNothing);
+        expect(find.byKey(const Key('tracks_bars_0')), findsOneWidget);
+      });
+
       testWidgets('not on another empty track', (tester) async {
         await pumpState(tester, TrackState.empty);
         expect(followsInput(tester), isFalse);
@@ -4607,13 +4619,10 @@ void main() {
         isTrue,
       );
       expect(identical(other, tester.widget<TrackColumn>(_column(1))), isTrue);
-      expect(
-        find.descendant(
-          of: find.byKey(const Key('tracks_bars_0')),
-          matching: find.text('—'),
-        ),
-        findsOneWidget,
-      );
+      // The growing length is no count: the slot counts the take from its
+      // capture on the playheads instead (#1936).
+      expect(find.byKey(const Key('tracks_capture_0')), findsOneWidget);
+      expect(find.byKey(const Key('tracks_bars_0')), findsNothing);
     });
 
     testWidgets('a level-only change does not rebuild the chrome', (

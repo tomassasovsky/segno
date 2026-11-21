@@ -1554,6 +1554,11 @@ typedef struct le_track {
    * read index for the last frame of the block, or the write head while
    * RECORDING. Published once per block beside the level above. */
   _Atomic int32_t a_play_pos;
+  /* The take in flight (le_track_snapshot.capture_frames and
+   * capture_target_frames, #1936): published once per block beside
+   * a_play_pos, 0 unless RECORDING. */
+  _Atomic int32_t a_capture_frames;
+  _Atomic int32_t a_capture_target;
   /* The engine frame (mod 2^32) the track's current lap began at, published
    * by the audio thread while it plays or overdubs a forward lap at an
    * integral rate, whenever it moves (a lap top, a launch, a relaunch). The

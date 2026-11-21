@@ -11,6 +11,7 @@ import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/looper/view/live_playhead.dart';
 import 'package:segno/looper/view/loop_count_words.dart';
 import 'package:segno/looper/view/slot_row.dart';
+import 'package:segno/looper/view/track_capture_count.dart';
 import 'package:segno/looper/view/track_column.dart'
     show PrimaryCrown, SlotFigure;
 import 'package:segno/notices/notices.dart';
@@ -229,12 +230,22 @@ class WaveTrackRow extends StatelessWidget {
                                           CrossAxisAlignment.baseline,
                                       slots: [
                                         RowSlot(
-                                          child: SlotFigure(
-                                            figure: count.figure,
-                                            unit: count.unit,
-                                            figureStyle: meta,
-                                            unitStyle: unit,
-                                          ),
+                                          // A recording take counts as it
+                                          // records (#1936).
+                                          child:
+                                              track.state ==
+                                                  TrackState.recording
+                                              ? TrackCaptureCount(
+                                                  channel: track.channel,
+                                                  figureStyle: meta,
+                                                  unitStyle: unit,
+                                                )
+                                              : SlotFigure(
+                                                  figure: count.figure,
+                                                  unit: count.unit,
+                                                  figureStyle: meta,
+                                                  unitStyle: unit,
+                                                ),
                                         ),
                                         RowSlot(
                                           child: SlotFigure(
