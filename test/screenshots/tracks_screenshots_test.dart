@@ -1407,7 +1407,7 @@ void main() {
 
   // #1936 part 2: a recording take counts toward its end, or shows the time
   // a free take has run, in the Tracks and Wave views.
-  for (final scene in ['target', 'free']) {
+  for (final scene in ['target', 'free', 'estimate']) {
     for (final view in [StageView.track, StageView.wave]) {
       testWidgets('a recording take counts: $scene, ${view.name} view', (
         tester,
@@ -1427,6 +1427,8 @@ void main() {
         );
         when(() => repository.playhead).thenReturn(
           Playhead(
+            // #1936 part 5: a free take the analysis is sure of, at 120.
+            tempoEstimateBpm: scene == 'estimate' ? 120 : 0,
             tracks: [0.3, 0.6, 0.8, if (target) 150000 / 384000 else 0],
             captures: [
               TakeCapture.none,

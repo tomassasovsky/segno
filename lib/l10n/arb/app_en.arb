@@ -8919,6 +8919,15 @@
     "@loopTempoClear": {
         "description": "Tempo page button: back to no tempo, so the next loop sets one."
     },
+    "stageCaptureApproxBars": "{count, plural, =1{≈ 1 bar} other{≈ {count} bars}}",
+    "@stageCaptureApproxBars": {
+        "description": "Beside a free take's recorded time (#1936): the whole bars the beat analysis estimates so far. A tentative count, never the loop's own.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
     "loopTempoHalve": "÷2",
     "@loopTempoHalve": {
         "description": "Tempo button (#1936): read the loop as half its bars, at half the tempo; the audio is unchanged."
