@@ -59,7 +59,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1540 | Drive pedals' aliasing at 48 kHz: four kinds oversampled (#1552); the owner's blind pairs decide whether the built-in Drive is oversampled too | build | plan-gate | `claude/drive-alias-1540` |
 | #1498 | Restart and shut down also wait for RAUC's own install, after an app restart | in-review | blocked-verify | `claude/rauc-power-gate-1498` |
 | #1755 | Every effect cheaper without changing its sound: pitch (#1764, #1770), drives (#1759), reverbs/delays/filters (#1762) and the Vinyl (#1904, part 4) bit-identical; part 5, the Degrade at 96 kHz, is next (scope on the issue) | build | auto | `claude/fx-opt-part5-1755` |
-| #1914 | The app's audio callback runs late on screen changes and take starts: it waits on memory (Ed's Racks overflow the caches). Parts 1-3 merged (#1925, #1926, #1932); part 4 in review (a recording take's heard lane starts on its image). Steady playback is clean on master. Open: the page transition, which gives all of the screen-change late periods in its first frames (variants without an offscreen layer being measured, the owner decides) | in-review | plan-gate | `claude/cb-overhead-1914-p4` |
+| #1914 | The app's audio callback runs late on screen changes and take starts: it waits on memory (Ed's Racks overflow the caches). Parts 1-4 merged; part 5 (Mesa keeps a page transition's render target, warmed at startup) and part 6 (an inaudible heard lane snaps to its target) in review. Steady playback and take starts clean on the console | in-review | plan-gate | `claude/cb-overhead-1914-p6` |
 | #1724 | Effects budget from the app's measured headroom: 10-minute untraced in-app ladder at 48 kHz / 32 (build 279); track job 200 → 300 ns, chains on the callback charged 2.5× (`kFxSerialFactor`); 4 inputs + 7 tracks or + 1 output rack fit | in-review | auto | `claude/fx-headroom-1724-p3` |
 | #1515 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track and lane chains) is #1729 | build | plan-gate | `claude/fx-multicore-1515-p1b` |
 | #1816 | Console WiFi against an ASUS RT-AX89X with 802.11ax on: firmware already matches Pi OS; brcmfmac options aligned with Pi OS and a troubleshooting note; failure not reproduced, issue stays open until it recurs | in-review | auto | `claude/wifi-firmware-1816` |
@@ -103,6 +103,24 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 - When Transpose and Speed ship (#1179), pedal 1 in bank A returns to
   Transpose, Hold Reverse and the Hold on pedal 4 to Speed. Sessions by
   foot (#1910) are not in the default map.
+
+## November 2026 A heard lane nothing reaches goes to its target at once (#1914 part 6)
+
+- Part 4 started a recording take's heard lane on its image, but in the
+  app the 2-lane take still spent 254-260 us of its start block, and 60-180
+  us a block for 10 ms after, in `le_heard_lane_wet`. The rig follows
+  tempo, so a new take plays through a stretch render that lands a few
+  blocks after it starts. Until it does, the lane's target is its clean
+  take, and the lane faded 1 to 0 and back, running its whole chain on the
+  callback frame by frame.
+- A heard lane nothing of reaches the outputs (`audible` false: a
+  recording track plays nothing, a stopped one has rung out, a muted one is
+  gated) now goes to its target at once. An audible lane still fades
+  (`test_heard_inaudible_lane_snaps`).
+- Console, profiled, two runs of four takes: the 2-lane take's start block
+  went from 870-892 us to 551-658 us, the heard lanes' time in it from
+  254-260 us to 12-14 us. No take start had a period past the deadline in
+  its 40 ms (1 to 3 a run before); the worst there was 573-658 us.
 
 ## November 2026 A recording take's heard lane starts on its image (#1914 part 4)
 
