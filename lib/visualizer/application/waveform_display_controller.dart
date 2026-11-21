@@ -386,7 +386,7 @@ class WaveformDisplayController {
       framesPerBar: looper.transport.framesPerBar(sampleRate),
       sampleRate: sampleRate,
       estimateFramesPerBar: estimateFramesPerBar(
-        playhead.tempoEstimateBpm,
+        playhead.tempoEstimateOf(_context.cursor),
         looper.transport.tsNum,
         sampleRate,
       ),

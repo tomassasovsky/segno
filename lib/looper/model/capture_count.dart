@@ -58,8 +58,8 @@ double? estimateFramesPerBar(double bpm, int tsNum, int sampleRate) =>
     : null;
 
 /// [count] as the stage writes it (#1936): the figure and its small unit,
-/// `2 / 4` bars, `3` bars, or `0:07` with no unit, or with the estimate's
-/// `≈ 2 bars` once there is one.
+/// `2 / 4` bars, `3` bars, or `0:07` with no unit, which the estimate's
+/// `≈ 2` bars replaces once there is one.
 ({String figure, String unit}) captureCountWords(
   AppLocalizations l10n,
   CaptureCount count,
@@ -73,12 +73,15 @@ double? estimateFramesPerBar(double bpm, int tsNum, int sampleRate) =>
   if (count.bar > 0) {
     return (figure: '${count.bar}', unit: l10n.stageBarsUnit(count.bar));
   }
-  return (
-    figure: elapsedFigure(count.seconds),
-    unit: count.approxBars > 0
-        ? l10n.stageCaptureApproxBars(count.approxBars)
-        : '',
-  );
+  // Once the beat analysis estimates whole bars, they take the time's
+  // place: the slot is sized for a count and its unit, not for both.
+  if (count.approxBars > 0) {
+    return (
+      figure: '≈ ${count.approxBars}',
+      unit: l10n.stageBarsUnit(count.approxBars),
+    );
+  }
+  return (figure: elapsedFigure(count.seconds), unit: '');
 }
 
 /// [seconds] as the stage's elapsed time: `0:07`, `1:32`.

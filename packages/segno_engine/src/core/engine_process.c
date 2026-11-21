@@ -1613,6 +1613,7 @@ static void finalize_master(le_engine* e, le_track* t, int32_t end_state,
   }
   if (e->ana_on && e->ana_track == fm_track) {
     e->ana_on = 0;
+    store_i32(&e->a_ana_track, -1);
     if (analyzed &&
         load_i32(&e->a_tempo_source) == LE_TEMPO_SOURCE_DERIVED) {
       /* The bars just derived (nearest 120 BPM) stand until the analysis
@@ -12189,11 +12190,13 @@ LE_AUDIO_HOT_AT(0) void le_engine_process(le_engine* e, float* output, const flo
         le_analysis_begin(e->analysis);
         e->ana_on = 1;
         e->ana_track = t;
+        store_i32(&e->a_ana_track, t);
       }
       if (e->ana_on && e->ana_track == t) {
         if (!recording) {
           le_analysis_abort(e->analysis); /* cleared or voided mid-take */
           e->ana_on = 0;
+          store_i32(&e->a_ana_track, -1);
         } else if (in != NULL) {
           float mono[128];
           for (uint32_t f0 = 0; f0 < frames; f0 += 128) {

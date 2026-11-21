@@ -15,6 +15,7 @@ class Playhead extends Equatable {
     this.captures = const [],
     this.tempoEstimateBpm = 0,
     this.tempoConfidence = 0,
+    this.tempoEstimateTrack = -1,
   });
 
   /// Each track's play position as a share of its loop, `0..1`, indexed by
@@ -36,6 +37,14 @@ class Playhead extends Equatable {
   /// with none.
   final double tempoConfidence;
 
+  /// The track whose take [tempoEstimateBpm] is of, `-1` with none.
+  final int tempoEstimateTrack;
+
+  /// The estimate for [channel]'s take in BPM, `0` unless it is the take
+  /// the beat analysis hears.
+  double tempoEstimateOf(int channel) =>
+      channel == tempoEstimateTrack ? tempoEstimateBpm : 0;
+
   /// [channel]'s position, or `0` when the rig has no such track.
   double track(int channel) =>
       channel >= 0 && channel < tracks.length ? tracks[channel] : 0;
@@ -51,6 +60,7 @@ class Playhead extends Equatable {
     captures,
     tempoEstimateBpm,
     tempoConfidence,
+    tempoEstimateTrack,
   ];
 }
 

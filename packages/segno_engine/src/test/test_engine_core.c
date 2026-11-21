@@ -6928,6 +6928,7 @@ static void test_analysis_live_estimate(void) {
          (double)s.tempo_estimate_bpm, (double)s.tempo_estimate_confidence);
   CHECK(s.tempo_estimate_bpm > 115.0f && s.tempo_estimate_bpm < 125.0f);
   CHECK(s.tempo_estimate_confidence > 0.0f);
+  CHECK(s.tempo_estimate_track == 0); /* the take it is of */
 
   le_engine_record(e, 0);
   float zero[512] = {0}, out[512];
@@ -6935,6 +6936,7 @@ static void test_analysis_live_estimate(void) {
   CHECK(ana_wait_settled(e, 2000));
   le_engine_get_snapshot(e, &s);
   CHECK(s.tempo_estimate_bpm == 0.0f);
+  CHECK(s.tempo_estimate_track == -1);
   free(x);
   le_engine_destroy(e);
 

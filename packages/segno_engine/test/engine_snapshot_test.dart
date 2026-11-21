@@ -1873,6 +1873,7 @@ void main() {
         'tempoSettling',
         'tempoEstimateBpm',
         'tempoConfidence',
+        'tempoEstimateTrack',
         'loopBeats',
         'currentBeat',
         'clickMode',

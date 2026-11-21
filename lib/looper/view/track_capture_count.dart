@@ -51,7 +51,7 @@ class TrackCaptureCount extends StatelessWidget {
         sampleRate: sampleRate,
         // The beat analysis's estimate, while a free first take records.
         estimateFramesPerBar: estimateFramesPerBar(
-          playhead.tempoEstimateBpm,
+          playhead.tempoEstimateOf(channel),
           tsNum,
           sampleRate,
         ),

@@ -197,12 +197,30 @@ void main() {
         const Playhead(
           captures: [TakeCapture(frames: 9000)],
           tempoEstimateBpm: 120,
+          tempoEstimateTrack: 0,
+        ),
+      );
+      await pump(tester);
+
+      expect(figure(tester).figure, '≈ 4');
+      expect(figure(tester).unit, 'bars');
+    });
+
+    testWidgets('shows no estimate on a take the analysis does not hear', (
+      tester,
+    ) async {
+      seed(const TransportState());
+      when(() => repository.playhead).thenReturn(
+        const Playhead(
+          captures: [TakeCapture(frames: 9000)],
+          tempoEstimateBpm: 120,
+          tempoEstimateTrack: 3,
         ),
       );
       await pump(tester);
 
       expect(figure(tester).figure, '0:09');
-      expect(figure(tester).unit, '≈ 4 bars');
+      expect(figure(tester).unit, '');
     });
   });
 }

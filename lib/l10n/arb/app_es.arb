@@ -2955,7 +2955,6 @@
     "consoleLedsCalibrateNote": "En una sala oscura, con las luces como en el escenario, esperá 10 segundos y tocá Sala oscura. Después hacé lo mismo en una sala iluminada. Cada uno toma la Lectura de la derecha. Sala oscura necesita la mitad de la lectura de Sala iluminada o menos, y Sala iluminada el doble de la de Sala oscura o más.",
     "loopTempoEdit": "Escribir un tempo",
     "loopTempoClear": "Quitar tempo",
-    "stageCaptureApproxBars": "{count, plural, =1{≈ 1 compás} other{≈ {count} compases}}",
     "loopTempoHalve": "÷2",
     "loopTempoDouble": "×2",
     "loopTempoHalveLabel": "La mitad de compases, a la mitad del tempo",

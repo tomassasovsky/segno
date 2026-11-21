@@ -233,6 +233,7 @@ class LooperRepository {
       ],
       tempoEstimateBpm: s.tempoEstimateBpm,
       tempoConfidence: s.tempoConfidence,
+      tempoEstimateTrack: s.tempoEstimateTrack,
     );
   }
 

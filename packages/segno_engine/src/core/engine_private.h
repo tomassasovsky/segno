@@ -3526,6 +3526,7 @@ struct le_engine {
   int32_t ana_wait_len;
   int32_t ana_wait_frames;
   _Atomic int32_t a_tempo_settling;
+  _Atomic int32_t a_ana_track; /* ana_track while ana_on, else -1 */
   /* Buffers the callback may still name, waiting to be freed until the
    * command posted after them has published (le_retire_buffer). */
   float* retired_buf[LE_RETIRED_MAX];

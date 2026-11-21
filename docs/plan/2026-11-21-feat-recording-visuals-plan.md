@@ -386,6 +386,10 @@ Where the build departs from this plan:
 - **The live estimate** shows only after aubio's confidence has reached 0.2
   with the tempo steady within 3% for two seconds: aubio's tempo alone reads
   about 122 BPM on silence, a held tone and noise.
+- **The estimate replaces the time** (D3 said beside it): `≈ 2` bars in the
+  count's usual form. The Tracks view's bars slot has no room for both: in
+  Spanish `0:07 ≈ 3 compases` truncated. Only the take the analysis hears
+  shows it (`tempo_estimate_track`).
 - **Not measured on the console yet:** the analysis worker's CPU and the
   callback's added copy.
 

@@ -1407,7 +1407,7 @@ void main() {
 
   // #1936 part 2: a recording take counts toward its end, or shows the time
   // a free take has run, in the Tracks and Wave views.
-  for (final scene in ['target', 'free', 'estimate']) {
+  for (final scene in ['target', 'free', 'estimate', 'estimate_es']) {
     for (final view in [StageView.track, StageView.wave]) {
       testWidgets('a recording take counts: $scene, ${view.name} view', (
         tester,
@@ -1428,7 +1428,8 @@ void main() {
         when(() => repository.playhead).thenReturn(
           Playhead(
             // #1936 part 5: a free take the analysis is sure of, at 120.
-            tempoEstimateBpm: scene == 'estimate' ? 120 : 0,
+            tempoEstimateBpm: scene.startsWith('estimate') ? 120 : 0,
+            tempoEstimateTrack: 3,
             tracks: [0.3, 0.6, 0.8, if (target) 150000 / 384000 else 0],
             captures: [
               TakeCapture.none,
@@ -1471,7 +1472,10 @@ void main() {
         );
         control.selectTrack(3);
         tracks.showView(view);
-        await pump(tester);
+        await pump(
+          tester,
+          locale: scene.endsWith('_es') ? const Locale('es') : null,
+        );
         await expectLater(
           find.byType(TracksView),
           matchesGoldenFile('goldens/tracks_take_${scene}_${view.name}.png'),
