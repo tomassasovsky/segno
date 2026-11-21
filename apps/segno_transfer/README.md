@@ -122,7 +122,11 @@ Password entry and first-time pairing are not provided by this version.
 Building the app builds `Segno.vst3` first
 (`packages/segno_engine/vst3/build.sh`): it renders the pedal faces with
 Flutter 3.50 (`FLUTTER=/path/to/flutter-3.50/bin/flutter`), then runs the
-CMake Release build. The plugin adds about 71 MB to the disk image.
+CMake Release build. The plugin adds about 71 MB to the disk image. The app
+icon, `AppIcon.icon`, is an Icon Composer file, so the build needs Xcode 26 or
+newer: `actool` compiles it into the icon macOS 26 draws and an `.icns` for
+macOS 14 and 15. Its design is the "Segno Transfer / AppIcon" board on the
+Penpot page "03 DESIGN SYSTEM / 03 App icons".
 
 ```sh
 python3 -m unittest discover -s apps/segno_transfer/Tests/RemoteTests -v
