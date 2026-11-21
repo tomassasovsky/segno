@@ -39,7 +39,7 @@ class Playhead extends Equatable {
 /// and where it ends by itself. Like the position, it moves on every poll.
 class TakeCapture extends Equatable {
   /// Creates a [TakeCapture].
-  const new({this.frames = 0, this.targetFrames = 0});
+  const new({this.frames = 0, this.targetFrames = 0, this.vizPoints = 0});
 
   /// No take in flight.
   static const none = TakeCapture();
@@ -52,10 +52,14 @@ class TakeCapture extends Equatable {
   /// multiple of the master loop. `0` when only a press ends it.
   final int targetFrames;
 
+  /// How many of the track's waveform buckets hold the take so far: toward
+  /// a target they span the target, else what is captured.
+  final int vizPoints;
+
   /// How much of [targetFrames] is captured, `0..1`; `0` without a target.
   double get progress =>
       targetFrames > 0 ? (frames / targetFrames).clamp(0.0, 1.0) : 0;
 
   @override
-  List<Object?> get props => [frames, targetFrames];
+  List<Object?> get props => [frames, targetFrames, vizPoints];
 }

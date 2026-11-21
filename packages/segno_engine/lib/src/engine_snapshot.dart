@@ -746,6 +746,7 @@ class TrackSnapshot {
     this.positionFrames = 0,
     this.captureFrames = 0,
     this.captureTargetFrames = 0,
+    this.captureVizPoints = 0,
     this.pendingTrigger = -1,
     this.quantizeOverride,
     this.quantizeDivOverride,
@@ -795,6 +796,7 @@ class TrackSnapshot {
       positionFrames = 0,
       captureFrames = 0,
       captureTargetFrames = 0,
+      captureVizPoints = 0,
       pendingTrigger = -1,
       quantizeOverride = null,
       quantizeDivOverride = null,
@@ -856,6 +858,7 @@ class TrackSnapshot {
     positionFrames: native.position_frames,
     captureFrames: native.capture_frames,
     captureTargetFrames: native.capture_target_frames,
+    captureVizPoints: native.capture_viz_points,
     pendingTrigger: native.pending_trigger,
     quantizeOverride: native.quantize_override < 0
         ? null
@@ -1041,6 +1044,11 @@ class TrackSnapshot {
   /// ends it (Auto, Sync, a free take) and when the track is not recording.
   final int captureTargetFrames;
 
+  /// How many of the track's waveform buckets hold the take in flight
+  /// (#1936); 0 unless recording. Toward a target the buckets span the
+  /// target; without one they span what is captured so far.
+  final int captureVizPoints;
+
   /// What the arm reported by [pending] waits for: `0` the quantize grid,
   /// `1` a signal at the recording input (Sound start), `2` a Band section
   /// toggle at the primary's loop top; `-1` while nothing is pending.
@@ -1130,6 +1138,7 @@ class TrackSnapshot {
           positionFrames == other.positionFrames &&
           captureFrames == other.captureFrames &&
           captureTargetFrames == other.captureTargetFrames &&
+          captureVizPoints == other.captureVizPoints &&
           pendingTrigger == other.pendingTrigger &&
           quantizeOverride == other.quantizeOverride &&
           quantizeDivOverride == other.quantizeDivOverride &&
@@ -1175,6 +1184,7 @@ class TrackSnapshot {
     positionFrames,
     captureFrames,
     captureTargetFrames,
+    captureVizPoints,
     pendingTrigger,
     quantizeOverride,
     quantizeDivOverride,

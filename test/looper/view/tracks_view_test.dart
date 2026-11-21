@@ -1282,14 +1282,17 @@ void main() {
             theme: AppTheme.neon,
             home: RepositoryProvider<LooperRepository>.value(
               value: repository,
-              child: Scaffold(
-                body: SizedBox(
-                  width: 800,
-                  height: 200,
-                  child: TrackWaveform(
-                    channel: 0,
-                    state: state,
-                    hasContent: true,
+              child: BlocProvider<LooperBloc>.value(
+                value: bloc,
+                child: Scaffold(
+                  body: SizedBox(
+                    width: 800,
+                    height: 200,
+                    child: TrackWaveform(
+                      channel: 0,
+                      state: state,
+                      hasContent: true,
+                    ),
                   ),
                 ),
               ),
@@ -1303,12 +1306,35 @@ void main() {
     testWidgets('draws no playhead over a take that is still recording', (
       tester,
     ) async {
+      seed(const LooperState());
       when(() => repository.playhead).thenReturn(const Playhead(tracks: [0.4]));
       await pumpWave(tester, LooperMeterState.recording);
       expect(drawn(tester), 0);
 
       await pumpWave(tester, LooperMeterState.playing);
       expect(drawn(tester), 0.4);
+    });
+
+    testWidgets("draws the target's bar ruler while recording toward it", (
+      tester,
+    ) async {
+      // 120 BPM at 1 kHz: 2000-frame bars, a 4-bar target.
+      seed(
+        const LooperState(
+          status: EngineStatus(sampleRate: 1000),
+          transport: TransportState(
+            tempoBpm: 120,
+            tempoSource: TempoSource.manual,
+          ),
+        ),
+      );
+      when(() => repository.playhead).thenReturn(
+        const Playhead(
+          captures: [TakeCapture(frames: 3000, targetFrames: 8000)],
+        ),
+      );
+      await pumpWave(tester, LooperMeterState.recording);
+      expect(tester.widget<WaveformView>(find.byType(WaveformView)).bars, 4);
     });
   });
 

@@ -8,6 +8,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/looper.dart';
+import 'package:segno/looper/model/capture_count.dart';
 import 'package:segno/looper/view/track_capture_count.dart';
 import 'package:segno/looper/view/track_column.dart' show SlotFigure;
 import 'package:segno/theme/theme.dart';

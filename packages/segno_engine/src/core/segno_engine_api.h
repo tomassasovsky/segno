@@ -1389,6 +1389,12 @@ typedef struct le_track_snapshot {
    * block beside position_frames. */
   int32_t capture_frames;
   int32_t capture_target_frames;
+  /* Trailing (#1936): how many of the track's LE_VIZ_POINTS waveform buckets
+   * hold the take in flight while RECORDING, 0 otherwise. Toward a target
+   * the buckets span the target and fill from the left; without one they
+   * span what is captured so far, the take compressing as it grows. When the
+   * take closes, its shape is mapped onto the finished loop. */
+  int32_t capture_viz_points;
 } le_track_snapshot;
 
 /* ===================== Audio-callback telemetry (#722) =====================
@@ -2521,7 +2527,9 @@ LE_EXPORT int32_t le_engine_read_visual(le_engine* engine, float* out,
 /* Copies a single track's waveform over its full recorded length (channel
  * 0..track_count-1). Pair with the track snapshot's position_frames and
  * length_frames. The shape is retained while stopped and cleared when its
- * take is removed; a first recording gains its shape as playback sweeps it. */
+ * take is removed. While a take records, the buckets hold the take so far
+ * (capture_viz_points of them, #1936); when it closes they are mapped onto
+ * the loop, and playback rewrites each as the playhead passes it. */
 LE_EXPORT int32_t le_engine_read_track_visual(le_engine* engine,
                                               int32_t channel, float* out,
                                               int32_t max_points);
