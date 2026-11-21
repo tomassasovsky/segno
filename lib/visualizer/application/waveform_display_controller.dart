@@ -6,6 +6,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/appliance/power_off/power_step.dart';
 import 'package:segno/logging/app_log.dart';
 import 'package:segno/looper/model/capture_count.dart';
+import 'package:segno/looper/model/loop_bars_scaling.dart';
 import 'package:segno/visualizer/performance_readout.dart';
 import 'package:segno/visualizer/waveform_window_service.dart';
 
@@ -345,6 +346,7 @@ class WaveformDisplayController {
   static bool _sameReadoutFacts(LooperState a, LooperState b, int cursor) {
     if (identical(a, b)) return true;
     if (a.tempoFollow != b.tempoFollow) return false;
+    if (loopBarsScaling(a) != loopBarsScaling(b)) return false;
     final ta = a.transport;
     final tb = b.transport;
     if (ta.tempoBpm != tb.tempoBpm ||
@@ -387,6 +389,7 @@ class WaveformDisplayController {
 
   PerformanceReadout _readoutOf(LooperState looper, CaptureCount count) {
     final transport = looper.transport;
+    final scaling = loopBarsScaling(looper);
     final track = _trackAt(looper, _context.cursor);
     return PerformanceReadout(
       selected: track == null
@@ -410,6 +413,8 @@ class WaveformDisplayController {
             ),
       tempoBpm: transport.tempoBpm,
       hasTempo: transport.tempoSource != TempoSource.none,
+      canHalveBars: scaling.halve,
+      canDoubleBars: scaling.double,
       tsNum: transport.tsNum,
       tsDen: transport.tsDen,
       mode: _context.mode,

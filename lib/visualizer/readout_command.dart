@@ -27,6 +27,10 @@ sealed class ReadoutCommand extends Equatable {
       },
       TempoTap.kind => const TempoTap(),
       TempoClear.kind => const TempoClear(),
+      TempoScaleBars.kind => switch (map['double']) {
+        final bool double => TempoScaleBars(double: double),
+        _ => null,
+      },
       SignatureSet.kind => switch ((map['num'], map['den'])) {
         (final int beats, final int note) => SignatureSet(beats, note),
         _ => null,
@@ -114,6 +118,25 @@ final class TempoClear extends ReadoutCommand {
 
   @override
   List<Object?> get props => const [];
+}
+
+/// Reads the loop as twice ([double]) or half its bars (#1936, D4), as the
+/// main screen's ÷2 and ×2 do; the engine decides whether it applies.
+final class TempoScaleBars extends ReadoutCommand {
+  /// Creates a [TempoScaleBars].
+  const new({required this.double});
+
+  /// The wire name.
+  static const kind = 'tempo.bars';
+
+  /// Twice the bars when true, half when false.
+  final bool double;
+
+  @override
+  Map<String, Object?> toMap() => {'kind': kind, 'double': double};
+
+  @override
+  List<Object?> get props => [double];
 }
 
 /// Sets the time signature to [num]/[den].

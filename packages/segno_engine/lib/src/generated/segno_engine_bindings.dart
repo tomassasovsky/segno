@@ -1484,7 +1484,9 @@ external int le_engine_read_request_result(
 /// Copies a single track's waveform over its full recorded length (channel
 /// 0..track_count-1). Pair with the track snapshot's position_frames and
 /// length_frames. The shape is retained while stopped and cleared when its
-/// take is removed; a first recording gains its shape as playback sweeps it.
+/// take is removed. While a take records, the buckets hold the take so far
+/// (capture_viz_points of them, #1936); when it closes they are mapped onto
+/// the loop, and playback rewrites each as the playhead passes it.
 @ffi.Native<
   ffi.Int32 Function(
     ffi.Pointer<le_engine>,
@@ -1735,6 +1737,22 @@ external int le_engine_restore_tempo(
   ffi.Pointer<le_engine> engine,
   double bpm,
   int source,
+);
+
+/// Reads the master loop as twice ([direction] > 0) or half ([direction] < 0)
+/// its bars, keeping the audio: the derived tempo doubles or halves with them
+/// and is latched as the recorded one, so nothing retimes (#1936, D4). The
+/// callback applies it only while the tempo is derived from the loop and not
+/// retimed since, no take is recording, no count-in runs, no external clock
+/// owns the tempo and the mode has one shared loop (not Free or Song);
+/// halving needs an even bar count, and the new tempo must stay inside the
+/// grid's range. Anything else leaves the loop as it is. LE_ERR_INVALID for
+/// a null handle or a 0 direction. Not perf-logged: no recorded material
+/// changes.
+@ffi.Native<ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)>()
+external int le_engine_scale_loop_bars(
+  ffi.Pointer<le_engine> engine,
+  int direction,
 );
 
 /// Sets the wet-cache memory budget in BYTES (stereo entries at 2x frames,
@@ -5015,6 +5033,10 @@ enum le_command_code {
   /// Never perf-logged.
   LE_CMD_SPARE_TAIL(145),
 
+  /// Read the master loop as twice (arg_i > 0) or half (arg_i < 0) its bars,
+  /// keeping the audio (#1936, le_engine_scale_loop_bars). Never logged.
+  LE_CMD_SCALE_LOOP_BARS(146),
+
   /// render recipe (#1202): the callback records
   /// every source's read law; never raw-posted
   LE_CMD_RENDER_FREEZE(112),
@@ -5148,6 +5170,7 @@ enum le_command_code {
     142 => LE_CMD_CLEAR_TEMPO,
     144 => LE_CMD_HEARD_ATTACH,
     145 => LE_CMD_SPARE_TAIL,
+    146 => LE_CMD_SCALE_LOOP_BARS,
     112 => LE_CMD_RENDER_FREEZE,
     113 => LE_CMD_BOUNCE,
     114 => LE_CMD_BOUNCE_RECOVER,
@@ -7160,6 +7183,21 @@ final class le_snapshot extends ffi.Struct {
 
   @ffi.Array.multi([16])
   external ffi.Array<ffi.Uint64> fx_draining_output;
+
+  /// Trailing (#1936): 1 while the beat analysis decides a free first take's
+  /// bar count; the tempo and bars may still change until it reads 0 (at
+  /// most a second).
+  @ffi.Int32()
+  external int tempo_settling;
+
+  /// Trailing (#1936): while a free first take records, the analysis's live
+  /// tempo estimate in BPM and its confidence (larger is surer); both 0 with
+  /// none. The take's bar count is not decided by these.
+  @ffi.Float()
+  external double tempo_estimate_bpm;
+
+  @ffi.Float()
+  external double tempo_estimate_confidence;
 }
 
 /// Instrument families, in catalogue order.

@@ -13,6 +13,7 @@
 #include <stdint.h>
 #include <string.h> /* memset — the NULL-engine telemetry read */
 
+#include "engine_analysis.h"
 #include "engine_core.h"    /* le_lanes_active */
 #include "engine_fx.h"      /* le_octaver_latency */
 #include "engine_heard.h"   /* the heard image (#1713) */
@@ -598,6 +599,9 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   out->quantize_div = timing.remembered_division;
   out->tempo_source = load_i32(&engine->a_tempo_source);
   out->loop_bars = load_i32(&engine->a_loop_bars);
+  out->tempo_settling = load_i32(&engine->a_tempo_settling);
+  le_analysis_estimate(engine->analysis, &out->tempo_estimate_bpm,
+                       &out->tempo_estimate_confidence);
   out->loop_beats = load_i32(&engine->a_loop_beats); /* #1168 */
   out->current_beat = load_i32(&engine->a_current_beat);
   /* Click + count-in (trailing block; click-off defaults read 0/0/1/0/0/0). */
