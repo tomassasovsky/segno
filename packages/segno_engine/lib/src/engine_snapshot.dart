@@ -744,6 +744,8 @@ class TrackSnapshot {
     this.oneShot = false,
     this.settledTakeId = 0,
     this.positionFrames = 0,
+    this.captureFrames = 0,
+    this.captureTargetFrames = 0,
     this.pendingTrigger = -1,
     this.quantizeOverride,
     this.quantizeDivOverride,
@@ -791,6 +793,8 @@ class TrackSnapshot {
       oneShot = false,
       settledTakeId = 0,
       positionFrames = 0,
+      captureFrames = 0,
+      captureTargetFrames = 0,
       pendingTrigger = -1,
       quantizeOverride = null,
       quantizeDivOverride = null,
@@ -850,6 +854,8 @@ class TrackSnapshot {
     oneShot: native.one_shot != 0,
     settledTakeId: native.settled_take_id,
     positionFrames: native.position_frames,
+    captureFrames: native.capture_frames,
+    captureTargetFrames: native.capture_target_frames,
     pendingTrigger: native.pending_trigger,
     quantizeOverride: native.quantize_override < 0
         ? null
@@ -1025,6 +1031,16 @@ class TrackSnapshot {
   /// it is the write head instead. `0` for an empty or never-played track.
   final int positionFrames;
 
+  /// Frames captured by the take in flight since its press (#1936); 0 unless
+  /// the track is recording. A take over a master counts from its own start,
+  /// where [positionFrames] is the write head locked to the master's phase.
+  final int captureFrames;
+
+  /// Where the take in flight ends by itself (#1936): an armed length preset
+  /// or a fixed multiple of the master loop, in frames. 0 when only a press
+  /// ends it (Auto, Sync, a free take) and when the track is not recording.
+  final int captureTargetFrames;
+
   /// What the arm reported by [pending] waits for: `0` the quantize grid,
   /// `1` a signal at the recording input (Sound start), `2` a Band section
   /// toggle at the primary's loop top; `-1` while nothing is pending.
@@ -1112,6 +1128,8 @@ class TrackSnapshot {
           oneShot == other.oneShot &&
           settledTakeId == other.settledTakeId &&
           positionFrames == other.positionFrames &&
+          captureFrames == other.captureFrames &&
+          captureTargetFrames == other.captureTargetFrames &&
           pendingTrigger == other.pendingTrigger &&
           quantizeOverride == other.quantizeOverride &&
           quantizeDivOverride == other.quantizeDivOverride &&
@@ -1155,6 +1173,8 @@ class TrackSnapshot {
     oneShot,
     settledTakeId,
     positionFrames,
+    captureFrames,
+    captureTargetFrames,
     pendingTrigger,
     quantizeOverride,
     quantizeDivOverride,

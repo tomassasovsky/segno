@@ -1405,6 +1405,79 @@ void main() {
     }, skip: !rendersScreenshots);
   }
 
+  // #1936 part 2: a recording take counts toward its end, or shows the time
+  // a free take has run, in the Tracks and Wave views.
+  for (final scene in ['target', 'free']) {
+    for (final view in [StageView.track, StageView.wave]) {
+      testWidgets('a recording take counts: $scene, ${view.name} view', (
+        tester,
+      ) async {
+        const sampleRate = 48000;
+        // 120 BPM: a 96000-frame bar, so a 4-bar preset ends at 384000.
+        final target = scene == 'target';
+        levels(
+          const MeterLevels(
+            tracks: [
+              TrackLevels(peak: 0.4),
+              TrackLevels(peak: 0.7),
+              TrackLevels(peak: 0.8),
+              TrackLevels(input: 0.3),
+            ],
+          ),
+        );
+        when(() => repository.playhead).thenReturn(
+          Playhead(
+            tracks: [0.3, 0.6, 0.8, if (target) 150000 / 384000 else 0],
+            captures: [
+              TakeCapture.none,
+              TakeCapture.none,
+              TakeCapture.none,
+              TakeCapture(
+                frames: target ? 150000 : 7 * sampleRate + 100,
+                targetFrames: target ? 384000 : 0,
+              ),
+            ],
+          ),
+        );
+        seed(
+          LooperState(
+            status: const EngineStatus(
+              isConnected: true,
+              devicePresent: true,
+              deviceName: 'Segno',
+              sampleRate: sampleRate,
+              inputChannels: 2,
+              outputChannels: 2,
+            ),
+            transport: target
+                ? const TransportState(
+                    tempoBpm: 120,
+                    tempoSource: TempoSource.manual,
+                  )
+                : const TransportState(),
+            tracks: const [
+              Track(state: TrackState.playing, lengthFrames: 96000),
+              Track(channel: 1, state: TrackState.playing, lengthFrames: 96000),
+              Track(channel: 2, state: TrackState.playing, lengthFrames: 96000),
+              Track(
+                channel: 3,
+                state: TrackState.recording,
+                lengthFrames: 150000,
+              ),
+            ],
+          ),
+        );
+        control.selectTrack(3);
+        tracks.showView(view);
+        await pump(tester);
+        await expectLater(
+          find.byType(TracksView),
+          matchesGoldenFile('goldens/tracks_take_${scene}_${view.name}.png'),
+        );
+      }, skip: !rendersScreenshots);
+    }
+  }
+
   testWidgets(
     'console main window with a reversed track: REV in the meta row gap',
     (tester) async {

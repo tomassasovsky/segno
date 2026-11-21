@@ -11,6 +11,7 @@ import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/looper/view/live_playhead.dart';
 import 'package:segno/looper/view/loop_count_words.dart';
 import 'package:segno/looper/view/slot_row.dart';
+import 'package:segno/looper/view/track_capture_count.dart';
 import 'package:segno/looper/view/track_column.dart'
     show PrimaryCrown, SlotFigure;
 import 'package:segno/notices/notices.dart';
@@ -229,12 +230,22 @@ class WaveTrackRow extends StatelessWidget {
                                           CrossAxisAlignment.baseline,
                                       slots: [
                                         RowSlot(
-                                          child: SlotFigure(
-                                            figure: count.figure,
-                                            unit: count.unit,
-                                            figureStyle: meta,
-                                            unitStyle: unit,
-                                          ),
+                                          // A recording take counts as it
+                                          // records (#1936).
+                                          child:
+                                              track.state ==
+                                                  TrackState.recording
+                                              ? TrackCaptureCount(
+                                                  channel: track.channel,
+                                                  figureStyle: meta,
+                                                  unitStyle: unit,
+                                                )
+                                              : SlotFigure(
+                                                  figure: count.figure,
+                                                  unit: count.unit,
+                                                  figureStyle: meta,
+                                                  unitStyle: unit,
+                                                ),
                                         ),
                                         RowSlot(
                                           child: SlotFigure(
@@ -360,7 +371,11 @@ class TrackWaveform extends StatelessWidget {
             ? repository.readTrackWaveform(channel)
             : Float32List(0),
         state: state,
-        progress: hasContent ? progress : 0,
+        // A recording take has no shape to play over yet: its progress
+        // shows on the count and the progress bar (#1936).
+        progress: hasContent && state != LooperMeterState.recording
+            ? progress
+            : 0,
         bars: hasContent ? bars : 0,
         semanticLabel: semanticLabel,
       ),

@@ -2590,6 +2590,8 @@ void le_engine_reopen_settle(le_engine* e, uint32_t drop_mask) {
     le_dub_drop_armed(t); /* also clears seam_capture + pending shadow */
     atomic_store_explicit(&t->a_layer_in_flight, 0, memory_order_release);
     store_i32(&t->a_play_pos, 0);
+    store_i32(&t->a_capture_frames, 0);
+    store_i32(&t->a_capture_target, 0);
     e->trk_play_pos[ch] = 0;
     le_fade_publish(e, t);
   }
@@ -11943,6 +11945,27 @@ LE_AUDIO_HOT_AT(0) void le_engine_process(le_engine* e, float* output, const flo
               tstate == LE_TRACK_EMPTY ? 0
               : recording              ? rp
                                        : e->trk_play_pos[t]);
+    /* The take in flight (#1936), by the rules advance_transport_frame ends
+     * it by: a defining take counts from 0 toward its armed preset; a take
+     * over a master counts from its own start toward a fixed multiple. */
+    {
+      int32_t captured = 0;
+      int32_t target = 0;
+      if (recording) {
+        const le_track* tr = &e->tracks[t];
+        if (e->clock.length == 0) {
+          captured = rp;
+          target = tr->length_preset_target_frames;
+        } else {
+          captured = rp - tr->record_start;
+          const int32_t eff = le_effective_multiple(e, t);
+          if (eff >= 1) target = eff * e->clock.length;
+        }
+        if (captured < 0) captured = 0;
+      }
+      store_i32(&e->tracks[t].a_capture_frames, captured);
+      store_i32(&e->tracks[t].a_capture_target, target);
+    }
     store_i32(&e->tracks[t].a_anchor,
               tstate == LE_TRACK_EMPTY ? 0 : le_track_anchor(&e->tracks[t]));
     if (e->tracks[t].bounce_parked != NULL) {
