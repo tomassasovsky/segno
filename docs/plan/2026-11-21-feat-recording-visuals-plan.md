@@ -388,6 +388,11 @@ Five stacked PRs, each with its design half in segno-design:
 
 Where the build departs from this plan:
 
+- **D6, revised by the owner on 2026-11-21:** the analysis decides, and the
+  length only stands in for it. `le_grid_derive_bpm` itself prefers the
+  power of two nearest 120 in 60 to 200 BPM, the candidates run to 64 bars,
+  and the app shows no tempo while the analysis settles, so the bars never
+  flip. See D6 above.
 - **D1's colour.** An empty track's input bar uses the meter's empty tone,
   raised from an invisible #2E2E31 to #6E6E73 (4.1:1 on the tile).
 - **The readout's count** (part 2) shipped with part 3, which reworked the

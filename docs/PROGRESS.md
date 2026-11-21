@@ -84,9 +84,12 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   mapped onto the loop when it closes, so the first lap has its shape.
 - A free first take's bar count comes from its beat: aubio 0.4.9 (vendored,
   `third_party/aubio`) computes spectral flux on an analysis worker
-  (`engine_analysis.c`); at the take's end the power-of-two bar count with
-  a tempo in 60 to 200 BPM whose beat the onsets repeat at wins, else the
-  nearest-120 reading stands (`tempo_settling` up to a second). ÷2 / ×2
+  (`engine_analysis.c`); at the take's end the power-of-two bar count (1 to
+  64) with a tempo in 60 to 200 BPM whose beat the onsets clearly repeat at
+  wins. Without a clear beat, the length's reading stands: the power of two
+  nearest 120 in that window (`le_grid_derive_bpm`, which no longer picks
+  any whole count first), else any whole count nearest 120. The app shows
+  no tempo for the few milliseconds the analysis takes. ÷2 / ×2
   (`LE_CMD_SCALE_LOOP_BARS`, 146) read a derived loop as half or twice its
   bars, on Tempo & click and the readout's Loop panel.
 - While a free take records, `≈ N bars` follows the time once the analysis
