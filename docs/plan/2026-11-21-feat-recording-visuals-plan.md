@@ -86,9 +86,10 @@ engine keeps today's nearest-120 choice.
 
 ## Part 0: design
 
-Before any UI part is built, the Penpot file gets the recording states, on
-page **25 Main views and selected-track display**, next to the accepted
-**First recording** tile, each with a `c/` note:
+The Penpot file gets the recording states on page **25 Main views and
+selected-track display**, next to the accepted **First recording** tile, each
+with a `c/` note. Each part's frames land in Penpot with that part, in the
+same pair of PRs:
 
 - Tracks view, recording toward a target: red meter at the input level,
   progress bar filling, bars slot `2 / 4`.

@@ -231,6 +231,15 @@ class TrackColumn extends StatelessWidget {
     // (muted included; see LooperTheme.meterColors).
     final meterState = LooperMeterState.of(track.state, muted: track.muted);
     final barColor = looper.meterColor(meterState, mode: mode);
+    // The meter shows what the track captures while it records or overdubs,
+    // and what it would capture while it is the empty track Record/Play
+    // records next: the selected one, or one with a record arm waiting
+    // (#1936, D1 and D2). Every other track shows its playback.
+    final meterFollowsInput = switch (track.state) {
+      TrackState.recording || TrackState.overdubbing => true,
+      TrackState.empty => selected || track.pending,
+      TrackState.playing || TrackState.stopped => false,
+    };
 
     // The meter conveys state through colour only (WCAG 1.4.1); name the state
     // in words so it reaches the tile's accessible label.
@@ -362,6 +371,7 @@ class TrackColumn extends StatelessWidget {
                           frozen: track.state == TrackState.stopped,
                           // The accepted stage's red clip cap.
                           clipColor: looper.recordColor,
+                          input: meterFollowsInput,
                         ),
                       ),
                       // A queued action sits centrally in its own track,

@@ -2393,6 +2393,30 @@ void main() {
       expect(meters.track(99), TrackLevels.silent);
     });
 
+    test("a track's input level is its lanes' input after the trim "
+        '(#1936)', () async {
+      engine.nextSnapshot = _laneSnapshot.copyWith(inputPeaks: [0.5, 0.9]);
+      final repo = buildRepo();
+      addTearDown(repo.dispose);
+      final sub = repo.looperState.listen((_) {});
+      addTearDown(sub.cancel);
+      await Future<void>.delayed(Duration.zero);
+
+      // The lane records input 0; input 1 is louder and not its own.
+      expect(repo.meters.track(0).input, 0.5);
+      // A track with no lane input reads silence.
+      expect(repo.meters.track(1).input, 0);
+
+      repo.setInputTrimDb(input: 0, db: -6);
+      ticker.add(null);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        repo.meters.track(0).input,
+        closeTo(0.5 * inputTrimGainOfDb(-6), 1e-6),
+      );
+    });
+
     test('emits a projected state on each tick, distinctly', () async {
       final repo = buildRepo();
       final emitted = <LooperState>[];
