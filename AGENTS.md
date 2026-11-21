@@ -3,7 +3,7 @@
 Instructions for every agent session in this repo. Claude Code reads this file
 through `CLAUDE.md`. The repo is the only source of truth: build and status live
 in `docs/PROGRESS.md`, the tracking contract in `docs/TRACKING.md`, and work
-items in GitHub Issues.
+items in the Jira project `KAN` (see `docs/TRACKING.md`).
 
 ## Session bootstrap (mandatory)
 
@@ -13,29 +13,33 @@ editing anything substantive.
 1. Read `docs/PROGRESS.md`: **Active threads** and **How to build / test**,
    plus the status section for the area you are about to touch.
 2. Read `docs/TRACKING.md`.
-3. List what is already open:
-   ```sh
-   gh issue list --state open --limit 200
+3. List what is already open, through the Atlassian connector
+   (`searchJiraIssuesUsingJql`) and `gh`:
+   ```
+   JQL: project = KAN AND statusCategory != Done ORDER BY Rank
    gh pr list --state open --limit 200
    ```
    When the request names a specific feature, bug, or area, also search for it:
-   ```sh
-   gh issue list --state all --search "<keywords>"
+   ```
+   JQL: project = KAN AND text ~ "<keywords>"
    gh pr list --state all --search "<keywords>"
    ```
+   Also check `gh issue list --state open` for new public reports to triage
+   into Jira (`docs/TRACKING.md`, "Where the work lives").
 4. Find or open the issue:
    - An open issue already covers the scope: work under it. Update its
-     `stage:*` label and comment with your branch. Do not open another issue.
+     `stage-*` label, move it to In Progress and comment with your branch. Do
+     not open another issue.
    - An open issue covers part of the scope: comment there. Open a new issue
      only for the part it does not cover, and link the two.
-   - A closed issue covers it and the work regressed or was never finished:
+   - A Done issue covers it and the work regressed or was never finished:
      reopen it, or open a follow-up that links it.
-   - Nothing covers it: open one with exactly one `stage:*` and one
-     `autonomy:*` label (definitions in `docs/TRACKING.md`).
+   - Nothing covers it: open one with exactly one `stage-*` and one gate
+     label (definitions in `docs/TRACKING.md`).
    - A trivial one-line fix needs no issue. Go straight to a PR.
 5. Check that the thread is free. If an open PR already references the issue
-   (`gh pr list --state open --search "<N>"`; branch names carry the issue
-   number), continue that PR or ask the user. Do not start a parallel one.
+   (`gh pr list --state open --search "KAN-<N>"`; branch names carry the key),
+   continue that PR or ask the user. Do not start a parallel one.
 
 ## Sibling repos
 
@@ -91,15 +95,17 @@ pen's", `AREA / name`) mean the same frames in the Penpot file.
 - One issue is one thread. Each thread gets its own branch in its own git
   worktree. Never run two threads in one checkout, and never run two sessions
   on one thread.
-- Name branches `<agent>/<topic>-<N>`, adding `-p<K>` for stacked parts
-  (`claude/library-1178-p6a`).
-- PR bodies reference the issue. The PR that completes it says `Closes #N`;
-  stacked part PRs that leave work behind say `Refs #N`. Do not write
-  `Closes #N` when another open PR already closes #N.
+- Name branches `<agent>/<topic>-KAN-<N>`, adding `-p<K>` for stacked parts
+  (`claude/library-KAN-42-p6a`).
+- PRs name the issue: the title ends with `(KAN-N)`. The PR that completes it
+  says `Closes KAN-N` in its body; stacked part PRs that leave work behind say
+  `Refs KAN-N`. Do not write `Closes KAN-N` when another open PR already
+  closes it. Jira does not close the issue on merge: whoever merges moves it
+  to Done.
 - Keep the **Active threads** table in `docs/PROGRESS.md` current in your
   branch: add a row when a thread starts, update it when its stage changes,
   and remove it in the PR that closes the issue (or when the work is parked).
-  The issue labels remain authoritative where the two disagree.
+  The Jira issue remains authoritative where the two disagree.
 - Ending a session with work unfinished: push the branch and leave a comment
   on the issue saying what is done, what is next, and anything the next
   session must know.
@@ -141,11 +147,11 @@ Run these before calling a change done:
 
 ## Tracking
 
-Pipeline stages, autonomy labels, the merge gate (CI green and no correctness
-findings from `/code-review`, run once at the end and at most twice), and
-auto-merge rules are defined in `docs/TRACKING.md`. Follow it as
-written. If an `autonomy:auto` item turns out to need a design call, relabel
-it `autonomy:plan-gate` and stop.
+The Jira board, pipeline stages, gate labels, the merge gate (CI green and no
+correctness findings from `/code-review`, run once at the end and at most
+twice), and auto-merge rules are defined in `docs/TRACKING.md`. Follow it as
+written. If an `agent-merges` item turns out to need a design call, relabel
+it `needs-plan-approval`, move it to Needs me and stop.
 
 Stale-issue triage is a separate procedure:
 `.claude/skills/stale-hygiene/SKILL.md`. It drafts and never closes on its own.

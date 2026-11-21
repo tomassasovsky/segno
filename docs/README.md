@@ -12,7 +12,7 @@ so it can disagree with the code.
 | Document | Contents |
 | --- | --- |
 | [`PROGRESS.md`](PROGRESS.md) | Project status: the active work threads, how to build and test, the architecture, what is done, and the roadmap. Updated as work lands. |
-| [`TRACKING.md`](TRACKING.md) | How work is tracked in GitHub Issues: the pipeline stages, the autonomy labels, the merge gate and auto-merge rules. |
+| [`TRACKING.md`](TRACKING.md) | How work is tracked in the Jira project KAN: the board, the pipeline stages, the gate labels, the merge gate and auto-merge rules. |
 | [`RUNNING_ON_RPI.md`](RUNNING_ON_RPI.md) | Running Segno on the console (Raspberry Pi 5): how the app starts, logs, profiling, storage, the power button, touchscreen calibration, the audio interface and the on-device checklist. |
 | [`HARDWARE_VALIDATION.md`](HARDWARE_VALIDATION.md) | Checks that need real hardware and cannot run in CI, with the results of the first bench pass. |
 | [`APPLIANCE_INTEGRATION.md`](APPLIANCE_INTEGRATION.md) | A record of the September 2026 integration of the console link and the update delivery: which release it was built from, what it covers, and what the release pipeline checks. |
@@ -40,8 +40,9 @@ authoritative where a specification and the code disagree.
 Most changes follow the same path: a brainstorm compares approaches, a plan
 sets out the work and its acceptance criteria, and reviews record what was
 checked before merging. Each record is dated, in its file name or its
-contents, and usually names the GitHub issue it belongs to. Later records and
-the code supersede earlier ones.
+contents, and usually names the issue it belongs to: a Jira key (`KAN-N`) from
+2026-11-21 on, a GitHub number (`#N`) before then. Later records and the code
+supersede earlier ones.
 
 | Folder | Contents | Count |
 | --- | --- | --- |
