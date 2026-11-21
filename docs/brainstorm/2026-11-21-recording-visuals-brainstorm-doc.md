@@ -4,7 +4,7 @@
 
 # A recording take shows its input, its waveform, its progress and its bars
 
-<!-- cspell:words aubio BTrack Essentia Quantiloop Tzanetakis Percival madmom libtempo -->
+<!-- cspell:words aubio BTrack Essentia Quantiloop Tzanetakis Percival madmom libtempo libsamplerate retimes retiming -->
 
 Tracking: [#1936](https://github.com/tomassasovsky/segno/issues/1936),
 `autonomy:plan-gate`.
