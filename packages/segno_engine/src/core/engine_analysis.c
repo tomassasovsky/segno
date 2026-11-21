@@ -12,6 +12,7 @@
 
 #include "audio_ring.h"
 #include "le_aubio.h"
+#include "rt_alloc.h"
 
 /* The ring holds about 2.7 s at 48 kHz: the worker drains it every
  * LE_ANALYSIS_PERIOD_NS, so it only fills when the worker is starved. */
@@ -289,8 +290,13 @@ static int32_t le_analysis_hop_for(int32_t sample_rate) {
 
 le_analysis* le_analysis_create(int32_t sample_rate, int32_t max_loop_frames) {
   if (sample_rate <= 0 || max_loop_frames <= 0) return NULL;
-  le_analysis* a = (le_analysis*)calloc(1, sizeof(le_analysis));
+  /* The audio thread writes this struct (the take counter, the end, the
+   * drop flag): from the fork-shielded, prefaulted allocator, so a fork in
+   * the app never leaves a copy-on-write page for the callback to fault on
+   * (rt_alloc.h). The worker's own buffers below are never touched by it. */
+  le_analysis* a = (le_analysis*)le_rt_alloc_prefaulted(sizeof(le_analysis));
   if (a == NULL) return NULL;
+  memset(a, 0, sizeof(le_analysis));
   a->sample_rate = sample_rate;
   a->hop = le_analysis_hop_for(sample_rate);
   a->win = a->hop * 2;
@@ -323,7 +329,7 @@ void le_analysis_destroy(le_analysis* a) {
   free(a->odf);
   free(a->hop_buf);
   free(a->chunk);
-  free(a);
+  le_rt_free(a);
 }
 
 /* ---- the audio thread ---- */
