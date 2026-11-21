@@ -251,14 +251,16 @@ renamed into place, so an index on disk always describes one whole render.
 A render cancelled part way leaves the previous render's stems and index.
 
 The lanes a track renders run up to the last lane that holds material: a
-take in either snapshot (`pcmRef`) or a lane of a layer. A lane listed empty
-at the arm, or counted active but never recorded, gets no stems. If the index
-cannot be written, the render reports every track failed. The lanes share the
-track's transport, so every lane is rebuilt from the same facts with its own
-images: lane `l` of each layer and snapshot. Every lane of a track that
-holds a take has the track's length, a lane added after the take too
-(#1825), so a lane a snapshot does not list while lane 0 has a take held
-nothing, and reads as silence there. The Track stage chain the lanes sum
+take in either snapshot (`pcmRef`) or a lane of a layer. A lane that neither
+snapshot nor any layer names gets no stems. Every lane of a track that holds
+a take has the track's length, a lane added after the take too (#1825), so
+the snapshots name every such lane: one that no pass wrote renders silent
+stems, as a lane whose input carried nothing during the take does. If the
+index cannot be written, the render reports every track failed. The lanes
+share the track's transport, so every lane is rebuilt from the same facts
+with its own images: lane `l` of each layer and snapshot. A lane a snapshot
+does not list while lane 0 has a take held nothing, and reads as silence
+there. The Track stage chain the lanes sum
 into (`trackChains`) is not replayed; its commands are manifest-only.
 
 ## `armSnapshot`
