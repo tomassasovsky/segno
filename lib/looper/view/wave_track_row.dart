@@ -367,12 +367,10 @@ class TrackWaveform extends StatelessWidget {
     // A recording take toward a target draws the target's bar ruler; its
     // own bars are not counted yet (#1936).
     final framesPerBar = recording
-        ? context.select<LooperBloc, double?>((bloc) {
-            final s = bloc.state;
-            final perBeat = s.transport.framesPerBeat(s.status.sampleRate);
-            final tsNum = s.transport.tsNum;
-            return perBeat == null || tsNum <= 0 ? null : perBeat * tsNum;
-          })
+        ? context.select<LooperBloc, double?>(
+            (bloc) =>
+                bloc.state.transport.framesPerBar(bloc.state.status.sampleRate),
+          )
         : null;
     return LivePlayhead<(double, TakeCapture)>(
       key: ValueKey((channel, framesPerBar)),

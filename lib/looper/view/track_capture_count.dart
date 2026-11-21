@@ -36,14 +36,8 @@ class TrackCaptureCount extends StatelessWidget {
     final l10n = context.l10n;
     final (framesPerBar, sampleRate) = context
         .select<LooperBloc, (double?, int)>((bloc) {
-          final state = bloc.state;
-          final sampleRate = state.status.sampleRate;
-          final perBeat = state.transport.framesPerBeat(sampleRate);
-          final tsNum = state.transport.tsNum;
-          return (
-            perBeat == null || tsNum <= 0 ? null : perBeat * tsNum,
-            sampleRate,
-          );
+          final sampleRate = bloc.state.status.sampleRate;
+          return (bloc.state.transport.framesPerBar(sampleRate), sampleRate);
         });
     return LivePlayhead<CaptureCount>(
       // The grid is part of the key: the selection reads it.

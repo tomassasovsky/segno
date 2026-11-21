@@ -378,11 +378,9 @@ class WaveformDisplayController {
       return (bar: 0, ofBars: 0, seconds: 0);
     }
     final sampleRate = looper.status.sampleRate;
-    final perBeat = looper.transport.framesPerBeat(sampleRate);
-    final tsNum = looper.transport.tsNum;
     return captureCountOf(
       _repository.playhead.capture(_context.cursor),
-      framesPerBar: perBeat == null || tsNum <= 0 ? null : perBeat * tsNum,
+      framesPerBar: looper.transport.framesPerBar(sampleRate),
       sampleRate: sampleRate,
     );
   }

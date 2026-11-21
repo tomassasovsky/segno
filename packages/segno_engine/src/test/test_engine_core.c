@@ -6729,6 +6729,36 @@ static void test_capture_viz_settles_over_master(void) {
   le_engine_destroy(e);
 }
 
+/* An Auto take over a master grows past one cycle and rounds up to two:
+ * its shape still lands where its audio plays. */
+static void test_capture_viz_settles_auto_multiple(void) {
+  printf("test_capture_viz_settles_auto_multiple\n");
+  le_engine* e = tg_make_engine_cap(1000, 100000);
+  float viz[LE_VIZ_POINTS];
+
+  tg_record_defining_loop(e, 4000);
+  tg_advance(e, 1000);
+  le_engine_record(e, 1);
+  tg_feed(e, 0.0f, 1000);
+  tg_feed(e, 0.8f, 5000);
+  le_engine_record(e, 1); /* close at 6000: rounds up to 2 cycles */
+  tg_feed(e, 0.0f, 64);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state != LE_TRACK_RECORDING);
+  const int len = s.tracks[1].length_frames;
+  CHECK(len == 8000);
+
+  le_engine_read_track_visual(e, 1, viz, LE_VIZ_POINTS);
+  float* buf = (float*)calloc((size_t)len, sizeof(float));
+  CHECK(le_engine_export_track(e, 1, buf, len) == len);
+  /* A free take's buckets are 256 frames, plus a block. */
+  cap_viz_check_settled(viz, buf, len, 0.8f, 256 + 64);
+  free(buf);
+
+  le_engine_destroy(e);
+}
+
 /* Clearing a recording track drops its shape and its drawn count. */
 static void test_capture_viz_cleared(void) {
   printf("test_capture_viz_cleared\n");
@@ -40219,6 +40249,7 @@ int main(void) {
   SHARD(test_capture_viz_target_take);
   SHARD(test_capture_viz_settles_defining_take);
   SHARD(test_capture_viz_settles_over_master);
+  SHARD(test_capture_viz_settles_auto_multiple);
   SHARD(test_capture_viz_cleared);
   SHARD(test_length_preset_n_bars_click_on_arms_through_count_in);
   SHARD(test_length_preset_n_bars_click_on_early_press_disarms);
