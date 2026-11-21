@@ -34,6 +34,9 @@ class TrackCaptureCount extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
+    final tsNum = context.select<LooperBloc, int>(
+      (bloc) => bloc.state.transport.tsNum,
+    );
     final (framesPerBar, sampleRate) = context
         .select<LooperBloc, (double?, int)>((bloc) {
           final sampleRate = bloc.state.status.sampleRate;
@@ -41,11 +44,17 @@ class TrackCaptureCount extends StatelessWidget {
         });
     return LivePlayhead<CaptureCount>(
       // The grid is part of the key: the selection reads it.
-      key: ValueKey((channel, framesPerBar, sampleRate)),
+      key: ValueKey((channel, framesPerBar, sampleRate, tsNum)),
       select: (playhead) => captureCountOf(
         playhead.capture(channel),
         framesPerBar: framesPerBar,
         sampleRate: sampleRate,
+        // The beat analysis's estimate, while a free first take records.
+        estimateFramesPerBar: estimateFramesPerBar(
+          playhead.tempoEstimateOf(channel),
+          tsNum,
+          sampleRate,
+        ),
       ),
       builder: (context, count) {
         final words = captureCountWords(l10n, count);

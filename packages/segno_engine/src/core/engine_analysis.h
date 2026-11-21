@@ -42,7 +42,9 @@ void le_analysis_abort(le_analysis* a);
 int le_analysis_result(le_analysis* a, int32_t* bars);
 
 /* Any thread: the live estimate of the take being recorded (#1936 part 5):
- * its tempo in BPM and the tracker's confidence, both 0 with none. */
+ * its tempo in BPM, 0 until the tracker has been confident and steady for
+ * two seconds, and the tracker's confidence as it is; both 0 with no take
+ * and once the take closes. */
 void le_analysis_estimate(le_analysis* a, float* bpm, float* confidence);
 
 /* The bar choice itself, exposed for tests: scores [bars] candidates over

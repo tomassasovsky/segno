@@ -7,7 +7,7 @@ issue: 1936
 
 # A recording take shows its input, waveform, progress and bars
 
-<!-- cspell:words aubio specflux Ooura reinterprets retimed libaubio lbuf -->
+<!-- cspell:words aubio specflux Ooura reinterprets retimed libaubio lbuf compases -->
 
 Tracking: [#1936](https://github.com/tomassasovsky/segno/issues/1936),
 `autonomy:plan-gate`. Brainstorm:
@@ -375,3 +375,45 @@ VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh &&
 - aubio: https://aubio.org , tempo source
   https://github.com/aubio/aubio/blob/master/src/tempo/tempo.c
 - BTrack (rejected): https://github.com/adamstark/BTrack
+
+## As built
+
+Five stacked PRs, each with its design half in segno-design:
+
+1. Input on the meter: #1938 (design #28).
+2. Progress, bars and elapsed time: #1939 (design #29).
+3. Recording waveform, and the readout's count: #1940 (design #30).
+4. Bar choice at the take's end, ÷2 / ×2: #1941 (design #31).
+5. Live estimate: the PR that closes #1936 (design #32).
+
+Where the build departs from this plan:
+
+- **D6, revised by the owner on 2026-11-21:** the analysis decides, and the
+  length only stands in for it. `le_grid_derive_bpm` itself prefers the
+  power of two nearest 120 in 60 to 200 BPM, the candidates run to 64 bars,
+  and the app shows no tempo while the analysis settles, so the bars never
+  flip. See D6 above.
+- **D1's colour.** An empty track's input bar uses the meter's empty tone,
+  raised from an invisible #2E2E31 to #6E6E73 (4.1:1 on the tile).
+- **The readout's count** (part 2) shipped with part 3, which reworked the
+  same `WaveformDisplayController`.
+- **A recording take draws no playhead** in the Wave row or on the readout:
+  the progress shows on the count and the progress bar.
+- **aubio** lives in `packages/segno_engine/third_party/aubio`, beside the
+  other vendored code, with its includes rewritten to relative paths, and
+  compiles as one TU, `src/core/le_aubio.c`.
+- **The first-take tempo notice** (part 4) does not exist in the app. The
+  repository uses `tempo_settling` instead: it reports no tempo and no bars
+  until the analysis answers.
+- **÷2 / ×2 on the readout** sit beside the tempo figure, not in the step
+  row: six touch targets do not fit the card.
+- **The live estimate** shows only after aubio's confidence has reached 0.2
+  with the tempo steady within 3% for two seconds: aubio's tempo alone reads
+  about 122 BPM on silence, a held tone and noise.
+- **The estimate replaces the time** (D3 said beside it): `≈ 2` bars in the
+  count's usual form. The Tracks view's bars slot has no room for both: in
+  Spanish `0:07 ≈ 3 compases` truncated. Only the take the analysis hears
+  shows it (`tempo_estimate_track`).
+- **Not measured on the console yet:** the analysis worker's CPU and the
+  callback's added copy.
+

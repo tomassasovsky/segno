@@ -27,7 +27,7 @@ void main() {
           framesPerBar: 2000,
           sampleRate: 1000,
         ),
-        (bar: 2, ofBars: 4, seconds: 0),
+        (bar: 2, ofBars: 4, seconds: 0, approxBars: 0),
       );
     });
 
@@ -49,7 +49,7 @@ void main() {
           framesPerBar: 2000,
           sampleRate: 1000,
         ),
-        (bar: 4, ofBars: 4, seconds: 0),
+        (bar: 4, ofBars: 4, seconds: 0, approxBars: 0),
       );
     });
 
@@ -60,7 +60,7 @@ void main() {
           framesPerBar: 2000,
           sampleRate: 1000,
         ),
-        (bar: 3, ofBars: 0, seconds: 0),
+        (bar: 3, ofBars: 0, seconds: 0, approxBars: 0),
       );
     });
 
@@ -71,8 +71,39 @@ void main() {
           framesPerBar: null,
           sampleRate: 1000,
         ),
-        (bar: 0, ofBars: 0, seconds: 7),
+        (bar: 0, ofBars: 0, seconds: 7, approxBars: 0),
       );
+    });
+  });
+
+  group("the beat analysis's estimate (#1936)", () {
+    test('adds whole bars to a take with no grid', () {
+      // 120 BPM in 4/4 at 1 kHz: a 2000-frame bar.
+      expect(
+        captureCountOf(
+          const TakeCapture(frames: 7000),
+          framesPerBar: null,
+          sampleRate: 1000,
+          estimateFramesPerBar: estimateFramesPerBar(120, 4, 1000),
+        ),
+        (bar: 0, ofBars: 0, seconds: 7, approxBars: 3),
+      );
+    });
+
+    test('is not used where the grid counts bars', () {
+      expect(
+        captureCountOf(
+          const TakeCapture(frames: 7000),
+          framesPerBar: 2000,
+          sampleRate: 1000,
+          estimateFramesPerBar: 1000,
+        ).approxBars,
+        0,
+      );
+    });
+
+    test('is nothing without an estimate', () {
+      expect(estimateFramesPerBar(0, 4, 48000), isNull);
     });
   });
 
@@ -155,6 +186,40 @@ void main() {
       await tester.pump();
 
       expect(figure(tester).figure, '0:07');
+      expect(figure(tester).unit, '');
+    });
+
+    testWidgets('shows the estimate beside the time once there is one', (
+      tester,
+    ) async {
+      seed(const TransportState());
+      when(() => repository.playhead).thenReturn(
+        const Playhead(
+          captures: [TakeCapture(frames: 9000)],
+          tempoEstimateBpm: 120,
+          tempoEstimateTrack: 0,
+        ),
+      );
+      await pump(tester);
+
+      expect(figure(tester).figure, '≈ 4');
+      expect(figure(tester).unit, 'bars');
+    });
+
+    testWidgets('shows no estimate on a take the analysis does not hear', (
+      tester,
+    ) async {
+      seed(const TransportState());
+      when(() => repository.playhead).thenReturn(
+        const Playhead(
+          captures: [TakeCapture(frames: 9000)],
+          tempoEstimateBpm: 120,
+          tempoEstimateTrack: 3,
+        ),
+      );
+      await pump(tester);
+
+      expect(figure(tester).figure, '0:09');
       expect(figure(tester).unit, '');
     });
   });

@@ -377,13 +377,19 @@ class WaveformDisplayController {
   CaptureCount _captureCount(LooperState looper) {
     final track = _trackAt(looper, _context.cursor);
     if (track == null || track.state != TrackState.recording) {
-      return (bar: 0, ofBars: 0, seconds: 0);
+      return kNoCaptureCount;
     }
     final sampleRate = looper.status.sampleRate;
+    final playhead = _repository.playhead;
     return captureCountOf(
-      _repository.playhead.capture(_context.cursor),
+      playhead.capture(_context.cursor),
       framesPerBar: looper.transport.framesPerBar(sampleRate),
       sampleRate: sampleRate,
+      estimateFramesPerBar: estimateFramesPerBar(
+        playhead.tempoEstimateOf(_context.cursor),
+        looper.transport.tsNum,
+        sampleRate,
+      ),
     );
   }
 
@@ -410,6 +416,7 @@ class WaveformDisplayController {
               captureBar: count.bar,
               captureOfBars: count.ofBars,
               captureSeconds: count.seconds,
+              captureApproxBars: count.approxBars,
             ),
       tempoBpm: transport.tempoBpm,
       hasTempo: transport.tempoSource != TempoSource.none,

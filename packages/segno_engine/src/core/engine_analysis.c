@@ -33,6 +33,13 @@ static const int32_t kBarCandidates[] = {1, 2, 4, 8, 16, 32, 64};
  * otherwise the take has no clear beat and the answer is 0. */
 #define LE_ANALYSIS_MIN_SCORE 0.05f
 #define LE_ANALYSIS_MIN_MARGIN 0.02f
+/* The live estimate shows only once aubio's confidence reaches this and its
+ * tempo has held within LE_ANALYSIS_EST_DRIFT for LE_ANALYSIS_EST_HOLD_S:
+ * its tempo alone means nothing (it reads ~122 BPM on silence, a held tone
+ * and noise alike), and a take with a clear beat reaches it within ~10 s. */
+#define LE_ANALYSIS_EST_CONF 0.2f
+#define LE_ANALYSIS_EST_DRIFT 0.03f
+#define LE_ANALYSIS_EST_HOLD_S 2
 
 struct le_analysis {
   int32_t sample_rate;
@@ -71,6 +78,9 @@ struct le_analysis {
   int32_t odf_len;
   int32_t odf_cap;
   float* chunk;
+  /* The estimate's run: the tempo it holds near, and for how many hops. */
+  float est_ref;
+  int32_t est_run;
 };
 
 static uint32_t le_bits(float v) {
@@ -158,6 +168,38 @@ int32_t le_analysis_choose_bars(const float* odf, int32_t n, int32_t hop,
 
 /* ---- the worker ---- */
 
+static void le_analysis_clear_estimate(le_analysis* a) {
+  a->est_run = 0;
+  a->est_ref = 0.0f;
+  atomic_store_explicit(&a->a_est_bpm_bits, le_bits(0.0f),
+                        memory_order_relaxed);
+  atomic_store_explicit(&a->a_est_conf_bits, le_bits(0.0f),
+                        memory_order_relaxed);
+}
+
+/* Publishes the tracker's estimate once it is confident and steady (see
+ * LE_ANALYSIS_EST_CONF), else 0; the confidence as it is. */
+static void le_analysis_estimate_hop(le_analysis* a) {
+  const float bpm = le_beat_tracker_bpm(a->tracker);
+  const float conf = le_beat_tracker_confidence(a->tracker);
+  const int32_t hold = LE_ANALYSIS_EST_HOLD_S * a->sample_rate / a->hop;
+  float shown = 0.0f;
+  if (!(conf >= LE_ANALYSIS_EST_CONF) || !(bpm > 0.0f)) {
+    a->est_run = 0;
+  } else if (a->est_run == 0 ||
+             fabsf(bpm - a->est_ref) > LE_ANALYSIS_EST_DRIFT * a->est_ref) {
+    a->est_ref = bpm;
+    a->est_run = 1;
+  } else {
+    a->est_run++;
+    if (a->est_run >= hold) shown = bpm;
+  }
+  atomic_store_explicit(&a->a_est_bpm_bits, le_bits(shown),
+                        memory_order_relaxed);
+  atomic_store_explicit(&a->a_est_conf_bits, le_bits(conf),
+                        memory_order_relaxed);
+}
+
 static void le_analysis_new_take(le_analysis* a) {
   a->take_seen++;
   a->hop_fill = 0;
@@ -166,10 +208,7 @@ static void le_analysis_new_take(le_analysis* a) {
   a->odf_maker = le_onset_odf_new(a->win, a->hop);
   le_beat_tracker_free(a->tracker);
   a->tracker = le_beat_tracker_new(a->win, a->hop, a->sample_rate);
-  atomic_store_explicit(&a->a_est_bpm_bits, le_bits(0.0f),
-                        memory_order_relaxed);
-  atomic_store_explicit(&a->a_est_conf_bits, le_bits(0.0f),
-                        memory_order_relaxed);
+  le_analysis_clear_estimate(a);
 }
 
 static void le_analysis_hop(le_analysis* a) {
@@ -178,12 +217,7 @@ static void le_analysis_hop(le_analysis* a) {
   }
   if (a->tracker != NULL) {
     le_beat_tracker_step(a->tracker, a->hop_buf);
-    atomic_store_explicit(&a->a_est_bpm_bits,
-                          le_bits(le_beat_tracker_bpm(a->tracker)),
-                          memory_order_relaxed);
-    atomic_store_explicit(&a->a_est_conf_bits,
-                          le_bits(le_beat_tracker_confidence(a->tracker)),
-                          memory_order_relaxed);
+    le_analysis_estimate_hop(a);
   }
 }
 
@@ -230,6 +264,7 @@ static void le_analysis_answer(le_analysis* a) {
         a->sample_rate);
   }
   a->handled_end = seq;
+  le_analysis_clear_estimate(a); /* the take is over: no estimate is live */
   atomic_store_explicit(&a->a_result_bars, bars, memory_order_relaxed);
   atomic_store_explicit(&a->a_result_seq, seq, memory_order_release);
 }

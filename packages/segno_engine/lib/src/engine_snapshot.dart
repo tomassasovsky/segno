@@ -1753,6 +1753,7 @@ class EngineSnapshot {
     this.tempoSettling = false,
     this.tempoEstimateBpm = 0,
     this.tempoConfidence = 0,
+    this.tempoEstimateTrack = -1,
     this.loopBeats = 0,
     this.currentBeat = 0,
     this.clickMode = ClickMode.off,
@@ -1855,6 +1856,7 @@ class EngineSnapshot {
       tempoSettling = false,
       tempoEstimateBpm = 0,
       tempoConfidence = 0,
+      tempoEstimateTrack = -1,
       loopBeats = 0,
       currentBeat = 0,
       clickMode = ClickMode.off,
@@ -1969,6 +1971,7 @@ class EngineSnapshot {
       tempoSettling: native.tempo_settling != 0,
       tempoEstimateBpm: native.tempo_estimate_bpm,
       tempoConfidence: native.tempo_estimate_confidence,
+      tempoEstimateTrack: native.tempo_estimate_track,
       loopBeats: native.loop_beats,
       currentBeat: native.current_beat,
       clickMode: ClickMode.fromCode(native.click_mode),
@@ -2079,6 +2082,7 @@ class EngineSnapshot {
     bool? tempoSettling,
     double? tempoEstimateBpm,
     double? tempoConfidence,
+    int? tempoEstimateTrack,
     int? loopBeats,
     int? currentBeat,
     ClickMode? clickMode,
@@ -2178,6 +2182,7 @@ class EngineSnapshot {
     tempoSettling: tempoSettling ?? this.tempoSettling,
     tempoEstimateBpm: tempoEstimateBpm ?? this.tempoEstimateBpm,
     tempoConfidence: tempoConfidence ?? this.tempoConfidence,
+    tempoEstimateTrack: tempoEstimateTrack ?? this.tempoEstimateTrack,
     loopBeats: loopBeats ?? this.loopBeats,
     currentBeat: currentBeat ?? this.currentBeat,
     clickMode: clickMode ?? this.clickMode,
@@ -2450,6 +2455,10 @@ class EngineSnapshot {
   /// How sure the analysis is of [tempoEstimateBpm] (larger is surer); `0`
   /// with none.
   final double tempoConfidence;
+
+  /// The track whose take [tempoEstimateBpm] is of (#1936), `-1` with none:
+  /// another track recording at the same time has no estimate.
+  final int tempoEstimateTrack;
 
   /// Whole beats (denominator notes) in the master loop, the grid's own
   /// count, or `0` with no grid (#1168). [loopBars] × [tsNum] for a
@@ -2748,6 +2757,7 @@ class EngineSnapshot {
           tempoSettling == other.tempoSettling &&
           tempoEstimateBpm == other.tempoEstimateBpm &&
           tempoConfidence == other.tempoConfidence &&
+          tempoEstimateTrack == other.tempoEstimateTrack &&
           loopBeats == other.loopBeats &&
           currentBeat == other.currentBeat &&
           clickMode == other.clickMode &&
@@ -2849,6 +2859,7 @@ class EngineSnapshot {
     tempoSettling,
     tempoEstimateBpm,
     tempoConfidence,
+    tempoEstimateTrack,
     loopBeats,
     currentBeat,
     clickMode,

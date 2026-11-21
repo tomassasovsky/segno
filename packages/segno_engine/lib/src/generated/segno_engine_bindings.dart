@@ -7198,6 +7198,11 @@ final class le_snapshot extends ffi.Struct {
 
   @ffi.Float()
   external double tempo_estimate_confidence;
+
+  /// Trailing (#1936): the track whose take the estimate is of, -1 with
+  /// none; another track recording at the same time has no estimate.
+  @ffi.Int32()
+  external int tempo_estimate_track;
 }
 
 /// Instrument families, in catalogue order.
