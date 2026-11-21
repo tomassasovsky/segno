@@ -613,6 +613,8 @@ void main() {
           ..length_preset_bars = 8
           ..settled_take_id = 4
           ..position_frames = 24000
+          ..capture_frames = 3000
+          ..capture_target_frames = 8000
           ..pending = 1
           ..pending_trigger = 2
           ..quantize_override = 1
@@ -637,6 +639,8 @@ void main() {
         expect(track.lengthPresetBars, 8);
         expect(track.settledTakeId, 4);
         expect(track.positionFrames, 24000);
+        expect(track.captureFrames, 3000);
+        expect(track.captureTargetFrames, 8000);
         expect(track.pending, isTrue);
         expect(track.pendingTrigger, 2);
         expect(track.quantizeOverride, isTrue);
@@ -768,6 +772,33 @@ void main() {
       expect(earlier, same);
       expect(earlier.hashCode, same.hashCode);
       expect(earlier, isNot(build(positionFrames: 75)));
+    });
+
+    test("a take's capture breaks equality (#1936)", () {
+      const capturing = TrackSnapshot(
+        state: TrackState.recording,
+        volume: 0.5,
+        muted: false,
+        lengthFrames: 100,
+        undoDepth: 0,
+        rms: 0.1,
+        peak: 0.2,
+        captureFrames: 100,
+        captureTargetFrames: 800,
+      );
+      const later = TrackSnapshot(
+        state: TrackState.recording,
+        volume: 0.5,
+        muted: false,
+        lengthFrames: 100,
+        undoDepth: 0,
+        rms: 0.1,
+        peak: 0.2,
+        captureFrames: 164,
+        captureTargetFrames: 800,
+      );
+      expect(capturing, isNot(later));
+      expect(capturing.hashCode, isNot(later.hashCode));
     });
 
     test('an arm-trigger-only change breaks equality', () {

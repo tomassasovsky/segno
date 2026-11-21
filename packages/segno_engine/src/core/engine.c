@@ -689,6 +689,8 @@ static void le_engine_reset_runtime(le_engine* engine, int32_t sample_rate,
     store_f32(&tr->a_trk_rms_bits, 0.0f);
     store_f32(&tr->a_trk_peak_bits, 0.0f);
     store_i32(&tr->a_play_pos, 0);
+    store_i32(&tr->a_capture_frames, 0);
+    store_i32(&tr->a_capture_target, 0);
     store_i32(&tr->a_pending, 0);
     store_i32(&tr->a_pending_launch, 0);
     store_i32(&tr->a_launch_grace, 0);

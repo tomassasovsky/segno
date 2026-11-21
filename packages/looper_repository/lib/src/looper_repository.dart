@@ -225,6 +225,12 @@ class LooperRepository {
         else
           for (final track in s.tracks) _progressOf(track),
       ],
+      captures: [
+        if (importing != null)
+          for (final _ in importing) TakeCapture.none
+        else
+          for (final track in s.tracks) _captureOf(track),
+      ],
     );
   }
 
@@ -235,12 +241,24 @@ class LooperRepository {
     _playheads.add(next);
   }
 
-  /// [track]'s position as a share of its length, `0` with no length or
-  /// while the take records ([Playhead.tracks]).
-  static double _progressOf(TrackSnapshot track) =>
-      track.lengthFrames > 0 && track.state != TrackState.recording
-      ? (track.positionFrames / track.lengthFrames).clamp(0.0, 1.0)
-      : 0;
+  /// [track]'s position as a share of its length ([Playhead.tracks]). While
+  /// the take records it is the share of the take's target, `0` with none
+  /// (#1936): the write head is no position to play against.
+  static double _progressOf(TrackSnapshot track) {
+    if (track.state == TrackState.recording) return _captureOf(track).progress;
+    return track.lengthFrames > 0
+        ? (track.positionFrames / track.lengthFrames).clamp(0.0, 1.0)
+        : 0;
+  }
+
+  /// [track]'s take in flight ([Playhead.captures]).
+  static TakeCapture _captureOf(TrackSnapshot track) =>
+      track.state == TrackState.recording
+      ? TakeCapture(
+          frames: track.captureFrames,
+          targetFrames: track.captureTargetFrames,
+        )
+      : TakeCapture.none;
 
   void _publishMeters(EngineSnapshot s) {
     final next = MeterLevels(

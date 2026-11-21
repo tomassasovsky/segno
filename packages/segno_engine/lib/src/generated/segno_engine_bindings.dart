@@ -7499,6 +7499,19 @@ final class le_track_snapshot extends ffi.Struct {
   /// track's Undo would take back something newer than a given edit.
   @ffi.Int32()
   external int history_seq;
+
+  /// Trailing (#1936): the take in flight while RECORDING, 0 otherwise.
+  /// capture_frames counts the frames captured since the press (a take over a
+  /// master counts from its own start, not from the master's phase).
+  /// capture_target_frames is where the take ends by itself: a length preset
+  /// armed on a defining take, or a fixed multiple of the master loop; 0 when
+  /// nothing ends it but a press (Auto, Sync, a free take). Published once per
+  /// block beside position_frames.
+  @ffi.Int32()
+  external int capture_frames;
+
+  @ffi.Int32()
+  external int capture_target_frames;
 }
 
 /// Per-track state machine, mirrored in le_snapshot.track_state.

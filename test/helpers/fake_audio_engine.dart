@@ -2207,6 +2207,8 @@ class _LengthTrack extends TrackSnapshot {
          oneShot: oneShot ?? source.oneShot,
          settledTakeId: source.settledTakeId,
          positionFrames: source.positionFrames,
+         captureFrames: source.captureFrames,
+         captureTargetFrames: source.captureTargetFrames,
          pendingTrigger: source.pendingTrigger,
          quantizeOverride: timing == null
              ? source.quantizeOverride
