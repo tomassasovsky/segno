@@ -6834,7 +6834,9 @@ static void ana_feed(le_engine* e, const float* x, int len) {
   for (int f = 0; f < len; f += 512) {
     const int n = len - f < 512 ? len - f : 512;
     le_engine_process(e, out, x + f, (uint32_t)n);
-    if ((f / 512) % 64 == 63) ana_sleep_us(20000);
+    /* 8192 frames (0.17 s) between pauses: a sixteenth of the ring, so a
+     * worker slow to wake still has room before the ring fills. */
+    if ((f / 512) % 16 == 15) ana_sleep_us(5000);
   }
 }
 

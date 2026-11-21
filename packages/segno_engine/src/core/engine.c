@@ -646,6 +646,12 @@ static void le_engine_reset_runtime(le_engine* engine, int32_t sample_rate,
                                     int32_t input_channels,
                                     int32_t output_channels,
                                     int32_t max_loop_frames) {
+  /* No take is fed to the beat analysis, and none awaits its answer, across
+   * a reset (#1936): a configure makes a new analysis, a retained reopen
+   * keeps it for the next take. */
+  engine->ana_on = 0;
+  engine->ana_wait = 0;
+  store_i32(&engine->a_tempo_settling, 0);
   /* Lane buffers are mono: one input channel in, routed out via the mask. */
   engine->track_count = LE_MAX_TRACKS;
   atomic_store_explicit(&engine->a_record_timing_default, 0, memory_order_seq_cst);
@@ -1100,9 +1106,6 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
    * longest take; configure runs with no callback, so it is safe to swap. */
   le_analysis_destroy(engine->analysis);
   engine->analysis = le_analysis_create(sample_rate, max_loop_frames);
-  engine->ana_on = 0;
-  engine->ana_wait = 0;
-  store_i32(&engine->a_tempo_settling, 0);
   return LE_OK;
 }
 
