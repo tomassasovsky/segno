@@ -255,14 +255,11 @@ take in either snapshot (`pcmRef`) or a lane of a layer. A lane listed empty
 at the arm, or counted active but never recorded, gets no stems. If the index
 cannot be written, the render reports every track failed. The lanes share the
 track's transport, so every lane is rebuilt from the same facts with its own
-images: lane `l` of each layer and snapshot. A lane a snapshot does not list
-while lane 0 has a take reads as silence there, except for the last pass's
-result in the disarm snapshot: a lane added after the take keeps a length of
-0 (#1825), which the snapshot skips, so the renderer keeps what that lane
-played before its last pass (what that pass added to it is not in the
-capture). The
-Track stage chain the lanes sum into (`trackChains`) is not replayed; its
-commands are manifest-only.
+images: lane `l` of each layer and snapshot. Every lane of a track that
+holds a take has the track's length, a lane added after the take too
+(#1825), so a lane a snapshot does not list while lane 0 has a take held
+nothing, and reads as silence there. The Track stage chain the lanes sum
+into (`trackChains`) is not replayed; its commands are manifest-only.
 
 ## `armSnapshot`
 

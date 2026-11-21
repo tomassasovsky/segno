@@ -4240,7 +4240,17 @@ static int le_apply_routing(le_engine* e, const le_mix_settings* mix,
   }
   for (int ch = 0; ch < e->track_count; ++ch)
     if (mix->lane_count_mask & (1u << ch)) {
-      atomic_store_explicit(&e->tracks[ch].lane_count, mix->lane_count[ch], memory_order_release);
+      le_track* t = &e->tracks[ch];
+      /* A lane that joins a track holding a take takes the track's length,
+       * as every lane of it does (le_track_set_len), so a pass that writes
+       * it is exported (#1825). le_prepare_routing silenced its live slot
+       * unless the lane still holds a take of its own. An empty track's
+       * lanes keep 0. */
+      const int32_t len = load_i32(&t->a_state) != LE_TRACK_EMPTY
+                              ? load_i32(&t->lanes[0].a_len) : 0;
+      for (int l = le_lanes_active(t); l < mix->lane_count[ch]; ++l)
+        store_i32(&t->lanes[l].a_len, len);
+      atomic_store_explicit(&t->lane_count, mix->lane_count[ch], memory_order_release);
       /* The lanes the track mixes from here (#1824, events.log 17). */
       le_plog_push(e, frame, (le_command){.code = LE_CMD_SET_LANE_COUNT,
         .lanei = {ch, 0, mix->lane_count[ch]}});

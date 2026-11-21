@@ -54,8 +54,8 @@ static void lst_pump(le_engine* e, lst_signal* sig, int only, int frames) {
 
 /* Appends the arm and disarm snapshots the Dart side writes to the
  * drain's performance.json: at arm the track is empty with two lanes, at
- * disarm it plays three, but lists two: a lane added after the take keeps
- * a length of 0 (#1825), which the snapshot skips. */
+ * disarm it plays three and lists them all: a lane added after the take has
+ * the track's length (#1825). */
 static void lst_finalize_manifest(const char* dir, int32_t take_id) {
   char path[700];
   snprintf(path, sizeof(path), "%s/performance.json", dir);
@@ -85,8 +85,10 @@ static void lst_finalize_manifest(const char* dir, int32_t take_id) {
             "{\"lane\":0,\"lenFrames\":%d,\"deferred\":false,\"takeId\":%d,"
             "\"pcmRef\":\"track0-lane0.wav\"},"
             "{\"lane\":1,\"lenFrames\":%d,\"deferred\":false,"
-            "\"pcmRef\":\"track0-lane1.wav\"}]}]}}",
-            LST_OFFSET, LST_LEN, take_id, LST_LEN);
+            "\"pcmRef\":\"track0-lane1.wav\"},"
+            "{\"lane\":2,\"lenFrames\":%d,\"deferred\":false,"
+            "\"pcmRef\":\"track0-lane2.wav\"}]}]}}",
+            LST_OFFSET, LST_LEN, take_id, LST_LEN, LST_LEN);
     CHECK(fclose(f) == 0);
   }
   free(json);
@@ -116,13 +118,12 @@ static float* lst_run(const char* name, int only, uint64_t* frames) {
       {5.0 / LST_LEN, 0.25f, 0.0},
       {11.0 / LST_LEN, 0.20f, 0.0},
   };
-  /* The last pass leaves the third lane as it was: the disarm snapshot
-   * does not list it (see lst_finalize_manifest), so its last pass's result
-   * is not in the capture, and the renderer keeps what it played. */
+  /* The last pass writes every lane, the added third one too: its result
+   * is only in the disarm snapshot (#1825). */
   lst_signal last[LST_INPUTS] = {
       {19.0 / LST_LEN, 0.10f, 0.0},
       {23.0 / LST_LEN, 0.10f, 0.0},
-      {29.0 / LST_LEN, 0.0f, 0.0},
+      {29.0 / LST_LEN, 0.10f, 0.0},
   };
   lst_signal dub[LST_INPUTS] = {
       {7.0 / LST_LEN, 0.15f, 0.0},
@@ -195,7 +196,7 @@ static float* lst_run(const char* name, int only, uint64_t* frames) {
   char path[700];
   if (only < 0) {
     float lane[LST_LEN];
-    for (int32_t l = 0; l < 2; ++l) {
+    for (int32_t l = 0; l < 3; ++l) {
       CHECK(le_engine_export_track_lane(e, 0, l, lane, LST_LEN) == LST_LEN);
       snprintf(path, sizeof(path), "%s/track0-lane%d.wav", dir, l);
       test_write_wav_mono(path, lane, LST_LEN, sr);
@@ -495,7 +496,62 @@ static void test_lane_stems_index_without_tracks(void) {
   le_engine_destroy(e);
 }
 
+/* #1825: a lane added to a track that already plays a take takes the
+ * track's length, as every lane of a track does. Before, it kept a length of
+ * 0, so the passes that wrote it were played but never exported: not by
+ * le_engine_export_track_lane (the performance snapshots), nor as the live
+ * image le_engine_export_layer gives a session save. */
+static void test_added_lane_takes_track_length(void) {
+  printf("test_added_lane_takes_track_length\n");
+  enum { LEN = 2048 };
+  le_engine* e = le_engine_create();
+  CHECK(le_engine_configure(e, 48000, 2, 2, 48000) == LE_OK);
+  CHECK(le_engine_set_rec_dub(e, 0) == LE_OK);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  pump_two_lane(e, 0.25f, 0.5f, LEN, NULL, NULL);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* finalize: playing */
+  pump_two_lane(e, 0.0f, 0.0f, 1000, NULL, NULL);
+  le_snapshot snap;
+  le_engine_get_snapshot(e, &snap);
+  CHECK(snap.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(snap.tracks[0].length_frames == LEN);
+
+  /* The lane joins while the track plays: it holds silence, the track's
+   * length of it. */
+  CHECK(set_lane_count_and_publish(e, 0, 2) == LE_OK);
+  CHECK(le_engine_set_lane_input(e, 0, 1, 1) == LE_OK);
+  pump_two_lane(e, 0.0f, 0.0f, 300, NULL, NULL);
+  le_lane_snapshot lane;
+  le_engine_get_lane(e, 0, 1, &lane);
+  CHECK(lane.length_frames == LEN);
+  static float pcm[LEN];
+  CHECK(le_engine_export_track_lane(e, 0, 1, pcm, LEN) == LEN);
+  float peak = 0.0f;
+  for (int i = 0; i < LEN; ++i) peak = fmaxf(peak, fabsf(pcm[i]));
+  CHECK(peak == 0.0f);
+
+  /* A pass writes it, and its export holds what the pass took. */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  pump_two_lane(e, 0.0f, 0.5f, LEN, NULL, NULL);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  pump_two_lane(e, 0.0f, 0.0f, 1000, NULL, NULL);
+  settle_layers(e);
+  le_engine_get_lane(e, 0, 1, &lane);
+  CHECK(lane.length_frames == LEN);
+  CHECK(le_engine_export_track_lane(e, 0, 1, pcm, LEN) == LEN);
+  int at_level = 0;
+  for (int i = 0; i < LEN; ++i) at_level += fabsf(pcm[i] - 0.5f) < 1e-3f;
+  CHECK(at_level > LEN / 2);
+  int32_t kinds[2 * LE_POOL_SLOTS];
+  int32_t skipped[2 * LE_POOL_SLOTS];
+  int32_t undo = -1;
+  CHECK(export_history(e, 0, kinds, skipped, 2 * LE_POOL_SLOTS, &undo) >= 1);
+  CHECK(le_engine_export_layer(e, 0, 1, undo, pcm, LEN) == LEN);
+  le_engine_destroy(e);
+}
+
 static void run_lane_stems_tests(void) {
+  test_added_lane_takes_track_length();
   test_lane_stems_index_without_tracks();
   test_lane_stems_match_live();
   test_lane_stems_without_logged_count();
