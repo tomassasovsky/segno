@@ -4764,8 +4764,7 @@ void main() {
         // A capturing track, and the selected empty one (channel 0 here),
         // meter their input, which shows whatever the track holds (#1936).
         final followsInput =
-            change.after.isCapturing ||
-            change.after.state == TrackState.empty;
+            change.after.isCapturing || change.after.state == TrackState.empty;
         expect(meter.hasContent, change.after.hasContent || followsInput);
       });
     }
