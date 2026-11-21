@@ -2,7 +2,7 @@
 
 <!-- What does this change, and why? -->
 
-Closes <!-- KAN-N for the owner's work, or #N for a public GitHub issue -->
+Closes <!-- SEG-N for the owner's work, or #N for a public GitHub issue -->
 
 ## Testing
 

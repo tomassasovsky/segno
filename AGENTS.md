@@ -3,7 +3,7 @@
 Instructions for every agent session in this repo. Claude Code reads this file
 through `CLAUDE.md`. The repo is the only source of truth: build and status live
 in `docs/PROGRESS.md`, the tracking contract in `docs/TRACKING.md`, and work
-items in the Jira project `KAN` (see `docs/TRACKING.md`).
+items in the Jira project `SEG` (see `docs/TRACKING.md`).
 
 ## Session bootstrap (mandatory)
 
@@ -16,12 +16,12 @@ editing anything substantive.
 3. List what is already open, through the Atlassian connector
    (`searchJiraIssuesUsingJql`) and `gh`:
    ```
-   JQL: project = KAN AND statusCategory != Done ORDER BY Rank
+   JQL: project = SEG AND statusCategory != Done ORDER BY Rank
    gh pr list --state open --limit 200
    ```
    When the request names a specific feature, bug, or area, also search for it:
    ```
-   JQL: project = KAN AND text ~ "<keywords>"
+   JQL: project = SEG AND text ~ "<keywords>"
    gh pr list --state all --search "<keywords>"
    ```
    Also check `gh issue list --state open` for new public reports to triage
@@ -38,7 +38,7 @@ editing anything substantive.
      label (definitions in `docs/TRACKING.md`).
    - A trivial one-line fix needs no issue. Go straight to a PR.
 5. Check that the thread is free. If an open PR already references the issue
-   (`gh pr list --state open --search "KAN-<N>"`; branch names carry the key),
+   (`gh pr list --state open --search "SEG-<N>"`; branch names carry the key),
    continue that PR or ask the user. Do not start a parallel one.
 
 ## Sibling repos
@@ -95,11 +95,11 @@ pen's", `AREA / name`) mean the same frames in the Penpot file.
 - One issue is one thread. Each thread gets its own branch in its own git
   worktree. Never run two threads in one checkout, and never run two sessions
   on one thread.
-- Name branches `<agent>/<topic>-KAN-<N>`, adding `-p<K>` for stacked parts
-  (`claude/library-KAN-42-p6a`).
-- PRs name the issue: the title ends with `(KAN-N)`. The PR that completes it
-  says `Closes KAN-N` in its body; stacked part PRs that leave work behind say
-  `Refs KAN-N`. Do not write `Closes KAN-N` when another open PR already
+- Name branches `<agent>/<topic>-SEG-<N>`, adding `-p<K>` for stacked parts
+  (`claude/library-SEG-42-p6a`).
+- PRs name the issue: the title ends with `(SEG-N)`. The PR that completes it
+  says `Closes SEG-N` in its body; stacked part PRs that leave work behind say
+  `Refs SEG-N`. Do not write `Closes SEG-N` when another open PR already
   closes it. Jira does not close the issue on merge: whoever merges moves it
   to Done.
 - Keep the **Active threads** table in `docs/PROGRESS.md` current in your

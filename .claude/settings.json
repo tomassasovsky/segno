@@ -15,7 +15,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo '[tracking] Substantive work (feature/multi-step/multi-session) needs a Jira issue in project KAN with one stage-* and one gate label (needs-plan-approval, needs-merge, needs-hardware or agent-merges). Run the AGENTS.md session bootstrap first: list open KAN issues and open PRs and reuse an issue that already covers the scope; open a new one only when none does. Branches end in -KAN-N, PR titles end with (KAN-N), PR bodies say Closes KAN-N (stacked parts: Refs KAN-N), and whoever merges moves the issue to Done; ready-to-merge only when CI is green AND /code-review (run once at the end, two rounds max) leaves no correctness findings; cleanups go to PR follow-ups. Trivial one-liners skip the issue. Contract: docs/TRACKING.md'"
+            "command": "echo '[tracking] Substantive work (feature/multi-step/multi-session) needs a Jira issue in project SEG with one stage-* and one gate label (needs-plan-approval, needs-merge, needs-hardware or agent-merges). Run the AGENTS.md session bootstrap first: list open SEG issues and open PRs and reuse an issue that already covers the scope; open a new one only when none does. Branches end in -SEG-N, PR titles end with (SEG-N), PR bodies say Closes SEG-N (stacked parts: Refs SEG-N), and whoever merges moves the issue to Done; ready-to-merge only when CI is green AND /code-review (run once at the end, two rounds max) leaves no correctness findings; cleanups go to PR follow-ups. Trivial one-liners skip the issue. Contract: docs/TRACKING.md'"
           }
         ]
       }

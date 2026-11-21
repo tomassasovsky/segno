@@ -34,36 +34,36 @@ file, where each area is a page. Workflow, MCP preconditions and snapshots:
 Issues with a live branch. Agents add a row when a thread starts, update it
 when its stage changes, and remove it in the PR that closes the issue or when
 the work is parked (rules in `AGENTS.md`). Stage and gate are copied from the
-Jira issue (project `KAN`), which is authoritative; if a row disagrees, fix the row.
+Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the row.
 
 | Issue | Thread | Stage | Gate | Branch |
 |-------|--------|-------|----------|--------|
-| KAN-15 | Work tracking moves from GitHub Issues to Jira: open issues copied, tracking contract switched; GitHub issues close after merge | build | needs-merge | `claude/jira-tracking-KAN-15` |
-| KAN-58 | NVMe drive drops off the bus mid-recording: the Pi 5 cmdline turns off APST and PCIe ASPM on every link | in-review | needs-hardware | `claude/nvme-power-1795` |
-| KAN-60 | A finished export to a FAT stick is on the device: copies and the export end with a volume sync | in-review | needs-hardware | `claude/usb-export-durable-1797` |
-| KAN-11 | Start helper programs with posix_spawn, never fork the app | in-review | needs-merge | `claude/no-fork-1367` |
-| KAN-87 | Retry Wi-Fi after a runtime drop, holding off while performing | in-review | needs-hardware | `claude/wifi-runtime-retry-1337` |
-| KAN-9 | Console negotiates the charger's full 20 V current, with a power-cycle prompt | in-review | needs-hardware | `claude/pd-provisioning-1352` |
-| KAN-51 | Song queue completion | in-review | needs-hardware | `claude/song-queue-comet-1077` |
-| KAN-86 | Song and Band: one section at a time | in-review | needs-merge | `claude/song-one-section-1323` |
-| KAN-55 | Replay audio-history changes in performance stems | build | needs-merge | `claude/stem-history-replay-1143` |
-| KAN-59 | Appliance USB storage service | build | needs-merge | `claude/usb-storage-1177-*` |
-| KAN-62 | Pitch and time DSP core | build | needs-merge | `claude/pitch-time-1179-*` |
-| KAN-63 | Instruments | plan | needs-merge | `claude/instruments-1197-*` |
-| KAN-64, KAN-52 | Recording to USB and long recordings: Parts 1-5 and 11 on master; durability and bounded recovery (Part 8's finalize and recovery, fixes #1078) in build | build | needs-merge | `claude/recording-durability-1198-p*` |
-| KAN-67 | Backing player | plan | needs-merge | `claude/backing-1200-*` |
-| KAN-71 | Shared render recipe, Bounce, Save selected | plan | needs-merge | `claude/render-1202-*` |
-| KAN-73 | MIDI clock | plan | needs-merge | `claude/midi-clock-1228-*` |
-| KAN-83 | Device and appliance pages (Parts 6, 7, 9, 11, 12 shipped; plan approved 2026-10-26 and refreshed; Q5 answered: refuse an Apply over the effects budget; P1, P2, P3a, P3b, P4 and P5 merged; P8 update from USB in review; all parts built; on-device checks listed on the issue) | build | needs-merge | `claude/device-pages-*1270*` |
-| KAN-7 | Ring carrier firmware updates from the console | in-review | needs-hardware | `claude/ring-update-1342` |
-| KAN-31, KAN-43 | Screen audits: every fix is on master; the Penpot writeback listed under each PR's Design writeback is owed (no Penpot tab with the MCP plugin on 2026-11-19) | build | agent-merges | none |
-| KAN-26 | Drive pedals' aliasing at 48 kHz: four kinds oversampled (#1552); the owner's blind pairs decide whether the built-in Drive is oversampled too | build | needs-plan-approval | `claude/drive-alias-1540` |
-| KAN-19 | Restart and shut down also wait for RAUC's own install, after an app restart | in-review | needs-hardware | `claude/rauc-power-gate-1498` |
-| KAN-49 | Every effect cheaper without changing its sound: pitch (#1764, #1770), drives (#1759), reverbs/delays/filters (#1762) and the Vinyl (#1904, part 4) bit-identical; part 5, the Degrade at 96 kHz, is next (scope on the issue) | build | agent-merges | `claude/fx-opt-part5-1755` |
-| KAN-93 | The app's audio callback runs late on screen changes and take starts: it waits on memory (Ed's Racks overflow the caches). Parts 1-4 and 6 merged (#1925, #1926, #1932, #1933, #1935); part 5 in review (Mesa keeps a page transition's render target, made at startup). Steady playback and take starts are clean on the console; the rare xruns were the bench's own reads of the app's memory | in-review | needs-plan-approval | `claude/cb-overhead-1914-p5` |
-| KAN-48 | Effects budget from the app's measured headroom: 10-minute untraced in-app ladder at 48 kHz / 32 (build 279); track job 200 → 300 ns, chains on the callback charged 2.5× (`kFxSerialFactor`); 4 inputs + 7 tracks or + 1 output rack fit | in-review | agent-merges | `claude/fx-headroom-1724-p3` |
-| KAN-24 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track and lane chains) is #1729 | build | needs-plan-approval | `claude/fx-multicore-1515-p1b` |
-| KAN-61 | Console WiFi against an ASUS RT-AX89X with 802.11ax on: firmware already matches Pi OS; brcmfmac options aligned with Pi OS and a troubleshooting note; failure not reproduced, issue stays open until it recurs | in-review | agent-merges | `claude/wifi-firmware-1816` |
+| SEG-3 | Work tracking moves from GitHub Issues to Jira: open issues copied, tracking contract switched; GitHub issues close after merge | in-review | needs-merge | `claude/jira-tracking-SEG-3` |
+| SEG-61 | NVMe drive drops off the bus mid-recording: the Pi 5 cmdline turns off APST and PCIe ASPM on every link | in-review | needs-hardware | `claude/nvme-power-1795` |
+| SEG-62 | A finished export to a FAT stick is on the device: copies and the export end with a volume sync | in-review | needs-hardware | `claude/usb-export-durable-1797` |
+| SEG-8 | Start helper programs with posix_spawn, never fork the app | in-review | needs-merge | `claude/no-fork-1367` |
+| SEG-81 | Retry Wi-Fi after a runtime drop, holding off while performing | in-review | needs-hardware | `claude/wifi-runtime-retry-1337` |
+| SEG-7 | Console negotiates the charger's full 20 V current, with a power-cycle prompt | in-review | needs-hardware | `claude/pd-provisioning-1352` |
+| SEG-46 | Song queue completion | in-review | needs-hardware | `claude/song-queue-comet-1077` |
+| SEG-80 | Song and Band: one section at a time | in-review | needs-merge | `claude/song-one-section-1323` |
+| SEG-50 | Replay audio-history changes in performance stems | build | needs-merge | `claude/stem-history-replay-1143` |
+| SEG-53 | Appliance USB storage service | build | needs-merge | `claude/usb-storage-1177-*` |
+| SEG-56 | Pitch and time DSP core | build | needs-merge | `claude/pitch-time-1179-*` |
+| SEG-57 | Instruments | plan | needs-merge | `claude/instruments-1197-*` |
+| SEG-58, SEG-47 | Recording to USB and long recordings: Parts 1-5 and 11 on master; durability and bounded recovery (Part 8's finalize and recovery, fixes #1078) in build | build | needs-merge | `claude/recording-durability-1198-p*` |
+| SEG-60 | Backing player | plan | needs-merge | `claude/backing-1200-*` |
+| SEG-64 | Shared render recipe, Bounce, Save selected | plan | needs-merge | `claude/render-1202-*` |
+| SEG-66 | MIDI clock | plan | needs-merge | `claude/midi-clock-1228-*` |
+| SEG-74 | Device and appliance pages (Parts 6, 7, 9, 11, 12 shipped; plan approved 2026-10-26 and refreshed; Q5 answered: refuse an Apply over the effects budget; P1, P2, P3a, P3b, P4 and P5 merged; P8 update from USB in review; all parts built; on-device checks listed on the issue) | build | needs-merge | `claude/device-pages-*1270*` |
+| SEG-5 | Ring carrier firmware updates from the console | in-review | needs-hardware | `claude/ring-update-1342` |
+| SEG-30, SEG-43 | Screen audits: every fix is on master; the Penpot writeback listed under each PR's Design writeback is owed (no Penpot tab with the MCP plugin on 2026-11-19) | build | agent-merges | none |
+| SEG-24 | Drive pedals' aliasing at 48 kHz: four kinds oversampled (#1552); the owner's blind pairs decide whether the built-in Drive is oversampled too | build | needs-plan-approval | `claude/drive-alias-1540` |
+| SEG-17 | Restart and shut down also wait for RAUC's own install, after an app restart | in-review | needs-hardware | `claude/rauc-power-gate-1498` |
+| SEG-49 | Every effect cheaper without changing its sound: pitch (#1764, #1770), drives (#1759), reverbs/delays/filters (#1762) and the Vinyl (#1904, part 4) bit-identical; part 5, the Degrade at 96 kHz, is next (scope on the issue) | build | agent-merges | `claude/fx-opt-part5-1755` |
+| SEG-90 | The app's audio callback runs late on screen changes and take starts: it waits on memory (Ed's Racks overflow the caches). Parts 1-4 and 6 merged (#1925, #1926, #1932, #1933, #1935); part 5 in review (Mesa keeps a page transition's render target, made at startup). Steady playback and take starts are clean on the console; the rare xruns were the bench's own reads of the app's memory | in-review | needs-plan-approval | `claude/cb-overhead-1914-p5` |
+| SEG-48 | Effects budget from the app's measured headroom: 10-minute untraced in-app ladder at 48 kHz / 32 (build 279); track job 200 → 300 ns, chains on the callback charged 2.5× (`kFxSerialFactor`); 4 inputs + 7 tracks or + 1 output rack fit | in-review | agent-merges | `claude/fx-headroom-1724-p3` |
+| SEG-22 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track and lane chains) is #1729 | build | needs-plan-approval | `claude/fx-multicore-1515-p1b` |
+| SEG-63 | Console WiFi against an ASUS RT-AX89X with 802.11ax on: firmware already matches Pi OS; brcmfmac options aligned with Pi OS and a troubleshooting note; failure not reproduced, issue stays open until it recurs | in-review | agent-merges | `claude/wifi-firmware-1816` |
 
 ---
 

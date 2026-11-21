@@ -9,17 +9,17 @@ This file is the contract. **Any session — human or agent — keeps it current
 
 ## Where the work lives
 
-- **Jira project `KAN` ("Segno")** on <https://aquiles-team.atlassian.net>
+- **Jira project `SEG` ("Segno.")** on <https://aquiles-team.atlassian.net>
   (cloudId `8bd5ad29-9876-4571-adbf-07b7eeba3260`). Every piece of the owner's
-  work is a `KAN-N` issue: a Task, or an Epic with Tasks under it.
+  work is a `SEG-N` issue: a Task or a Bug, or an Epic with those under it.
 - Agents read and write it through the Atlassian MCP connector:
   `searchJiraIssuesUsingJql` to find issues, `createJiraIssue`,
-  `editJiraIssue`, `transitionJiraIssue` (by transition id, below) and
+  `editJiraIssue`, `transitionJiraIssue` and
   `addOrEditJiraIssueComment`. With no Atlassian connector in the session,
   stop and tell the owner; do not track work anywhere else.
 - **GitHub Issues are the public intake only.** Outside contributors file bugs
   and requests there, because the Jira project is private. Triage moves each
-  one into Jira: create the `KAN` issue with a link to the GitHub issue,
+  one into Jira: create the `SEG` issue with a link to the GitHub issue,
   comment the key on GitHub, and close the GitHub issue.
 - Issue numbers written `#N` in `docs/`, commit messages and PRs before
   2026-11-21 are GitHub issues. The open ones moved to Jira that day;
@@ -30,12 +30,16 @@ This file is the contract. **Any session — human or agent — keeps it current
 The board's columns say where the work stands for the owner. Sprints are two
 weeks; the owner plans each one from the backlog.
 
-| Column      | Transition id | Means                                                        |
-|-------------|---------------|--------------------------------------------------------------|
-| To Do       | `11`          | In the backlog or the sprint, not started                    |
-| In Progress | `21`          | An agent session is working on it                            |
-| Needs me    | `31`          | Waiting on the owner; the issue's `needs-*` label says why   |
-| Done        | `41`          | Merged, or closed with a reason in a comment                 |
+| Column      | Means                                                        |
+|-------------|--------------------------------------------------------------|
+| To Do       | In the backlog or the sprint, not started                    |
+| In Progress | An agent session is working on it                            |
+| Needs me    | Waiting on the owner; the issue's `needs-*` label says why   |
+| Done        | Merged, or closed with a reason in a comment                 |
+
+Move an issue by the column it goes to: `listJiraIssueTransitions` names the
+transition that leads there. Transition ids are not written down here because
+they change when the board's columns change.
 
 Agents pick work from the active sprint first. An issue goes to **Needs me**
 the moment its gate is reached: the plan is committed (`needs-plan-approval`),
@@ -57,14 +61,14 @@ brainstorm → plan → plan-review → build → in-review (PR: CI + code-revie
 | `stage-plan`       | brainstorm lands               | `docs/plan/*.md` committed         |
 | `stage-plan-review`| `plan-technical-review` skill  | review notes / approval            |
 | `stage-build`      | branch pushed / first commit   | branch + commits                   |
-| `stage-in-review`  | PR opened naming `KAN-N`       | PR + `gh pr checks`                |
+| `stage-in-review`  | PR opened naming `SEG-N`       | PR + `gh pr checks`                |
 | (Done)             | PR merges                      | the agent moves the issue to Done  |
 
-**Rule:** a branch is named `<agent>/<topic>-KAN-N`, and the PR title ends with
-`(KAN-N)`. The PR body says `Closes KAN-N` for the PR that completes the issue,
-and `Refs KAN-N` for stacked parts that leave work behind. One issue never has
+**Rule:** a branch is named `<agent>/<topic>-SEG-N`, and the PR title ends with
+`(SEG-N)`. The PR body says `Closes SEG-N` for the PR that completes the issue,
+and `Refs SEG-N` for stacked parts that leave work behind. One issue never has
 two open PRs that both close it. Jira does not close issues from a PR, so the
-agent that merges (or sees the merge) moves the issue to Done (transition `41`).
+agent that merges (or sees the merge) moves the issue to Done.
 
 ## The gate labels — which call needs the owner
 
@@ -132,15 +136,15 @@ How the review runs:
 - Stage changed, merged, or parked? Update the issue's labels and column and
   the thread's **Active threads** row. The PR that closes the issue removes
   its row.
-- Opening a PR? Set `stage-in-review` on the issue, put `(KAN-N)` in the title
-  and `Closes KAN-N` in the body, and add `ci:*` + `review:pending` to the PR.
+- Opening a PR? Set `stage-in-review` on the issue, put `(SEG-N)` in the title
+  and `Closes SEG-N` in the body, and add `ci:*` + `review:pending` to the PR.
 - After running `/code-review` on a PR: set `review:clean` when no correctness
   findings remain (or leave `pending` and report them). List the cleanup
   findings under "Follow-ups" in the PR body. If `ci:green` too, add
   `ready-to-merge`, and move the issue to Needs me unless it is
   `agent-merges`.
 - Finished a part of an Epic? Move that Task to Done.
-- Merged? Move the issue to Done (transition `41`) and comment the merge
+- Merged? Move the issue to Done and comment the merge
   commit on it.
 
 ## Auto-merge (ON)
