@@ -250,12 +250,33 @@ class LooperRepository {
       outputPeaks: s.outputPeaks,
       tracks: [
         for (final track in s.tracks)
-          TrackLevels(peak: track.peak, peakL: track.peakL, peakR: track.peakR),
+          TrackLevels(
+            peak: track.peak,
+            peakL: track.peakL,
+            peakR: track.peakR,
+            input: _trackInputPeak(track, s.inputPeaks),
+          ),
       ],
     );
     if (next == _meters) return;
     _meters = next;
     _meterLevels.add(next);
+  }
+
+  /// The loudest input [track]'s lanes record from, after each input's trim
+  /// (#1936). [inputPeaks] are the raw peaks the engine reports; the capture
+  /// multiplies each input by its trim before it reaches a lane, so the level
+  /// shown is the level recorded.
+  double _trackInputPeak(TrackSnapshot track, List<double> inputPeaks) {
+    var loudest = 0.0;
+    for (final lane in track.lanes) {
+      final input = lane.inputChannel;
+      if (input < 0 || input >= inputPeaks.length) continue;
+      final level =
+          inputPeaks[input] * inputTrimGainOfDb(_inputSetup.trimDbOf(input));
+      if (level > loudest) loudest = level;
+    }
+    return loudest;
   }
 
   /// Fired when the repository changes a lane's chain or resets a remembered

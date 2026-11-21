@@ -1537,6 +1537,7 @@ void main() {
       required String name,
       required InteractionMode mode,
       Track? liveTrack,
+      bool selected = false,
     }) {
       // [track] is seeded as the bloc's OWN track for its channel, not just
       // handed to the widget. A column is a live view: its meter reads the
@@ -1570,7 +1571,7 @@ void main() {
                     child: TrackColumn(
                       track: track,
                       name: name,
-                      selected: false,
+                      selected: selected,
                       mode: mode,
                     ),
                   ),
@@ -1581,6 +1582,80 @@ void main() {
         ),
       );
     }
+
+    group('the meter follows the input (#1936)', () {
+      bool followsInput(WidgetTester tester) =>
+          tester.widget<TrackPeakMeter>(find.byType(TrackPeakMeter)).input;
+
+      Future<void> pumpState(
+        WidgetTester tester,
+        TrackState state, {
+        bool selected = false,
+        bool pending = false,
+      }) => pumpColumn(
+        tester,
+        track: Track(
+          state: state,
+          lengthFrames: state == TrackState.empty ? 0 : 48000,
+          pending: pending,
+          lanes: const [Lane(inputChannel: 0)],
+        ),
+        name: 'Track 1',
+        mode: InteractionMode.record,
+        selected: selected,
+      );
+
+      testWidgets('on the selected empty track', (tester) async {
+        await pumpState(tester, TrackState.empty, selected: true);
+        expect(followsInput(tester), isTrue);
+      });
+
+      testWidgets('on an empty track with a record arm waiting', (
+        tester,
+      ) async {
+        await pumpState(tester, TrackState.empty, pending: true);
+        expect(followsInput(tester), isTrue);
+      });
+
+      testWidgets('not on another empty track', (tester) async {
+        await pumpState(tester, TrackState.empty);
+        expect(followsInput(tester), isFalse);
+      });
+
+      testWidgets('while recording and overdubbing', (tester) async {
+        await pumpState(tester, TrackState.recording);
+        expect(followsInput(tester), isTrue);
+        await pumpState(tester, TrackState.overdubbing);
+        expect(followsInput(tester), isTrue);
+      });
+
+      testWidgets('not while playing or stopped, selected or not', (
+        tester,
+      ) async {
+        await pumpState(tester, TrackState.playing, selected: true);
+        expect(followsInput(tester), isFalse);
+        await pumpState(tester, TrackState.stopped, selected: true);
+        expect(followsInput(tester), isFalse);
+      });
+
+      testWidgets('draws the input in the record colour while recording', (
+        tester,
+      ) async {
+        setLevels(
+          const MeterLevels(tracks: [TrackLevels(peak: 0, input: 0.5)]),
+        );
+        await pumpState(tester, TrackState.recording);
+        final bar = tester.widget<PeakMeterBar>(find.byType(PeakMeterBar));
+        expect(bar.peak, closeTo(0.5, 0.01));
+        expect(
+          bar.color,
+          AppTheme.neon.extension<LooperTheme>()!.meterColor(
+            LooperMeterState.recording,
+            mode: InteractionMode.record,
+          ),
+        );
+      });
+    });
 
     testWidgets('a value-equal Track from an EARLIER poll is accepted', (
       tester,
@@ -4686,7 +4761,18 @@ void main() {
         final meter = tester.widget<PeakMeterBar>(
           find.descendant(of: _column(0), matching: find.byType(PeakMeterBar)),
         );
-        expect(meter.hasContent, change.after.hasContent);
+        // A bar that follows the input shows whatever the track holds
+        // (#1936); which tracks follow it is pinned in "the meter follows
+        // the input".
+        final followsInput = tester
+            .widget<TrackPeakMeter>(
+              find.descendant(
+                of: _column(0),
+                matching: find.byType(TrackPeakMeter),
+              ),
+            )
+            .input;
+        expect(meter.hasContent, change.after.hasContent || followsInput);
       });
     }
 

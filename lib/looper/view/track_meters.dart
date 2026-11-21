@@ -7,7 +7,8 @@ import 'package:segno/looper/view/live_playhead.dart';
 import 'package:segno/theme/theme.dart';
 
 /// One track's [PeakMeterBar], following [channel]'s live level from
-/// `LooperRepository.meterLevels` (#1301).
+/// `LooperRepository.meterLevels` (#1301): its playback, or with [input] the
+/// inputs it records from (#1936).
 ///
 /// The leaf of the rebuild split (#646/#654/#832): levels are not part of the
 /// looper state at all, so the only thing a meter tick rebuilds is this bar,
@@ -29,11 +30,18 @@ class TrackPeakMeter extends StatelessWidget {
     required this.hasContent,
     required this.frozen,
     this.clipColor,
+    this.input = false,
     super.key,
   });
 
   /// The channel whose level this bar follows.
   final int channel;
+
+  /// Whether the bar follows the track's input ([TrackLevels.input]) rather
+  /// than its playback ([TrackLevels.peak]): a track that waits to record or
+  /// records shows what it captures. The input is live whatever the track
+  /// holds, so [hasContent] and [frozen] do not apply to it.
+  final bool input;
 
   /// The bar fill colour (the track's meter-state colour).
   final Color color;
@@ -50,13 +58,18 @@ class TrackPeakMeter extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return LiveMeter<double>(
-      key: ValueKey(channel),
-      select: (levels) => meterPeak(levels.track(channel).peak),
+      // The source is part of the key: switching it starts a new bar rather
+      // than holding the other source's last fill.
+      key: ValueKey((channel, input)),
+      select: (levels) {
+        final track = levels.track(channel);
+        return meterPeak(input ? track.input : track.peak);
+      },
       builder: (context, peak) => PeakMeterBar(
         peak: peak,
         color: color,
-        hasContent: hasContent,
-        frozen: frozen,
+        hasContent: input || hasContent,
+        frozen: !input && frozen,
         clipColor: clipColor,
       ),
     );

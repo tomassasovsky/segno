@@ -1349,6 +1349,62 @@ void main() {
     );
   }, skip: !rendersScreenshots);
 
+  // #1936: a track that records, or is the empty track Record/Play records
+  // next, meters its input (MAIN VIEWS / First recording).
+  for (final scene in ['recording', 'empty_selected']) {
+    testWidgets('the meter follows the input: $scene', (tester) async {
+      const status = EngineStatus(
+        isConnected: true,
+        devicePresent: true,
+        deviceName: 'Segno',
+        sampleRate: 48000,
+        inputChannels: 2,
+        outputChannels: 2,
+      );
+      levels(
+        const MeterLevels(
+          tracks: [
+            TrackLevels(peak: 0.4, input: 0.3),
+            TrackLevels(peak: 0.7, input: 0.3),
+            TrackLevels(peak: 0.8, input: 0.3),
+            TrackLevels(input: 0.3),
+          ],
+        ),
+      );
+      seed(
+        LooperState(
+          status: status,
+          tracks: [
+            const Track(state: TrackState.playing, lengthFrames: 96000),
+            const Track(
+              channel: 1,
+              state: TrackState.playing,
+              lengthFrames: 96000,
+            ),
+            const Track(
+              channel: 2,
+              state: TrackState.playing,
+              lengthFrames: 96000,
+            ),
+            Track(
+              channel: 3,
+              state: scene == 'recording'
+                  ? TrackState.recording
+                  : TrackState.empty,
+              lengthFrames: scene == 'recording' ? 48000 : 0,
+            ),
+          ],
+        ),
+      );
+      control.selectTrack(3);
+      await pump(tester);
+      await expectLater(
+        find.byType(TracksView),
+        matchesGoldenFile('goldens/tracks_input_meter_$scene.png'),
+      );
+    }, skip: !rendersScreenshots);
+  }
+
   testWidgets(
     'console main window with a reversed track: REV in the meta row gap',
     (tester) async {

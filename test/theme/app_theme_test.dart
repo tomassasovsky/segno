@@ -225,6 +225,24 @@ void main() {
       expect(ratio(hc.fx, hc.fxSurface), closeTo(6.83, 0.05));
     });
 
+    test("an empty track's input bar clears 3:1 on the track tile in every "
+        'theme (#1936)', () {
+      // The empty tone is the bar an empty track draws from its input while
+      // it is the next to record: a level, so a non-text component.
+      for (final theme in [AppTheme.neon, AppTheme.highContrast]) {
+        final looper = theme.extension<LooperTheme>()!;
+        for (final mode in [InteractionMode.record, InteractionMode.mute]) {
+          expect(
+            ratio(
+              looper.meterColor(LooperMeterState.empty, mode: mode),
+              looper.tileBackground,
+            ),
+            greaterThanOrEqualTo(3),
+          );
+        }
+      }
+    });
+
     test('the HC empty-meter tone clears 3:1 on the track tile', () {
       final looper = AppTheme.highContrast.extension<LooperTheme>()!;
       // WCAG 1.4.11: the empty-meter groove is the dimmest non-text

@@ -137,6 +137,63 @@ void main() {
 
       expect(drawn(tester), 0);
     });
+
+    group('following the input (#1936)', () {
+      Widget inputMeter({bool hasContent = false, bool frozen = false}) =>
+          TrackPeakMeter(
+            channel: 0,
+            color: Colors.red,
+            hasContent: hasContent,
+            frozen: frozen,
+            input: true,
+          );
+
+      PeakMeterBar bar(WidgetTester tester) =>
+          tester.widget<PeakMeterBar>(find.byType(PeakMeterBar));
+
+      testWidgets('draws the input level, not the playback', (tester) async {
+        when(() => repository.meters).thenReturn(
+          const MeterLevels(tracks: [TrackLevels(peak: 0.25, input: 0.75)]),
+        );
+        seed(const LooperState());
+        await pumpLeaf(tester, inputMeter());
+
+        expect(bar(tester).peak, closeTo(0.75, 0.01));
+      });
+
+      testWidgets('shows on a track with nothing recorded', (tester) async {
+        seed(const LooperState());
+        await pumpLeaf(tester, inputMeter());
+
+        levels.add(const MeterLevels(tracks: [TrackLevels(input: 0.5)]));
+        await tester.pump();
+        await tester.pump();
+
+        expect(bar(tester).hasContent, isTrue);
+        expect(bar(tester).peak, closeTo(0.5, 0.01));
+      });
+
+      testWidgets('is live on a stopped track', (tester) async {
+        seed(const LooperState());
+        await pumpLeaf(tester, inputMeter(hasContent: true, frozen: true));
+
+        expect(bar(tester).frozen, isFalse);
+      });
+
+      testWidgets('switching the source starts a new bar', (tester) async {
+        when(() => repository.meters).thenReturn(
+          const MeterLevels(tracks: [TrackLevels(peak: 0.25, input: 0.75)]),
+        );
+        seed(const LooperState());
+        await pumpLeaf(tester, inputMeter());
+        final first = tester.state(find.byType(PeakMeterBar));
+
+        await pumpLeaf(tester, meter(0));
+
+        expect(tester.state(find.byType(PeakMeterBar)), isNot(first));
+        expect(bar(tester).peak, closeTo(0.25, 0.01));
+      });
+    });
   });
 
   group('PeakMeterBar clip cap', () {
