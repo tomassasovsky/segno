@@ -7,7 +7,7 @@ issue: 1936
 
 # A recording take shows its input, waveform, progress and bars
 
-<!-- cspell:words aubio specflux Ooura reinterprets -->
+<!-- cspell:words aubio specflux Ooura reinterprets retimed libaubio lbuf -->
 
 Tracking: [#1936](https://github.com/tomassasovsky/segno/issues/1936),
 `autonomy:plan-gate`. Brainstorm:
