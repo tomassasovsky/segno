@@ -305,7 +305,7 @@ class _StateLine extends StatelessWidget {
       LooperMeterState.muted => surface.textSecondary,
       LooperMeterState.empty => surface.textMuted,
     };
-    final bars = track?.bars ?? 0;
+    final length = track?.lengthText(l10n);
     return Row(
       crossAxisAlignment: CrossAxisAlignment.baseline,
       textBaseline: TextBaseline.alphabetic,
@@ -321,9 +321,9 @@ class _StateLine extends StatelessWidget {
           ),
         ),
         const Spacer(),
-        if (bars > 0)
+        if (length != null)
           AppText(
-            l10n.stageBarsFigure(bars),
+            length,
             key: const Key('console_readout_bars'),
             style: TextStyle(
               fontFamily: SurfaceTheme.displayFont,

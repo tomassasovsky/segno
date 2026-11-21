@@ -1413,6 +1413,10 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
     return EngineResult.ok;
   }
 
+  /// The mock records no loop, so there are no bars to read again.
+  @override
+  EngineResult scaleLoopBars({required bool double}) => _requireRunning();
+
   @override
   EngineResult setTimeSignature(int num, int den) {
     final result = _requireRunning();

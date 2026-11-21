@@ -124,7 +124,8 @@ class WaveformWindowApp extends StatelessWidget {
                 builder: (context, data, _) => WaveformView(
                   samples: data.samples,
                   progress: data.progress,
-                  bars: selected?.bars ?? 0,
+                  // A recording take draws its target's ruler (#1936).
+                  bars: selected?.captureCount?.ofBars ?? selected?.bars ?? 0,
                   state: readoutMeterStateOf(selected),
                   semanticLabel: selected == null
                       ? context.l10n.a11yReadoutNoTrack

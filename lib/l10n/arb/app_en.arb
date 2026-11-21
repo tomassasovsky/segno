@@ -8931,6 +8931,22 @@
     "@loopTempoClear": {
         "description": "Tempo page button: back to no tempo, so the next loop sets one."
     },
+    "loopTempoHalve": "÷2",
+    "@loopTempoHalve": {
+        "description": "Tempo button (#1936): read the loop as half its bars, at half the tempo; the audio is unchanged."
+    },
+    "loopTempoDouble": "×2",
+    "@loopTempoDouble": {
+        "description": "Tempo button (#1936): read the loop as twice its bars, at twice the tempo; the audio is unchanged."
+    },
+    "loopTempoHalveLabel": "Half the bars, half the tempo",
+    "@loopTempoHalveLabel": {
+        "description": "Accessible name of the ÷2 tempo button (#1936)."
+    },
+    "loopTempoDoubleLabel": "Twice the bars, twice the tempo",
+    "@loopTempoDoubleLabel": {
+        "description": "Accessible name of the ×2 tempo button (#1936)."
+    },
     "loopTempoClearRefused": "Tempo not cleared",
     "@loopTempoClearRefused": {
         "description": "Notice when Clear tempo is refused."

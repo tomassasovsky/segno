@@ -262,7 +262,7 @@ class _PanelHeader extends StatelessWidget {
       LooperMeterState.muted => surface.textSecondary,
       LooperMeterState.empty => surface.textMuted,
     };
-    final bars = track?.bars ?? 0;
+    final length = track?.lengthText(l10n);
     final spacing = context.spacing;
     return SizedBox(
       height: kReadoutMinTarget,
@@ -306,10 +306,10 @@ class _PanelHeader extends StatelessWidget {
               word,
               style: TextStyle(color: wordColor, fontSize: 15, height: 1),
             ),
-            if (bars > 0) ...[
+            if (length != null) ...[
               SizedBox(width: spacing.sm),
               AppText(
-                l10n.stageBarsFigure(bars),
+                length,
                 style: TextStyle(
                   color: surface.textSecondary,
                   fontSize: 15,
@@ -526,65 +526,98 @@ class _TempoCard extends StatelessWidget {
             trailing: _BeatLights(readout: readout, frame: frame),
           ),
           const SizedBox(height: 4),
-          Semantics(
-            button: true,
-            enabled: editable,
-            label: l10n.loopTempoEdit,
-            onTap: editable ? onTypeTempo : null,
-            child: GestureDetector(
-              key: const Key('readout_panel_bpm_button'),
-              behavior: HitTestBehavior.opaque,
-              onTap: editable ? onTypeTempo : null,
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(minHeight: kReadoutMinTarget),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Opacity(
-                    opacity: editable ? 1 : surface.disabledOpacity,
-                    // As wide as the figure, so the rule underlines it.
-                    child: IntrinsicWidth(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.baseline,
-                            textBaseline: TextBaseline.alphabetic,
-                            children: [
-                              AppText(
-                                readoutExactTempo(
-                                  hasTempo: readout.hasTempo,
-                                  bpm: readout.tempoBpm,
-                                ),
-                                key: const Key('readout_panel_bpm'),
-                                style: TextStyle(
-                                  fontFamily: SurfaceTheme.monoFont,
-                                  color: surface.textPrimary,
-                                  fontSize: 44,
-                                  height: 1,
-                                ),
+          Row(
+            children: [
+              Expanded(
+                child: Semantics(
+                  button: true,
+                  enabled: editable,
+                  label: l10n.loopTempoEdit,
+                  onTap: editable ? onTypeTempo : null,
+                  child: GestureDetector(
+                    key: const Key('readout_panel_bpm_button'),
+                    behavior: HitTestBehavior.opaque,
+                    onTap: editable ? onTypeTempo : null,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(
+                        minHeight: kReadoutMinTarget,
+                      ),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: Opacity(
+                            opacity: editable ? 1 : surface.disabledOpacity,
+                            // As wide as the figure, so the rule underlines it.
+                            child: IntrinsicWidth(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.baseline,
+                                    textBaseline: TextBaseline.alphabetic,
+                                    children: [
+                                      AppText(
+                                        readoutExactTempo(
+                                          hasTempo: readout.hasTempo,
+                                          bpm: readout.tempoBpm,
+                                        ),
+                                        key: const Key('readout_panel_bpm'),
+                                        style: TextStyle(
+                                          fontFamily: SurfaceTheme.monoFont,
+                                          color: surface.textPrimary,
+                                          fontSize: 44,
+                                          height: 1,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      AppText(
+                                        l10n.stageBpmUnit,
+                                        style: TextStyle(
+                                          color: surface.textSecondary,
+                                          fontSize: 15,
+                                          height: 1,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 4),
+                                  // The keypad's affordance, as on the mockup.
+                                  if (editable) const _DottedRule(),
+                                ],
                               ),
-                              const SizedBox(width: 8),
-                              AppText(
-                                l10n.stageBpmUnit,
-                                style: TextStyle(
-                                  color: surface.textSecondary,
-                                  fontSize: 15,
-                                  height: 1,
-                                ),
-                              ),
-                            ],
+                            ),
                           ),
-                          const SizedBox(height: 4),
-                          // The keypad's affordance, as on the mockup.
-                          if (editable) const _DottedRule(),
-                        ],
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
-            ),
+              // ÷2 and ×2 (#1936, D4) beside the tempo they halve or
+              // double: live when the engine would apply them.
+              const SizedBox(width: 8),
+              ReadoutButton(
+                key: const Key('readout_panel_halve'),
+                label: l10n.loopTempoHalve,
+                semanticLabel: l10n.loopTempoHalveLabel,
+                enabled: readout.canHalveBars,
+                fontSize: 18,
+                onPressed: () => onCommand(const TempoScaleBars(double: false)),
+              ),
+              const SizedBox(width: 8),
+              ReadoutButton(
+                key: const Key('readout_panel_double'),
+                label: l10n.loopTempoDouble,
+                semanticLabel: l10n.loopTempoDoubleLabel,
+                enabled: readout.canDoubleBars,
+                fontSize: 18,
+                onPressed: () => onCommand(const TempoScaleBars(double: true)),
+              ),
+            ],
           ),
           const SizedBox(height: 8),
           // A refusal takes the note's place until it times out.

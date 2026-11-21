@@ -1,0 +1,66 @@
+From: Segno <segno@localhost>
+Subject: [PATCH] v3d: keep large BOs cached under a budget
+
+Freed BOs stay in the v3d BO cache for 2 s. Flutter's Impeller renders a
+full-page fade (a page transition) through an offscreen pass with 4x
+MSAA, about 73 MB at 1080p on a GPU without
+GL_EXT_multisampled_render_to_texture, and drops it 4 frames after the
+fade. The next transition, seconds later, allocates it again, and the
+kernel zeroes all of its pages at once: a burst of memory writes that
+stalls the audio callback on the Pi 5 (segno #1914). BOs of 4 MB or more
+now stay cached until the large ones cached pass 256 MB, the oldest
+going first, so a transition reuses the last one's whenever it comes.
+
+Upstream-Status: Inappropriate [embedded specific]
+---
+--- a/src/gallium/drivers/v3d/v3d_bufmgr.c
++++ b/src/gallium/drivers/v3d/v3d_bufmgr.c
+@@ -232,16 +232,36 @@
+         free(bo);
+ }
+ 
++/* Large BOs (an offscreen render target's multisample buffers: 73 MB at
++ * 1080p and 4x) are kept until the large ones cached pass a budget, not for
++ * 2 s: re-creating one has the kernel zero all of its pages at once, a burst
++ * that stalls the memory bus, and a renderer that drops its target a few
++ * frames after use (Impeller) re-creates it on each use otherwise. */
++#define V3D_BO_CACHE_LARGE (4u << 20)
++#define V3D_BO_CACHE_LARGE_BUDGET (256u << 20)
++
+ static void
+ free_stale_bos(struct v3d_screen *screen, time_t time)
+ {
+         struct v3d_bo_cache *cache = &screen->bo_cache;
+         bool freed_any = false;
++        uint64_t large = 0;
+ 
++        list_for_each_entry(struct v3d_bo, bo, &cache->time_list, time_list) {
++                if (bo->size >= V3D_BO_CACHE_LARGE)
++                        large += bo->size;
++        }
++
++        /* In free order: the oldest large BOs go first while over budget. */
+         list_for_each_entry_safe(struct v3d_bo, bo, &cache->time_list,
+                                  time_list) {
+-                /* If it's more than a second old, free it. */
+-                if (time - bo->free_time > 2) {
++                const bool is_large = bo->size >= V3D_BO_CACHE_LARGE;
++                const bool stale = is_large ?
++                        large > V3D_BO_CACHE_LARGE_BUDGET :
++                        time - bo->free_time > 2;
++                if (stale) {
++                        if (is_large)
++                                large -= bo->size;
+                         if (dump_stats && !freed_any) {
+                                 fprintf(stderr, "Freeing stale BOs:\n");
+                                 v3d_bo_dump_stats(screen);
+@@ -249,7 +269,8 @@
+                         }
+                         v3d_bo_remove_from_cache(cache, bo);
+                         v3d_bo_free(bo);
+-                } else {
++                } else if (!is_large && large <= V3D_BO_CACHE_LARGE_BUDGET) {
++                        /* Every BO after this one is younger. */
+                         break;
+                 }
+         }

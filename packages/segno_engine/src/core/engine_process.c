@@ -24,6 +24,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "engine_analysis.h"
 #include "audio_ring.h"      /* le_audio_ring_push_frame (performance capture) */
 #include "engine_core.h"     /* valid_channel, le_track_set_len, le_mask_to_channel */
 #include "engine_fx.h"       /* fx_apply_chain, le_fx_entry_reset */
@@ -1029,6 +1030,44 @@ static void sync_grid_to_loop(le_engine* e, int32_t len) {
   le_set_loop_grid(e, bars * num);
 }
 
+/* Reads the master loop as [bars] whole bars (#1936): the same audio and
+ * length, at the tempo that makes them [bars]. The tempo stays derived and
+ * is latched as the recorded one, so nothing retimes. Returns 0, changing
+ * nothing, when that tempo leaves the grid's range. */
+static int le_grid_reinterpret_bars(le_engine* e, int32_t bars) {
+  const int32_t len = e->clock.length;
+  if (len <= 0 || bars < 1) return 0;
+  int32_t num = load_i32(&e->a_ts_num);
+  if (num <= 0) num = 4;
+  const int32_t sr = e->sample_rate > 0 ? e->sample_rate : 48000;
+  const double bpm = 60.0 * sr * (double)bars * num / (double)len;
+  if (!(bpm >= LE_GRID_TEMPO_MIN) || bpm > LE_GRID_TEMPO_MAX) return 0;
+  store_f32(&e->a_tempo_bpm_bits, (float)bpm);
+  store_i32(&e->a_tempo_source, LE_TEMPO_SOURCE_DERIVED);
+  e->grid_prev_beat = -1; /* re-arm beat publication at the next frame */
+  le_set_loop_grid(e, bars * num);
+  le_tempo_latch(e);
+  return 1;
+}
+
+/* Whether a defining take on track [ch] has its bar count chosen by the
+ * beat analysis (#1936): Multi mode, no tempo yet, loop/tempo sync on, no
+ * length preset, and no external clock. */
+static int le_analysis_wanted(le_engine* e, int32_t ch) {
+  if (e->analysis == NULL || e->clock_source >= 0) return 0;
+  const int32_t mode = load_i32(&e->a_looper_mode);
+  if (mode == LE_LOOPER_MODE_FREE || mode == LE_LOOPER_MODE_SONG) return 0;
+  return load_i32(&e->a_tempo_source) == LE_TEMPO_SOURCE_NONE &&
+         load_i32(&e->a_sync_tempo) &&
+         load_i32(&e->tracks[ch].a_length_preset_bars) == 0;
+}
+
+/* Stops the analysis waiting for a closed take's answer. */
+static void le_analysis_settle(le_engine* e) {
+  e->ana_wait = 0;
+  store_i32(&e->a_tempo_settling, 0);
+}
+
 /* The beat count is part of the recorded musical grid. It cannot be inferred
  * from a tempo that may have clamped, or from a future-capture preference. */
 static void le_restore_musical_grid(le_engine* e, int32_t beats) {
@@ -1364,8 +1403,112 @@ static void le_primary_reconcile(le_engine* e) {
 static void reset_track_viz(le_engine* e, int32_t ch) {
   e->track_viz_bucket[ch] = -1;
   e->track_viz_accum[ch] = 0.0f;
+  e->cap_viz_on[ch] = 0;
+  store_i32(&e->a_cap_viz_filled[ch], 0);
   for (int i = 0; i < LE_VIZ_POINTS; ++i) {
     store_f32(&e->a_track_viz[ch][i], 0.0f);
+  }
+}
+
+/* The first bucket width of a take with no target (#1936): about 5 ms at
+ * 48 kHz, so a short take still has a shape; it doubles as the take grows. */
+#define LE_CAP_VIZ_WIDTH0 256.0
+
+/* Draws the take in flight into track [ch]'s waveform buckets (#1936), once
+ * per block: [peak] is the block's loudest captured input, [captured] the
+ * frames captured since the press, [target] where the take ends by itself
+ * (0: only a press). Every bucket the block's frames fall in keeps the
+ * loudest peak it has seen. A take with no target merges neighbouring
+ * buckets into the first half and doubles the width when it outgrows them,
+ * so the shape always spans what has been captured: a 512-float pass once
+ * per doubling. */
+static void le_capture_viz_tap(le_engine* e, int32_t ch, int32_t captured,
+                               int32_t target, float peak) {
+  _Atomic uint32_t* viz = e->a_track_viz[ch];
+  /* A new take, or one that restarted before the last one was settled. */
+  if (!e->cap_viz_on[ch] || captured < e->cap_viz_seen[ch]) {
+    e->cap_viz_on[ch] = 1;
+    e->cap_viz_seen[ch] = 0;
+    e->cap_viz_target[ch] = target;
+    e->cap_viz_width[ch] =
+        target > 0 ? (double)target / LE_VIZ_POINTS : LE_CAP_VIZ_WIDTH0;
+    e->track_viz_bucket[ch] = -1;
+    for (int i = 0; i < LE_VIZ_POINTS; ++i) store_f32(&viz[i], 0.0f);
+  }
+  const int32_t seen = e->cap_viz_seen[ch];
+  if (captured <= seen) return;
+  const int fixed = e->cap_viz_target[ch] > 0;
+  double w = e->cap_viz_width[ch];
+  int32_t last = (int32_t)((double)(captured - 1) / w);
+  while (!fixed && last >= LE_VIZ_POINTS) {
+    for (int i = 0; i < LE_VIZ_POINTS / 2; ++i) {
+      const float a = load_f32(&viz[2 * i]);
+      const float b = load_f32(&viz[2 * i + 1]);
+      store_f32(&viz[i], a > b ? a : b);
+    }
+    for (int i = LE_VIZ_POINTS / 2; i < LE_VIZ_POINTS; ++i) {
+      store_f32(&viz[i], 0.0f);
+    }
+    w *= 2.0;
+    last = (int32_t)((double)(captured - 1) / w);
+  }
+  e->cap_viz_width[ch] = w;
+  /* The seam's crossfade captures a few frames past a target. */
+  if (last >= LE_VIZ_POINTS) last = LE_VIZ_POINTS - 1;
+  int32_t first = (int32_t)((double)seen / w);
+  if (first > last) first = last;
+  for (int32_t i = first; i <= last; ++i) {
+    if (peak > load_f32(&viz[i])) store_f32(&viz[i], peak);
+  }
+  e->cap_viz_seen[ch] = captured;
+  store_i32(&e->a_cap_viz_filled[ch], last + 1);
+}
+
+/* Maps the closed take's buckets onto its loop of [len] frames (#1936), so
+ * the first lap already has its shape: loop bucket j takes the loudest
+ * capture bucket its frames came from. Capture frame f landed at loop frame
+ * (f + [phase]) mod len: 0 for a defining take, the press's phase less the
+ * record offset for a take over a master. The playback tap then rewrites
+ * each bucket as the playhead leaves it, as before. No-op when no take was
+ * drawn. */
+static void le_capture_viz_settle(le_engine* e, int32_t ch, int32_t len,
+                                  int32_t phase) {
+  if (!e->cap_viz_on[ch]) return;
+  e->cap_viz_on[ch] = 0;
+  store_i32(&e->a_cap_viz_filled[ch], 0);
+  e->track_viz_bucket[ch] = -1;
+  e->track_viz_accum[ch] = 0.0f;
+  _Atomic uint32_t* viz = e->a_track_viz[ch];
+  float src[LE_VIZ_POINTS];
+  for (int i = 0; i < LE_VIZ_POINTS; ++i) src[i] = load_f32(&viz[i]);
+  const double w = e->cap_viz_width[ch];
+  const int64_t seen = e->cap_viz_seen[ch];
+  int64_t shift = (int64_t)phase % len;
+  if (shift < 0) shift += len;
+  for (int j = 0; j < LE_VIZ_POINTS; ++j) {
+    const int64_t l0 = (int64_t)j * len / LE_VIZ_POINTS;
+    int64_t l1 = (int64_t)(j + 1) * len / LE_VIZ_POINTS;
+    if (l1 <= l0) l1 = l0 + 1;
+    float best = 0.0f;
+    /* The loop bucket's frames, back in capture order: one run, or two
+     * where the take's start falls inside the bucket. */
+    for (int64_t lf = l0; lf < l1;) {
+      int64_t f = lf - shift;
+      if (f < 0) f += len;
+      int64_t run = l1 - lf;
+      if (f + run > len) run = len - f;
+      const int64_t f_end = f + run < seen ? f + run : seen;
+      if (f < seen) {
+        int32_t k0 = (int32_t)((double)f / w);
+        int32_t k1 = (int32_t)((double)(f_end - 1) / w);
+        if (k1 >= LE_VIZ_POINTS) k1 = LE_VIZ_POINTS - 1;
+        for (int32_t k = k0; k <= k1; ++k) {
+          if (src[k] > best) best = src[k];
+        }
+      }
+      lf += run;
+    }
+    store_f32(&viz[j], best);
   }
 }
 
@@ -1422,6 +1565,7 @@ static void finalize_master(le_engine* e, le_track* t, int32_t end_state,
     store_i32(&e->a_master_len, len);
   }
   le_track_set_len(t, len);
+  le_capture_viz_settle(e, (int32_t)(t - e->tracks), len, 0);
   store_i32(&t->a_multiple, 1); /* the defining track is one base loop */
   store_i32(&t->a_sync_divisor, 0); /* a defining track is never a division */
   le_audio_rev_bump(t); /* [R1] record finalize: fresh content */
@@ -1454,6 +1598,11 @@ static void finalize_master(le_engine* e, le_track* t, int32_t end_state,
    * Free mode (see above): skipped outright — no session-tempo derivation
    * from a single independent length. */
   const int32_t preset_bars = load_i32(&t->a_length_preset_bars);
+  const int32_t fm_track = (int32_t)(t - e->tracks);
+  /* #1936: the take the beat analysis heard, when its tempo is about to be
+   * derived from its length alone. */
+  const int analyzed = e->ana_on && e->ana_track == fm_track &&
+                       le_analysis_wanted(e, fm_track);
   if (!free_mode) {
     if (preset_bars > 0 && t->length_preset_target_frames == 0) {
       le_apply_length_preset_tempo(e, len, preset_bars);
@@ -1461,6 +1610,24 @@ static void finalize_master(le_engine* e, le_track* t, int32_t end_state,
       sync_grid_to_loop(e, len);
     }
     le_tempo_latch(e); /* the tempo this master was recorded at (#1179) */
+  }
+  if (e->ana_on && e->ana_track == fm_track) {
+    e->ana_on = 0;
+    store_i32(&e->a_ana_track, -1);
+    if (analyzed &&
+        load_i32(&e->a_tempo_source) == LE_TEMPO_SOURCE_DERIVED) {
+      /* The bars just derived (nearest 120 BPM) stand until the analysis
+       * answers, which may read the loop as another whole bar count. */
+      int32_t num = load_i32(&e->a_ts_num);
+      if (num <= 0) num = 4;
+      le_analysis_end(e->analysis, len, num);
+      e->ana_wait = 1;
+      e->ana_wait_len = len;
+      e->ana_wait_frames = 0;
+      store_i32(&e->a_tempo_settling, 1);
+    } else {
+      le_analysis_abort(e->analysis);
+    }
   }
   t->length_preset_target_frames = 0; /* consumed; the next take re-arms */
   if (end_state == LE_TRACK_OVERDUBBING) le_dub_session_start(e, t);
@@ -2110,6 +2277,13 @@ static void finalize_new_track(le_engine* e, le_track* t, int32_t end_state,
    * read twice, a calibration landing between them would arm on one value and
    * fade at positions computed from another. */
   const int32_t rec_off = load_i32(&e->a_record_offset);
+  /* A Sync division folds the take into a shorter loop: its first laps draw
+   * the shape from playback instead. */
+  if (load_i32(&t->a_sync_divisor) > 0) {
+    reset_track_viz(e, ch);
+  } else {
+    le_capture_viz_settle(e, ch, new_len, t->record_start - rec_off);
+  }
   /* `allow_fold` is the caller's: a take that is frozen or cancelled right
    * after this (clear-freeze, CANCEL_TAKE) captures no continuation, so its
    * tail has to be faded here instead of being left for a fold that never
@@ -2590,6 +2764,8 @@ void le_engine_reopen_settle(le_engine* e, uint32_t drop_mask) {
     le_dub_drop_armed(t); /* also clears seam_capture + pending shadow */
     atomic_store_explicit(&t->a_layer_in_flight, 0, memory_order_release);
     store_i32(&t->a_play_pos, 0);
+    store_i32(&t->a_capture_frames, 0);
+    store_i32(&t->a_capture_target, 0);
     e->trk_play_pos[ch] = 0;
     le_fade_publish(e, t);
   }
@@ -5415,6 +5591,34 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       /* A restored tempo is the one the recorded clock measures (#1179 Part
        * 4a): recall restores before or after its commit, never a retime. */
       le_tempo_latch(e);
+      break;
+    }
+    case LE_CMD_SCALE_LOOP_BARS: {
+      /* #1936, D4: read the loop as twice (arg_i > 0) or half (arg_i < 0)
+       * the bars, the audio untouched. Only a derived tempo the loop has
+       * not been retimed from, with no take in flight and no external
+       * clock; halving needs an even bar count. Not logged, like Clear
+       * tempo: no recorded material changes. */
+      if (e->clock.length <= 0 || e->clock_source >= 0 ||
+          e->count_in_total > 0 || e->retime_len != 0 ||
+          load_i32(&e->a_tempo_source) != LE_TEMPO_SOURCE_DERIVED) {
+        break;
+      }
+      const int32_t mode = load_i32(&e->a_looper_mode);
+      if (mode == LE_LOOPER_MODE_FREE || mode == LE_LOOPER_MODE_SONG) break;
+      int capturing_take = 0;
+      for (int32_t c = 0; c < e->track_count; ++c) {
+        if (load_i32(&e->tracks[c].a_state) == LE_TRACK_RECORDING) {
+          capturing_take = 1;
+        }
+      }
+      if (capturing_take) break;
+      const int32_t bars = load_i32(&e->a_loop_bars);
+      if (bars < 1) break;
+      const int32_t next =
+          cmd->arg_i > 0 ? bars * 2 : (bars % 2 == 0 ? bars / 2 : 0);
+      if (next < 1) break;
+      if (le_grid_reinterpret_bars(e, next)) le_analysis_settle(e);
       break;
     }
     case LE_CMD_CLEAR_TEMPO: {
@@ -9029,7 +9233,14 @@ static LE_BRIDGE_NOINLINE le_heard_pair le_heard_lane_wet(
         le_fx_rack_reset(&ln->fx, s);
       }
     }
-    if (target) {
+    if (!audible) {
+      /* Nothing of the lane is heard (a recording track plays nothing, a
+       * stopped one has rung out, a muted one is gated): a fade would only
+       * run the lane's chain here, on the callback, frame by frame, for its
+       * 10 ms. A take whose source render lands a few blocks after it
+       * starts (a tempo stretch) moved its target twice so (#1914). */
+      m = target ? 1.0f : 0.0f;
+    } else if (target) {
       m += od_step;
       if (m > 1.0f) m = 1.0f;
     } else {
@@ -11936,6 +12147,77 @@ LE_AUDIO_HOT_AT(0) void le_engine_process(le_engine* e, float* output, const flo
               tstate == LE_TRACK_EMPTY ? 0
               : recording              ? rp
                                        : e->trk_play_pos[t]);
+    /* The take in flight (#1936), by the rules advance_transport_frame ends
+     * it by: a defining take counts from 0 toward its armed preset; a take
+     * over a master counts from its own start toward a fixed multiple. */
+    {
+      int32_t captured = 0;
+      int32_t target = 0;
+      if (recording) {
+        const le_track* tr = &e->tracks[t];
+        if (e->clock.length == 0) {
+          captured = rp;
+          target = tr->length_preset_target_frames;
+        } else {
+          captured = rp - tr->record_start;
+          const int32_t eff = le_effective_multiple(e, t);
+          if (eff >= 1) target = eff * e->clock.length;
+        }
+        if (captured < 0) captured = 0;
+      }
+      store_i32(&e->tracks[t].a_capture_frames, captured);
+      store_i32(&e->tracks[t].a_capture_target, target);
+      if (recording) {
+        /* The block's loudest captured input: what the lanes wrote, each
+         * input times its trim (the take's waveform, #1936). */
+        float peak = 0.0f;
+        for (int l = 0; l < lane_n[t]; ++l) {
+          const int32_t ic = load_i32(&e->tracks[t].lanes[l].a_input_channel);
+          if (ic < 0 || ic >= ch_in || ic >= LE_MAX_CHANNELS) continue;
+          const float p = in_peak_ch[ic] * in_trim[ic];
+          if (p > peak) peak = p;
+        }
+        le_capture_viz_tap(e, t, captured, target, peak);
+      } else if (e->cap_viz_on[t]) {
+        /* Left RECORDING by a path that neither settled nor reset the
+         * shape: stop drawing it. */
+        e->cap_viz_on[t] = 0;
+        store_i32(&e->a_cap_viz_filled[t], 0);
+      }
+      /* #1936: a free first take's input, mono, for the beat analysis. */
+      if (recording && e->clock.length == 0 && !e->ana_on &&
+          le_analysis_wanted(e, t)) {
+        le_analysis_begin(e->analysis);
+        e->ana_on = 1;
+        e->ana_track = t;
+        store_i32(&e->a_ana_track, t);
+      }
+      if (e->ana_on && e->ana_track == t) {
+        if (!recording) {
+          le_analysis_abort(e->analysis); /* cleared or voided mid-take */
+          e->ana_on = 0;
+          store_i32(&e->a_ana_track, -1);
+        } else if (in != NULL) {
+          float mono[128];
+          for (uint32_t f0 = 0; f0 < frames; f0 += 128) {
+            const uint32_t n = frames - f0 < 128 ? frames - f0 : 128;
+            for (uint32_t f = 0; f < n; ++f) {
+              float sum = 0.0f;
+              int used = 0;
+              for (int l = 0; l < lane_n[t]; ++l) {
+                const int32_t ic =
+                    load_i32(&e->tracks[t].lanes[l].a_input_channel);
+                if (ic < 0 || ic >= ch_in || ic >= LE_MAX_CHANNELS) continue;
+                sum += in[(f0 + f) * ch_in + ic] * in_trim[ic];
+                ++used;
+              }
+              mono[f] = used > 0 ? sum / (float)used : 0.0f;
+            }
+            le_analysis_push(e->analysis, mono, (int32_t)n);
+          }
+        }
+      }
+    }
     store_i32(&e->tracks[t].a_anchor,
               tstate == LE_TRACK_EMPTY ? 0 : le_track_anchor(&e->tracks[t]));
     if (e->tracks[t].bounce_parked != NULL) {
@@ -11944,6 +12226,24 @@ LE_AUDIO_HOT_AT(0) void le_engine_process(le_engine* e, float* output, const flo
     }
   }
   LE_PROF_MARK(LE_PROF_METERS);
+  /* #1936: a closed free take's bar count, once the analysis answers. The
+   * loop must still be that take's, at its derived tempo, never retimed;
+   * past a second the derived bars stand. */
+  if (e->ana_wait) {
+    int32_t bars = 0;
+    if (le_analysis_result(e->analysis, &bars)) {
+      if (bars > 0 && e->clock.length == e->ana_wait_len &&
+          load_i32(&e->a_tempo_source) == LE_TEMPO_SOURCE_DERIVED &&
+          e->retime_len == 0 && e->clock_source < 0 &&
+          load_i32(&e->a_loop_bars) != bars) {
+        (void)le_grid_reinterpret_bars(e, bars);
+      }
+      le_analysis_settle(e);
+    } else {
+      e->ana_wait_frames += (int32_t)frames;
+      if (e->ana_wait_frames >= e->sample_rate) le_analysis_settle(e);
+    }
+  }
   store_i32(&e->a_master_pos, e->clock.position);
   le_song_publish(e);
   atomic_fetch_add_explicit(&e->a_frames, (uint64_t)frames,
