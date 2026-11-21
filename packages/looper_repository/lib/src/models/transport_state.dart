@@ -197,6 +197,13 @@ class TransportState extends Equatable {
     return sampleRate * 60 / tempoBpm;
   }
 
+  /// One bar ([tsNum] beats) in frames, on [framesPerBeat]'s grid; null
+  /// without one.
+  double? framesPerBar(int sampleRate) {
+    final perBeat = framesPerBeat(sampleRate);
+    return perBeat == null || tsNum <= 0 ? null : perBeat * tsNum;
+  }
+
   /// Whether a master loop length has been established.
   bool get hasLoop => masterLengthFrames > 0;
 

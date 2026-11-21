@@ -1,7 +1,9 @@
+import 'package:flutter/widgets.dart' show Locale;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart'
     show RecordTiming, TempoFollowState;
 import 'package:segno/appliance/power_off/power_step.dart';
+import 'package:segno/l10n/l10n.dart';
 import 'package:segno/notices/notices.dart';
 import 'package:segno/visualizer/performance_readout.dart';
 
@@ -137,6 +139,23 @@ void main() {
       expect(PerformanceReadout.fromMap(const {}).brightness, 1);
     });
 
+    test("a recording take's count crosses the channel (#1936)", () {
+      const readout = PerformanceReadout(
+        selected: ReadoutTrack(
+          channel: 2,
+          name: 'Vox',
+          state: 'recording',
+          captureBar: 2,
+          captureOfBars: 4,
+        ),
+      );
+      expect(PerformanceReadout.fromMap(readout.toMap()), readout);
+      expect(
+        PerformanceReadout.fromMap(readout.toMap()).selected!.captureCount,
+        (bar: 2, ofBars: 4, seconds: 0),
+      );
+    });
+
     test('the Loop panel facts cross the channel (#1654)', () {
       const panel = PerformanceReadout(
         tempoFollow: TempoFollowState.retimes,
@@ -203,6 +222,42 @@ void main() {
         const ReadoutLoopSettings(ready: true, captureLocked: true).editable,
         isFalse,
       );
+    });
+  });
+
+  group('ReadoutTrack.lengthText (#1936)', () {
+    final l10n = lookupAppLocalizations(const Locale('en'));
+
+    test('a recording take reads its count', () {
+      const toward = ReadoutTrack(
+        channel: 0,
+        name: '',
+        state: 'recording',
+        captureBar: 2,
+        captureOfBars: 4,
+      );
+      expect(toward.lengthText(l10n), '2 / 4 bars');
+      const free = ReadoutTrack(
+        channel: 0,
+        name: '',
+        state: 'recording',
+        captureSeconds: 7,
+      );
+      expect(free.lengthText(l10n), '0:07');
+    });
+
+    test('a finished take reads its bars, and none without them', () {
+      const playing = ReadoutTrack(
+        channel: 0,
+        name: '',
+        state: 'playing',
+        bars: 4,
+        captureBar: 9,
+      );
+      expect(playing.lengthText(l10n), '4 bars');
+      expect(playing.captureCount, isNull);
+      const empty = ReadoutTrack(channel: 0, name: '', state: 'empty');
+      expect(empty.lengthText(l10n), isNull);
     });
   });
 }

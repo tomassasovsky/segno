@@ -262,7 +262,7 @@ class _PanelHeader extends StatelessWidget {
       LooperMeterState.muted => surface.textSecondary,
       LooperMeterState.empty => surface.textMuted,
     };
-    final bars = track?.bars ?? 0;
+    final length = track?.lengthText(l10n);
     final spacing = context.spacing;
     return SizedBox(
       height: kReadoutMinTarget,
@@ -306,10 +306,10 @@ class _PanelHeader extends StatelessWidget {
               word,
               style: TextStyle(color: wordColor, fontSize: 15, height: 1),
             ),
-            if (bars > 0) ...[
+            if (length != null) ...[
               SizedBox(width: spacing.sm),
               AppText(
-                l10n.stageBarsFigure(bars),
+                length,
                 style: TextStyle(
                   color: surface.textSecondary,
                   fontSize: 15,

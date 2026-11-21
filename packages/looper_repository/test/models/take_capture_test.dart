@@ -58,4 +58,14 @@ void main() {
       expect(const TransportState().framesPerBeat(48000), isNull);
     });
   });
+
+  test('TransportState.framesPerBar is tsNum beats', () {
+    const transport = TransportState(
+      tempoBpm: 120,
+      tempoSource: TempoSource.manual,
+      tsNum: 3,
+    );
+    expect(transport.framesPerBar(48000), 72000);
+    expect(const TransportState().framesPerBar(48000), isNull);
+  });
 }
