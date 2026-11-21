@@ -152,7 +152,7 @@ void main() {
       expect(PerformanceReadout.fromMap(readout.toMap()), readout);
       expect(
         PerformanceReadout.fromMap(readout.toMap()).selected!.captureCount,
-        (bar: 2, ofBars: 4, seconds: 0),
+        (bar: 2, ofBars: 4, seconds: 0, approxBars: 0),
       );
     });
 

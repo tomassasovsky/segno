@@ -21,6 +21,7 @@ class ReadoutTrack extends Equatable {
     this.captureBar = 0,
     this.captureOfBars = 0,
     this.captureSeconds = 0,
+    this.captureApproxBars = 0,
   });
 
   /// Rebuilds a track from [map] as pushed across the window channel.
@@ -35,6 +36,7 @@ class ReadoutTrack extends Equatable {
     captureBar: map['captureBar'] as int? ?? 0,
     captureOfBars: map['captureOfBars'] as int? ?? 0,
     captureSeconds: map['captureSeconds'] as int? ?? 0,
+    captureApproxBars: map['captureApproxBars'] as int? ?? 0,
   );
 
   /// The track's channel, `0`-based; the display shows `channel + 1`.
@@ -71,9 +73,17 @@ class ReadoutTrack extends Equatable {
   /// See [captureBar].
   final int captureSeconds;
 
+  /// See [captureBar]: the whole bars the beat analysis estimates so far.
+  final int captureApproxBars;
+
   /// The take's count while the track records (#1936), else null.
   CaptureCount? get captureCount => state == TrackState.recording.name
-      ? (bar: captureBar, ofBars: captureOfBars, seconds: captureSeconds)
+      ? (
+          bar: captureBar,
+          ofBars: captureOfBars,
+          seconds: captureSeconds,
+          approxBars: captureApproxBars,
+        )
       : null;
 
   /// What the readout writes for the track's length: the take's count while
@@ -96,6 +106,7 @@ class ReadoutTrack extends Equatable {
     'captureBar': captureBar,
     'captureOfBars': captureOfBars,
     'captureSeconds': captureSeconds,
+    'captureApproxBars': captureApproxBars,
   };
 
   @override
@@ -110,6 +121,7 @@ class ReadoutTrack extends Equatable {
     captureBar,
     captureOfBars,
     captureSeconds,
+    captureApproxBars,
   ];
 }
 

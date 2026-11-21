@@ -2012,6 +2012,9 @@ typedef struct le_snapshot {
    * none. The take's bar count is not decided by these. */
   float tempo_estimate_bpm;
   float tempo_estimate_confidence;
+  /* Trailing (#1936): the track whose take the estimate is of, -1 with
+   * none; another track recording at the same time has no estimate. */
+  int32_t tempo_estimate_track;
 } le_snapshot;
 
 /* What a song-tempo change does now (le_snapshot.tempo_follow, #1179 Part

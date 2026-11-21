@@ -652,6 +652,7 @@ static void le_engine_reset_runtime(le_engine* engine, int32_t sample_rate,
   engine->ana_on = 0;
   engine->ana_wait = 0;
   store_i32(&engine->a_tempo_settling, 0);
+  store_i32(&engine->a_ana_track, -1);
   /* Lane buffers are mono: one input channel in, routed out via the mask. */
   engine->track_count = LE_MAX_TRACKS;
   atomic_store_explicit(&engine->a_record_timing_default, 0, memory_order_seq_cst);

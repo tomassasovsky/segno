@@ -6909,6 +6909,49 @@ static void test_analysis_skips_set_tempo(void) {
   le_engine_destroy(e);
 }
 
+/* #1936 part 5: the live estimate. A free take of clicks at 120 shows a
+ * tempo near it once the tracker is sure and steady; silence shows none; the
+ * estimate goes when the take closes. */
+static void test_analysis_live_estimate(void) {
+  printf("test_analysis_live_estimate\n");
+  const int sr = 48000;
+  le_engine* e = tg_make_engine_cap(sr, sr * 30);
+  int len = 0;
+  float* x = ana_clicks(sr, 120.0, 7, &len); /* 14 s */
+  le_snapshot s;
+
+  le_engine_record(e, 0);
+  ana_feed(e, x, len);
+  ana_sleep_us(50000); /* the worker drains what is left */
+  le_engine_get_snapshot(e, &s);
+  printf("  estimate %.1f BPM, confidence %.2f\n",
+         (double)s.tempo_estimate_bpm, (double)s.tempo_estimate_confidence);
+  CHECK(s.tempo_estimate_bpm > 115.0f && s.tempo_estimate_bpm < 125.0f);
+  CHECK(s.tempo_estimate_confidence > 0.0f);
+  CHECK(s.tempo_estimate_track == 0); /* the take it is of */
+
+  le_engine_record(e, 0);
+  float zero[512] = {0}, out[512];
+  le_engine_process(e, out, zero, (uint32_t)(sr / 100));
+  CHECK(ana_wait_settled(e, 2000));
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tempo_estimate_bpm == 0.0f);
+  CHECK(s.tempo_estimate_track == -1);
+  free(x);
+  le_engine_destroy(e);
+
+  /* Silence: the tracker is never sure, so there is no estimate. */
+  e = tg_make_engine_cap(sr, sr * 30);
+  float* quiet = (float*)calloc((size_t)(sr * 12), sizeof(float));
+  le_engine_record(e, 0);
+  ana_feed(e, quiet, sr * 12);
+  ana_sleep_us(50000);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tempo_estimate_bpm == 0.0f);
+  free(quiet);
+  le_engine_destroy(e);
+}
+
 /* ÷2 and ×2 (D4): the loop reads as half or twice the bars, the tempo with
  * them, the audio and its length untouched; halving an odd count, and any
  * change to a tempo that was set rather than derived, is refused. */
@@ -40455,6 +40498,7 @@ int main(void) {
   SHARD(test_analysis_first_take);
   SHARD(test_analysis_skips_set_tempo);
   SHARD(test_scale_loop_bars);
+  SHARD(test_analysis_live_estimate);
   SHARD(test_capture_viz_cleared);
   SHARD(test_length_preset_n_bars_click_on_arms_through_count_in);
   SHARD(test_length_preset_n_bars_click_on_early_press_disarms);

@@ -602,6 +602,7 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   out->tempo_settling = load_i32(&engine->a_tempo_settling);
   le_analysis_estimate(engine->analysis, &out->tempo_estimate_bpm,
                        &out->tempo_estimate_confidence);
+  out->tempo_estimate_track = load_i32(&engine->a_ana_track);
   out->loop_beats = load_i32(&engine->a_loop_beats); /* #1168 */
   out->current_beat = load_i32(&engine->a_current_beat);
   /* Click + count-in (trailing block; click-off defaults read 0/0/1/0/0/0). */

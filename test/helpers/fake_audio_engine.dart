@@ -2116,6 +2116,7 @@ class _LengthSnapshot extends EngineSnapshot {
          tempoSettling: source.tempoSettling,
          tempoEstimateBpm: source.tempoEstimateBpm,
          tempoConfidence: source.tempoConfidence,
+         tempoEstimateTrack: source.tempoEstimateTrack,
          loopBeats: source.loopBeats,
          currentBeat: source.currentBeat,
          clickMode: source.clickMode,
