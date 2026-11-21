@@ -42,7 +42,6 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1797 | A finished export to a FAT stick is on the device: copies and the export end with a volume sync | in-review | blocked-verify | `claude/usb-export-durable-1797` |
 | #1367 | Start helper programs with posix_spawn, never fork the app | in-review | merge-gate | `claude/no-fork-1367` |
 | #1337 | Retry Wi-Fi after a runtime drop, holding off while performing | in-review | blocked-verify | `claude/wifi-runtime-retry-1337` |
-| #1352 | Console negotiates the charger's full 20 V current, with a power-cycle prompt | in-review | blocked-verify | `claude/pd-provisioning-1352` |
 | #1077 | Song queue completion | in-review | blocked-verify | `claude/song-queue-comet-1077` |
 | #1323 | Song and Band: one section at a time | in-review | merge-gate | `claude/song-one-section-1323` |
 | #1143 | Replay audio-history changes in performance stems | build | merge-gate | `claude/stem-history-replay-1143` |
