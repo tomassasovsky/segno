@@ -5626,20 +5626,27 @@ static void test_tempo_grid_derive_bpm(void) {
   CHECK(fabsf(le_grid_derive_bpm(100, 4, 1000, &bars) - 300.0f) < 0.01f);
   CHECK(bars == 1);
 
-  /* A slow loop walks up into the window: 12000 frames -> 20*b bpm, and b=6
-   * lands exactly on 120. */
-  CHECK(fabsf(le_grid_derive_bpm(12000, 4, 1000, &bars) - 120.0f) < 0.01f);
-  CHECK(bars == 6);
+  /* A slow loop takes the power of two nearest 120 (#1936): 12000 frames ->
+   * 20*b bpm; 4 bars (80) and 8 (160) are equidistant, and the slower wins.
+   * Any whole count read it as 6 bars at 120. */
+  CHECK(fabsf(le_grid_derive_bpm(12000, 4, 1000, &bars) - 80.0f) < 0.01f);
+  CHECK(bars == 4);
 
   /* Signature-generic: 7/8 changes the bar size (7 beat units per bar). A
    * 7000-frame loop at sr 1000: bpm(b) = 60*b -> 120 at 2 bars. */
   CHECK(fabsf(le_grid_derive_bpm(7000, 7, 1000, &bars) - 120.0f) < 0.01f);
   CHECK(bars == 2);
 
-  /* One more nearest-120 spot check for the closed form: 6000 frames gives
-   * 40*b candidates; b=3 lands exactly on 120. */
-  CHECK(fabsf(le_grid_derive_bpm(6000, 4, 1000, &bars) - 120.0f) < 0.01f);
-  CHECK(bars == 3);
+  /* 6000 frames gives 40*b candidates: 3 bars would be exactly 120, but the
+   * powers of two come first, 2 bars (80) and 4 (160) equidistant, and the
+   * slower wins (#1936). */
+  CHECK(fabsf(le_grid_derive_bpm(6000, 4, 1000, &bars) - 80.0f) < 0.01f);
+  CHECK(bars == 2);
+
+  /* With no power of two between 60 and 200, any whole count nearest 120:
+   * 1100 frames gives 218.2*b, so 1 bar at 218.2 (the old rule). */
+  CHECK(fabsf(le_grid_derive_bpm(1100, 4, 1000, &bars) - 218.18f) < 0.01f);
+  CHECK(bars == 1);
 
   /* Extreme-but-valid arguments terminate (the old walk's int32 candidate
    * index overflowed here) and still land in the window near 120. */
@@ -6853,15 +6860,16 @@ static int ana_wait_settled(le_engine* e, int ms) {
   return 0;
 }
 
-/* A free first take of 4 bars at 140 BPM: its length alone reads as 3 bars
- * at 105 (nearest 120); the analysis reads 4 bars at 140, the audio as it
- * was. */
+/* A free first take of 2 bars at 70 BPM: its length alone reads as 4 bars
+ * at 140 (the power of two nearest 120), and the same length holds 2 bars at
+ * 70; the onsets repeat at 70's beat, so the analysis reads 2 bars at 70, the
+ * audio as it was. */
 static void test_analysis_first_take(void) {
   printf("test_analysis_first_take\n");
   const int sr = 48000;
   le_engine* e = tg_make_engine_cap(sr, sr * 20);
   int len = 0;
-  float* x = ana_clicks(sr, 140.0, 4, &len);
+  float* x = ana_clicks(sr, 70.0, 2, &len);
   le_snapshot s;
 
   le_engine_record(e, 0);
@@ -6872,11 +6880,11 @@ static void test_analysis_first_take(void) {
   le_engine_get_snapshot(e, &s);
   CHECK(s.master_length_frames == len);
   CHECK(s.tempo_settling == 1);
-  CHECK(s.loop_bars == 3); /* the nearest-120 reading, until the answer */
+  CHECK(s.loop_bars == 4); /* the length's reading, until the answer */
   CHECK(ana_wait_settled(e, 2000));
   le_engine_get_snapshot(e, &s);
-  CHECK(s.loop_bars == 4);
-  CHECK(fabsf(s.tempo_bpm - 140.0f) < 0.1f);
+  CHECK(s.loop_bars == 2);
+  CHECK(fabsf(s.tempo_bpm - 70.0f) < 0.1f);
   CHECK(s.tempo_source == LE_TEMPO_SOURCE_DERIVED);
   CHECK(fabsf(s.recorded_tempo_bpm - s.tempo_bpm) < 1e-3f); /* no retime */
   CHECK(s.master_length_frames == len);
@@ -6988,9 +6996,12 @@ static void test_scale_loop_bars(void) {
 
   le_engine_destroy(e);
 
-  /* An odd bar count does not halve. */
+  /* An odd bar count does not halve: a 3-bar length preset with the click
+   * off derives 3 bars at 120 from the take's length. */
   e = tg_make_engine_cap(1000, 100000);
-  tg_record_defining_loop(e, 6000); /* 3 bars at 120 */
+  CHECK(le_engine_set_track_length_preset(e, 0, 3) == LE_OK);
+  tg_advance(e, 1);
+  tg_record_defining_loop(e, 6000);
   le_engine_get_snapshot(e, &s);
   CHECK(s.loop_bars == 3);
   le_engine_scale_loop_bars(e, -1);

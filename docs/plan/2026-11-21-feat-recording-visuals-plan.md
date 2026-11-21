@@ -84,6 +84,24 @@ tempo falls between 60 and 200 BPM**. The onset analysis scores those
 candidates; with no clear winner (a flat score, a take with no onsets) the
 engine keeps today's nearest-120 choice.
 
+**Revised by the owner, 2026-11-21:** the analysis decides, and the length's
+reading only stands in for it. A free take's tempo can't always be found
+from its audio (a pad or a drone has no beat, and a clear beat is still
+ambiguous between half and double), so the fallback is a better guess
+rather than a refusal:
+
+- The candidates run to 64 bars (1, 2, 4, 8, 16, 32, 64), the Looper X's
+  longest preset, so a long take is not forced to a slow tempo.
+- The derivation itself (`le_grid_derive_bpm`, D7) now takes the power of
+  two nearest 120 within 60 to 200 BPM first, and any whole count nearest 120
+  only when no power of two fits. Any whole count let a 4-bar take at 140
+  read as 3 bars at 105; real loops are almost always 1, 2, 4 or 8 bars.
+- The analysis overrules that reading only with a clear winner, a few
+  milliseconds after the take closes. Meanwhile the app reports no tempo and
+  no bars, so the figures go from none to the answer and never flip.
+- A wrong octave is one tap away (÷2 / ×2, D4), and a player who wants
+  certainty sets a length preset or taps the tempo first.
+
 ## Part 0: design
 
 The Penpot file gets the recording states on page **25 Main views and

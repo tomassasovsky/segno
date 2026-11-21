@@ -6309,6 +6309,10 @@ void main() {
         "carry the take's estimate (#1936)", () async {
       engine.nextSnapshot = _playingSnapshot.copyWith(
         tempoSettling: true,
+        tempoBpm: 140,
+        tempoSource: TempoSource.derived,
+        loopBars: 4,
+        loopBeats: 16,
         tempoEstimateBpm: 92.5,
         tempoConfidence: 0.8,
       );
@@ -6319,6 +6323,11 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       expect(repo.lastState.transport.tempoSettling, isTrue);
+      // The provisional reading is not shown while it settles.
+      expect(repo.lastState.transport.tempoBpm, 0);
+      expect(repo.lastState.transport.tempoSource, TempoSource.none);
+      expect(repo.lastState.transport.loopBars, 0);
+      expect(repo.lastState.transport.loopBeats, 0);
       expect(repo.playhead.tempoEstimateBpm, 92.5);
       expect(repo.playhead.tempoConfidence, closeTo(0.8, 1e-6));
     });
