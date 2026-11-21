@@ -1,3 +1,4 @@
+<!-- cspell:words aubio Brossier FFTW BLAS Ooura ooura beattracking cvec fvec lvec mathutils musicutils peakpicker phasevoc specdesc -->
 # Vendored third-party code
 
 ## `vst3sdk/` — Steinberg VST3 SDK (plugin-hosting subset)
