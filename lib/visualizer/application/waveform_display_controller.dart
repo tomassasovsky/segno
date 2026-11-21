@@ -249,7 +249,10 @@ class WaveformDisplayController {
     final samples = selected.hasContent
         ? _repository.readTrackWaveform(cursor)
         : Float32List(0);
-    final progress = _repository.playhead.track(cursor);
+    // A recording take has no shape to play over yet (#1936).
+    final progress = selected.state == TrackState.recording
+        ? 0.0
+        : _repository.playhead.track(cursor);
     _sentProgress = progress;
     unawaited(
       _window.pushWaveform(samples, progress, name).catchError((Object _) {

@@ -4,19 +4,16 @@ import 'package:looper_repository/looper_repository.dart';
 void main() {
   group('TakeCapture (#1936)', () {
     test('is no take by default', () {
-      expect(TakeCapture.none.recording, isFalse);
       expect(TakeCapture.none.progress, 0);
     });
 
     test('reports its share of the target', () {
       const capture = TakeCapture(frames: 2000, targetFrames: 8000);
-      expect(capture.recording, isTrue);
       expect(capture.progress, 0.25);
     });
 
     test('has no progress without a target', () {
       const capture = TakeCapture(frames: 2000);
-      expect(capture.recording, isTrue);
       expect(capture.progress, 0);
     });
 

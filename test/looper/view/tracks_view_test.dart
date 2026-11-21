@@ -39,6 +39,7 @@ import 'package:segno/looper/view/stage_db_scale.dart';
 import 'package:segno/looper/view/stage_top_bar.dart';
 import 'package:segno/looper/view/track_column.dart';
 import 'package:segno/looper/view/track_meters.dart';
+import 'package:segno/looper/view/wave_track_row.dart';
 import 'package:segno/notices/notices.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
@@ -1272,6 +1273,43 @@ void main() {
     // before it builds against this test's providers.
     segnoNavigatorKey.currentState!.removeRoute(pushed.single);
     await tester.pumpAndSettle();
+  });
+
+  group('a recording Wave row (#1936)', () {
+    Future<void> pumpWave(WidgetTester tester, LooperMeterState state) =>
+        tester.pumpWidget(
+          MaterialApp(
+            theme: AppTheme.neon,
+            home: RepositoryProvider<LooperRepository>.value(
+              value: repository,
+              child: Scaffold(
+                body: SizedBox(
+                  width: 800,
+                  height: 200,
+                  child: TrackWaveform(
+                    channel: 0,
+                    state: state,
+                    hasContent: true,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+
+    double drawn(WidgetTester tester) =>
+        tester.widget<WaveformView>(find.byType(WaveformView)).progress;
+
+    testWidgets('draws no playhead over a take that is still recording', (
+      tester,
+    ) async {
+      when(() => repository.playhead).thenReturn(const Playhead(tracks: [0.4]));
+      await pumpWave(tester, LooperMeterState.recording);
+      expect(drawn(tester), 0);
+
+      await pumpWave(tester, LooperMeterState.playing);
+      expect(drawn(tester), 0.4);
+    });
   });
 
   group('the footer opens the Loop settings tabs (#1653, #1659)', () {

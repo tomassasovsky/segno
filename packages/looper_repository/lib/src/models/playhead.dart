@@ -52,9 +52,6 @@ class TakeCapture extends Equatable {
   /// multiple of the master loop. `0` when only a press ends it.
   final int targetFrames;
 
-  /// Whether a take is in flight.
-  bool get recording => frames > 0 || targetFrames > 0;
-
   /// How much of [targetFrames] is captured, `0..1`; `0` without a target.
   double get progress =>
       targetFrames > 0 ? (frames / targetFrames).clamp(0.0, 1.0) : 0;

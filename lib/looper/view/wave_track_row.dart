@@ -371,7 +371,11 @@ class TrackWaveform extends StatelessWidget {
             ? repository.readTrackWaveform(channel)
             : Float32List(0),
         state: state,
-        progress: hasContent ? progress : 0,
+        // A recording take has no shape to play over yet: its progress
+        // shows on the count and the progress bar (#1936).
+        progress: hasContent && state != LooperMeterState.recording
+            ? progress
+            : 0,
         bars: hasContent ? bars : 0,
         semanticLabel: semanticLabel,
       ),
