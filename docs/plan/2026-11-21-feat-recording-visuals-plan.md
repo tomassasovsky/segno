@@ -13,8 +13,8 @@ Tracking: [#1936](https://github.com/tomassasovsky/segno/issues/1936),
 `autonomy:plan-gate`. Brainstorm:
 `docs/brainstorm/2026-11-21-recording-visuals-brainstorm-doc.md`, which has
 the current behaviour, the research on other loopers and beat trackers, and
-the alternatives rejected. This plan stops for the owner's decisions below
-before any part is built.
+the alternatives rejected. The owner approved the six recommendations below
+as written on 2026-11-21.
 
 ## Overview
 
