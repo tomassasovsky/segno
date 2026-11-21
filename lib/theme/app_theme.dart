@@ -27,7 +27,9 @@ RoutingGraphTheme routingGraphThemeFromSurface(SurfaceTheme s) =>
 
 /// Track meter (peak bar) color per meter state while in **record** mode.
 const _recordMeterColors = <LooperMeterState, Color>{
-  LooperMeterState.empty: Color(0xFF2E2E31), // not shown (empty = no bar)
+  // An empty track's bar is its input, while it is the track Record/Play
+  // records next (#1936): a grey that clears 3:1 on the tile.
+  LooperMeterState.empty: Color(0xFF6E6E73),
   LooperMeterState.recording: Color(0xFFFF1744),
   LooperMeterState.overdubbing: Color(0xFFFF1744),
   LooperMeterState.playing: Color(0xFF4CDA4A),
@@ -39,7 +41,7 @@ const _recordMeterColors = <LooperMeterState, Color>{
 
 /// Track meter (peak bar) color per meter state while in **mute** mode.
 const _muteMeterColors = <LooperMeterState, Color>{
-  LooperMeterState.empty: Color(0xFF2E2E31),
+  LooperMeterState.empty: Color(0xFF6E6E73),
   LooperMeterState.recording: Color(0xFFFF1744),
   LooperMeterState.overdubbing: Color(0xFFFF1744),
   LooperMeterState.playing: Color(0xFF4CDA4A),
