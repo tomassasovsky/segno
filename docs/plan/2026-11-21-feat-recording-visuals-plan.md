@@ -402,8 +402,9 @@ Where the build departs from this plan:
 - **aubio** lives in `packages/segno_engine/third_party/aubio`, beside the
   other vendored code, with its includes rewritten to relative paths, and
   compiles as one TU, `src/core/le_aubio.c`.
-- **The first-take tempo notice** (part 4) does not exist in the app, so
-  nothing waits on `tempo_settling`; the field is there for one.
+- **The first-take tempo notice** (part 4) does not exist in the app. The
+  repository uses `tempo_settling` instead: it reports no tempo and no bars
+  until the analysis answers.
 - **÷2 / ×2 on the readout** sit beside the tempo figure, not in the step
   row: six touch targets do not fit the card.
 - **The live estimate** shows only after aubio's confidence has reached 0.2
