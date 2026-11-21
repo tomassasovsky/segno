@@ -164,6 +164,8 @@ static void le_fill_track_snapshot(le_engine* engine, int32_t ch,
   out->position_frames = active ? load_i32(&tr->a_play_pos) : 0;
   out->capture_frames = active ? load_i32(&tr->a_capture_frames) : 0;
   out->capture_target_frames = active ? load_i32(&tr->a_capture_target) : 0;
+  out->capture_viz_points =
+      active ? load_i32(&engine->a_cap_viz_filled[tr - engine->tracks]) : 0;
   out->pending_trigger =
       active && out->pending ? load_i32(&tr->a_pending_trigger) : -1;
 }

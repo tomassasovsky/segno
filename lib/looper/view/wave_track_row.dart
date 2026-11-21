@@ -7,6 +7,7 @@ import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/looper/model/capture_count.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/looper/view/live_playhead.dart';
 import 'package:segno/looper/view/loop_count_words.dart';
@@ -362,23 +363,45 @@ class TrackWaveform extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final repository = context.read<LooperRepository>();
-    return LivePlayhead<double>(
-      key: ValueKey(channel),
-      select: (playhead) => playhead.track(channel),
-      builder: (context, progress) => WaveformView(
-        key: Key('wave_waveform_$channel'),
-        samples: hasContent
-            ? repository.readTrackWaveform(channel)
-            : Float32List(0),
-        state: state,
-        // A recording take has no shape to play over yet: its progress
-        // shows on the count and the progress bar (#1936).
-        progress: hasContent && state != LooperMeterState.recording
-            ? progress
-            : 0,
-        bars: hasContent ? bars : 0,
-        semanticLabel: semanticLabel,
-      ),
+    final recording = state == LooperMeterState.recording;
+    // A recording take toward a target draws the target's bar ruler; its
+    // own bars are not counted yet (#1936).
+    final framesPerBar = recording
+        ? context.select<LooperBloc, double?>((bloc) {
+            final s = bloc.state;
+            final perBeat = s.transport.framesPerBeat(s.status.sampleRate);
+            final tsNum = s.transport.tsNum;
+            return perBeat == null || tsNum <= 0 ? null : perBeat * tsNum;
+          })
+        : null;
+    return LivePlayhead<(double, TakeCapture)>(
+      key: ValueKey((channel, framesPerBar)),
+      // The take's capture is part of the value: a recording take's shape
+      // grows on every poll while its progress may stay 0 (a free take).
+      select: (playhead) =>
+          (playhead.track(channel), playhead.capture(channel)),
+      builder: (context, value) {
+        final (progress, capture) = value;
+        final ruler = recording
+            ? captureCountOf(
+                capture,
+                framesPerBar: framesPerBar,
+                sampleRate: 1,
+              ).ofBars
+            : bars;
+        return WaveformView(
+          key: Key('wave_waveform_$channel'),
+          samples: hasContent
+              ? repository.readTrackWaveform(channel)
+              : Float32List(0),
+          state: state,
+          // A recording take is drawn as it arrives, with no playhead: its
+          // progress shows on the count and the progress bar (#1936).
+          progress: hasContent && !recording ? progress : 0,
+          bars: hasContent ? ruler : 0,
+          semanticLabel: semanticLabel,
+        );
+      },
     );
   }
 }

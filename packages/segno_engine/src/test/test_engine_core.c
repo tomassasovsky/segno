@@ -6573,6 +6573,179 @@ static void test_capture_progress_over_master(void) {
   le_engine_destroy(e);
 }
 
+/* #1936: the take's shape while it records. Reads the track's buckets and
+ * its snapshot's count of drawn ones. */
+static int cap_viz_read(le_engine* e, int ch, float* viz) {
+  le_engine_read_track_visual(e, ch, viz, LE_VIZ_POINTS);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  return s.tracks[ch].capture_viz_points;
+}
+
+/* A free take draws 256-frame buckets from the left, at its input's level. */
+static void test_capture_viz_free_take(void) {
+  printf("test_capture_viz_free_take\n");
+  le_engine* e = tg_make_engine_cap(1000, 200000);
+  float viz[LE_VIZ_POINTS];
+
+  le_engine_record(e, 0);
+  tg_feed(e, 0.5f, 2048);
+  const int drawn = cap_viz_read(e, 0, viz);
+  CHECK(drawn >= 7 && drawn <= 8); /* 2048 frames of 256, less a block */
+  CHECK(fabsf(viz[0] - 0.5f) < 1e-6f);
+  CHECK(fabsf(viz[drawn - 1] - 0.5f) < 1e-6f);
+  CHECK(viz[drawn] == 0.0f);
+
+  le_engine_destroy(e);
+}
+
+/* A free take that outgrows the buckets merges pairs and keeps spanning
+ * what it captured: quiet first, loud after. */
+static void test_capture_viz_free_take_compresses(void) {
+  printf("test_capture_viz_free_take_compresses\n");
+  le_engine* e = tg_make_engine_cap(1000, 400000);
+  float viz[LE_VIZ_POINTS];
+
+  le_engine_record(e, 0);
+  tg_feed(e, 0.0f, 100000);
+  tg_feed(e, 0.6f, 100000); /* 200000 frames: twice 512 x 256 */
+  const int drawn = cap_viz_read(e, 0, viz);
+  CHECK(drawn > 256 && drawn <= LE_VIZ_POINTS);
+  /* Width 512 now: frame 50000 is bucket ~97, frame 150000 bucket ~292. */
+  CHECK(viz[97] == 0.0f);
+  CHECK(fabsf(viz[292] - 0.6f) < 1e-6f);
+
+  le_engine_destroy(e);
+}
+
+/* Toward a target the buckets span the target and fill from the left. */
+static void test_capture_viz_target_take(void) {
+  printf("test_capture_viz_target_take\n");
+  le_engine* e = tg_make_engine_cap(1000, 100000);
+  float viz[LE_VIZ_POINTS];
+
+  le_engine_set_tempo(e, 120.0f);
+  CHECK(le_engine_set_click_mode(e, LE_CLICK_REC) == LE_OK);
+  CHECK(le_engine_set_track_length_preset(e, 0, 4) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_record(e, 0);
+  tg_feed(e, 0.5f, 4000); /* half of the 8000-frame target */
+  const int drawn = cap_viz_read(e, 0, viz);
+  CHECK(drawn > 240 && drawn <= 256);
+  CHECK(fabsf(viz[100] - 0.5f) < 1e-6f);
+  CHECK(viz[300] == 0.0f);
+
+  le_engine_destroy(e);
+}
+
+/* Compares the settled buckets with [buf]'s own: every bucket whose frames,
+ * and [slack] frames either side, are all at [level] or all silent in the
+ * buffer reads the same in the buckets. The shape is as fine as the coarser
+ * of a block (the tap draws once per block, and skips the take's last
+ * partial block) and a capture bucket, so a bucket that close to a level
+ * change may read either. */
+static void cap_viz_check_settled(const float* viz, const float* buf, int len,
+                                  float level, int slack) {
+  const int block = slack;
+  int compared = 0;
+  for (int j = 0; j < LE_VIZ_POINTS; ++j) {
+    const int l0 = (int)((int64_t)j * len / LE_VIZ_POINTS);
+    int l1 = (int)((int64_t)(j + 1) * len / LE_VIZ_POINTS);
+    if (l1 <= l0) l1 = l0 + 1;
+    int loud = 1;
+    int quiet = 1;
+    for (int i = l0 - block; i < l1 + block; ++i) {
+      const float a = fabsf(buf[((i % len) + len) % len]);
+      if (fabsf(a - level) >= 1e-4f) loud = 0;
+      if (a != 0.0f) quiet = 0;
+    }
+    if (loud) {
+      CHECK(fabsf(viz[j] - level) < 1e-4f);
+      ++compared;
+    } else if (quiet) {
+      CHECK(viz[j] == 0.0f);
+      ++compared;
+    }
+  }
+  CHECK(compared > LE_VIZ_POINTS / 2);
+}
+
+/* A defining take closes with its shape already mapped onto the loop. */
+static void test_capture_viz_settles_defining_take(void) {
+  printf("test_capture_viz_settles_defining_take\n");
+  le_engine* e = tg_make_engine_cap(1000, 100000);
+  float viz[LE_VIZ_POINTS];
+
+  le_engine_record(e, 0);
+  tg_feed(e, 0.0f, 2000);
+  tg_feed(e, 0.8f, 2000);
+  le_engine_record(e, 0); /* close: the seam defers 10 frames */
+  tg_feed(e, 0.0f, 1000 / 100);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[0].capture_viz_points == 0);
+  const int len = s.tracks[0].length_frames;
+  CHECK(len == 4000);
+
+  le_engine_read_track_visual(e, 0, viz, LE_VIZ_POINTS);
+  float* buf = (float*)calloc((size_t)len, sizeof(float));
+  CHECK(le_engine_export_track(e, 0, buf, len) == len);
+  /* A free take's buckets are 256 frames, plus a block. */
+  cap_viz_check_settled(viz, buf, len, 0.8f, 256 + 64);
+  free(buf);
+
+  le_engine_destroy(e);
+}
+
+/* A take over a master starts mid-cycle: its shape lands where its audio
+ * plays in the loop. */
+static void test_capture_viz_settles_over_master(void) {
+  printf("test_capture_viz_settles_over_master\n");
+  le_engine* e = tg_make_engine_cap(1000, 100000);
+  float viz[LE_VIZ_POINTS];
+
+  tg_record_defining_loop(e, 4000);
+  CHECK(le_engine_set_track_multiple(e, 1, 1) == LE_OK);
+  tg_advance(e, 1000); /* the press lands a quarter into the cycle */
+  le_engine_record(e, 1);
+  tg_feed(e, 0.0f, 1000);
+  tg_feed(e, 0.8f, 3000); /* reaches the auto-finalize at 4000 */
+  tg_feed(e, 0.0f, 200);  /* the overdub that follows adds nothing */
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state != LE_TRACK_RECORDING);
+  CHECK(s.tracks[1].capture_viz_points == 0);
+  const int len = s.tracks[1].length_frames;
+  CHECK(len == 4000);
+
+  le_engine_read_track_visual(e, 1, viz, LE_VIZ_POINTS);
+  float* buf = (float*)calloc((size_t)len, sizeof(float));
+  CHECK(le_engine_export_track(e, 1, buf, len) == len);
+  /* Toward a target the buckets are the loop's own: a block of slack. */
+  cap_viz_check_settled(viz, buf, len, 0.8f, 64);
+  free(buf);
+
+  le_engine_destroy(e);
+}
+
+/* Clearing a recording track drops its shape and its drawn count. */
+static void test_capture_viz_cleared(void) {
+  printf("test_capture_viz_cleared\n");
+  le_engine* e = tg_make_engine_cap(1000, 100000);
+  float viz[LE_VIZ_POINTS];
+
+  le_engine_record(e, 0);
+  tg_feed(e, 0.5f, 1024);
+  CHECK(cap_viz_read(e, 0, viz) > 0);
+  le_engine_clear(e, 0);
+  tg_feed(e, 0.5f, 64);
+  CHECK(cap_viz_read(e, 0, viz) == 0);
+  CHECK(viz[0] == 0.0f);
+
+  le_engine_destroy(e);
+}
+
 static void test_length_preset_n_bars_click_on_arms_through_count_in(void) {
   printf("test_length_preset_n_bars_click_on_arms_through_count_in\n");
   /* Code-review coverage gap: le_arm_length_preset_target has TWO call
@@ -40041,6 +40214,12 @@ int main(void) {
   SHARD(test_capture_progress_preset_take);
   SHARD(test_capture_progress_free_take);
   SHARD(test_capture_progress_over_master);
+  SHARD(test_capture_viz_free_take);
+  SHARD(test_capture_viz_free_take_compresses);
+  SHARD(test_capture_viz_target_take);
+  SHARD(test_capture_viz_settles_defining_take);
+  SHARD(test_capture_viz_settles_over_master);
+  SHARD(test_capture_viz_cleared);
   SHARD(test_length_preset_n_bars_click_on_arms_through_count_in);
   SHARD(test_length_preset_n_bars_click_on_early_press_disarms);
   SHARD(test_length_preset_n_bars_click_on_handoff_before_target);

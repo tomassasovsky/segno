@@ -410,6 +410,41 @@ void main() {
     });
   });
 
+  test("a recording take's count reaches the readout as it moves, and its "
+      'frames carry no playhead (#1936)', () {
+    fakeAsync((clock) {
+      const recording = LooperState(
+        status: EngineStatus(sampleRate: 1000),
+        tracks: [
+          Track(state: TrackState.recording, lengthFrames: 2000),
+          Track(channel: 1),
+        ],
+      );
+      when(() => repository.lastState).thenReturn(recording);
+      when(() => repository.readTrackWaveform(0)).thenReturn(Float32List(0));
+      when(() => repository.playhead).thenReturn(
+        const Playhead(tracks: [0.5], captures: [TakeCapture(frames: 2000)]),
+      );
+      final display = build()..start(enabled: true);
+      clock
+        ..flushMicrotasks()
+        ..elapse(const Duration(milliseconds: 40));
+      expect(window.readouts.last.selected!.captureSeconds, 2);
+      expect(window.progresses.last, 0);
+      final pushes = window.readouts.length;
+
+      // Only the take moves: one more second on the count.
+      when(() => repository.playhead).thenReturn(
+        const Playhead(tracks: [0.5], captures: [TakeCapture(frames: 3000)]),
+      );
+      clock.elapse(const Duration(milliseconds: 40));
+      expect(window.readouts, hasLength(pushes + 1));
+      expect(window.readouts.last.selected!.captureSeconds, 3);
+      unawaited(display.close());
+      clock.flushMicrotasks();
+    });
+  });
+
   test('an external clock owning the tempo reaches the readout', () {
     when(() => repository.lastState).thenReturn(
       const LooperState(

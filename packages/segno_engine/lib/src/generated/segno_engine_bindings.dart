@@ -7512,6 +7512,14 @@ final class le_track_snapshot extends ffi.Struct {
 
   @ffi.Int32()
   external int capture_target_frames;
+
+  /// Trailing (#1936): how many of the track's LE_VIZ_POINTS waveform buckets
+  /// hold the take in flight while RECORDING, 0 otherwise. Toward a target
+  /// the buckets span the target and fill from the left; without one they
+  /// span what is captured so far, the take compressing as it grows. When the
+  /// take closes, its shape is mapped onto the finished loop.
+  @ffi.Int32()
+  external int capture_viz_points;
 }
 
 /// Per-track state machine, mirrored in le_snapshot.track_state.

@@ -257,6 +257,7 @@ class LooperRepository {
       ? TakeCapture(
           frames: track.captureFrames,
           targetFrames: track.captureTargetFrames,
+          vizPoints: track.captureVizPoints,
         )
       : TakeCapture.none;
 
@@ -6834,6 +6835,9 @@ class LooperRepository {
   /// - once per track lap thereafter, at the wrap, while the track plays;
   /// - never while the track stands still (its last shape is kept).
   ///
+  /// While a take records, the buckets hold the take so far (#1936): all of
+  /// them toward a target, else only the ones drawn.
+  ///
   /// The native tap and playhead both span this track's entire loop, including
   /// multiples, divisions and independent Free/Song clocks.
   Float32List readTrackWaveform(int channel) {
@@ -6849,9 +6853,15 @@ class LooperRepository {
     final progress = playhead.track(channel);
     final entry = _waveforms[channel];
     if (entry == null || entry.key != key) {
-      final samples = _engine.readTrackVisual(channel);
-      _waveforms[channel] = _WaveformRead(key, samples, sweepFrom: progress);
-      return samples;
+      final read = _WaveformRead(
+        key,
+        _engine.readTrackVisual(channel),
+        sweepFrom: progress,
+      );
+      _waveforms[channel] = read;
+      return track.state == TrackState.recording
+          ? _takeShape(channel, read)
+          : read.samples;
     }
     final wrapped = progress < entry.lastProgress;
     if (wrapped) entry.wraps++;
@@ -6866,7 +6876,18 @@ class LooperRepository {
     if (track.isCapturing || (playing && (!swept || justSwept || wrapped))) {
       entry.samples = _engine.readTrackVisual(channel);
     }
+    if (track.state == TrackState.recording) return _takeShape(channel, entry);
     return entry.samples;
+  }
+
+  /// A recording take's shape (#1936): toward a target, every bucket (the
+  /// target's span, filled from the left); without one, the buckets drawn so
+  /// far, which a painter spreads across the row as the take grows.
+  Float32List _takeShape(int channel, _WaveformRead entry) {
+    final capture = playhead.capture(channel);
+    if (capture.targetFrames > 0) return entry.samples;
+    final drawn = capture.vizPoints.clamp(0, entry.samples.length);
+    return Float32List.sublistView(entry.samples, 0, drawn);
   }
 
   /// One copy of each track's waveform, see [readTrackWaveform].

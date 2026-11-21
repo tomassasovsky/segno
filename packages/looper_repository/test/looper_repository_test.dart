@@ -169,6 +169,7 @@ EngineSnapshot _playingAt(
   int lengthFrames = 96000,
   int captureFrames = 0,
   int captureTargetFrames = 0,
+  int captureVizPoints = 0,
 }) => EngineSnapshot(
   isRunning: true,
   sampleRate: 48000,
@@ -193,6 +194,7 @@ EngineSnapshot _playingAt(
       positionFrames: masterPositionFrames,
       captureFrames: captureFrames,
       captureTargetFrames: captureTargetFrames,
+      captureVizPoints: captureVizPoints,
       undoDepth: 1,
       rms: 0.3,
       peak: peak,
@@ -2403,6 +2405,37 @@ void main() {
 
       expect(repo.playhead.capture(0), TakeCapture.none);
       expect(repo.playhead.track(0), 0.25);
+    });
+
+    group("a recording take's shape (#1936)", () {
+      Future<LooperRepository> recording({required int target}) async {
+        engine
+          ..visual = Float32List.fromList(List.filled(512, 0.5))
+          ..nextSnapshot = _playingAt(
+            4800,
+            state: TrackState.recording,
+            lengthFrames: 4800,
+            captureFrames: 4800,
+            captureTargetFrames: target,
+            captureVizPoints: 19,
+          );
+        final repo = buildRepo();
+        addTearDown(repo.dispose);
+        final sub = repo.looperState.listen((_) {});
+        addTearDown(sub.cancel);
+        await Future<void>.delayed(Duration.zero);
+        return repo;
+      }
+
+      test('is every bucket toward a target', () async {
+        final repo = await recording(target: 8000);
+        expect(repo.readTrackWaveform(0), hasLength(512));
+      });
+
+      test('is the drawn buckets without one', () async {
+        final repo = await recording(target: 0);
+        expect(repo.readTrackWaveform(0), hasLength(19));
+      });
     });
 
     test('meters carry the master, input, monitor and output levels', () async {
