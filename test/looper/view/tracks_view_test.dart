@@ -4761,17 +4761,11 @@ void main() {
         final meter = tester.widget<PeakMeterBar>(
           find.descendant(of: _column(0), matching: find.byType(PeakMeterBar)),
         );
-        // A bar that follows the input shows whatever the track holds
-        // (#1936); which tracks follow it is pinned in "the meter follows
-        // the input".
-        final followsInput = tester
-            .widget<TrackPeakMeter>(
-              find.descendant(
-                of: _column(0),
-                matching: find.byType(TrackPeakMeter),
-              ),
-            )
-            .input;
+        // A capturing track, and the selected empty one (channel 0 here),
+        // meter their input, which shows whatever the track holds (#1936).
+        final followsInput =
+            change.after.isCapturing ||
+            change.after.state == TrackState.empty;
         expect(meter.hasContent, change.after.hasContent || followsInput);
       });
     }
