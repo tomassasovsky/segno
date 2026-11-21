@@ -279,6 +279,38 @@ static void test_heard_take_starts_on_its_image(void) {
   le_engine_destroy(e);
 }
 
+/* A heard lane that nothing of reaches the outputs (its track recording)
+ * goes to its target at once instead of fading there (#1914): the fade would
+ * run the lane's chain on the callback for its 10 ms. A playing one fades. */
+static void test_heard_inaudible_lane_snaps(void) {
+  printf("test_heard_inaudible_lane_snaps\n");
+  enum { N = 4800, F = 480 };
+  le_engine* e = heard_engine(48000);
+  heard_monitor_reverb(e);
+  CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_DRIVE) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1, 1) == LE_OK);
+  le_record_image image = heard_image(4, 1);
+  CHECK(le_engine_record_with_image(e, 0, &image) == LE_OK);
+  heard_feed(e, 0, 640, 64, NULL);
+  CHECK(load_i32(&e->tracks[0].a_state) == LE_TRACK_RECORDING);
+  CHECK(e->heard[0][0].mix == 1.0f);
+  CHECK(le_engine_set_lane_source(e, 0, 0, LE_LANE_SOURCE_CLEAN) == LE_OK);
+  heard_feed(e, 640, 64, 64, NULL);
+  CHECK(e->heard[0][0].mix == 0.0f); /* at once, while recording */
+  CHECK(le_engine_set_lane_source(e, 0, 0, LE_LANE_SOURCE_HEARD) == LE_OK);
+  heard_feed(e, 704, 64, 64, NULL);
+  CHECK(e->heard[0][0].mix == 1.0f);
+  heard_feed(e, 768, N - 768, 64, NULL);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  heard_feed(e, N, 2 * F, 64, NULL);
+  CHECK(load_i32(&e->tracks[0].a_state) == LE_TRACK_PLAYING);
+  CHECK(le_engine_set_lane_source(e, 0, 0, LE_LANE_SOURCE_CLEAN) == LE_OK);
+  heard_silence(e, 64, 64, NULL);
+  /* Playing: a step of the 10 ms fade, not the whole of it. */
+  CHECK(e->heard[0][0].mix > 0.0f && e->heard[0][0].mix < 1.0f);
+  le_engine_destroy(e);
+}
+
 /* Switching the lane to its clean take crossfades over 10 ms to the clean
  * take through the lane's chain, which comes back through its re-enable
  * ramp; switching back returns to the image. */
@@ -681,6 +713,7 @@ static void run_heard_tests(void) {
   test_heard_attach_edges();
   test_heard_take_records_the_chain_output();
   test_heard_take_plays_its_image();
+  test_heard_inaudible_lane_snaps();
   test_heard_take_starts_on_its_image();
   test_heard_source_switch();
   test_heard_records_an_unmonitored_chain();
