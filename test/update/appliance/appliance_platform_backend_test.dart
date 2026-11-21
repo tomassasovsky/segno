@@ -237,6 +237,16 @@ void main() {
       expect((await backend(env).recover()).interrupted, isNull);
     });
 
+    test('interruptedInstall asks the helper again (#1507)', () async {
+      final env = _FakeEnv(files: {_version: '1.0.0'})..attempt = '1.1.0';
+      final updates = backend(env);
+
+      expect(await updates.interruptedInstall(), Version.parse('1.1.0'));
+      // The helper staged the install RAUC finished, and reports none.
+      env.attempt = null;
+      expect(await updates.interruptedInstall(), isNull);
+    });
+
     test('clearInterrupted forgets the attempt through the helper', () async {
       final env = _FakeEnv()..attempt = '1.1.0';
 

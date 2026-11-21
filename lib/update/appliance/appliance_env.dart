@@ -67,8 +67,9 @@ abstract interface class ApplianceEnv {
   void clearDirectorySync(String path);
 
   /// The version of an install the helper recorded and never finished (cut
-  /// off by a power loss, a stopped service or a cancel), or `null`. Never
-  /// throws.
+  /// off by a power loss, a stopped service or a cancel), or `null`. When
+  /// RAUC finished that install after the helper was killed, the helper
+  /// stages it first and reports `null` (#1507). Never throws.
   Future<String?> updateAttempt();
 
   /// Forgets the install [updateAttempt] reports. Never throws.

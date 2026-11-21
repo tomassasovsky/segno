@@ -184,15 +184,28 @@ teardown
 # wrong) boot id next to it reads as "staged in a previous boot" and the very
 # next reconcile clears it while its reboot is still pending.
 
-# Stubs shared by the two staging tests: a rauc that "installs" (progress line
-# included — install parses it) and a manifest served over file://.
+# Stubs shared by the staging tests: a rauc that "installs" (progress line
+# included — install parses it), RAUC's D-Bus Operation (idle unless a test
+# writes "$work/operation"), the helper on PATH for segno-ota-check, which
+# hands its install over to it (#1507), and a manifest served over file://.
 write_stage_fixture() {
     cat > "$work/bin/rauc" <<STUB
 #!/bin/sh
+echo "\$*" > "$work/rauc-args"
 echo "100% installing done."
 exit 0
 STUB
     chmod +x "$work/bin/rauc"
+    cat > "$work/bin/busctl" <<STUB
+#!/bin/sh
+printf 's "%s"\\n' "\$(cat "$work/operation" 2>/dev/null || echo idle)"
+STUB
+    chmod +x "$work/bin/busctl"
+    cat > "$work/bin/segno-update-ctl" <<STUB
+#!/bin/sh
+exec "$SHELL_UNDER_TEST" "$CTL" "\$@"
+STUB
+    chmod +x "$work/bin/segno-update-ctl"
     printf 'bundle-bytes\n' > "$work/channel/production/segno-0.7.0.raucb"
     bundle_sha=$(sha256sum "$work/channel/production/segno-0.7.0.raucb" | cut -d' ' -f1)
     cat > "$work/channel/production/manifest.json" <<JSON
@@ -226,22 +239,59 @@ check "the marker survives an immediate reconcile" yes "$(has_marker)"
 check "which reports not cleared" '{"cleared":false}' "$out"
 teardown
 
-echo "segno-ota-check records the staging boot id too"
+run_ota() {
+    SEGNO_UPDATE_BASE="file://$work/channel" \
+    SEGNO_CHANNEL_FILE="/nonexistent" \
+    SEGNO_CHANNEL_OVERRIDE_FILE="/nonexistent" \
+    SEGNO_VERSION_FILE="$work/state/build-version" \
+    SEGNO_STAGED_FILE="$work/state/ota-staged-version" \
+    SEGNO_STAGED_BOOT_ID_FILE="$work/state/ota-staged-boot-id" \
+    SEGNO_BOOT_ID_FILE="$work/boot_id" \
+    SEGNO_PENDING_FLAG="$work/state/update-pending" \
+    SEGNO_UPDATE_ATTEMPT_FILE="$work/state/update-attempt" \
+    SEGNO_TRYBOOT_REQUESTED_FILE="$work/state/ota-tryboot-requested" \
+    SEGNO_MOUNTS_FILE="/nonexistent" \
+    TMPDIR="$work" \
+    PATH="$work/bin:$PATH" \
+        "$SHELL_UNDER_TEST" "$OTA" >/dev/null 2>"$work/stderr"
+}
+
+echo "segno-ota-check installs through the helper, which records the boot id"
 setup
 write_stage_fixture
-SEGNO_UPDATE_BASE="file://$work/channel" \
-SEGNO_CHANNEL_FILE="/nonexistent" \
-SEGNO_CHANNEL_OVERRIDE_FILE="/nonexistent" \
-SEGNO_VERSION_FILE="$work/state/build-version" \
-SEGNO_STAGED_FILE="$work/state/ota-staged-version" \
-SEGNO_STAGED_BOOT_ID_FILE="$work/state/ota-staged-boot-id" \
-SEGNO_BOOT_ID_FILE="$work/boot_id" \
-SEGNO_PENDING_FLAG="$work/state/update-pending" \
-PATH="$work/bin:$PATH" \
-    "$SHELL_UNDER_TEST" "$OTA" >/dev/null 2>"$work/stderr"; rc=$?
+run_ota; rc=$?
 check "stages" 0 "$rc"
 check "writes the marker" "0.7.0" "$(marker)"
 check "records this boot's id" "boot-b" "$(boot_record)"
+check "leaves no attempt marker" no \
+    "$([ -f "$work/state/update-attempt" ] && echo yes || echo no)"
+teardown
+
+echo "segno-ota-check starts nothing while RAUC is installing (#1507)"
+setup
+write_stage_fixture
+echo installing > "$work/operation"
+echo "0.6.5" > "$work/state/ota-staged-version"
+echo "boot-b" > "$work/state/ota-staged-boot-id"
+run_ota; rc=$?
+check "exits non-zero" 1 "$rc"
+check "never runs rauc install" no \
+    "$([ -f "$work/rauc-args" ] && echo yes || echo no)"
+check "keeps the staged marker" "0.6.5" "$(marker)"
+check "says why" yes \
+    "$(grep -q 'already installing' "$work/stderr" && echo yes || echo no)"
+teardown
+
+echo "segno-ota-check drops an earlier staged build before RAUC overwrites it"
+setup
+write_stage_fixture
+echo "0.6.5" > "$work/state/ota-staged-version"
+echo "boot-b" > "$work/state/ota-staged-boot-id"
+printf '#!/bin/sh\necho "rauc: failed"\nexit 1\n' > "$work/bin/rauc"
+run_ota; rc=$?
+check "exits non-zero" 1 "$rc"
+check "the staged marker is gone" no "$(has_marker)"
+check "the staged boot id is gone" no "$(has_boot_record)"
 teardown
 
 echo

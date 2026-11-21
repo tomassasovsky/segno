@@ -35,6 +35,15 @@
 #             PROGRESS lines, attempt and staged markers, and exit 3 for a
 #             read-only /boot.
 #   attempt   Print the install that was cut off, {"version":"<v>"}, or {}.
+#             First it stages an install that RAUC finished after the helper
+#             that started it was killed (the app crashed or restarted past
+#             the download, #1507). RAUC's daemon goes on writing the slot
+#             with no client, so nothing else writes the staged markers.
+#             The install counts as finished when, in the boot that recorded
+#             the attempt and with RAUC idle, every inactive slot's status
+#             is "ok" for the attempt's version and was written after the
+#             attempt began. It is then staged as a finished install is, and
+#             `attempt` prints {}.
 #   clear-attempt
 #             Forget it (the app retried or dropped the cut-off install).
 #   install-state
@@ -100,6 +109,9 @@ PENDING_FLAG="${SEGNO_PENDING_FLAG:-/run/segno-update-pending}"
 # The install in progress, on /data so a power loss cannot take it with it.
 # Holds the version alone, like the staged marker.
 ATTEMPT_FILE="${SEGNO_UPDATE_ATTEMPT_FILE:-/data/segno/update-attempt}"
+# The boot id when the attempt began, kept next to it: only an install RAUC
+# finished in that same boot is staged after its helper is gone (#1507).
+ATTEMPT_BOOT_FILE="$ATTEMPT_FILE-boot-id"
 # Written by `reboot` when it asks for the staged slot: a reboot without it
 # (Shut down, a power cut, a watchdog) never tried the staged build.
 TRYBOOT_FILE="${SEGNO_TRYBOOT_REQUESTED_FILE:-/data/.ota-tryboot-requested}"
@@ -178,7 +190,7 @@ child=""
 _on_exit() {
     [ -z "${work:-}" ] || rm -rf "$work"
     [ -z "${staged_copy:-}" ] || rm -f "$staged_copy"
-    [ -z "$attempt_open" ] || rm -f "$ATTEMPT_FILE"
+    [ -z "$attempt_open" ] || clear_attempt
 }
 
 # `trap ... EXIT` never runs on an untrapped SIGTERM, so a killed install
@@ -334,7 +346,58 @@ do_install() {
 open_attempt() {
     mkdir -p "$(dirname "$ATTEMPT_FILE")" 2>/dev/null || true
     { printf '%s\n' "$1" > "$ATTEMPT_FILE"; } 2>/dev/null || true
+    tr -d '[:space:]' <"$BOOT_ID_FILE" >"$ATTEMPT_BOOT_FILE" 2>/dev/null || true
     attempt_open=1
+}
+
+clear_attempt() { rm -f "$ATTEMPT_FILE" "$ATTEMPT_BOOT_FILE"; }
+
+# mark_staged VERSION: VERSION is in the inactive slot. Sets the markers a
+# restart applies, and ends the attempt: the staged marker speaks for it now.
+mark_staged() {
+    echo "$1" > "$STAGED_FILE" 2>/dev/null || true
+    record_staged_boot_id
+    : > "$PENDING_FLAG" 2>/dev/null || true
+    clear_attempt
+    attempt_open=""
+}
+
+# Stages the attempt when RAUC finished it on its own: the helper that
+# started it was killed past the download (the app crashed or restarted),
+# and RAUC's daemon wrote the slot with no client left to write the markers
+# (#1507). Succeeds only when it staged it.
+#
+# The evidence is RAUC's slot status, which it saves for each slot it
+# writes: "pending" while it writes, then "ok" (or "failed") with the
+# bundle's version and the time it finished. Every inactive slot must read
+# "ok" for the attempt's version, written no earlier than the attempt began:
+# an older "ok" for the same version speaks for an earlier install, not this
+# one. Only in the boot that began the attempt, as reconcile-staged does not
+# vouch for a slot across a reboot either.
+finish_orphaned_install() {
+    version=$(tr -d '[:space:]' <"$ATTEMPT_FILE" 2>/dev/null || true)
+    [ -n "$version" ] || return 1
+    attempt_boot=$(tr -d '[:space:]' <"$ATTEMPT_BOOT_FILE" 2>/dev/null || true)
+    booted=$(tr -d '[:space:]' <"$BOOT_ID_FILE" 2>/dev/null || true)
+    if [ -z "$booted" ] || [ "$attempt_boot" != "$booted" ]; then
+        return 1
+    fi
+    # Still writing: the next ask, once RAUC is idle, decides.
+    rauc_installing && return 1
+    since=$(date -u -r "$ATTEMPT_FILE" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null) ||
+        return 1
+    # Both timestamps are UTC in one format, so jq's string order is time
+    # order.
+    rauc status --detailed --output-format=json 2>/dev/null |
+        jq -e --arg v "$version" --arg since "$since" '
+            [.slots[] | to_entries[].value | select(.state == "inactive")]
+            | length > 0 and all(.[];
+                .slot_status.status == "ok"
+                and .slot_status.bundle.version == $v
+                and (.slot_status.installed.timestamp // "") >= $since)
+        ' >/dev/null 2>&1 || return 1
+    log "RAUC finished installing v$version after its helper was gone; staging it"
+    mark_staged "$version"
 }
 
 # install_bundle BUNDLE VERSION FROM: install BUNDLE to the inactive slot,
@@ -365,12 +428,7 @@ install_bundle() {
     fi
     child=""
 
-    echo "$version" > "$STAGED_FILE" 2>/dev/null || true
-    record_staged_boot_id
-    : > "$PENDING_FLAG" 2>/dev/null || true
-    # Staged: the attempt is over, and the staged marker speaks for it now.
-    rm -f "$ATTEMPT_FILE"
-    attempt_open=""
+    mark_staged "$version"
     progress 100
     log "staged v$version to the inactive slot; reboot to apply"
 }
@@ -507,8 +565,8 @@ case "${1:-}" in
     install)          do_install ;;
     install-file)     do_install_file "${2:-}" ;;
     reconcile-staged) do_reconcile_staged ;;
-    attempt)          do_attempt ;;
-    clear-attempt)    rm -f "$ATTEMPT_FILE" ;;
+    attempt)          finish_orphaned_install || true; do_attempt ;;
+    clear-attempt)    clear_attempt ;;
     install-state)
         if rauc_installing; then
             echo '{"installing":true}'

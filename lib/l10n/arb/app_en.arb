@@ -7631,6 +7631,14 @@
     "@updatesPanelPaused": {
         "description": "Updates page status panel title when an install was cut off."
     },
+    "updatesPanelInstalling": "Installing",
+    "@updatesPanelInstalling": {
+        "description": "Updates page status panel title while the system installer is still writing an update that was started before the app last restarted."
+    },
+    "updatesPageRaucInstalling": "The update is still installing and cannot be stopped. Restart and Shut down wait until it finishes.",
+    "@updatesPageRaucInstalling": {
+        "description": "Updates page status sentence while the system installer is still writing an update that was started before the app last restarted. There is no Cancel: the install cannot be stopped."
+    },
     "updatesPageVersion": "Segno {version}",
     "@updatesPageVersion": {
         "description": "Updates page status panel meta: the version on offer.",

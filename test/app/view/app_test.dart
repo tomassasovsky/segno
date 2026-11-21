@@ -88,6 +88,8 @@ class _FakeUpdateBackend implements PlatformUpdateBackend {
   @override
   Future<UpdateRecovery> recover() async => const UpdateRecovery();
   @override
+  Future<Version?> interruptedInstall() async => null;
+  @override
   Future<void> clearInterrupted() async {}
   @override
   Future<bool> installInProgress() async => false;
