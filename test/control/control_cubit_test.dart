@@ -3045,6 +3045,20 @@ void main() {
           verify(() => looper.setMute(muted: false, channel: 3)).called(1);
         });
 
+        test('a mute no poll has shown yet keeps the track out', () {
+          setEngine(
+            _tracksWith(const [
+              Track(state: TrackState.playing, lengthFrames: 48000),
+              Track(channel: 1, state: TrackState.playing, lengthFrames: 48000),
+            ]),
+          );
+          when(() => looper.trackMuted(1)).thenReturn(true);
+          cubit
+            ..toggleMode()
+            ..stop();
+          expect(cubit.state.parkedResume, {0});
+        });
+
         test('Stop with nothing audible saves nothing: Rec/Play brings back '
             'every take', () {
           setEngine(

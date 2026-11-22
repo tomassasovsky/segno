@@ -2150,7 +2150,9 @@ class ControlCubit extends Cubit<ControlState> {
       state.copyWith(
         parkedResume: {
           for (final channel in running)
-            if (!(_trackAt(channel)?.muted ?? false) &&
+            // The repository's mute, as the press that mutes reads it: a
+            // mute the next poll has not shown yet still counts.
+            if (!_looper.trackMuted(channel) &&
                 !state.excluded.contains(channel))
               channel,
         },
