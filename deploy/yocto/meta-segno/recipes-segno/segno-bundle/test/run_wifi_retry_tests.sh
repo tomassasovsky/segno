@@ -441,6 +441,18 @@ check "an adapter pulled out while it held the link starts it for wlan0" \
     "start --no-block segno-wifi-retry.service" "$(cat "$work/systemctl-args")"
 teardown
 
+# An adapter plugged in while the console runs gets the retry, which moves the
+# link onto it (#1963).
+echo "a Wi-Fi device that appears starts the retry"
+RULES="$here/../files/98-segno-wifi-adapter.rules"
+check "one rule, for an added wlan device, wanting the retry" \
+    'ACTION=="add", SUBSYSTEM=="net", ENV{DEVTYPE}=="wlan", TAG+="systemd", ENV{SYSTEMD_WANTS}+="segno-wifi-retry.service"' \
+    "$(grep -v '^#' "$RULES" | grep -v '^$')"
+check "installed by the recipe" 2 \
+    "$(grep -c 'rules.d/98-segno-wifi-adapter.rules' "$here/../segno-bundle.bb")"
+check "and fetched" yes \
+    "$(grep -q 'file://98-segno-wifi-adapter.rules' "$here/../segno-bundle.bb" && echo yes || echo no)"
+
 echo
 echo "wifi-retry: $pass passed, $fail failed"
 [ "$fail" -eq 0 ] || exit 1
