@@ -113,6 +113,11 @@ PACKAGE_ARCH = "${MACHINE_ARCH}"
 # parted + e2fsprogs-resize2fs: segno-data-grow (expand /data to fill the SD card).
 # coreutils: the app's pedal link configures the pedal UART with stty.
 # iw: as on Raspberry Pi OS, for `iw reg get` and `iw event` on the console.
+# linux-firmware-rtl8822: the rtw88 firmware for USB Wi-Fi adapters on the
+# RTL8822BU/CU chips (TP-Link Archer T3U and the like). The kernel has their
+# driver (rtw_8822bu) built in, but without rtw88/rtw8822b_fw.bin its probe
+# fails. One of these replaced the Pi 5's on-board Wi-Fi on the console when
+# that stopped transmitting (#1816).
 # NOT wireless-regdb: packagegroup-base-wifi already pulls
 # wireless-regdb-static (the signed /lib/firmware/regulatory.db the kernel
 # reads for cfg80211.ieee80211_regdom), and the two RCONFLICT, so requesting
@@ -132,7 +137,7 @@ RDEPENDS:${PN} = "mesa alsa-lib libstdc++ dtc \
                   parted e2fsprogs-resize2fs \
                   networkmanager-nmcli networkmanager-wifi \
                   ddcutil \
-                  iw \
+                  iw linux-firmware-rtl8822 \
                   util-linux-mount util-linux-umount util-linux-blkid util-linux-flock \
                   dosfstools util-linux-fsck \
                   coreutils python3-core python3-io python3-gpiod \
