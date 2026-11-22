@@ -1007,7 +1007,7 @@ void main() {
       );
       await tester.runAsync(() => control.setPedalSetup(PedalSetup.fresh));
       control.setMode(InteractionMode.custom);
-      if (scene == 'bank_b') control.toggleBankWithCursor();
+      if (scene == 'bank_b') control.toggleBank();
       await pump(
         tester,
         locale: scene == 'spanish' ? const Locale('es') : null,
