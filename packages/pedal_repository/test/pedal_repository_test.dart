@@ -516,9 +516,8 @@ void main() {
           PedalColor.defaultColor,
         );
         colors[PedalButton.recPlay.index] = const PedalColor(0x00, 0xFF, 0x00);
-        final frame = lighting({
-          PedalButton.recPlay,
-        }).copyWith(globalColor: GlobalColor.amber, pedalColors: colors);
+        final frame = lighting({PedalButton.recPlay})
+            .copyWith(globalColor: GlobalColor.amber, pedalColors: colors);
         final line = describePedalLights(frame);
         expect(line, contains('ring=amber'));
         expect(line, contains('lit=[recPlay:#00FF00]'));
