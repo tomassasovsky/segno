@@ -1810,8 +1810,8 @@ class ControlCubit extends Cubit<ControlState> {
   // Cursor / bank
   // ---------------------------------------------------------------------------
 
-  /// Moves the shared cursor to [channel], following it into its bank (a
-  /// cursor can never hide behind the other bank).
+  /// Moves the shared cursor to [channel] and reveals its bank. BANK can
+  /// later leave the cursor on the bank it hides ([toggleBank], #1960).
   void selectTrack(int channel) {
     if (channel < 0 || channel >= _channelCount) return;
     emit(
