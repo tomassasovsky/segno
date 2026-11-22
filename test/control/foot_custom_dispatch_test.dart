@@ -268,7 +268,7 @@ void main() {
         rig.release(PedalButton.track1);
         await _pump();
         expect(rig.control.state.cursor, 2);
-        rig.control.toggleBankWithCursor();
+        rig.control.toggleBank();
         await _pump();
         rig.press(PedalButton.track1);
         await _pump(const Duration(milliseconds: 50));

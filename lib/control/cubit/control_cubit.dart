@@ -1829,10 +1829,10 @@ class ControlCubit extends Cubit<ControlState> {
     emit(state.copyWith(activeBank: bank));
   }
 
-  /// Toggles the visible bank, moving the cursor to the new bank's first
-  /// track — the pedal BANK footswitch / keyboard `B` semantics.
-  void toggleBankWithCursor() =>
-      selectTrack((state.activeBank == 0 ? 1 : 0) * ControlState.tracksPerBank);
+  /// Toggles the visible bank and leaves the cursor where it is, even on the
+  /// bank now hidden (#1960) — the pedal BANK footswitch / keyboard `B`
+  /// semantics. Selecting a track still reveals its bank ([selectTrack]).
+  void toggleBank() => browseBank(state.activeBank == 0 ? 1 : 0);
 
   // ---------------------------------------------------------------------------
   // Rec/Play
@@ -2487,9 +2487,9 @@ class ControlCubit extends Cubit<ControlState> {
     if (state.mode == InteractionMode.tuner) _leaveTuner();
     emit(
       state.copyWith(
+        // The selected track and the visible bank stay as they were
+        // (#1960).
         mode: InteractionMode.record,
-        cursor: 0,
-        activeBank: 0,
         excluded: const <int>{},
         parkedResume: const <int>{},
         // Offer whole-rig undo only when a cleared take can actually come back:
@@ -2622,7 +2622,7 @@ class ControlCubit extends Cubit<ControlState> {
       if (hold) {
         togglePerformanceRecord();
       } else {
-        toggleBankWithCursor();
+        toggleBank();
       }
       return;
     }
@@ -2716,7 +2716,7 @@ class ControlCubit extends Cubit<ControlState> {
       case PedalButton.mode:
         setMode(InteractionMode.record);
       case PedalButton.bank:
-        if (!hold) toggleBankWithCursor();
+        if (!hold) toggleBank();
       case PedalButton.recPlay ||
           PedalButton.stop ||
           PedalButton.undo ||
@@ -3107,7 +3107,7 @@ class ControlCubit extends Cubit<ControlState> {
       if (button == PedalButton.mode) {
         setMode(InteractionMode.record);
       } else if (button == PedalButton.bank) {
-        toggleBankWithCursor();
+        toggleBank();
       } else {
         _armCustom(button);
       }
@@ -3514,7 +3514,7 @@ class ControlCubit extends Cubit<ControlState> {
       case ControlCommand.recordPerformance:
         return _assignedPerformanceToggle();
       case ControlCommand.nextBank:
-        toggleBankWithCursor();
+        toggleBank();
         return true;
       case ControlCommand.trackFxOff:
         return _sweepTrackChains(enabled: false);
@@ -3882,7 +3882,7 @@ class ControlCubit extends Cubit<ControlState> {
       _bankGesture,
       cue: PedalButton.bank,
       onHold: togglePerformanceRecord,
-      onTap: toggleBankWithCursor,
+      onTap: toggleBank,
     );
   }
 

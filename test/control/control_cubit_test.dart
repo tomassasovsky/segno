@@ -2645,7 +2645,7 @@ void main() {
       test('Bank still switches banks', () async {
         await stomp(PedalButton.bank);
         expect(cubit.state.activeBank, 1);
-        expect(cubit.state.cursor, 4);
+        expect(cubit.state.cursor, 0); // the selection stays (#1960)
       });
 
       test('the encoder still drives master gain', () async {
@@ -2739,14 +2739,16 @@ void main() {
         expect(cubit.state.activeBank, 1); // out-of-range ignored
       });
 
-      test('toggleBankWithCursor moves the cursor to the new bank base', () {
-        cubit.toggleBankWithCursor();
+      test('toggleBank switches the bank and keeps the cursor (#1960)', () {
+        cubit
+          ..selectTrack(2)
+          ..toggleBank();
         expect(cubit.state.activeBank, 1);
-        expect(cubit.state.cursor, 4);
+        expect(cubit.state.cursor, 2);
 
-        cubit.toggleBankWithCursor();
+        cubit.toggleBank();
         expect(cubit.state.activeBank, 0);
-        expect(cubit.state.cursor, 0);
+        expect(cubit.state.cursor, 2);
       });
     });
 
@@ -4215,9 +4217,11 @@ void main() {
           verify(() => looper.setMute(muted: false)).called(1);
           verify(() => looper.setMute(muted: false, channel: 1)).called(1);
 
-          // The whole-rig reset: overlay home again.
+          // The whole-rig reset: Record again, the selection and its bank
+          // kept (#1960).
           expect(cubit.state.mode, InteractionMode.record);
-          expect(cubit.state.cursor, 0);
+          expect(cubit.state.cursor, 5);
+          expect(cubit.state.activeBank, 1);
           expect(cubit.state.parkedResume, isEmpty);
 
           // The unmute persists per lane (lane 0 default when none reported).
@@ -4743,13 +4747,13 @@ void main() {
         expect(cubit.state.mode, InteractionMode.mute);
       });
 
-      test('Bank toggles the active bank and moves the cursor', () async {
+      test('Bank toggles the active bank and keeps the cursor', () async {
         transport
           ..press(PedalButton.bank, down: true)
           ..press(PedalButton.bank, down: false);
         await pumpEventQueue();
         expect(cubit.state.activeBank, 1);
-        expect(cubit.state.cursor, 4);
+        expect(cubit.state.cursor, 0);
       });
 
       test('a track press targets the visible bank base', () async {
@@ -5037,7 +5041,7 @@ void main() {
           await release(PedalButton.track1);
           expect(chainEnabled[3], isTrue);
           expect(transport.lastFrame?.trackLeds[0], isNot(PedalTrackLed.off));
-          cubit.toggleBankWithCursor();
+          cubit.toggleBank();
           expect(cubit.state.activeBank, 1);
           expect(transport.lastFrame?.trackLeds[4], PedalTrackLed.off);
           await stomp(PedalButton.track1);
