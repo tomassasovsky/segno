@@ -52,9 +52,8 @@ and carries on as before. The update itself is the ring's; see
 When the console idles and the app dims the screens, the app sets STATE flags
 bit 4 (`dimmed`, pedal-link protocol 11, #1349) until the next touch, key,
 footswitch or playback wakes them. The board then shows the pills at about
-20 % (`ring_link::DIM_LEVEL`, 51/255) and
-sets the ring state's DIMMED flag, so ring firmware 1.1 and later dim the ring
-by the same share.
+20 % (`ring_link::DIM_LEVEL`, 51/255) and sets the ring state's DIMMED flag,
+so ring firmware 1.1 and later dim the ring by the same share.
 
 ### PD trigger (firmware 2.3)
 
@@ -168,8 +167,9 @@ limit (#1957): an earlier budget of 6000 channel units dimmed every pill when
 a pressed switch lit white, so each press flickered the rest. All ten pills
 white is about 2.07 A on the 20 mA/channel model, inside the v3 pill power bar
 and the BUCK_AUX budget in segno-hardware's `segno_wiring.md`. NeoPixelBus
-PIO/DMA preserves interrupts during the 80-pixel transfer. Forced refresh, goodbye and stale-link darkening cover the
-whole chain. RGB black is a valid deliberately dark hue.
+PIO/DMA preserves interrupts during the 80-pixel transfer. Forced refresh,
+goodbye and stale-link darkening cover the whole chain. RGB black is a valid
+deliberately dark hue.
 
 **Song queue (#1077, #1323).** While a Song or Band section waits for the
 sounding one's end, STATE byte 51 names the footswitch whose pill shows it and
