@@ -52,7 +52,7 @@ and carries on as before. The update itself is the ring's; see
 When the console idles and the app dims the screens, the app sets STATE flags
 bit 4 (`dimmed`, pedal-link protocol 11, #1349) until the next touch, key,
 footswitch or playback wakes them. The board then shows the pills at about
-20 % (`ring_link::DIM_LEVEL`, 51/255, applied after the channel budget) and
+20 % (`ring_link::DIM_LEVEL`, 51/255) and
 sets the ring state's DIMMED flag, so ring firmware 1.1 and later dim the ring
 by the same share.
 
@@ -134,8 +134,8 @@ room (#1564). The wiring is in segno-hardware's `hardware/segno_wiring.md`.
   hysteresis, the sampling slot can blank the pills.
 
 `LED_LEVEL` (`0x14`) is the app's answer: how bright the pills and the ring
-are, 1..255 of full. The board scales every pill pixel by it after the channel
-budget, together with the idle dim as one factor (`ring_link::outputLevel`),
+are, 1..255 of full. The board scales every pill pixel by it, together with
+the idle dim as one factor (`ring_link::outputLevel`),
 rounding each pixel once so its hue holds: a lit pixel keeps its strongest
 channel at 1 at least, and weak channels drop out rather than rising to match
 it. It fades to a new level at 3 steps per 20 ms render (the whole range in
@@ -163,10 +163,12 @@ Record/Play, Stop, Undo, Mode, Track1–4, Clear, Bank order.
 The app supplies every pill's active bit and RGB hue. Inactive means dark;
 local switch contact, legacy track colors and mode do not override that fact.
 Optical output retains the sourced peak 191, center weights
-38/92/201/255/255/201/92/38, color gamma and total channel budget 6000.
-The limiter recomputes from the source frame so refreshes do not progressively
-dim the display. NeoPixelBus PIO/DMA preserves interrupts during the
-80-pixel transfer. Forced refresh, goodbye and stale-link darkening cover the
+38/92/201/255/255/201/92/38 and color gamma. The pills have no total-current
+limit (#1957): an earlier budget of 6000 channel units dimmed every pill when
+a pressed switch lit white, so each press flickered the rest. All ten pills
+white is about 2.07 A on the 20 mA/channel model, inside the v3 pill power bar
+and the BUCK_AUX budget in segno-hardware's `segno_wiring.md`. NeoPixelBus
+PIO/DMA preserves interrupts during the 80-pixel transfer. Forced refresh, goodbye and stale-link darkening cover the
 whole chain. RGB black is a valid deliberately dark hue.
 
 **Song queue (#1077, #1323).** While a Song or Band section waits for the

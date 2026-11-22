@@ -110,9 +110,9 @@ extern "C" {
 
 /* segno -> board (#1564): [level], 1..255, how bright the pills and the
  * ring are, as a share of full output (255, the brightness every earlier
- * firmware shows). It scales the pixels after the channel budget and before
- * the idle dim. The app picks it (a manual level, or one that follows
- * AMBIENT) and sends it after the STATE that answers each HELLO; the board
+ * firmware shows). It scales the pixels before the idle dim. The app picks
+ * it (a manual level, or one that follows AMBIENT) and sends it after the
+ * STATE that answers each HELLO; the board
  * fades to a new level instead of jumping, and goes back to 255 when the
  * app's frames stop. 0 is refused: dark is STATE's goodbye.
  *
