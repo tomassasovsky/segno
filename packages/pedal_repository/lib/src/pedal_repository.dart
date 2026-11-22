@@ -409,7 +409,7 @@ String describePedalLights(PedalStateFrame frame) {
   final lit = [
     for (final button in PedalButton.values)
       if (frame.activeButtonMask & (1 << button.index) != 0)
-        '${button.name}:${frame.pedalColors[button.index]}',
+        '${button.name}:${frame.colorFor(button)}',
   ];
   return [
     'mode=${frame.mode.name}',
