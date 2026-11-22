@@ -13,6 +13,18 @@ rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$binary_dir/SegnoTransfer" "$app/Contents/MacOS/SegnoTransfer"
 cp -R "$binary_dir/SegnoTransfer_TransferCore.bundle" "$app/Contents/Resources/"
+# AppIcon.icon is an Icon Composer file (Xcode 26). actool compiles it into
+# Assets.car, which macOS 26 draws, and AppIcon.icns for macOS 14 and 15.
+# actool reports its errors on stdout, so show them when the icon is missing.
+if ! icon_log=$(xcrun actool AppIcon.icon --compile "$app/Contents/Resources" \
+  --platform macosx --minimum-deployment-target 14.0 --app-icon AppIcon \
+  --output-partial-info-plist /dev/null --output-format human-readable-text 2>&1) ||
+  [[ ! -f "$app/Contents/Resources/Assets.car" ||
+    ! -f "$app/Contents/Resources/AppIcon.icns" ]]; then
+  printf '%s\n' "$icon_log" >&2
+  echo "Compiling AppIcon.icon failed; it needs Xcode 26 or newer." >&2
+  exit 1
+fi
 # Nested code goes in a code location (PlugIns), signed before the app.
 mkdir -p "$app/Contents/PlugIns"
 cp -R "$plugins" "$app/Contents/PlugIns/"
@@ -25,6 +37,8 @@ cat > "$app/Contents/Info.plist" <<'PLIST'
 <key>CFBundleName</key><string>Segno Transfer</string>
 <key>CFBundleDisplayName</key><string>Segno Transfer</string>
 <key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleIconFile</key><string>AppIcon</string>
+<key>CFBundleIconName</key><string>AppIcon</string>
 <key>CFBundleShortVersionString</key><string>0.3.0</string>
 <key>CFBundleVersion</key><string>1</string>
 <key>LSMinimumSystemVersion</key><string>14.0</string>
