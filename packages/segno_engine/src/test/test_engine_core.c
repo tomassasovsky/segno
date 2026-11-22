@@ -7042,6 +7042,33 @@ static void test_overdub_viz_draws_the_layer(void) {
   le_engine_destroy(e);
 }
 
+/* #1955: an overdub with feedback below 1 draws the old content faded, as
+ * the loop now holds it, not as it read back. */
+static void test_overdub_viz_follows_feedback(void) {
+  printf("test_overdub_viz_follows_feedback\n");
+  le_engine* e = tg_make_engine_cap(1000, 100000);
+  float viz[LE_VIZ_POINTS];
+  le_snapshot s;
+
+  le_engine_record(e, 0);
+  tg_feed(e, 0.8f, 4000);
+  le_engine_record(e, 0);
+  tg_feed(e, 0.0f, e->sample_rate / 100); /* finalizes; plays from 1 */
+  tg_advance(e, 3999);
+  CHECK(le_engine_set_overdub_feedback(e, 0.25f) == LE_OK);
+  le_engine_record(e, 0); /* punch in at the loop's start, adding silence */
+  tg_feed(e, 0.0f, 2000);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_OVERDUBBING);
+
+  le_engine_read_track_visual(e, 0, viz, LE_VIZ_POINTS);
+  /* The dubbed half holds 0.8 x 0.25; the half not reached reads 0.8. */
+  CHECK(fabsf(viz[128] - 0.2f) < 0.02f);
+  CHECK(fabsf(viz[384] - 0.8f) < 0.02f);
+
+  le_engine_destroy(e);
+}
+
 static void test_capture_viz_cleared(void) {
   printf("test_capture_viz_cleared\n");
   le_engine* e = tg_make_engine_cap(1000, 100000);
@@ -40540,6 +40567,7 @@ int main(void) {
   SHARD(test_analysis_live_estimate);
   SHARD(test_capture_viz_cleared);
   SHARD(test_overdub_viz_draws_the_layer);
+  SHARD(test_overdub_viz_follows_feedback);
   SHARD(test_length_preset_n_bars_click_on_arms_through_count_in);
   SHARD(test_length_preset_n_bars_click_on_early_press_disarms);
   SHARD(test_length_preset_n_bars_click_on_handoff_before_target);
