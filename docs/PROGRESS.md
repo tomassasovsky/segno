@@ -3407,6 +3407,10 @@ travel and diffuser bridge anchoring still require validation; #1074 stays
   joins. **Off by default**, so a shipped build can never
   present invented networks as real ones; the factory tests assert the flag
   from both sides, so the branch is covered by the ordinary CI run.
+- **Seeing what the pedal shows:** every change of the pedal's lights is a
+  `pedal frame:` line in the app's journal (`ssh root@<console> journalctl
+  -u segno.service | grep 'pedal frame'`): the mode, the ring colour and each
+  lit switch with its colour, at most 20 lines a second (#1957).
 - **Seeing what the console's screens draw:** `ssh root@<console>
   segno-capture` prints one PNG path per screen under `/data/capture`; copy
   them with `scp 'root@<console>:/data/capture/*.png' .`. It is Flutter's
