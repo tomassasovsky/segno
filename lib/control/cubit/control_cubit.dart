@@ -2128,6 +2128,12 @@ class ControlCubit extends Cubit<ControlState> {
   /// Parks the play transport: freezes EVERY running content track (muted
   /// ones too — mute silences, park freezes) and latches what Rec/Play brings
   /// back at INTENT time, before engine truth catches up with the stops.
+  ///
+  /// The latch is what the parked LEDs show: the running tracks that are
+  /// heard. A muted one runs only because a parked Rec/Play resumed the whole
+  /// loop with it deselected, and its LED stays dark, so Rec/Play leaves it
+  /// out and a press brings it in (#1957). With none heard the latch is
+  /// empty, and Rec/Play brings back every take.
   void parkAll() {
     _parkAllAccepted();
   }
@@ -2142,7 +2148,12 @@ class ControlCubit extends Cubit<ControlState> {
     if (running.isEmpty) return true; // Keep the parked resume set.
     emit(
       state.copyWith(
-        parkedResume: {...running}..removeWhere(state.excluded.contains),
+        parkedResume: {
+          for (final channel in running)
+            if (!(_trackAt(channel)?.muted ?? false) &&
+                !state.excluded.contains(channel))
+              channel,
+        },
       ),
     );
     var accepted = false;
