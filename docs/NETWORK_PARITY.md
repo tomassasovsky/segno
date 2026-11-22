@@ -57,6 +57,7 @@ it the same), **deviates** (different, with the reason).
 | udev rules | NetworkManager's own (`84-nm-drivers`, `85-nm-unmanaged`, `90-nm-thunderbolt`); raspberrypi-sys-mods has none for networking (SM) | NetworkManager's own, the same three | matches |
 | Interface names | `wlan0`, `eth0`: pi-gen runs `raspi-config nonint do_net_names 1` (PG stage1) | `wlan0`, `eth0`: `net.ifnames=0` on the kernel command line (meta-raspberrypi) | matches in effect |
 | systemd-networkd | not installed (IMG) | installed, masked | matches in effect |
+| Which Wi-Fi device joins | NetworkManager's choice: a profile pinned to a device (`connection.interface-name`) goes up there, one with no device on whichever Wi-Fi device it tries first | `segno-wifi-ctl` picks one device: a USB Wi-Fi adapter when one is plugged in, else the built-in `wlan0` (`segno-wifi-ctl iface`). It pins the profiles it creates to that device and moves a saved one to it whenever it activates it; the retry service and the dispatcher hook follow the same device | deviates: one console's built-in radio stopped transmitting while NetworkManager kept handing its profile to it (#1816), and the Network page reports one device. With two Wi-Fi devices, a profile NetworkManager may put on either would go up on the one the app does not watch (#1963). |
 
 ## wpa_supplicant
 

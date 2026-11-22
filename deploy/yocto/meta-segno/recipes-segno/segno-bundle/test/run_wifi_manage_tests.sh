@@ -131,6 +131,7 @@ case "\$*" in
         ;;
     *"-g connection.autoconnect-priority connection show"*) printf '0\n' ;;
     *"-g 802-11-wireless.hidden connection show"*) printf '%s\n' "\${HIDDEN:-no}" ;;
+    *"-g connection.interface-name connection show"*) printf '%s\n' "\${PINNED:-wlan0}" ;;
     *"-f SSID device wifi list"*) [ -n "\${LIST:-}" ] && printf '%s\n' "\$LIST" ;;
     *"-g connection.id connection show"*|*"-g 802-11-wireless.ssid connection show"*)
         name_of "\$last"
@@ -215,7 +216,7 @@ run_with_stdin() {
         GENERAL_STATE="${GENERAL_STATE:-30 (disconnected)}" \
         HIDDEN="${HIDDEN:-no}" LIST="${LIST:-}" SEGNO_JOIN_EVIDENCE_WAIT=0 \
         STORED_PSK="${STORED_PSK:-}" DEV_AC="${DEV_AC:-yes}" GOOD_KEY="${GOOD_KEY:-}" BUSCTL_RC="${BUSCTL_RC:-0}" NO_FILE="${NO_FILE:-}" \
-        SEGNO_NM_RUN_DIR="$work/run" \
+        SEGNO_NM_RUN_DIR="$work/run" SEGNO_SYS_CLASS_NET="$work/sys" PINNED="${PINNED:-wlan0}" \
         HTTP_CODE="${HTTP_CODE:-200}" CURL_RC="${CURL_RC:-0}" \
         "$TEST_SHELL" "$CTL" "$@" >"$work/stdout" 2>"$work/stderr"
     rc=$?
@@ -650,6 +651,147 @@ setup
 HTTP_CODE=000 CURL_RC=28 run connectivity
 check "succeeds" 0 "$rc"
 check "reports no internet" '{"internet":false}' "$(cat "$work/stdout")"
+teardown
+
+# The device the console manages (#1963): a USB Wi-Fi adapter when one is
+# plugged in, else wlan0. The fake /sys/class/net holds what each case puts
+# in it: a Wi-Fi device has a phy80211 link, and its device's subsystem is
+# the bus it sits on.
+wifi_dev() {
+    mkdir -p "$work/sys/$1/device"
+    : > "$work/sys/$1/phy80211"
+    ln -s "../../../../bus/$2" "$work/sys/$1/device/subsystem"
+}
+wired_dev() {
+    mkdir -p "$work/sys/$1/device"
+    ln -s "../../../../bus/$2" "$work/sys/$1/device/subsystem"
+}
+args_line() { grep -n -F -- "$1" "$work/nmcli-args" | head -1 | cut -d: -f1; }
+
+echo "the built-in radio alone is the device"
+setup
+wifi_dev wlan0 sdio
+wired_dev eth0 platform
+run iface
+check "iface is wlan0" wlan0 "$(cat "$work/stdout")"
+teardown
+
+echo "no Wi-Fi device at all still answers wlan0"
+setup
+run iface
+check "iface is wlan0" wlan0 "$(cat "$work/stdout")"
+teardown
+
+echo "a USB Wi-Fi adapter is the device while it is plugged in"
+setup
+wifi_dev wlan0 sdio
+wifi_dev wlan1 usb
+wired_dev eth0 platform
+run iface
+check "iface is wlan1" wlan1 "$(cat "$work/stdout")"
+teardown
+
+echo "a USB wired adapter is not a Wi-Fi device"
+setup
+wifi_dev wlan0 sdio
+wired_dev eth1 usb
+run iface
+check "iface is wlan0" wlan0 "$(cat "$work/stdout")"
+teardown
+
+echo "two USB Wi-Fi adapters go by name"
+setup
+wifi_dev wlan0 sdio
+wifi_dev wlan2 usb
+wifi_dev wlan1 usb
+run iface
+check "iface is wlan1" wlan1 "$(cat "$work/stdout")"
+teardown
+
+echo "SEGNO_WIFI_IFACE still names the device by hand"
+setup
+wifi_dev wlan1 usb
+SEGNO_WIFI_IFACE=wlan0 run iface
+check "iface is wlan0" wlan0 "$(cat "$work/stdout")"
+teardown
+
+echo "a new network joined with an adapter plugged in is pinned to the adapter"
+setup
+wifi_dev wlan0 sdio
+wifi_dev wlan1 usb
+run_with_stdin 'goodpass' connect Rehearsal
+check "the join succeeds" 0 "$rc"
+check "the profile is made for wlan1" yes \
+    "$(has 'connection add type wifi ifname wlan1 con-name Rehearsal' "$work/nmcli-args")"
+check "not for wlan0" no "$(has 'ifname wlan0' "$work/nmcli-args")"
+teardown
+
+echo "a saved network pinned to wlan0 moves to the adapter when it is joined"
+setup
+wifi_dev wlan0 sdio
+wifi_dev wlan1 usb
+SAVED="Studio" STORED_PSK='right-key' run connect Studio
+check "the join succeeds" 0 "$rc"
+check "the stored profile is pinned to wlan1" yes \
+    "$(has 'connection modify uuid uuid-Studio connection.interface-name wlan1' "$work/nmcli-args")"
+check "before it goes up" yes \
+    "$([ "$(args_line 'connection.interface-name wlan1')" -lt "$(args_line 'connection up')" ] 2>/dev/null && echo yes || echo no)"
+teardown
+
+echo "a key typed for a saved network pinned to wlan0 pins the stored profile first"
+setup
+wifi_dev wlan0 sdio
+wifi_dev wlan1 usb
+SAVED="Studio" STORED_PSK='old-key' GOOD_KEY='new-key' run_with_stdin 'new-key' connect Studio
+check "the join succeeds" 0 "$rc"
+check "the stored profile is pinned to wlan1 before the copy is made" yes \
+    "$([ "$(args_line 'connection modify uuid uuid-Studio connection.interface-name wlan1')" -lt "$(args_line 'connection modify --temporary uuid uuid-Studio')" ] 2>/dev/null && echo yes || echo no)"
+teardown
+
+echo "activate pins a saved profile to the adapter; the retry brings it up there"
+setup
+wifi_dev wlan0 sdio
+wifi_dev wlan1 usb
+SAVED="Studio" STORED_PSK='right-key' run activate uuid-Studio 20
+check "succeeds" 0 "$rc"
+check "pinned to wlan1" yes \
+    "$(has 'connection modify uuid uuid-Studio connection.interface-name wlan1' "$work/nmcli-args")"
+check "and says so" yes "$(has 'pinned uuid-Studio to wlan1' "$work/stderr")"
+check "pauses wlan1's autoconnect, not wlan0's" yes \
+    "$(has 'device set wlan1 autoconnect no' "$work/nmcli-args")"
+teardown
+
+echo "the adapter pulled out: a profile pinned to it moves back to wlan0"
+setup
+wifi_dev wlan0 sdio
+SAVED="Studio" STORED_PSK='right-key' PINNED=wlan1 run activate uuid-Studio 20
+check "succeeds" 0 "$rc"
+check "pinned to wlan0" yes \
+    "$(has 'connection modify uuid uuid-Studio connection.interface-name wlan0' "$work/nmcli-args")"
+teardown
+
+echo "a profile already pinned to the device is not written"
+setup
+wifi_dev wlan0 sdio
+wifi_dev wlan1 usb
+SAVED="Studio" STORED_PSK='right-key' PINNED=wlan1 run activate uuid-Studio 20
+check "succeeds" 0 "$rc"
+check "nothing modified on the stored profile" no \
+    "$(grep -F 'connection modify uuid uuid-Studio' "$work/nmcli-args" | grep -qF interface-name && echo yes || echo no)"
+teardown
+
+echo "status, scan and connectivity look at the adapter"
+setup
+wifi_dev wlan0 sdio
+wifi_dev wlan1 usb
+run status
+check "status reads wlan1" yes "$(has 'GENERAL.STATE device show wlan1' "$work/nmcli-args")"
+check "and never wlan0" no "$(has 'wlan0' "$work/nmcli-args")"
+: > "$work/nmcli-args"
+run scan
+check "scan lists wlan1's networks" yes "$(has 'device wifi list ifname wlan1' "$work/nmcli-args")"
+run connectivity
+check "the internet check goes over wlan1" yes "$(has '--interface wlan1' "$work/curl-args")"
 teardown
 
 echo

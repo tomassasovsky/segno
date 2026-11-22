@@ -82,7 +82,8 @@ SRC_URI = "file://segno.service \
            file://segno-usb-mount@.service \
            file://segno-usb-eject.path \
            file://segno-usb-eject.service \
-           file://98-segno-usb-storage.rules"
+           file://98-segno-usb-storage.rules \
+           file://98-segno-wifi-adapter.rules"
 
 # No source tree (prebuilt install). walnascar bans S=${WORKDIR}; SRC_URI local
 # files land in ${UNPACKDIR}, which do_install references directly.
@@ -170,6 +171,7 @@ FILES:${PN} += "/opt/segno ${bindir}/segno-kiosk-launch ${bindir}/segno-rtirq \
                 ${bindir}/segno-capture \
                 ${bindir}/segno-touch-persist \
                 ${sysconfdir}/udev/rules.d/98-segno-usb-storage.rules \
+                ${sysconfdir}/udev/rules.d/98-segno-wifi-adapter.rules \
                 ${bindir}/segno-usb-ctl \
                 ${systemd_system_unitdir}/segno-usb-mount@.service \
                 ${systemd_system_unitdir}/segno-usb-eject.path \
@@ -330,6 +332,8 @@ do_install() {
     install -d ${D}${sysconfdir}/udev/rules.d
     install -m 0644 ${UNPACKDIR}/98-segno-usb-storage.rules \
         ${D}${sysconfdir}/udev/rules.d/98-segno-usb-storage.rules
+    install -m 0644 ${UNPACKDIR}/98-segno-wifi-adapter.rules \
+        ${D}${sysconfdir}/udev/rules.d/98-segno-wifi-adapter.rules
 
     # Network configuration: Raspberry Pi OS's, plus what A/B needs (#1843).
     # docs/NETWORK_PARITY.md lists every piece against Pi OS.

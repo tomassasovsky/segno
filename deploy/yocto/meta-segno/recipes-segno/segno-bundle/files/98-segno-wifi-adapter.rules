@@ -1,0 +1,11 @@
+# A Wi-Fi device that appears starts segno-wifi-retry (#1963).
+#
+# segno-wifi-ctl manages a USB Wi-Fi adapter whenever one is plugged in. One
+# plugged in while the console runs would otherwise leave the link on wlan0
+# while the Network page read the idle adapter. The retry finds the adapter
+# disconnected and brings a saved network up on it, pinning the profile there;
+# it holds off while the app performs and stands down when the radio is off.
+# At boot the same event only asks for a unit multi-user.target already
+# starts. TAG+="systemd" and SYSTEMD_WANTS, as in 98-segno-usb-storage.rules:
+# the unit is started by systemd, not by a RUN program udev would kill.
+ACTION=="add", SUBSYSTEM=="net", ENV{DEVTYPE}=="wlan", TAG+="systemd", ENV{SYSTEMD_WANTS}+="segno-wifi-retry.service"
