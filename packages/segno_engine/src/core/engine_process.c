@@ -10257,6 +10257,8 @@ LE_AUDIO_HOT_AT(4) void mix_tracks_frame_heard(
       if (lbuf == NULL) continue;
 
       float loopsample = 0.0f;
+      /* The overdub's written sample, for the waveform (#1955). */
+      float dub_peak = 0.0f;
       if (st[t] == LE_TRACK_RECORDING) {
         if (rec_w >= 0) lbuf[rec_w] = insample;
       } else if (st[t] == LE_TRACK_OVERDUBBING || st[t] == LE_TRACK_PLAYING) {
@@ -10309,6 +10311,7 @@ LE_AUDIO_HOT_AT(4) void mix_tracks_frame_heard(
            * is the classic additive `+= insample`. trk_fb is this track's own
            * (ramped) coefficient, the global one when it inherits. */
           lbuf[wdub] = lbuf[wdub] * trk_fb + insample * od_gain;
+          dub_peak = fabsf(lbuf[wdub]);
         }
       }
       /* Unity while the track plays, so steady playback is bit-identical. */
@@ -10601,6 +10604,11 @@ LE_AUDIO_HOT_AT(4) void mix_tracks_frame_heard(
       const float la = fabsf(loopsample);
       if (la > lane_peak[t][l]) lane_peak[t][l] = la;
       if (la > frame_trk_peak[t]) frame_trk_peak[t] = la;
+      /* An overdub draws the loop as it now holds it (#1955): the sample just
+       * written, old content and new layer together, so the layer shows as it
+       * lands rather than a pass later. The write head trails the read head
+       * by the record offset, a few ms, well inside one bucket. */
+      if (dub_peak > frame_trk_peak[t]) frame_trk_peak[t] = dub_peak;
       lane_sumsq[t][l] += loopsample * loopsample;
       /* The track's own level is the SUM of its lanes, not lane 0's (#655).
        * frame_trk_peak above is a max, which the visualizer wants; a meter

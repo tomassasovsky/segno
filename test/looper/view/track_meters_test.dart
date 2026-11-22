@@ -145,7 +145,7 @@ void main() {
             color: Colors.red,
             hasContent: hasContent,
             frozen: frozen,
-            input: true,
+            source: MeterSource.input,
           );
 
       PeakMeterBar bar(WidgetTester tester) =>
@@ -192,6 +192,37 @@ void main() {
 
         expect(tester.state(find.byType(PeakMeterBar)), isNot(first));
         expect(bar(tester).peak, closeTo(0.25, 0.01));
+      });
+    });
+
+    group('following both (#1955)', () {
+      Widget bothMeter() => const TrackPeakMeter(
+        channel: 0,
+        color: Colors.red,
+        hasContent: true,
+        frozen: false,
+        source: MeterSource.both,
+      );
+
+      PeakMeterBar bar(WidgetTester tester) =>
+          tester.widget<PeakMeterBar>(find.byType(PeakMeterBar));
+
+      testWidgets('draws the louder of the playback and the input', (
+        tester,
+      ) async {
+        when(() => repository.meters).thenReturn(
+          const MeterLevels(tracks: [TrackLevels(peak: 0.25, input: 0.75)]),
+        );
+        seed(const LooperState());
+        await pumpLeaf(tester, bothMeter());
+        expect(bar(tester).peak, closeTo(0.75, 0.01));
+
+        levels.add(
+          const MeterLevels(tracks: [TrackLevels(peak: 0.6, input: 0.1)]),
+        );
+        await tester.pump();
+        await tester.pump();
+        expect(bar(tester).peak, closeTo(0.6, 0.01));
       });
     });
   });

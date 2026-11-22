@@ -71,9 +71,13 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   D1 to D6 approved as recommended on 2026-11-21; "As built" lists the
   departures). Five stacked PRs, #1938 to the one closing #1936, each with
   its design half on Penpot pages 05 and 25 (segno-design #28 to #32).
-- A track meters its input while it records or overdubs, and while it is
-  the empty track Record/Play records next; the input bar of an empty
-  track is grey (`TrackLevels.input`, the lanes' inputs after trim).
+- A track meters its input while it records, and while it is the empty
+  track Record/Play records next; the input bar of an empty track is grey
+  (`TrackLevels.input`, the lanes' inputs after trim). An overdubbing track
+  meters the louder of its playback and its input (`MeterSource.both`), and
+  its waveform draws each bucket from the sample the overdub writes, the
+  loop and the new layer together, on the pass it records (#1955,
+  segno-design#35).
 - The engine publishes each recording take's captured frames and its
   target (`capture_frames`, `capture_target_frames`): the progress bar
   fills toward a known end, and the bars slot reads `2 / 4` bars, `3` bars,

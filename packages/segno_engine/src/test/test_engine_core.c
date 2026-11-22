@@ -7014,6 +7014,34 @@ static void test_scale_loop_bars(void) {
 }
 
 /* Clearing a recording track drops its shape and its drawn count. */
+/* #1955: an overdub draws the layer it adds on the pass it records, not a
+ * pass later: each bucket it writes holds the old content and the new layer
+ * together, and the buckets it has not reached yet still hold the loop. */
+static void test_overdub_viz_draws_the_layer(void) {
+  printf("test_overdub_viz_draws_the_layer\n");
+  le_engine* e = tg_make_engine_cap(1000, 100000);
+  float viz[LE_VIZ_POINTS];
+  le_snapshot s;
+
+  tg_record_defining_loop(e, 4000); /* silent; plays from position 1 */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  tg_advance(e, 3999); /* one silent pass: every bucket read back as 0 */
+  le_engine_record(e, 0); /* punch in at the loop's start */
+  tg_feed(e, 0.5f, 2000);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_OVERDUBBING);
+  CHECK(s.tracks[0].position_frames > 1900 && s.tracks[0].position_frames < 2100);
+
+  le_engine_read_track_visual(e, 0, viz, LE_VIZ_POINTS);
+  /* 4000 frames over 512 buckets: frame 1000 is bucket 128, frame 3000
+   * bucket 384. The layer is in; the half not reached is the loop. */
+  CHECK(fabsf(viz[128] - 0.5f) < 1e-3f);
+  CHECK(viz[384] == 0.0f);
+
+  le_engine_destroy(e);
+}
+
 static void test_capture_viz_cleared(void) {
   printf("test_capture_viz_cleared\n");
   le_engine* e = tg_make_engine_cap(1000, 100000);
@@ -40511,6 +40539,7 @@ int main(void) {
   SHARD(test_scale_loop_bars);
   SHARD(test_analysis_live_estimate);
   SHARD(test_capture_viz_cleared);
+  SHARD(test_overdub_viz_draws_the_layer);
   SHARD(test_length_preset_n_bars_click_on_arms_through_count_in);
   SHARD(test_length_preset_n_bars_click_on_early_press_disarms);
   SHARD(test_length_preset_n_bars_click_on_handoff_before_target);
