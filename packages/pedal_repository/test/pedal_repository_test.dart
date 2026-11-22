@@ -463,6 +463,67 @@ void main() {
       await logged.dispose();
     });
 
+    group('the light log (#1957)', () {
+      late List<String> lines;
+      late PedalRepository logged;
+
+      setUp(() {
+        lines = <String>[];
+        logged = PedalRepository(link, clock: () => now, log: lines.add);
+      });
+
+      tearDown(() => logged.dispose());
+
+      PedalStateFrame lighting(Set<PedalButton> lit) =>
+          PedalStateFrame.blank().copyWith(
+            activeButtonMask: lit.fold<int>(
+              0,
+              (mask, button) => mask | (1 << button.index),
+            ),
+          );
+
+      test('writes one line per change of what the pedal shows', () {
+        logged
+          ..pushState(lighting({PedalButton.track1}))
+          ..pushState(lighting({PedalButton.track1}).copyWith(masterGain: 0.5))
+          ..pushState(lighting({PedalButton.track1, PedalButton.track2}));
+
+        expect(lines, hasLength(2));
+        expect(lines.first, startsWith('pedal frame: '));
+        expect(lines.first, contains('track1:'));
+        expect(lines.first, isNot(contains('track2:')));
+        expect(lines.last, contains('track2:'));
+      });
+
+      test('writes at most its cap a second, then counts what it left out', () {
+        const cap = PedalRepository.maxLightLinesPerSecond;
+        for (var i = 0; i < cap + 5; i++) {
+          logged.pushState(
+            lighting(i.isEven ? {PedalButton.track1} : {PedalButton.track2}),
+          );
+        }
+        expect(lines, hasLength(cap));
+
+        now = const Duration(seconds: 1);
+        logged.pushState(lighting({PedalButton.stop}));
+        expect(lines, hasLength(cap + 1));
+        expect(lines.last, contains('(5 changes before this not logged)'));
+      });
+
+      test('names each lit switch with its colour', () {
+        final colors = List.filled(
+          PedalButton.values.length,
+          PedalColor.defaultColor,
+        );
+        colors[PedalButton.recPlay.index] = const PedalColor(0x00, 0xFF, 0x00);
+        final frame = lighting({PedalButton.recPlay})
+            .copyWith(globalColor: GlobalColor.amber, pedalColors: colors);
+        final line = describePedalLights(frame);
+        expect(line, contains('ring=amber'));
+        expect(line, contains('lit=[recPlay:#00FF00]'));
+      });
+    });
+
     test('every hello is answered with the last pushed frame', () async {
       final frame = PedalStateFrame.blank().copyWith(
         globalColor: GlobalColor.green,
