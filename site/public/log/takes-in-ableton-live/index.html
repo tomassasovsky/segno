@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>A take from the pedal, opened in Ableton Live · Segno devlog</title>
+<meta name="description" content="Segno now writes every recorded performance as an Ableton Live set, with a stem for each loop and the console&#x27;s effects as plugins, and a Mac app opens it in Live in one click.">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0b0b0c" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f6f6f4" media="(prefers-color-scheme: light)">
+<link rel="canonical" href="https://segno.aquiles.dev/log/takes-in-ableton-live/">
+<link rel="alternate" type="application/rss+xml" title="Segno devlog" href="/feed.xml">
+<link rel="icon" href="/favicon.svg?v=3c135dbe" type="image/svg+xml">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Segno">
+<meta property="og:title" content="A take from the pedal, opened in Ableton Live · Segno devlog">
+<meta property="og:description" content="Segno now writes every recorded performance as an Ableton Live set, with a stem for each loop and the console&#x27;s effects as plugins, and a Mac app opens it in Live in one click.">
+<meta property="og:url" content="https://segno.aquiles.dev/log/takes-in-ableton-live/">
+<meta property="og:image" content="https://segno.aquiles.dev/img/og.jpg?v=999b8210">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Render of the Segno floor console.">
+<meta name="twitter:card" content="summary_large_image">
+<meta property="article:published_time" content="2026-11-22">
+<link rel="preload" href="/fonts/Inter-Regular.woff2?v=5fedeecb" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/Inter-SemiBold.woff2?v=a6a1a4db" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/styles.css?v=682c6f6d">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<svg class="sprite" aria-hidden="true">
+  <symbol id="glyph" viewBox="0 0 1024 1024">
+    <path transform="matrix(0.88590331 0 0 -0.88590331 266.60478372 836.24061069)" fill="currentColor" d="M135 665C141 665 148 663 151 652L153 645C160 618 175 559 226 559C267 559 295 583 295 626C295 641 292 657 287 673C271 719 204 736 153 736C83 736 4 650 4 551C4 527 9 502 20 477C52 404 197 315 205 312C209 310 211 308 211 304C211 300 209 295 205 288C198 274 54 15 54 15C52 11 51 6 51 2C51 -14 63 -27 79 -27C89 -27 99 -21 104 -12C104 -12 259 268 262 274C262 273 270 279 274 279C289 276 489 217 489 122C489 83 465 57 431 52L428 51C407 51 390 65 390 96V107C390 145 365 173 337 173C333 173 329 172 325 171C288 162 254 146 254 106C254 45 316 -8 375 -8C388 -8 402 -6 417 -1C497 26 550 91 550 174C550 183 549 193 548 203C533 313 375 402 363 408C351 415 346 419 346 424C346 426 347 428 348 430C353 438 508 717 508 717C511 722 512 726 512 731C512 747 499 759 484 759C474 759 464 754 459 745C459 745 300 458 294 449C291 444 289 441 285 441C282 441 279 442 275 444C266 447 115 505 89 550C83 561 75 582 75 603C75 630 87 658 129 665ZM415 466C415 435 441 409 472 409C504 409 529 435 529 466C529 498 504 523 472 523C441 523 415 498 415 466ZM140 264C140 295 115 321 83 321C52 321 26 295 26 264C26 232 52 207 83 207C115 207 140 232 140 264Z"/>
+  </symbol>
+</svg>
+
+<header class="bar">
+  <div class="wrap bar-inner">
+    <a class="brand" href="/" aria-label="Segno home page">
+      <svg class="brand-glyph" aria-hidden="true"><use href="#glyph"/></svg>
+      <span class="brand-word">segno</span>
+    </a>
+    <nav class="nav" aria-label="Sections">
+      <a href="/#features">Features</a>
+      <a href="/#hardware">Hardware</a>
+      <a href="/#architecture">Architecture</a>
+      <a href="/log/" aria-current="page">Devlog</a>
+    </nav>
+    <a class="nav-source" href="https://github.com/tomassasovsky/segno">Source</a>
+  </div>
+</header>
+
+<main id="main" tabindex="-1">
+  <article class="post wrap">
+    <p class="eyebrow"><a href="/log/">Devlog</a> &middot; <time datetime="2026-11-22">22 November 2026</time></p>
+    <h1>A take from the pedal, opened in Ableton Live</h1>
+    <p class="lede">Segno now writes every recorded performance as an Ableton Live set, with a stem for each loop and the console&#x27;s effects as plugins, and a Mac app opens it in Live in one click.</p>
+    <div class="prose">
+<p>Segno can record a whole performance, a take, while you loop. Until this week the take came out as finished audio: what the speakers played, plus each track as it sounded. That's fine for listening back, but not for working on the take later. This week the take became an Ableton Live set you can keep editing, and a small Mac app opens it in one click. Segno is still in development, and all of this runs on the bench console.</p>
+<h2>What gets recorded</h2>
+<p>First the console had to record the clean signal. Before <a href="https://github.com/tomassasovsky/segno/pull/1809">#1809</a>, a take tapped each input after its monitor chain, so an input played with monitoring off came out silent. Now every input monitored at arm, and every instrument with a patch, is also written raw, before its effects.</p>
+<p>At the end of a take, the console renders stems from that recording and its event log. Since <a href="https://github.com/tomassasovsky/segno/pull/1826">#1826</a>, every lane of every looper track gets two: a dry stem, the loop as it played with nothing after it, and a wet stem, the lane after its volume, effects and mute. The console writes the Live set right after that render, at the end of every take.</p>
+<h2>The Live set</h2>
+<p>Each looper track is a Group track in Live. Inside it, each lane has a track that plays its dry stem through that lane's effects, and an "(as heard)" track with the wet stem, switched off, kept as a reference.</p>
+<p>The effects are Segno's own. The console's effects code also builds as VST3 plugins, and <a href="https://github.com/tomassasovsky/segno/pull/1811">#1811</a> loads each lane's chain into Live as those plugins, with the settings it had at arm. To check them I rendered a set of 31 tracks, one plugin each, from Live 12.2.7 and compared it with the engine's own render. 19 plugins were bit-identical, 5 were below -120 dBFS, and the other 7 were between -101 and -116 dBFS at their peak. Those 7 are bit-identical in our own test host, so the difference comes from rounding in Live's host. For a real take of 150 seconds, Live's render of the track was -139.6 dBFS (peak) away from what the console played.</p>
+<p>A loop doesn't stand still while you play it, so <a href="https://github.com/tomassasovsky/segno/pull/1839">#1839</a> replays the take's changes as Live automation: every effect switched on or off, every knob moved and every effect swapped in a slot. Each change is a step at the frame it happened. The same PR stopped the plugins from reporting a latency, because the console doesn't compensate one. With nothing reported, Live plays every lane with the same timing the console did.</p>
+<p>The plugins also have a face now. <a href="https://github.com/tomassasovsky/segno/pull/1819">#1819</a> gives each one an editor that draws its pedal the way the console's Effects page does, with every value printed, and Live's parameter list reads values the way the console shows them ("348 ms", "1/8D").</p>
+<h2>Getting it onto the Mac</h2>
+<p>Segno Transfer is the Mac app that browses and downloads takes from the console. <a href="https://github.com/tomassasovsky/segno/releases/tag/transfer-v0.3.0">Segno Transfer 0.3.0</a>, released this week, adds Open in Live (<a href="https://github.com/tomassasovsky/segno/pull/1830">#1830</a>). It downloads the set and only the files it references, checks each one's SHA-256 against the console's copy, and moves the folder into place only after every file passes. On the bench, a take of 547 MB (the set and 11 audio files) came over in 17.5 seconds. A second click reused the verified copy in 10 ms.</p>
+<p>The app carries Segno.vst3 and offers to install it when the set needs it and it's missing or older (<a href="https://github.com/tomassasovsky/segno/pull/1831">#1831</a>). The set is written as a Live Project folder (<a href="https://github.com/tomassasovsky/segno/pull/1838">#1838</a>), so Cmd+S saves it in place, and Open in Live now reopens your edited copy instead of downloading a fresh one (<a href="https://github.com/tomassasovsky/segno/pull/1841">#1841</a>).</p>
+<h2>Still open</h2>
+<p>The app and the plugin are signed locally, not notarized by Apple, so macOS asks you to approve each once in Privacy &amp; Security. Live's own save of the reference set with the new Group tracks is still owed (<a href="https://github.com/tomassasovsky/segno/pull/1826">#1826</a> explains the check), and Cmd+S saving in place still needs a check in Live 12.</p>
+    </div>
+    <p class="post-foot"><a href="/log/">All entries</a> &middot; <a href="/feed.xml">RSS feed</a></p>
+  </article>
+</main>
+
+<footer class="foot">
+  <div class="wrap foot-inner">
+    <p><svg class="foot-glyph" aria-hidden="true"><use href="#glyph"/></svg> Segno is made by <a href="https://github.com/tomassasovsky">Tom&aacute;s Sasovsky</a>.</p>
+    <p>Source under <a href="https://github.com/tomassasovsky/segno/blob/master/LICENSE">GPLv3</a>. Set in Inter and JetBrains Mono (SIL Open Font License).</p>
+  </div>
+</footer>
+</body>
+</html>
