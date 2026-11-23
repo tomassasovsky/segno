@@ -1081,21 +1081,18 @@ static float* le_pr_snapshot_image(const char* dir, const le_json_value* lane,
 
 /* Lane [lane] of [channel]'s image in a snapshot's [tracks] for [plane],
  * as le_pr_snapshot_image returns one (#1824). A snapshot lists a lane only
- * with a length of its own, and the engine removes only a lane that holds
- * nothing (le_mix_valid refuses one whose take could come back). So a lane
- * the snapshot does not list, or lists with no take, while lane 0 has one:
- *  - with [silence] (a take's own image) held nothing of that take, and
- *    reads as silence of lane 0's length, so its segments keep the track's
- *    timing (the lanes share one transport);
- *  - without (a pass's result) is a lane added after the take, which an
- *    overdub writes while its length stays 0 (#1825): nothing is named
- *    (*present 0), and the lane keeps what it played before the pass. */
+ * with a length of its own, every lane of a track that holds a take has the
+ * track's length (a lane added after the take too, #1825), and the engine
+ * removes only a lane that holds nothing (le_mix_valid refuses one whose
+ * take could come back). So a lane the snapshot does not list, or lists with
+ * no take, while lane 0 has one held nothing, and reads as silence of lane
+ * 0's length, so its segments keep the track's timing (the lanes share one
+ * transport). */
 static float* le_pr_snapshot_lane_image(const char* dir,
                                         const le_json_value* tracks,
                                         int32_t channel, int32_t lane,
-                                        int plane, int silence,
-                                        int32_t* frames, int* heard,
-                                        int* present) {
+                                        int plane, int32_t* frames,
+                                        int* heard, int* present) {
   const le_json_value* own = le_pr_find_lane(tracks, channel, lane);
   *frames = 0;
   *heard = 0;
@@ -1103,7 +1100,7 @@ static float* le_pr_snapshot_lane_image(const char* dir,
   if (own != NULL && le_json_get(own, "pcmRef") != NULL) {
     return le_pr_snapshot_image(dir, own, plane, frames, heard, present);
   }
-  if (lane == 0 || !silence) return NULL;
+  if (lane == 0) return NULL;
   /* Lane 0's take's length, from its header. */
   const le_json_value* first = le_pr_find_lane(tracks, channel, 0);
   const le_json_value* ref = le_json_get(first, "pcmRef");
@@ -1838,19 +1835,17 @@ static uint64_t le_pr_arm_phase(const le_pr_manifest* m,
 
 /* The image a plan names (a `layers` index or LE_PR_DUB_DISARM) for lane
  * [lane] and [plane], as le_pr_snapshot_image returns one: *present 0 when
- * nothing is named, NULL with *present 1 when it cannot be read. [silence]
- * as le_pr_snapshot_lane_image takes it: 1 for a take's own image, 0 for a
- * pass's result. */
+ * nothing is named, NULL with *present 1 when it cannot be read. */
 static float* le_pr_dub_image(const char* dir, const le_pr_manifest* m,
                               int32_t channel, int32_t lane, int32_t image,
-                              int plane, int silence, int32_t* frames,
-                              int* heard, int* present) {
+                              int plane, int32_t* frames, int* heard,
+                              int* present) {
   *frames = 0;
   *heard = 0;
   *present = 0;
   if (image == LE_PR_DUB_DISARM) {
     return le_pr_snapshot_lane_image(dir, m->disarm_tracks, channel, lane,
-                                     plane, silence, frames, heard, present);
+                                     plane, frames, heard, present);
   }
   if (image < 0) return NULL;
   return le_pr_load_layer(dir, m, image, lane, plane, frames, heard, present);
@@ -1869,7 +1864,7 @@ static int le_pr_apply_dub(le_pr_track_build* b, const char* dir,
                            const le_pr_dub_edge* edge) {
   int32_t frames;
   int heard, present;
-  float* image = le_pr_dub_image(dir, m, channel, lane, edge->image, plane, 0,
+  float* image = le_pr_dub_image(dir, m, channel, lane, edge->image, plane,
                                  &frames, &heard, &present);
   if (!present) return 0;
   if (image == NULL) {
@@ -1960,7 +1955,7 @@ static le_pr_track_build* le_pr_track_open(const char* dir,
     int arm_heard = 0;
     int present = 0;
     float* image = le_pr_snapshot_lane_image(dir, m->arm_tracks, channel, lane,
-                                             plane, 1, &frames, &arm_heard,
+                                             plane, &frames, &arm_heard,
                                              &present);
     if (present) {
       if (image != NULL) {
@@ -2105,7 +2100,7 @@ static le_pr_track_build* le_pr_track_open(const char* dir,
       int32_t frames;
       int heard, present;
       float* image = le_pr_dub_image(dir, m, channel, lane,
-                                     dubs.take_image[i], plane, 1, &frames,
+                                     dubs.take_image[i], plane, &frames,
                                      &heard, &present);
       if (present) {
         if (image != NULL) {

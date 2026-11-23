@@ -65,6 +65,27 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 ---
 
+## November 2026 A lane added after a take has the track's length (SEG-69, #1825)
+
+- A lane added to a track that holds a take (`le_engine_set_lane_count`
+  while it plays) kept a length of 0: a pass wrote it and the callback
+  played it, but `le_engine_export_track_lane` returned no frames, so the
+  performance snapshots skipped it and what its last pass added was not in a
+  capture's stems. The callback now gives each lane it activates on such a
+  track lane 0's length when it publishes the count (`le_apply_routing`), as
+  every lane of a track has it. An empty track's lanes keep 0.
+- The renderer no longer keeps what an unlisted lane played before the last
+  pass: every lane with a take is in the disarm snapshot, and an unlisted
+  lane reads as silence. `test_added_lane_takes_track_length` and the lane
+  stems test, whose last pass now writes the added lane, prove it.
+- The trailing-lane trim reads `a_recoverable`, not the length, so it still
+  removes an added lane that holds nothing. A session save exports the added
+  lane's live image now, but still drops the lane when the track's history
+  was made partly before the lane joined: some history slots have no buffer
+  for the lane, so `exportLayer` returns nothing for them and the save drops
+  the lane as torn. Undo into those images has the same gap. Left for a
+  follow-up.
+
 ## November 2026 CI fails a firmware change that keeps the board's version (#1969)
 
 - The boot flashers flash a board only when its version differs from the
@@ -653,9 +674,8 @@ a take's chains, where it used to hold each effect as it stood at arm.
   silences a lane at or past it. A version-16 capture has no count and
   renders every lane as mixed throughout. The engine removes only a lane
   that holds nothing, so the count matters for a lane's effect tail. A lane
-  added after its track's take keeps a length of 0, so no snapshot exports
-  it: the renderer keeps what it played before its last pass, and what that
-  pass added is not in the capture (#1825).
+  added after its track's take has the track's length (#1825, below), so
+  the disarm snapshot exports what its last pass added.
 - The Live set gives each looper track a Group track holding `<track> L<n>`
   (the lane's dry stem and clean loop through the lane's chain as Segno's
   plugins, playing, with its volume and mute as automation) and
