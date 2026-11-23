@@ -89,12 +89,19 @@ jobs:
   #     stalls the audio thread, and a dart:io child running beside
   #     spawn_process takes the exit status of its children;
   #   - no method, function or getter in lib/ or packages/*/lib may return a
-  #     widget (#1697): UI is built from widget classes.
+  #     widget (#1697): UI is built from widget classes;
+  #   - a change to a board's firmware raises that board's FW_MAJOR.FW_MINOR
+  #     (#1969): the boot flashers flash a board only when its version differs
+  #     from the image's. On a pull request it compares the merge commit with
+  #     HEAD^1, the target branch, hence fetch-depth: 2; on a push it fetches
+  #     the commit master was on before the push and compares with that.
   analyze:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: "3.50.x"
@@ -128,6 +135,18 @@ jobs:
       - name: No widget-returning methods
         if: ${{ !cancelled() }}
         run: dart run tool/check_no_widget_methods.dart
+      - name: Firmware changes raise the board's version
+        if: ${{ !cancelled() }}
+        env:
+          BEFORE: ${{ github.event_name == 'push' && github.event.before || '' }}
+        run: |
+          set -eu
+          base=HEAD^1
+          # A force push can leave the old tip unreachable; HEAD^1 then.
+          if [ -n "$BEFORE" ] && git fetch --quiet --depth=1 origin "$BEFORE"; then
+            base=$BEFORE
+          fi
+          dart run tool/check_firmware_version_bump.dart "$base"
 
   # The root app's suite, as the Very Good flutter_package workflow ran it:
   # every test file in one isolate (`--optimization`), randomized order, and
