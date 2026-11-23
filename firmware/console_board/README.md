@@ -321,8 +321,8 @@ do", and the fix reached the board only with 2.8 (#1968). The ring carrier
 works the same way ([its README](../ring_board/README.md#build)).
 
 CI enforces it (#1969). `tool/check_firmware_version_bump.dart` runs in the
-`analyze` job on every pull request and every push to master, and compares
-the commit with its first parent (on a pull request, the target branch):
+`analyze` job on every pull request, against the target branch, and on every
+push to master, against where master was before the push:
 
 | Changed | Raises |
 |---|---|
@@ -343,7 +343,12 @@ The version must go up; a lower one fails as well. Not counted as a change:
 Everything else counts, a new, deleted or renamed file included, as do
 `seal.py` and `partition_table.json` for the ring. The tests that build
 against the firmware live in `firmware/test/`, outside the boards, so a
-change to them alone needs no bump. Run it before pushing:
+change to them alone needs no bump.
+
+The check reads only `firmware/`. A change to the Arduino core or LED library
+versions the images are compiled with (`appliance-release.yml`, and the
+`console-firmware` job's cache key) rebuilds both images too, so raise both
+boards' versions by hand in that PR. Run the check before pushing:
 
 ```sh
 dart run tool/check_firmware_version_bump.dart "$(git merge-base origin/master HEAD)"

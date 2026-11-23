@@ -24,9 +24,10 @@
 // BASE or HEAD is not checked.
 //
 // Usage: dart run tool/check_firmware_version_bump.dart [BASE]
-// BASE defaults to HEAD^1: on a pull request CI checks out the merge commit,
-// whose first parent is the target branch, and on master each squash merge is
-// one commit. Run from the repository root.
+// BASE defaults to HEAD^1. On a pull request CI passes HEAD^1, the merge
+// commit's first parent (the target branch); on a push to master it passes
+// the commit master was on before the push, so every commit of the push is
+// covered. Run from the repository root.
 
 import 'dart:io';
 
@@ -248,7 +249,8 @@ void main(List<String> args) {
       'error: cannot compare the firmware with $base (a shallow checkout '
       'needs fetch-depth: 2): ${error.message}',
     );
-    exit(2);
+    exitCode = 2;
+    return;
   }
   if (problems.isEmpty) {
     stdout.writeln(
@@ -259,5 +261,5 @@ void main(List<String> args) {
   for (final problem in problems) {
     stderr.writeln('error: $problem\n');
   }
-  exit(1);
+  exitCode = 1;
 }
