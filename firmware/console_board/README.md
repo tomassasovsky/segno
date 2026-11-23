@@ -163,9 +163,9 @@ The app supplies every pill's active bit and RGB hue. Inactive means dark;
 local switch contact, legacy track colors and mode do not override that fact.
 Optical output retains the sourced peak 191, center weights
 38/92/201/255/255/201/92/38 and color gamma. The pills have no total-current
-limit (#1957): an earlier budget of 6000 channel units dimmed every pill when
-a pressed switch lit white, so each press flickered the rest. All ten pills
-white is about 2.07 A on the 20 mA/channel model, inside the v3 pill power bar
+limit (firmware 2.8, #1957): an earlier budget of 6000 channel units dimmed
+every pill when a pressed switch lit white, so each press flickered the rest.
+All ten pills white is about 2.07 A on the 20 mA/channel model, inside the v3 pill power bar
 and the BUCK_AUX budget in segno-hardware's `segno_wiring.md`. NeoPixelBus
 PIO/DMA preserves interrupts during the 80-pixel transfer. Forced refresh,
 goodbye and stale-link darkening cover the whole chain. RGB black is a valid

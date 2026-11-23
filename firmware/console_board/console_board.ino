@@ -63,9 +63,10 @@ struct Rgb { uint8_t r, g, b; };
 // the full pill three times (CLEAR_HOLD, #1534; still protocol 12, see
 // pedal_link.h). 2.7: reads the light sensor on J22 and reports it
 // (AMBIENT), and shows the pills and the ring at the app's LED_LEVEL (#1564;
-// still protocol 12).
+// still protocol 12). 2.8: the pills have no current limit, so a press no
+// longer dims the others (#1957; still protocol 12).
 static const uint8_t FW_MAJOR = 2;
-static const uint8_t FW_MINOR = 7;
+static const uint8_t FW_MINOR = 8;
 
 // ---- pin map (console_board.py GPIO table) ---------------------------------
 static const uint8_t PIN_LINK_TX = 16, PIN_LINK_RX = 17;
