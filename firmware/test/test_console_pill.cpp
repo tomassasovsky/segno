@@ -751,11 +751,37 @@ int main() {
   state.active_button_mask = 0x3ff;
   for (auto &color : state.pedal_colors) color = {255,255,255};
   receive(state, now += 20);
-  assert(channelTotal() <= 6000 && channelTotal() > 5500);
-  const auto limited = ind.shown;
+  // No current limit (#1957): all ten pills white show the full curve.
+  for (unsigned group = 0; group < 10; ++group) {
+    for (unsigned pixel = 0; pixel < 8; ++pixel) {
+      const uint32_t level = bright[pixel];
+      assert(ind.shown[group * 8 + pixel] == (level << 16 | level << 8 | level));
+    }
+  }
+  assert(channelTotal() == 10u * 3u * 878u);
+  const auto allWhite = ind.shown;
   for (unsigned repeat = 0; repeat < 8; ++repeat) {
     receive(state, now += 100);
-    assert(ind.shown == limited);
+    assert(ind.shown == allWhite);
+  }
+  // A press lighting one more pill white leaves the lit ones as they were
+  // (#1957): five green pills, then Stop pressed white beside them.
+  state.active_button_mask = 0;
+  for (auto &color : state.pedal_colors) color = {0,255,0};
+  for (const uint8_t button : {PEDAL_BTN_TRACK1, PEDAL_BTN_TRACK2, PEDAL_BTN_TRACK4,
+                               PEDAL_BTN_MODE, PEDAL_BTN_REC_PLAY}) {
+    state.active_button_mask |= 1u << button;
+  }
+  receive(state, now += 20);
+  const auto greens = ind.shown;
+  state.active_button_mask |= 1u << PEDAL_BTN_STOP;
+  state.pedal_colors[PEDAL_BTN_STOP] = {255,255,255};
+  receive(state, now += 20);
+  for (unsigned group = 0; group < 10; ++group) {
+    if (PILL_BUTTON[group] == PEDAL_BTN_STOP) continue;
+    for (unsigned pixel = 0; pixel < 8; ++pixel) {
+      assert(ind.shown[group * 8 + pixel] == greens[group * 8 + pixel]);
+    }
   }
   state.active_button_mask = 1;
   state.pedal_colors[0] = {255,0,0};

@@ -93,6 +93,10 @@ and when the bootrom tries a lower version than the other partition holds, the
 confirmation erases the higher one, so an appliance rolled back to an older
 image puts the ring back on that image's firmware.
 
+CI fails a change to `firmware/ring_board` or `firmware/libraries` that does
+not raise it (#1969); the rule and its exemptions are in
+[the console board's README](../console_board/README.md#firmware-versions).
+
 ## First install, over USB, once per carrier
 
 The console cannot program a XIAO that has no updater or no partition table,
@@ -159,5 +163,10 @@ takes about ten seconds at 115200 baud.
 profile and output, breathe, arc, freeze, budget, dimming, link timeout and the input
 snapshots. `firmware/test/test_ring_update.cpp` runs updates end to end, the
 Pi's engine against this sketch on simulated flash and bootrom. Encoder feel,
-UART noise immunity, LED timing and the bootrom's own trial and revert still
-need the assembled board.
+UART noise immunity and LED timing still need the assembled board.
+
+The bootrom's own behaviour was checked on the assembled console on
+2026-11-21 (#1342). A transfer cut by unplugging J1 left the ring booting its
+previous firmware. An image that was never confirmed was reverted by the
+bootrom within 20 s. A boot with a current ring spends about 40 ms in
+`segno-ring-flash`.

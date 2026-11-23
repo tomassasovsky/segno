@@ -162,6 +162,45 @@ class PedalRepository {
     _lastFrame = stamped;
     _frames.add(stamped);
     if (_connected) _link.send(StateMessage(stamped));
+    _logLights(stamped);
+  }
+
+  /// At most this many `pedal frame:` lines a second, so a loop that changes
+  /// the lights quickly cannot flood the log.
+  static const maxLightLinesPerSecond = 20;
+
+  String? _lightsLogged;
+  Duration? _lightWindowStart;
+  int _lightLines = 0;
+  int _lightsSkipped = 0;
+
+  /// Logs what [frame] lights when it differs from the last line (#1957):
+  /// the mode, the ring, and each lit switch with its colour. The fields that
+  /// move on their own (loop length, master gain, the queued fill) are left
+  /// out, so a steady loop writes nothing.
+  void _logLights(PedalStateFrame frame) {
+    final log = _log;
+    if (log == null) return;
+    final lights = describePedalLights(frame);
+    if (lights == _lightsLogged) return;
+    _lightsLogged = lights;
+    final now = _clock();
+    final start = _lightWindowStart;
+    if (start == null || now - start >= const Duration(seconds: 1)) {
+      _lightWindowStart = now;
+      _lightLines = 0;
+    }
+    if (_lightLines >= maxLightLinesPerSecond) {
+      _lightsSkipped++;
+      return;
+    }
+    _lightLines++;
+    final skipped = _lightsSkipped;
+    _lightsSkipped = 0;
+    log(
+      'pedal frame: $lights'
+      '${skipped > 0 ? ' ($skipped changes before this not logged)' : ''}',
+    );
   }
 
   /// Tells the board how far a clear-track hold on [button] has run, so its
@@ -360,4 +399,30 @@ class PedalRepository {
     await _powerSupplyChanges.close();
     await _ambientLightChanges.close();
   }
+}
+
+/// What [frame] lights, in one line (#1957): the mode, the looper mode, the
+/// ring colour, each lit switch with its colour, and the flags that change
+/// the board's look. Fields that move on their own (loop length, master
+/// gain, the queued fill) are not in it.
+String describePedalLights(PedalStateFrame frame) {
+  final lit = [
+    for (final button in PedalButton.values)
+      if (frame.activeButtonMask & (1 << button.index) != 0)
+        '${button.name}:${frame.colorFor(button)}',
+  ];
+  return [
+    'mode=${frame.mode.name}',
+    'looper=${frame.looperMode.name}',
+    'ring=${frame.globalColor.name}',
+    'bank=${frame.activeBank}',
+    'track=${frame.selectedTrack}',
+    'lit=[${lit.join(' ')}]',
+    if (frame.queuedButton != null) 'queued=${frame.queuedButton!.name}',
+    if (frame.countingIn) 'countIn',
+    if (frame.clearFadeActive) 'clearFade',
+    if (frame.performanceArmed) 'performance',
+    if (frame.dimmed) 'dimmed',
+    if (frame.isGoodbye) 'goodbye',
+  ].join(' ');
 }

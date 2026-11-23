@@ -52,9 +52,8 @@ and carries on as before. The update itself is the ring's; see
 When the console idles and the app dims the screens, the app sets STATE flags
 bit 4 (`dimmed`, pedal-link protocol 11, #1349) until the next touch, key,
 footswitch or playback wakes them. The board then shows the pills at about
-20 % (`ring_link::DIM_LEVEL`, 51/255, applied after the channel budget) and
-sets the ring state's DIMMED flag, so ring firmware 1.1 and later dim the ring
-by the same share.
+20 % (`ring_link::DIM_LEVEL`, 51/255) and sets the ring state's DIMMED flag,
+so ring firmware 1.1 and later dim the ring by the same share.
 
 ### PD trigger (firmware 2.3)
 
@@ -134,8 +133,8 @@ room (#1564). The wiring is in segno-hardware's `hardware/segno_wiring.md`.
   hysteresis, the sampling slot can blank the pills.
 
 `LED_LEVEL` (`0x14`) is the app's answer: how bright the pills and the ring
-are, 1..255 of full. The board scales every pill pixel by it after the channel
-budget, together with the idle dim as one factor (`ring_link::outputLevel`),
+are, 1..255 of full. The board scales every pill pixel by it, together with
+the idle dim as one factor (`ring_link::outputLevel`),
 rounding each pixel once so its hue holds: a lit pixel keeps its strongest
 channel at 1 at least, and weak channels drop out rather than rising to match
 it. It fades to a new level at 3 steps per 20 ms render (the whole range in
@@ -163,11 +162,14 @@ Record/Play, Stop, Undo, Mode, Track1–4, Clear, Bank order.
 The app supplies every pill's active bit and RGB hue. Inactive means dark;
 local switch contact, legacy track colors and mode do not override that fact.
 Optical output retains the sourced peak 191, center weights
-38/92/201/255/255/201/92/38, color gamma and total channel budget 6000.
-The limiter recomputes from the source frame so refreshes do not progressively
-dim the display. NeoPixelBus PIO/DMA preserves interrupts during the
-80-pixel transfer. Forced refresh, goodbye and stale-link darkening cover the
-whole chain. RGB black is a valid deliberately dark hue.
+38/92/201/255/255/201/92/38 and color gamma. The pills have no total-current
+limit (firmware 2.8, #1957): an earlier budget of 6000 channel units dimmed
+every pill when a pressed switch lit white, so each press flickered the rest.
+All ten pills white is about 2.07 A on the 20 mA/channel model, inside the v3 pill power bar
+and the BUCK_AUX budget in segno-hardware's `segno_wiring.md`. NeoPixelBus
+PIO/DMA preserves interrupts during the 80-pixel transfer. Forced refresh,
+goodbye and stale-link darkening cover the whole chain. RGB black is a valid
+deliberately dark hue.
 
 **Song queue (#1077, #1323).** While a Song or Band section waits for the
 sounding one's end, STATE byte 51 names the footswitch whose pill shows it and
@@ -306,6 +308,51 @@ segno-openocd -f /usr/lib/segno/console-board/pi5-swd.cfg \
 Point `program` at your own build to try a change; the next boot puts the
 shipped firmware back, which is the intended behaviour — the image is the
 source of truth for what the board runs.
+
+## Firmware versions
+
+The oneshot compares versions, not images: a board that reports the version
+in the image's marker is left alone. So **every change to what the board runs
+raises `FW_MAJOR` or `FW_MINOR` in `console_board.ino`**, with a line in the
+history comment above them. A change without one ships in the image and never
+reaches a board already on that version: #1967 changed the pills under 2.7,
+build .289 logged "board runs firmware 2.7 on link protocol 12; nothing to
+do", and the fix reached the board only with 2.8 (#1968). The ring carrier
+works the same way ([its README](../ring_board/README.md#build)).
+
+CI enforces it (#1969). `tool/check_firmware_version_bump.dart` runs in the
+`analyze` job on every pull request, against the target branch, and on every
+push to master, against where master was before the push:
+
+| Changed | Raises |
+|---|---|
+| `firmware/console_board/**` | the console board |
+| `firmware/ring_board/**` | the ring carrier (`FW_MAJOR`/`FW_MINOR` in `ring_board.ino`) |
+| `firmware/libraries/**` (SegnoRing, compiled into both) | both |
+
+The version must go up; a lower one fails as well. Not counted as a change:
+
+- Markdown files;
+- `firmware/console_board/pi5-swd.cfg`, since the image ships the Yocto
+  recipe's copy;
+- an edit to a `.c`, `.cpp`, `.h` or `.ino` file that changes only comments,
+  indentation, spaces inside a line or blank lines. The check compares the
+  code with comments removed and each line's whitespace collapsed, so moving
+  code to another line still counts.
+
+Everything else counts, a new, deleted or renamed file included, as do
+`seal.py` and `partition_table.json` for the ring. The tests that build
+against the firmware live in `firmware/test/`, outside the boards, so a
+change to them alone needs no bump.
+
+The check reads only `firmware/`. A change to the Arduino core or LED library
+versions the images are compiled with (`appliance-release.yml`, and the
+`console-firmware` job's cache key) rebuilds both images too, so raise both
+boards' versions by hand in that PR. Run the check before pushing:
+
+```sh
+dart run tool/check_firmware_version_bump.dart "$(git merge-base origin/master HEAD)"
+```
 
 ## Talk to it from the Pi
 

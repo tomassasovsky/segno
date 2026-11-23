@@ -82,7 +82,8 @@ SRC_URI = "file://segno.service \
            file://segno-usb-mount@.service \
            file://segno-usb-eject.path \
            file://segno-usb-eject.service \
-           file://98-segno-usb-storage.rules"
+           file://98-segno-usb-storage.rules \
+           file://98-segno-wifi-adapter.rules"
 
 # No source tree (prebuilt install). walnascar bans S=${WORKDIR}; SRC_URI local
 # files land in ${UNPACKDIR}, which do_install references directly.
@@ -113,6 +114,11 @@ PACKAGE_ARCH = "${MACHINE_ARCH}"
 # parted + e2fsprogs-resize2fs: segno-data-grow (expand /data to fill the SD card).
 # coreutils: the app's pedal link configures the pedal UART with stty.
 # iw: as on Raspberry Pi OS, for `iw reg get` and `iw event` on the console.
+# linux-firmware-rtl8822: the rtw88 firmware for USB Wi-Fi adapters on the
+# RTL8822BU/CU chips (TP-Link Archer T3U and the like). The kernel has their
+# driver (rtw_8822bu) built in, but without rtw88/rtw8822b_fw.bin its probe
+# fails. One of these replaced the Pi 5's on-board Wi-Fi on the console when
+# that stopped transmitting (#1816).
 # NOT wireless-regdb: packagegroup-base-wifi already pulls
 # wireless-regdb-static (the signed /lib/firmware/regulatory.db the kernel
 # reads for cfg80211.ieee80211_regdom), and the two RCONFLICT, so requesting
@@ -132,7 +138,7 @@ RDEPENDS:${PN} = "mesa alsa-lib libstdc++ dtc \
                   parted e2fsprogs-resize2fs \
                   networkmanager-nmcli networkmanager-wifi \
                   ddcutil \
-                  iw \
+                  iw linux-firmware-rtl8822 \
                   util-linux-mount util-linux-umount util-linux-blkid util-linux-flock \
                   dosfstools util-linux-fsck \
                   coreutils python3-core python3-io python3-gpiod \
@@ -165,6 +171,7 @@ FILES:${PN} += "/opt/segno ${bindir}/segno-kiosk-launch ${bindir}/segno-rtirq \
                 ${bindir}/segno-capture \
                 ${bindir}/segno-touch-persist \
                 ${sysconfdir}/udev/rules.d/98-segno-usb-storage.rules \
+                ${sysconfdir}/udev/rules.d/98-segno-wifi-adapter.rules \
                 ${bindir}/segno-usb-ctl \
                 ${systemd_system_unitdir}/segno-usb-mount@.service \
                 ${systemd_system_unitdir}/segno-usb-eject.path \
@@ -325,6 +332,8 @@ do_install() {
     install -d ${D}${sysconfdir}/udev/rules.d
     install -m 0644 ${UNPACKDIR}/98-segno-usb-storage.rules \
         ${D}${sysconfdir}/udev/rules.d/98-segno-usb-storage.rules
+    install -m 0644 ${UNPACKDIR}/98-segno-wifi-adapter.rules \
+        ${D}${sysconfdir}/udev/rules.d/98-segno-wifi-adapter.rules
 
     # Network configuration: Raspberry Pi OS's, plus what A/B needs (#1843).
     # docs/NETWORK_PARITY.md lists every piece against Pi OS.

@@ -77,6 +77,7 @@ teardown() { rm -rf "$work"; }
 run() { printf '%s' "${KEY:-}" | PATH="$work/bin:$PATH" SEGNO_JOURNALCTL="$work/bin/journalctl" \
     SAVED="${SAVED:-}" PRIORITIES="${PRIORITIES:-}" \
     UP_RC="${UP_RC:-0}" STORED_PSK="${STORED_PSK:-}" SEGNO_JOIN_EVIDENCE_WAIT=0 \
+    SEGNO_SYS_CLASS_NET="$work/sys" \
     sh "$CTL" "$@" >"$work/stdout" 2>"$work/stderr"; }
 
 check() {

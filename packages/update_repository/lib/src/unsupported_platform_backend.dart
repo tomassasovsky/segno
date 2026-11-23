@@ -30,6 +30,9 @@ class UnsupportedPlatformBackend implements PlatformUpdateBackend {
   Future<UpdateRecovery> recover() async => const UpdateRecovery();
 
   @override
+  Future<Version?> interruptedInstall() async => null;
+
+  @override
   Future<void> clearInterrupted() async {}
 
   @override

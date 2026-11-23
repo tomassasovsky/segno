@@ -24,9 +24,25 @@ TEST_SHELL="${TEST_SHELL:-sh}"
 pass=0
 fail=0
 
+# A Wi-Fi device <name> on bus <bus> (usb, sdio) in the fake /sys/class/net,
+# and a wired one, as segno-wifi-ctl iface reads them.
+wifi_dev() {
+    mkdir -p "$work/sys/$1/device"
+    : > "$work/sys/$1/phy80211"
+    ln -s "../../../../bus/$2" "$work/sys/$1/device/subsystem"
+}
+wired_dev() {
+    mkdir -p "$work/sys/$1/device"
+    ln -s "../../../../bus/$2" "$work/sys/$1/device/subsystem"
+}
+
 setup() {
     work=$(mktemp -d "${TMPDIR:-/tmp}/wifi-retry-test.XXXXXX")
     mkdir -p "$work/bin"
+    # The fake /sys/class/net: eth0 and the built-in wlan0; wifi_dev adds a
+    # device (#1963).
+    wired_dev eth0 platform
+    wifi_dev wlan0 sdio
     : > "$work/nmcli-args"
     : > "$work/events"
     # STATES, RADIOS, UP_RCS and LISTINGS are consumed one entry per call; the
@@ -50,7 +66,10 @@ case "\$*" in
     *"-f DEVICE,TYPE,STATE device"*)
         state=\$(next "\$(printf '%s' "\${STATES:-disconnected}" | tr ' ' '|')" state-count)
         printf 'eth0:ethernet:unavailable\n'
-        printf 'wlan0:wifi:%s\n' "\$state"
+        # WIFI_DEV is the device whose state STATES plays; any other Wi-Fi
+        # device listed is the built-in wlan0, disconnected.
+        [ "\${WIFI_DEV:-wlan0}" = wlan0 ] || printf 'wlan0:wifi:disconnected\n'
+        printf '%s:wifi:%s\n' "\${WIFI_DEV:-wlan0}" "\$state"
         ;;
     *"-f UUID,TYPE,AUTOCONNECT,TIMESTAMP connection show"*)
         next "\${LISTINGS-uuid-Cafe:802-11-wireless:yes:100}" listing-count | tr ' ' '\n'
@@ -133,6 +152,8 @@ run_retry() {
     SEGNO_WIFI_RETRY_SCAN_WAIT="${SCAN_WAIT:-0}" \
     SEGNO_WIFI_RETRY_HOLD_POLL=0 \
     SEGNO_WIFI_HOLD_FILE="$work/hold" \
+    SEGNO_SYS_CLASS_NET="$work/sys" \
+    WIFI_DEV="${WIFI_DEV:-wlan0}" \
     HOLD_ON_AT="${HOLD_ON_AT:-0}" \
     HOLD_OFF_AT="${HOLD_OFF_AT:-0}" \
     HOLDER="${HOLDER:-$$}" \
@@ -363,10 +384,35 @@ check "activated only after the release" yes \
 check "one activation" 1 "$(ups)"
 teardown
 
+# With a USB Wi-Fi adapter plugged in, the adapter is the device (#1963).
+echo "watches the adapter, not wlan0, while one is plugged in"
+setup
+wifi_dev wlan1 usb
+WIFI_DEV=wlan1 STATES=connected run_retry
+check "exit 0" 0 "$?"
+check "the adapter's link counts" yes "$(said 'no retry needed')"
+check "does not activate on account of wlan0" 0 "$(ups)"
+check "says which device" yes "$(said 'watching wlan1')"
+teardown
+
+echo "a drop on the adapter is retried on the adapter"
+setup
+wifi_dev wlan1 usb
+WIFI_DEV=wlan1 run_retry
+check "exit 0" 0 "$?"
+check "rescans on wlan1" yes "$(called_with 'device wifi rescan ifname wlan1')"
+check "lists wlan1's networks" yes "$(called_with 'device wifi list ifname wlan1')"
+check "pins the profile to wlan1" yes \
+    "$(called_with 'connection modify uuid uuid-Cafe connection.interface-name wlan1')"
+check "activates" "up uuid-Cafe" "$(grep '^up ' "$work/events")"
+check "never touches wlan0" no "$(called_with 'wlan0')"
+teardown
+
 # The NetworkManager dispatcher hook starts the retry for a runtime drop.
 dispatch() {
     : > "$work/systemctl-args"
-    PATH="$work/bin:$PATH" "$TEST_SHELL" "$DISPATCH" "$@"
+    PATH="$work/bin:$PATH" SEGNO_SYS_CLASS_NET="$work/sys" \
+        SEGNO_WIFI_CTL="$work/bin/segno-wifi-ctl" "$TEST_SHELL" "$DISPATCH" "$@"
 }
 
 echo "the dispatcher hook starts the retry when wlan0 goes down"
@@ -383,7 +429,29 @@ dispatch wlan0 up
 check "not when wlan0 comes up" "" "$(cat "$work/systemctl-args")"
 dispatch eth0 down
 check "not for another interface" "" "$(cat "$work/systemctl-args")"
+wifi_dev wlan1 usb
+dispatch wlan1 down
+check "with an adapter plugged in, when the adapter goes down" \
+    "start --no-block segno-wifi-retry.service" "$(cat "$work/systemctl-args")"
+dispatch wlan0 down
+check "and not when wlan0 does" "" "$(cat "$work/systemctl-args")"
+rm -rf "$work/sys/wlan1"
+dispatch wlan1 down
+check "an adapter pulled out while it held the link starts it for wlan0" \
+    "start --no-block segno-wifi-retry.service" "$(cat "$work/systemctl-args")"
 teardown
+
+# An adapter plugged in while the console runs gets the retry, which moves the
+# link onto it (#1963).
+echo "a Wi-Fi device that appears starts the retry"
+RULES="$here/../files/98-segno-wifi-adapter.rules"
+check "one rule, for an added wlan device, wanting the retry" \
+    'ACTION=="add", SUBSYSTEM=="net", ENV{DEVTYPE}=="wlan", TAG+="systemd", ENV{SYSTEMD_WANTS}+="segno-wifi-retry.service"' \
+    "$(grep -v '^#' "$RULES" | grep -v '^$')"
+check "installed by the recipe" 2 \
+    "$(grep -c 'rules.d/98-segno-wifi-adapter.rules' "$here/../segno-bundle.bb")"
+check "and fetched" yes \
+    "$(grep -q 'file://98-segno-wifi-adapter.rules' "$here/../segno-bundle.bb" && echo yes || echo no)"
 
 echo
 echo "wifi-retry: $pass passed, $fail failed"

@@ -541,28 +541,25 @@ static void le_pd_fd_close(int fd) { (void)close(fd); }
  * file, and on POSIX it is never momentarily absent. That is a guarantee
  * about what a CONCURRENT READER sees.
  *
- * It is NOT a durability guarantee. Nothing here fsyncs, so after a power cut
- * the sidecar may be missing this cycle's content entirely. That is
- * deliberate, and it is not the weaker choice it looks like:
+ * It is NOT a durability guarantee, and it does not need to be one. This
+ * cycle never fsyncs the sidecar, so after a power cut performance.json may
+ * be missing this cycle's content, or describe audio that never reached the
+ * device. Durability belongs to the checkpoint thread (perf_checkpoint.h,
+ * #1198 D4, #727): every `checkpoint_ms` it fdatasyncs the parts, events.log
+ * and layer files, then records how many frames of each stream are on the
+ * device. Finalize and recovery (performance_repository's take_recovery.dart)
+ * trust that checkpoint and clamp capture_frames to the audio actually kept,
+ * so a sidecar that got ahead of its PCM is corrected, not believed.
  *
- *   - The sidecar describes the PCM streams, which are only fflush'd (stdio
- *     buffer -> page cache) and never synced either. Syncing only the sidecar
- *     makes the pair INCONSISTENT: performance.json durably claiming
- *     capture_frames = N while the open part's last seconds are still page
- *     cache, so #679's salvage and daw_export lay out an arrangement past the
- *     audio. Un-synced, both sides lose the same tail and stay consistent.
- *   - On ext4 data=ordered an fsync here commits the journal transaction
- *     carrying the open part's block allocations too, so it would drag PCM
- *     writeback onto this cycle synchronously — and the capture rings hold
- *     only LE_PERF_RING_SECONDS_DEFAULT. An SD garbage-collection stall past that
- *     inside one cycle overruns master_ring and writes zero-filled silence
- *     into the take: the exact #710 defect, re-manufactured.
- *
- * Real crash-durability needs the sidecar and the PCM synced together, off
- * this cycle's critical path, with that overrun risk analysed — designed in
- * #727, not smuggled in here. The comment this replaces claimed the checked
- * close made unflushed bytes un-renameable; it never did, and overclaiming
- * was the actual defect. */
+ * The sync stays off this cycle deliberately. On ext4 data=ordered an fsync
+ * here commits the journal transaction carrying the open part's block
+ * allocations too, so it would drag PCM writeback onto this cycle
+ * synchronously, and the capture rings hold only
+ * LE_PERF_RING_SECONDS_DEFAULT. An SD garbage-collection stall past that
+ * inside one cycle overruns master_ring and writes zero-filled silence into
+ * the take: the #710 defect again (#726 tried it and was reverted). Whether
+ * the checkpoint thread's own syncs ever stall this cycle that long is what
+ * #727's appliance bench take measures with a_perf_zero_filled_frames. */
 
 /* Writes every byte or reports failure — a short write is a real possibility
  * on a filling disk, and a partially-written temp file must never be renamed
@@ -713,10 +710,12 @@ typedef struct le_pd_gap {
  * its file has been fclose'd, so a reader never sees an entry naming a file
  * whose last bytes are still sitting in a stdio buffer. That is a VISIBILITY
  * ordering, not a durability one: fclose flushes to the page cache and makes
- * the file complete to other processes, it does not put it on the platter.
- * Nothing in this module fsyncs, on either side (see the durability note above
- * the sidecar's descriptor shims, and #727), so a power cut can still lose a
- * staged layer whose manifest entry survived. `channel`/`slot`/
+ * the file complete to other processes, it does not put it on the device.
+ * Only the checkpoint thread syncs (see the durability note above the
+ * sidecar's descriptor shims), so a power cut can still lose a staged layer
+ * whose manifest entry survived. When recovery has to fall back to the
+ * checkpoint, it drops the layers the checkpoint does not list and counts
+ * them in `layers_dropped`. `channel`/`slot`/
  * `generation` are the same key events.log's LE_PLOG_LAYER_RETIRED entry
  * carries, for a renderer to cross-reference the sample-accurate frame (see
  * layer_staging_ring.h and docs/formats/performance-event-log-format.md). */
@@ -980,9 +979,9 @@ static int le_pd_write(FILE* f, const void* data, size_t bytes) {
  * stream's userspace buffer until an eventual fclose — the file is kept open
  * for the whole capture session, unlike the sidecar's per-cycle
  * open/write/close (#722 moved that off stdio; it was fopen/fclose before).
- * This is a flush to the OS, NOT to the device — no fsync is involved
- * anywhere in this module, on either side (see the durability note above the
- * sidecar's descriptor shims, and #727).
+ * This is a flush to the OS, NOT to the device. Only the checkpoint thread
+ * syncs, every `checkpoint_ms` and off this cycle (see the durability note
+ * above the sidecar's descriptor shims).
  * This IS the ~250 ms flush cadence perf_drain.h documents. Not itself
  * subject to the force-write-failure test hook (le_pd_write already covers
  * the PCM data path; by the time flush would run, either the write already
@@ -1198,8 +1197,8 @@ static int le_pd_settle_held(le_perf_drain* d) {
  * layer_staging_ring.h's documented handoff contract. Only records a
  * manifest entry on success, and only once the file is fclose'd — i.e. once
  * every byte has reached the OS and the file is complete to any other reader,
- * which is not the same as being on the device (no fsync here or anywhere else
- * in this module) — see le_pd_layer_manifest_entry's doc comment for why. */
+ * which is not the same as being on the device (only the next checkpoint
+ * syncs it) — see le_pd_layer_manifest_entry's doc comment for why. */
 static int le_pd_write_staged_layer(le_perf_drain* d,
                                     le_staged_layer* entry) {
   char filename[64];
