@@ -63,9 +63,10 @@ struct Rgb { uint8_t r, g, b; };
 // the full pill three times (CLEAR_HOLD, #1534; still protocol 12, see
 // pedal_link.h). 2.7: reads the light sensor on J22 and reports it
 // (AMBIENT), and shows the pills and the ring at the app's LED_LEVEL (#1564;
-// still protocol 12).
+// still protocol 12). 2.8: the pills have no current limit, so a press no
+// longer dims the others (#1957; still protocol 12).
 static const uint8_t FW_MAJOR = 2;
-static const uint8_t FW_MINOR = 7;
+static const uint8_t FW_MINOR = 8;
 
 // ---- pin map (console_board.py GPIO table) ---------------------------------
 static const uint8_t PIN_LINK_TX = 16, PIN_LINK_RX = 17;
@@ -137,11 +138,12 @@ static bool pillReadsRed(Rgb c) {
 // When a pill leaves the queue and stays lit, it blends from its last fill
 // to the diffused curve over this long.
 static const unsigned long PILL_SETTLE_MS = 300;
-// Limit the whole pill chain to ~471 mA of color-channel current using the
-// conservative 20 mA/channel model. The ring now has its own supply branch and
-// its own budget on the ring carrier. This is a planning model, not measured
-// consumption.
-static const uint32_t PILL_CHANNEL_BUDGET = 6000;
+// The pills are drawn as the app colours them, with no current limit
+// (#1957). A limit that dims every pill when the total rises made a press
+// flicker the others. The most they can draw is all ten white on the curve
+// above, about 2.07 A on the conservative 20 mA/channel model, which the v3
+// board's pill power bar and the BUCK_AUX budget carry. The ring has its own
+// supply branch and its own budget on the ring carrier.
 // DMA keeps interrupts available throughout the 80-pixel transfer.
 NeoPixelBus<NeoGrbFeature, Rp2040x4Pio1Ws2812xMethod> ind(IND_N, PIN_IND);
 
@@ -869,7 +871,6 @@ static unsigned long g_pillSettleAt[PEDAL_BTN_COUNT];
 static bool renderIndicators() {
   const unsigned long now = millis();
   RgbColor desired[IND_N];
-  uint32_t channelTotal = 0;
   // A fill no message has refreshed is over, and forgotten, so it cannot
   // come back with a later frame or when millis() wraps.
   if (g_clearHold.button != 0 && now - g_clearHoldAtMs >= PEDAL_LINK_CLEAR_HOLD_STALE_MS) {
@@ -921,7 +922,7 @@ static bool renderIndicators() {
     const unsigned long settled = now - g_pillSettleAt[group];
     if (!lit || settled >= PILL_SETTLE_MS) g_pillSettling[group] = false;
     // Preserve calibrated color ratios and the tested spatial curve, with no
-    // extra gamma/dimmer. The total-current budget only dims crowded patterns.
+    // extra gamma/dimmer.
     const uint32_t corrected = rgb(color.r, color.g, color.b);
     for (uint8_t pixel = 0; pixel < PILL_PIXELS; ++pixel) {
       uint8_t level = (uint8_t)(PILL_PEAK * PILL_WEIGHTS[pixel] / 255.0f + 0.5f);
@@ -967,21 +968,14 @@ static bool renderIndicators() {
         value = clearFlashOn ? RgbColor(clearInk[0], clearInk[1], clearInk[2]) : RgbColor(0);
       }
       desired[pillPixelIndex(group, pixel)] = value;
-      channelTotal += value.R + value.G + value.B;
     }
   }
   const uint8_t output = ring_link::outputLevel(g_ledLevel, g_haveFrame && g_frame.dimmed);
   bool changed = false;
   for (uint8_t pixel = 0; pixel < IND_N; ++pixel) {
     RgbColor value = desired[pixel];
-    if (channelTotal > PILL_CHANNEL_BUDGET) {
-      value.R = (uint32_t)value.R * PILL_CHANNEL_BUDGET / channelTotal;
-      value.G = (uint32_t)value.G * PILL_CHANNEL_BUDGET / channelTotal;
-      value.B = (uint32_t)value.B * PILL_CHANNEL_BUDGET / channelTotal;
-    }
     // The app's LED level (#1564), and then the idle dim with the screens
-    // (#1349), both after the budget so a crowded frame dims by the same
-    // share as a sparse one.
+    // (#1349).
     ring_link::scalePixel(value.R, value.G, value.B, output);
     if (ind.GetPixelColor(pixel) != value) {
       ind.SetPixelColor(pixel, value);

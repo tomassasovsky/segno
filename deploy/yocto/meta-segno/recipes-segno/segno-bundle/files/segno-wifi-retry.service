@@ -2,7 +2,7 @@
 Description=Segno: retry the saved WiFi network until it connects, at boot and after a drop (#824, #1326, #1337)
 # After NM is up; the script itself waits a settle period, so by the time it
 # checks, the first auto-activation has either succeeded or is in flight.
-# Started again by the NetworkManager dispatcher hook when wlan0 goes down
+# Started again by the NetworkManager dispatcher hook when the Wi-Fi device goes down
 # while the console runs (#1337); a start while it runs is a no-op.
 After=NetworkManager.service
 Wants=NetworkManager.service

@@ -2645,7 +2645,7 @@ void main() {
       test('Bank still switches banks', () async {
         await stomp(PedalButton.bank);
         expect(cubit.state.activeBank, 1);
-        expect(cubit.state.cursor, 4);
+        expect(cubit.state.cursor, 0); // the selection stays (#1960)
       });
 
       test('the encoder still drives master gain', () async {
@@ -2739,14 +2739,16 @@ void main() {
         expect(cubit.state.activeBank, 1); // out-of-range ignored
       });
 
-      test('toggleBankWithCursor moves the cursor to the new bank base', () {
-        cubit.toggleBankWithCursor();
+      test('toggleBank switches the bank and keeps the cursor (#1960)', () {
+        cubit
+          ..selectTrack(2)
+          ..toggleBank();
         expect(cubit.state.activeBank, 1);
-        expect(cubit.state.cursor, 4);
+        expect(cubit.state.cursor, 2);
 
-        cubit.toggleBankWithCursor();
+        cubit.toggleBank();
         expect(cubit.state.activeBank, 0);
-        expect(cubit.state.cursor, 0);
+        expect(cubit.state.cursor, 2);
       });
     });
 
@@ -2992,6 +2994,89 @@ void main() {
           0,
           1,
         }, reason: 'parked with the latch');
+      });
+
+      // #1957: a deselected track comes back from a parked Rec/Play running
+      // but muted (the engine resumes everything). The next Stop must not
+      // save it: its parked LED is dark, so Rec/Play must leave it out, and a
+      // press on it must bring it in, not take it out.
+      group('a muted running track (#1957)', () {
+        const playing = [
+          Track(state: TrackState.playing, lengthFrames: 48000),
+          Track(channel: 1, state: TrackState.playing, lengthFrames: 48000),
+          Track(
+            channel: 3,
+            state: TrackState.playing,
+            lengthFrames: 48000,
+            muted: true,
+          ),
+        ];
+        const parked = [
+          Track(state: TrackState.stopped, lengthFrames: 48000),
+          Track(channel: 1, state: TrackState.stopped, lengthFrames: 48000),
+          Track(
+            channel: 3,
+            state: TrackState.stopped,
+            lengthFrames: 48000,
+            muted: true,
+          ),
+        ];
+
+        test('is not saved by Stop, and Rec/Play leaves it muted', () {
+          setEngine(_tracksWith(playing));
+          cubit
+            ..toggleMode() // Mute while running
+            ..stop();
+          expect(cubit.state.parkedResume, {0, 1});
+          verify(() => looper.stopTrack(channel: 3)).called(1);
+          setEngine(_tracksWith(parked));
+          cubit.recPlay();
+          verify(() => looper.play()).called(1);
+          verify(() => looper.play(channel: 1)).called(1);
+          verifyNever(() => looper.setMute(muted: false, channel: 3));
+        });
+
+        test('a press on it while parked brings it back', () {
+          setEngine(_tracksWith(playing));
+          cubit
+            ..toggleMode()
+            ..stop();
+          setEngine(_tracksWith(parked));
+          cubit.trackPressed(3);
+          expect(cubit.state.parkedResume, {0, 1, 3});
+          verify(() => looper.setMute(muted: false, channel: 3)).called(1);
+        });
+
+        test('a mute no poll has shown yet keeps the track out', () {
+          setEngine(
+            _tracksWith(const [
+              Track(state: TrackState.playing, lengthFrames: 48000),
+              Track(channel: 1, state: TrackState.playing, lengthFrames: 48000),
+            ]),
+          );
+          when(() => looper.trackMuted(1)).thenReturn(true);
+          cubit
+            ..toggleMode()
+            ..stop();
+          expect(cubit.state.parkedResume, {0});
+        });
+
+        test('Stop with nothing audible saves nothing: Rec/Play brings back '
+            'every take', () {
+          setEngine(
+            _tracksWith(const [
+              Track(
+                state: TrackState.playing,
+                lengthFrames: 48000,
+                muted: true,
+              ),
+            ]),
+          );
+          cubit
+            ..toggleMode()
+            ..stop();
+          expect(cubit.state.parkedResume, isEmpty);
+        });
       });
 
       test('a second Rec/Play during a deferred launch keeps the deselected '
@@ -3387,8 +3472,10 @@ void main() {
           // freezes).
           verify(() => looper.stopTrack()).called(1);
           verify(() => looper.stopTrack(channel: 1)).called(1);
-          // The latch captured the running set at INTENT time.
-          expect(cubit.state.parkedResume, {0, 1});
+          // The latch captured the heard running set at INTENT time: the
+          // muted track's parked LED is dark, so Rec/Play leaves it out
+          // (#1957).
+          expect(cubit.state.parkedResume, {0});
         },
       );
 
@@ -4215,9 +4302,11 @@ void main() {
           verify(() => looper.setMute(muted: false)).called(1);
           verify(() => looper.setMute(muted: false, channel: 1)).called(1);
 
-          // The whole-rig reset: overlay home again.
+          // The whole-rig reset: Record again, the selection and its bank
+          // kept (#1960).
           expect(cubit.state.mode, InteractionMode.record);
-          expect(cubit.state.cursor, 0);
+          expect(cubit.state.cursor, 5);
+          expect(cubit.state.activeBank, 1);
           expect(cubit.state.parkedResume, isEmpty);
 
           // The unmute persists per lane (lane 0 default when none reported).
@@ -4743,13 +4832,13 @@ void main() {
         expect(cubit.state.mode, InteractionMode.mute);
       });
 
-      test('Bank toggles the active bank and moves the cursor', () async {
+      test('Bank toggles the active bank and keeps the cursor', () async {
         transport
           ..press(PedalButton.bank, down: true)
           ..press(PedalButton.bank, down: false);
         await pumpEventQueue();
         expect(cubit.state.activeBank, 1);
-        expect(cubit.state.cursor, 4);
+        expect(cubit.state.cursor, 0);
       });
 
       test('a track press targets the visible bank base', () async {
@@ -5037,7 +5126,7 @@ void main() {
           await release(PedalButton.track1);
           expect(chainEnabled[3], isTrue);
           expect(transport.lastFrame?.trackLeds[0], isNot(PedalTrackLed.off));
-          cubit.toggleBankWithCursor();
+          cubit.toggleBank();
           expect(cubit.state.activeBank, 1);
           expect(transport.lastFrame?.trackLeds[4], PedalTrackLed.off);
           await stomp(PedalButton.track1);

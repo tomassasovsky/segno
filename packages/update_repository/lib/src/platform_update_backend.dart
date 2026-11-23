@@ -42,6 +42,14 @@ abstract interface class PlatformUpdateBackend {
   /// longer be applied, so the check can offer that build again.
   Future<UpdateRecovery> recover();
 
+  /// The version of an install that was cut off before it was staged, or
+  /// `null` when there is none. [recover] reports it at startup; this asks
+  /// again later, once an install the installer was still running has ended.
+  /// On the appliance the helper first stages an install that RAUC finished
+  /// after the app that started it was gone, so a finished install reads as
+  /// staged ([stagedVersion]) rather than cut off. Never throws.
+  Future<Version?> interruptedInstall();
+
   /// Forgets an install that was cut off, once it is retried or dropped.
   Future<void> clearInterrupted();
 

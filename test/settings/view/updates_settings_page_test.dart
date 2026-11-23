@@ -12,6 +12,7 @@ import 'package:segno/appliance/power_off/power_gate.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/view/loop_settings/loop_select.dart';
+import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/performance/cubit/performance_recorder_cubit.dart';
 import 'package:segno/session/cubit/session_cubit.dart';
 import 'package:segno/settings/view/updates_settings_page.dart';
@@ -200,10 +201,8 @@ void main() {
         ),
       );
 
-      await tester.tap(
-        find.byKey(const Key('updates_download')),
-        warnIfMissed: false,
-      );
+      // The panel says RAUC is installing, so the offer is not shown.
+      expect(find.byKey(const Key('updates_download')), findsNothing);
       await tester.tap(
         find.byKey(const Key('updates_check')),
         warnIfMissed: false,
@@ -225,6 +224,79 @@ void main() {
       await tester.tap(find.byKey(const Key('updates_download')));
       await tester.pumpAndSettle();
       verify(update.startDownload).called(1);
+    });
+
+    testWidgets('Installing: after an app restart mid-install the panel says '
+        'RAUC is still installing, with no Cancel, until it lands in Ready to '
+        'install (#1507)', (tester) async {
+      await pump(
+        tester,
+        _running.copyWith(
+          phase: UpdatePhase.interrupted,
+          interrupted: Version.parse('1.1.0'),
+          raucInstalling: true,
+        ),
+      );
+      final l10n = l10nOf(tester);
+
+      expect(title(l10n.updatesPanelInstalling), findsOneWidget);
+      expect(title(l10n.updatesPanelPaused), findsNothing);
+      expect(find.text(l10n.updatesPageVersion('1.1.0')), findsOneWidget);
+      expect(find.text(l10n.updatesPageRaucInstalling), findsOneWidget);
+      expect(
+        tester
+            .widget<LoopNote>(find.byKey(const Key('updates_status_sentence')))
+            .tone,
+        LoopNoteTone.plain,
+      );
+      expect(find.byKey(const Key('updates_retry')), findsNothing);
+      expect(find.byKey(const Key('updates_discard')), findsNothing);
+      expect(find.byKey(const Key('updates_cancel')), findsNothing);
+      // The panel's own state, not a dimmed one.
+      expect(
+        tester
+            .widget<Opacity>(
+              find
+                  .ancestor(
+                    of: find.byKey(const Key('updates_status')),
+                    matching: find.byType(Opacity),
+                  )
+                  .first,
+            )
+            .opacity,
+        1,
+      );
+      expect(
+        tester
+            .widget<LoopSelect<bool>>(find.byKey(const Key('updates_channel')))
+            .enabled,
+        isFalse,
+      );
+
+      // RAUC finished; the helper staged what it wrote.
+      await emit(
+        tester,
+        _running.copyWith(
+          phase: UpdatePhase.staged,
+          available: UpdateManifest(version: _offer.version, bundle: ''),
+        ),
+      );
+      expect(title(l10n.updatesPanelReady), findsOneWidget);
+      expect(focused(tester, 'updates_install_restart'), isTrue);
+    });
+
+    testWidgets('Installing: an install RAUC did not finish comes back as '
+        'Update paused, with Retry focused (#1507)', (tester) async {
+      final paused = _running.copyWith(
+        phase: UpdatePhase.interrupted,
+        interrupted: Version.parse('1.1.0'),
+      );
+      await pump(tester, paused.copyWith(raucInstalling: true));
+      final l10n = l10nOf(tester);
+
+      await emit(tester, paused);
+      expect(title(l10n.updatesPanelPaused), findsOneWidget);
+      expect(focused(tester, 'updates_retry'), isTrue);
     });
 
     testWidgets('a manifest without a size shows the version alone', (

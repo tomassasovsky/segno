@@ -42,7 +42,6 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1797 | A finished export to a FAT stick is on the device: copies and the export end with a volume sync | in-review | blocked-verify | `claude/usb-export-durable-1797` |
 | #1367 | Start helper programs with posix_spawn, never fork the app | in-review | merge-gate | `claude/no-fork-1367` |
 | #1337 | Retry Wi-Fi after a runtime drop, holding off while performing | in-review | blocked-verify | `claude/wifi-runtime-retry-1337` |
-| #1352 | Console negotiates the charger's full 20 V current, with a power-cycle prompt | in-review | blocked-verify | `claude/pd-provisioning-1352` |
 | #1077 | Song queue completion | in-review | blocked-verify | `claude/song-queue-comet-1077` |
 | #1323 | Song and Band: one section at a time | in-review | merge-gate | `claude/song-one-section-1323` |
 | #1143 | Replay audio-history changes in performance stems | build | merge-gate | `claude/stem-history-replay-1143` |
@@ -54,7 +53,6 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1202 | Shared render recipe, Bounce, Save selected | plan | merge-gate | `claude/render-1202-*` |
 | #1228 | MIDI clock | plan | merge-gate | `claude/midi-clock-1228-*` |
 | #1270 | Device and appliance pages (Parts 6, 7, 9, 11, 12 shipped; plan approved 2026-10-26 and refreshed; Q5 answered: refuse an Apply over the effects budget; P1, P2, P3a, P3b, P4 and P5 merged; P8 update from USB in review; all parts built; on-device checks listed on the issue) | build | merge-gate | `claude/device-pages-*1270*` |
-| #1342 | Ring carrier firmware updates from the console | in-review | blocked-verify | `claude/ring-update-1342` |
 | #1590, #1672 | Screen audits: every fix is on master; the Penpot writeback listed under each PR's Design writeback is owed (no Penpot tab with the MCP plugin on 2026-11-19) | build | auto | none |
 | #1540 | Drive pedals' aliasing at 48 kHz: four kinds oversampled (#1552); the owner's blind pairs decide whether the built-in Drive is oversampled too | build | plan-gate | `claude/drive-alias-1540` |
 | #1498 | Restart and shut down also wait for RAUC's own install, after an app restart | in-review | blocked-verify | `claude/rauc-power-gate-1498` |
@@ -62,6 +60,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1914 | The app's audio callback runs late on screen changes and take starts: it waits on memory (Ed's Racks overflow the caches). Parts 1-4 and 6 merged (#1925, #1926, #1932, #1933, #1935); part 5 in review (Mesa keeps a page transition's render target, made at startup). Steady playback and take starts are clean on the console; the rare xruns were the bench's own reads of the app's memory | in-review | plan-gate | `claude/cb-overhead-1914-p5` |
 | #1724 | Effects budget from the app's measured headroom: 10-minute untraced in-app ladder at 48 kHz / 32 (build 279); track job 200 → 300 ns, chains on the callback charged 2.5× (`kFxSerialFactor`); 4 inputs + 7 tracks or + 1 output rack fit | in-review | auto | `claude/fx-headroom-1724-p3` |
 | #1515 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track and lane chains) is #1729 | build | plan-gate | `claude/fx-multicore-1515-p1b` |
+| #1963 | Wi-Fi tooling manages a USB Wi-Fi adapter when one is plugged in, else `wlan0` (`segno-wifi-ctl iface`); profiles follow the device; checked on the console over Ethernet with `wlan1` up | in-review | blocked-verify | `claude/wifi-follow-adapter-1963` |
 | #1816 | Console WiFi against an ASUS RT-AX89X with 802.11ax on: firmware already matches Pi OS; brcmfmac options aligned with Pi OS and a troubleshooting note; failure not reproduced, issue stays open until it recurs | in-review | auto | `claude/wifi-firmware-1816` |
 
 ---
@@ -85,15 +84,40 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 - Not checked on the console: a September take's DAW package after the
   update.
 
+## November 2026 CI fails a firmware change that keeps the board's version (#1969)
+
+- The boot flashers flash a board only when its version differs from the
+  image's, so #1967's pill fix shipped in build .289 under 2.7 and stayed
+  off the board until #1968 raised it to 2.8.
+- `tool/check_firmware_version_bump.dart`, in the `analyze` job on every
+  pull request and master push: a change under
+  `firmware/console_board` or `firmware/ring_board` must raise that board's
+  `FW_MAJOR.FW_MINOR`, and one under `firmware/libraries` both. Markdown,
+  the console's `pi5-swd.cfg` and C/C++ edits to comments or whitespace
+  only are exempt. Rule and exemptions: `firmware/console_board/README.md`,
+  "Firmware versions"; tests: `test/tool/check_firmware_version_bump_test.dart`.
+- Run over master's first-parent commits that touch the board sources, it
+  flags #1967 (195b9d463) and three earlier changes that kept the version
+  (15e0db4f1, be5712811, the #1534 merge e995e79de), and passes #1968 and
+  the README-only commits. History has no comment-only C/C++ commit; the
+  comment exemption is covered by the unit tests only.
+- On a pull request it compares the merge commit with HEAD^1; on a push to
+  master, with the commit master was on before the push. Arduino core and
+  library pin changes are outside `firmware/` and need a manual bump.
+
 ## November 2026 A recording take shows its input, waveform, progress and bars (#1936)
 
 - Plan: `docs/plan/2026-11-21-feat-recording-visuals-plan.md` (decisions
   D1 to D6 approved as recommended on 2026-11-21; "As built" lists the
   departures). Five stacked PRs, #1938 to the one closing #1936, each with
   its design half on Penpot pages 05 and 25 (segno-design #28 to #32).
-- A track meters its input while it records or overdubs, and while it is
-  the empty track Record/Play records next; the input bar of an empty
-  track is grey (`TrackLevels.input`, the lanes' inputs after trim).
+- A track meters its input while it records, and while it is the empty
+  track Record/Play records next; the input bar of an empty track is grey
+  (`TrackLevels.input`, the lanes' inputs after trim). An overdubbing track
+  meters the louder of its playback and its input (`MeterSource.both`), and
+  its waveform draws each bucket from the sample the overdub writes, the
+  loop and the new layer together, on the pass it records (#1955,
+  segno-design#35).
 - The engine publishes each recording take's captured frames and its
   target (`capture_frames`, `capture_target_frames`): the progress bar
   fills toward a known end, and the bars slot reads `2 / 4` bars, `3` bars,
@@ -1429,6 +1453,18 @@ a take's chains, where it used to hold each effect as it stood at arm.
   with no Pre entry records clean. The rendered tail is the Pre run's. A
   re-amp the Effects page did not weigh that does not fit is held and named
   by the standing notice.
+- Post entries that do not fit (the owner's option A, 2026-11-19): at the
+  press, a take whose input Post entries would not fit beside the rest of
+  the rig (and the takes pressed before it that have not landed,
+  `_takeChargesPending`) copies them onto its lane at Pre. Its lane then
+  carries no Post entry, so the engine records the input chain's whole
+  output into the image (the tap point is the lane's own split, as for an
+  overdub over a dry take), and the take sounds as heard; those effects stop
+  with it on Stop. Its track says so (`fxTakePrinted`, "Effects recorded").
+  Post entries that fit still run live. A lane playing its image is never
+  held: not when its take lands (`_holdUnheardTake`), not by R2
+  (`_fitRig`). An input chain that is all Post and does not fit is recorded
+  heard, where before it recorded clean and could be held dry.
 - Local tool: `SEGNO_HEARD_FORCE=1` runs the whole native core suite with
   every take recording an image of an input with no chain, which must equal
   the clean take after every callback.
@@ -1978,6 +2014,24 @@ a take's chains, where it used to hold each effect as it stood at arm.
   catch SIGUSR1, whose default action would end it. The app keeps five
   captures per screen.
 - Device check owed: run it on the console under both renderers.
+
+## November 2026 Updates page after an app restart mid-install (SEG-18, #1507)
+
+- While RAUC writes an install whose helper is gone (`raucInstalling`), the
+  Updates status panel says Installing, with the attempt's version and no
+  actions, instead of a dimmed Update paused.
+- The helper's `attempt` first stages an install RAUC finished on its own:
+  in the boot that recorded the attempt (`update-attempt-boot-id` next to
+  the marker), with RAUC idle, every inactive slot's `rauc status` entry is
+  `ok` for the attempt's version and was written after the attempt began.
+  The cubit asks it once RAUC goes idle, so the page lands in Ready to
+  install and Restart tries the new slot. Anything else stays Update paused.
+- The app asks RAUC before `recover()` at startup; Retry, Cancel, Check and
+  the channel never drop the attempt while RAUC still writes it.
+- `segno-ota-check` hands its install to `segno-update-ctl install`, so it
+  has the busy check, the attempt marker and the staged-marker handling too.
+- Device check owed: restart the app past 40 % of an install and watch the
+  page go from Installing to Ready to install.
 
 ## November 2026 Power screens only when they say something (#1553)
 
@@ -3415,6 +3469,10 @@ travel and diffuser bridge anchoring still require validation; #1074 stays
   joins. **Off by default**, so a shipped build can never
   present invented networks as real ones; the factory tests assert the flag
   from both sides, so the branch is covered by the ordinary CI run.
+- **Seeing what the pedal shows:** every change of the pedal's lights is a
+  `pedal frame:` line in the app's journal (`ssh root@<console> journalctl
+  -u segno.service | grep 'pedal frame'`): the mode, the ring colour and each
+  lit switch with its colour, at most 20 lines a second (#1957).
 - **Seeing what the console's screens draw:** `ssh root@<console>
   segno-capture` prints one PNG path per screen under `/data/capture`; copy
   them with `scp 'root@<console>:/data/capture/*.png' .`. It is Flutter's

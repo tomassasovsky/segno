@@ -56,6 +56,7 @@ case "\$*" in
     *"-g connection.timestamp connection show uuid "*) echo "\$SAVED_TS" ;;
     *"-g 802-11-wireless-security.psk connection show uuid "*) echo "\${SAVED_PSK:-}" ;;
     *"-g connection.autoconnect connection show uuid "*) echo yes ;;
+    *"-g connection.interface-name connection show uuid "*) echo wlan0 ;;
     *"device wifi list"*) [ -n "\${LIST:-}" ] && printf '%s\n' "\$LIST" ;;
     *"connection up"*)
         if [ -n "\${STORED_RIGHT:-}" ] && [ ! -f "$work/cleared" ]; then

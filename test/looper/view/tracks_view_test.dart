@@ -1647,9 +1647,9 @@ void main() {
       );
     }
 
-    group('the meter follows the input (#1936)', () {
-      bool followsInput(WidgetTester tester) =>
-          tester.widget<TrackPeakMeter>(find.byType(TrackPeakMeter)).input;
+    group('what the meter follows (#1936, #1955)', () {
+      MeterSource source(WidgetTester tester) =>
+          tester.widget<TrackPeakMeter>(find.byType(TrackPeakMeter)).source;
 
       Future<void> pumpState(
         WidgetTester tester,
@@ -1671,14 +1671,14 @@ void main() {
 
       testWidgets('on the selected empty track', (tester) async {
         await pumpState(tester, TrackState.empty, selected: true);
-        expect(followsInput(tester), isTrue);
+        expect(source(tester), MeterSource.input);
       });
 
       testWidgets('on an empty track with a record arm waiting', (
         tester,
       ) async {
         await pumpState(tester, TrackState.empty, pending: true);
-        expect(followsInput(tester), isTrue);
+        expect(source(tester), MeterSource.input);
       });
 
       testWidgets("a recording take's bars slot counts the take", (
@@ -1695,23 +1695,28 @@ void main() {
 
       testWidgets('not on another empty track', (tester) async {
         await pumpState(tester, TrackState.empty);
-        expect(followsInput(tester), isFalse);
+        expect(source(tester), MeterSource.playback);
       });
 
-      testWidgets('while recording and overdubbing', (tester) async {
+      testWidgets('the input while recording', (tester) async {
         await pumpState(tester, TrackState.recording);
-        expect(followsInput(tester), isTrue);
+        expect(source(tester), MeterSource.input);
+      });
+
+      testWidgets('the loop and the input together while overdubbing', (
+        tester,
+      ) async {
         await pumpState(tester, TrackState.overdubbing);
-        expect(followsInput(tester), isTrue);
+        expect(source(tester), MeterSource.both);
       });
 
       testWidgets('not while playing or stopped, selected or not', (
         tester,
       ) async {
         await pumpState(tester, TrackState.playing, selected: true);
-        expect(followsInput(tester), isFalse);
+        expect(source(tester), MeterSource.playback);
         await pumpState(tester, TrackState.stopped, selected: true);
-        expect(followsInput(tester), isFalse);
+        expect(source(tester), MeterSource.playback);
       });
 
       testWidgets('draws the input in the record colour while recording', (

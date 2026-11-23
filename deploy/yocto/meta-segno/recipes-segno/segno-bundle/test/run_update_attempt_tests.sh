@@ -35,8 +35,14 @@ setup() {
     echo "boot-a" > "$work/boot_id"
     echo "0.6.0" > "$work/state/build-version"
 
-    cat > "$work/bin/rauc" <<'STUB'
+    # `rauc status` answers from "$work/rauc-status.json" (a test writes
+    # it with slot_status), and fails when there is none.
+    cat > "$work/bin/rauc" <<STUB
 #!/bin/sh
+if [ "\$1" = status ]; then
+    cat "$work/rauc-status.json" 2>/dev/null || exit 1
+    exit 0
+fi
 echo "100% installing done."
 exit 0
 STUB
@@ -116,6 +122,43 @@ check() {
 
 attempt() { cat "$work/state/segno/update-attempt" 2>/dev/null; }
 has_attempt() { [ -f "$work/state/segno/update-attempt" ] && echo yes || echo no; }
+attempt_boot() { cat "$work/state/segno/update-attempt-boot-id" 2>/dev/null; }
+staged() { cat "$work/state/ota-staged-version" 2>/dev/null; }
+has_file() { [ -e "$1" ] && echo yes || echo no; }
+
+# An attempt as the helper records it: the version, and the boot it began in.
+write_attempt() {
+    mkdir -p "$work/state/segno"
+    echo "$1" > "$work/state/segno/update-attempt"
+    echo "$2" > "$work/state/segno/update-attempt-boot-id"
+}
+
+# What `rauc status --detailed --output-format=json` prints on a console
+# booted from slot A: the inactive group (firmware.1, rootfs.1) carries
+# STATUS for VERSION, written at TIMESTAMP; the booted group an old 0.6.0.
+# FIRMWARE_STATUS defaults to STATUS.
+write_rauc_status() {
+    local status=$1 version=$2 timestamp=$3 firmware_status=${4:-$1}
+    cat > "$work/rauc-status.json" <<JSON
+{"compatible":"segno-rpi5","booted":"A","boot_primary":"rootfs.1",
+ "slots":[
+  {"firmware.0":{"class":"firmware","state":"active","parent":"rootfs.0",
+    "slot_status":{"bundle":{"version":"0.6.0"},"status":"ok",
+      "installed":{"timestamp":"2026-01-01T00:00:00Z","count":1}}}},
+  {"rootfs.0":{"class":"rootfs","state":"booted","bootname":"A",
+    "slot_status":{"bundle":{"version":"0.6.0"},"status":"ok",
+      "installed":{"timestamp":"2026-01-01T00:00:00Z","count":1}}}},
+  {"firmware.1":{"class":"firmware","state":"inactive","parent":"rootfs.1",
+    "slot_status":{"bundle":{"version":"$version"},"status":"$firmware_status",
+      "installed":{"timestamp":"$timestamp","count":2}}}},
+  {"rootfs.1":{"class":"rootfs","state":"inactive","bootname":"B",
+    "slot_status":{"bundle":{"version":"$version"},"status":"$status",
+      "installed":{"timestamp":"$timestamp","count":2}}}}
+ ]}
+JSON
+}
+
+now_utc() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 work_dirs() { find "$work/tmp" -mindepth 1 -maxdepth 1 | wc -l | tr -d ' '; }
 
 echo "a successful install leaves no attempt marker"
@@ -165,6 +208,7 @@ for _ in $(seq 1 100); do
 done
 check "the download started" yes "$([ -f "$work/curl-started" ] && echo yes || echo no)"
 check "the attempt is recorded while it runs" "0.7.0" "$(attempt)"
+check "with the boot it began in" "boot-a" "$(attempt_boot)"
 started=$(date +%s)
 kill -TERM "$helper"
 wait "$helper"; rc=$?
@@ -189,7 +233,101 @@ check "attempt prints the version" '{"version":"0.7.0"}' "$out"
 ctl clear-attempt 2>"$work/stderr"; rc=$?
 check "clear-attempt exits 0" 0 "$rc"
 check "clear-attempt forgets it" no "$(has_attempt)"
+check "and its boot id" no "$(has_file "$work/state/segno/update-attempt-boot-id")"
 check "attempt then prints {}" '{}' "$(ctl attempt 2>/dev/null)"
+teardown
+
+# --- an install RAUC finished after its helper was killed (#1507) -----------
+
+echo "RAUC finished the install after its helper was gone: attempt stages it"
+setup
+write_attempt 0.7.0 boot-a
+write_rauc_status ok 0.7.0 "$(now_utc)"
+out=$(ctl attempt 2>"$work/stderr"); rc=$?
+check "exits 0" 0 "$rc"
+check "reports nothing cut off" '{}' "$out"
+check "stages the version" "0.7.0" "$(staged)"
+check "records this boot's id" "boot-a" \
+    "$(cat "$work/state/ota-staged-boot-id" 2>/dev/null)"
+check "sets the pending flag" yes "$(has_file "$work/state/update-pending")"
+check "ends the attempt" no "$(has_attempt)"
+check "and its boot id" no "$(has_file "$work/state/segno/update-attempt-boot-id")"
+check "says so" yes \
+    "$(grep -q 'after its helper was gone' "$work/stderr" && echo yes || echo no)"
+teardown
+
+echo "RAUC still writing: attempt reports the install, stages nothing"
+setup
+write_attempt 0.7.0 boot-a
+echo installing > "$work/operation"
+write_rauc_status pending 0.7.0 "$(now_utc)"
+out=$(ctl attempt 2>"$work/stderr")
+check "prints the version" '{"version":"0.7.0"}' "$out"
+check "stages nothing" no "$(has_file "$work/state/ota-staged-version")"
+check "keeps the attempt" "0.7.0" "$(attempt)"
+teardown
+
+echo "RAUC failed the install: attempt reports it as cut off"
+setup
+write_attempt 0.7.0 boot-a
+write_rauc_status failed 0.7.0 "$(now_utc)"
+out=$(ctl attempt 2>"$work/stderr")
+check "prints the version" '{"version":"0.7.0"}' "$out"
+check "stages nothing" no "$(has_file "$work/state/ota-staged-version")"
+teardown
+
+echo "one slot of the group still pending: attempt reports it as cut off"
+setup
+write_attempt 0.7.0 boot-a
+write_rauc_status ok 0.7.0 "$(now_utc)" pending
+out=$(ctl attempt 2>"$work/stderr")
+check "prints the version" '{"version":"0.7.0"}' "$out"
+check "stages nothing" no "$(has_file "$work/state/ota-staged-version")"
+teardown
+
+echo "an earlier install of the same version: not this attempt's"
+setup
+write_attempt 0.7.0 boot-a
+write_rauc_status ok 0.7.0 "2000-01-01T00:00:00Z"
+out=$(ctl attempt 2>"$work/stderr")
+check "prints the version" '{"version":"0.7.0"}' "$out"
+check "stages nothing" no "$(has_file "$work/state/ota-staged-version")"
+teardown
+
+echo "the slot holds another version: attempt reports it as cut off"
+setup
+write_attempt 0.7.0 boot-a
+write_rauc_status ok 0.6.9 "$(now_utc)"
+out=$(ctl attempt 2>"$work/stderr")
+check "prints the version" '{"version":"0.7.0"}' "$out"
+check "stages nothing" no "$(has_file "$work/state/ota-staged-version")"
+teardown
+
+echo "an attempt from an earlier boot is never staged"
+setup
+write_attempt 0.7.0 boot-z
+write_rauc_status ok 0.7.0 "$(now_utc)"
+out=$(ctl attempt 2>"$work/stderr")
+check "prints the version" '{"version":"0.7.0"}' "$out"
+check "stages nothing" no "$(has_file "$work/state/ota-staged-version")"
+teardown
+
+echo "an attempt with no boot id (an older image's) is never staged"
+setup
+write_attempt 0.7.0 boot-a
+rm "$work/state/segno/update-attempt-boot-id"
+write_rauc_status ok 0.7.0 "$(now_utc)"
+out=$(ctl attempt 2>"$work/stderr")
+check "prints the version" '{"version":"0.7.0"}' "$out"
+check "stages nothing" no "$(has_file "$work/state/ota-staged-version")"
+teardown
+
+echo "rauc status fails: attempt reports the install as cut off"
+setup
+write_attempt 0.7.0 boot-a
+out=$(ctl attempt 2>"$work/stderr")
+check "prints the version" '{"version":"0.7.0"}' "$out"
+check "stages nothing" no "$(has_file "$work/state/ota-staged-version")"
 teardown
 
 echo "RAUC still installing an earlier run's install: install refuses first"

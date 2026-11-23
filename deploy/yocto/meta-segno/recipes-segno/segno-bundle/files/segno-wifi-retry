@@ -19,11 +19,14 @@
 # itself, at boot and after a drop (#1326, #1337).
 #
 # A runtime drop gets the same treatment: the NetworkManager dispatcher hook
-# (segno-wifi-dispatch) starts this service when wlan0 goes down.
+# (segno-wifi-dispatch) starts this service when the Wi-Fi device goes down.
 #
-# While wlan0 is disconnected, it activates a saved network the owner lets
-# auto-join, with backoff, until it connects or RETRY_FOR seconds have
-# passed. It never writes a profile. It stands down for good when the console
+# The device is the one segno-wifi-ctl manages: a USB Wi-Fi adapter when one
+# is plugged in, else the built-in wlan0 (#1963). While it is disconnected,
+# this activates a saved network the owner lets auto-join, with backoff,
+# until it connects or RETRY_FOR seconds have passed. It never writes a
+# profile itself; segno-wifi-ctl activate pins the one it brings up to the
+# device. It stands down for good when the console
 # is online, the radio is off, the owner disconnected by hand, or nothing
 # saved may auto-join.
 #
@@ -64,8 +67,11 @@ BACKOFF_MAX="${SEGNO_WIFI_RETRY_BACKOFF_MAX:-60}" # longest pause between attemp
 POLL="${SEGNO_WIFI_RETRY_POLL:-2}"                # seconds between checks while NM is mid-activation
 SCAN_WAIT="${SEGNO_WIFI_RETRY_SCAN_WAIT:-16}"     # seconds to wait for a saved SSID after rescan
 UP_WAIT="${SEGNO_WIFI_RETRY_UP_WAIT:-20}"         # activation budget for one attempt
-IFACE="${SEGNO_WIFI_IFACE:-wlan0}"
 WIFI_CTL="${SEGNO_WIFI_CTL:-/usr/bin/segno-wifi-ctl}"
+# The device the console manages (segno-wifi-ctl iface, #1963), asked again
+# on every pass: an adapter plugged in or pulled out during the minutes this
+# runs changes it.
+IFACE=
 HOLD_FILE="${SEGNO_WIFI_HOLD_FILE:-/run/segno/wifi-hold}"
 HOLD_POLL="${SEGNO_WIFI_RETRY_HOLD_POLL:-5}"      # seconds between checks while held
 TAB=$(printf '\t')
@@ -77,7 +83,7 @@ command -v nmcli >/dev/null 2>&1 || { log "nmcli not present; nothing to do"; ex
 sleep "$SETTLE"
 deadline=$(( $(date +%s) + RETRY_FOR ))
 
-# wlan0's NM state word: connected, connecting, disconnected, unavailable, ...
+# The Wi-Fi device's NM state word: connected, connecting, disconnected, unavailable, ...
 wifi_state() {
   nmcli -t -f DEVICE,TYPE,STATE device 2>/dev/null \
     | awk -F: -v dev="$IFACE" '$1 == dev && $2 == "wifi" { split($3, w, " "); print w[1]; exit }'
@@ -164,6 +170,12 @@ while :; do
   if [ "$holding" = yes ]; then
     log "performance over; resuming"
     holding=no
+  fi
+
+  managed=${SEGNO_WIFI_IFACE:-$("$WIFI_CTL" iface)}
+  if [ "$managed" != "$IFACE" ]; then
+    IFACE=$managed
+    log "watching $IFACE"
   fi
 
   # The owner turned WiFi off? Their call wins -- retrying into a disabled

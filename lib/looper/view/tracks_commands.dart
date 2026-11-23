@@ -289,9 +289,9 @@ class TracksCommands {
     }
     if (key == LogicalKeyboardKey.keyB) {
       final nextBank = overlay.state.activeBank == 0 ? 1 : 0;
-      // Selecting the other bank's first track moves the cursor and reveals
-      // it — the pedal BANK footswitch semantics, via the same intent.
-      overlay.toggleBankWithCursor();
+      // Reveals the other bank and keeps the selection — the pedal BANK
+      // footswitch semantics, via the same intent (#1960).
+      overlay.toggleBank();
       _announce(l10n.a11yBankSelected(String.fromCharCode(0x41 + nextBank)));
       return KeyEventResult.handled;
     }

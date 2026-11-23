@@ -89,13 +89,20 @@ class AppliancePlatformBackend implements PlatformUpdateBackend {
     _env.clearDirectorySync(stagingDirectory);
     final staged = _readVersion(stagedFile);
     final reason = await _env.reconcileStaged();
-    final attempt = _parse(await _env.updateAttempt());
     return UpdateRecovery(
       rolledBack: reason == 'tryboot-not-taken' && staged != Version.none
           ? staged
           : null,
-      interrupted: attempt == Version.none ? null : attempt,
+      interrupted: await interruptedInstall(),
     );
+  }
+
+  /// The helper's `attempt`, which first stages an install RAUC finished
+  /// after its helper was killed (#1507).
+  @override
+  Future<Version?> interruptedInstall() async {
+    final attempt = _parse(await _env.updateAttempt());
+    return attempt == Version.none ? null : attempt;
   }
 
   @override

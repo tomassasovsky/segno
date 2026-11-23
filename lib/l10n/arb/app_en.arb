@@ -4714,6 +4714,14 @@
     "@fxOverBudget": {
         "description": "Shown when adding an effect would overload the audio processing, so the add was refused."
     },
+    "fxTakePrintedTitle": "This take's Post effects are recorded into it",
+    "@fxTakePrintedTitle": {
+        "description": "On the track's card when a take recorded its input's Post effects into itself because there was no room to run them live (#1713)."
+    },
+    "fxTakePrintedBody": "There was no room to run them live. The take sounds as you heard it, but they stop with it on Stop.",
+    "@fxTakePrintedBody": {
+        "description": "Under fxTakePrintedTitle (#1713)."
+    },
     "fxBindOverBudget": "Not enough processing left for what this switch can turn on",
     "@fxBindOverBudget": {
         "description": "Shown when saving a pedal, MIDI or external switch assignment is refused: the effects it could switch on would not fit the audio processing, so nothing was saved."
@@ -6725,6 +6733,10 @@
     "@noticeOverdubRefused": {
         "description": "Short cause over a refused overdub on the track's card (#1562)."
     },
+    "noticeEffectsRecorded": "Effects recorded",
+    "@noticeEffectsRecorded": {
+        "description": "Short cause over a take that recorded its input's Post effects into itself, on the track's card (#1713)."
+    },
     "noticeNoInput": "No input",
     "@noticeNoInput": {
         "description": "Short cause over a Record with no input on the track's card (#1562)."
@@ -7630,6 +7642,14 @@
     "updatesPanelPaused": "Update paused",
     "@updatesPanelPaused": {
         "description": "Updates page status panel title when an install was cut off."
+    },
+    "updatesPanelInstalling": "Installing",
+    "@updatesPanelInstalling": {
+        "description": "Updates page status panel title while the system installer is still writing an update that was started before the app last restarted."
+    },
+    "updatesPageRaucInstalling": "The update is still installing and cannot be stopped. Restart and Shut down wait until it finishes.",
+    "@updatesPageRaucInstalling": {
+        "description": "Updates page status sentence while the system installer is still writing an update that was started before the app last restarted. There is no Cancel: the install cannot be stopped."
     },
     "updatesPageVersion": "Segno {version}",
     "@updatesPageVersion": {

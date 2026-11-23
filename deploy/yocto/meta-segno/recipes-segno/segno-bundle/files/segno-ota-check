@@ -1,9 +1,10 @@
 #!/bin/sh
 # Segno appliance OTA update check. Polls the device's channel manifest on
-# segno.aquiles.dev, and if a newer signed bundle is published, downloads it,
-# verifies its sha256, and `rauc install`s it to the INACTIVE A/B slot. It does
-# NOT reboot — activation is deferred to a session-safe moment (Phase 4); we just
-# drop a marker the UI / a user action acts on.
+# segno.aquiles.dev, and if a newer signed bundle is published, hands over to
+# `segno-update-ctl install`, the install the app runs, which downloads,
+# verifies and installs it to the INACTIVE A/B slot. It does NOT reboot —
+# activation is deferred to a session-safe moment (Phase 4); the helper drops
+# the markers the UI / a user action acts on.
 #
 # Version model (deliberately simple + RAUC-version-independent):
 #   current = the running image's semver   (/etc/segno/build-version, baked by CI)
@@ -19,17 +20,6 @@ CHANNEL_OVERRIDE_FILE="${SEGNO_CHANNEL_OVERRIDE_FILE:-/data/segno/update-channel
 CHANNEL_FILE="${SEGNO_CHANNEL_FILE:-/etc/segno/update-channel}"
 CUR_FILE="${SEGNO_VERSION_FILE:-/etc/segno/build-version}"
 STAGED_FILE="${SEGNO_STAGED_FILE:-/data/.ota-staged-version}"  # on /data so it survives OS updates
-# The boot id current when the marker was written (see segno-update-ctl, which
-# owns the reconcile logic reading this). MUST be recorded on every path that
-# writes the marker: a marker staged this boot whose boot id is missing looks
-# to reconcile-staged like a stale one and would be cleared before the
-# applying reboot ever happens.
-STAGED_BOOT_FILE="${SEGNO_STAGED_BOOT_ID_FILE:-/data/.ota-staged-boot-id}"
-BOOT_ID_FILE="${SEGNO_BOOT_ID_FILE:-/proc/sys/kernel/random/boot_id}"
-# tmpfs marker: "reboot to activate". Overridable because a redirection onto a
-# missing /run is FATAL in a POSIX sh (`:` is a special builtin), `|| true` or
-# not — the test harness has no /run to point it at.
-PENDING_FLAG="${SEGNO_PENDING_FLAG:-/run/segno-update-pending}"
 WORK="$(mktemp -d /tmp/segno-ota.XXXXXX)"
 trap 'rm -rf "$WORK"' EXIT
 
@@ -82,9 +72,7 @@ semver_newer() {
 command -v rauc >/dev/null 2>&1 || { log "rauc not installed, skipping"; exit 0; }
 
 # Drop a staged marker left by a failed tryboot so we can re-offer the build.
-if command -v segno-update-ctl >/dev/null 2>&1; then
-    segno-update-ctl reconcile-staged >/dev/null 2>&1 || true
-fi
+segno-update-ctl reconcile-staged >/dev/null 2>&1 || true
 
 channel=$(resolve_channel)
 current=$(cat "$CUR_FILE" 2>/dev/null || echo "0.0.0")
@@ -100,34 +88,16 @@ fi
 
 version=$(jq -r '.version // "0.0.0"' "$man" 2>/dev/null || echo "0.0.0")
 bundle=$(jq -r '.bundle // empty' "$man" 2>/dev/null || echo "")
-sha=$(jq -r '.sha256 // empty' "$man" 2>/dev/null || echo "")
 
 if [ -z "$bundle" ] || ! semver_newer "$current" "$version" || ! semver_newer "$staged" "$version"; then
     log "up to date (published=$version)"; exit 0
 fi
 
 log "new version $version available: $bundle"
-bfile="$WORK/$bundle"
-if ! curl -fsSL --max-time 1800 -o "$bfile" "${BASE_URL}/${channel}/${bundle}"; then
-    log "bundle download failed"; exit 1
-fi
-
-# Integrity: sha256 from the manifest (defence in depth — RAUC also verifies the
-# bundle's own X.509 signature, which is the real security boundary).
-if [ -n "$sha" ]; then
-    actual=$(sha256sum "$bfile" | cut -d' ' -f1)
-    if [ "$actual" != "$sha" ]; then
-        log "sha256 mismatch (want $sha got $actual) — refusing"; exit 1
-    fi
-fi
-
-# Install to the inactive slot. RAUC verifies the signature against the baked-in
-# keyring and refuses anything it can't validate. No reboot here (deferred).
-if rauc install "$bfile"; then
-    echo "$version" > "$STAGED_FILE" 2>/dev/null || true
-    tr -d '[:space:]' <"$BOOT_ID_FILE" >"$STAGED_BOOT_FILE" 2>/dev/null || true
-    : > "$PENDING_FLAG" 2>/dev/null || true
-    log "installed v$version to inactive slot; reboot pending (deferred activation)"
-else
-    log "rauc install failed"; exit 1
-fi
+# The app's own install does the rest (#1507): it downloads and verifies the
+# bundle, refuses while RAUC is installing another, drops an earlier staged
+# build's markers before RAUC overwrites its slot, records the attempt, and
+# sets the staged markers. No reboot here (deferred). `exec` skips the EXIT
+# trap, so the work dir goes first.
+rm -rf "$WORK"
+exec segno-update-ctl install

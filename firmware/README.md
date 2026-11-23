@@ -33,6 +33,9 @@ only when the board is not already running the shipped version. The ring carrier
 install per board before that works. See
 [console board flashing](console_board/README.md#flashing) and
 [ring carrier first install](ring_board/README.md#first-install-over-usb-once-per-carrier).
+Because the flashers compare versions, every change to a board's firmware
+raises its version, and CI checks that it does: see
+[firmware versions](console_board/README.md#firmware-versions).
 
 ## Tests
 

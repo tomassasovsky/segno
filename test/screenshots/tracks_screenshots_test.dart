@@ -1007,7 +1007,7 @@ void main() {
       );
       await tester.runAsync(() => control.setPedalSetup(PedalSetup.fresh));
       control.setMode(InteractionMode.custom);
-      if (scene == 'bank_b') control.toggleBankWithCursor();
+      if (scene == 'bank_b') control.toggleBank();
       await pump(
         tester,
         locale: scene == 'spanish' ? const Locale('es') : null,
@@ -1350,8 +1350,9 @@ void main() {
   }, skip: !rendersScreenshots);
 
   // #1936: a track that records, or is the empty track Record/Play records
-  // next, meters its input (MAIN VIEWS / First recording).
-  for (final scene in ['recording', 'empty_selected']) {
+  // next, meters its input (MAIN VIEWS / First recording); an overdubbing
+  // one meters the louder of its loop and its input (#1955).
+  for (final scene in ['recording', 'empty_selected', 'overdubbing']) {
     testWidgets('the meter follows the input: $scene', (tester) async {
       const status = EngineStatus(
         isConnected: true,
@@ -1362,12 +1363,15 @@ void main() {
         outputChannels: 2,
       );
       levels(
-        const MeterLevels(
+        MeterLevels(
           tracks: [
-            TrackLevels(peak: 0.4, input: 0.3),
-            TrackLevels(peak: 0.7, input: 0.3),
-            TrackLevels(peak: 0.8, input: 0.3),
-            TrackLevels(input: 0.3),
+            const TrackLevels(peak: 0.4, input: 0.3),
+            const TrackLevels(peak: 0.7, input: 0.3),
+            const TrackLevels(peak: 0.8, input: 0.3),
+            if (scene == 'overdubbing')
+              const TrackLevels(peak: 0.35, input: 0.6)
+            else
+              const TrackLevels(input: 0.3),
           ],
         ),
       );
@@ -1388,10 +1392,12 @@ void main() {
             ),
             Track(
               channel: 3,
-              state: scene == 'recording'
-                  ? TrackState.recording
-                  : TrackState.empty,
-              lengthFrames: scene == 'recording' ? 48000 : 0,
+              state: switch (scene) {
+                'recording' => TrackState.recording,
+                'overdubbing' => TrackState.overdubbing,
+                _ => TrackState.empty,
+              },
+              lengthFrames: scene == 'empty_selected' ? 0 : 48000,
             ),
           ],
         ),
