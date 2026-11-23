@@ -53,7 +53,6 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1202 | Shared render recipe, Bounce, Save selected | plan | merge-gate | `claude/render-1202-*` |
 | #1228 | MIDI clock | plan | merge-gate | `claude/midi-clock-1228-*` |
 | #1270 | Device and appliance pages (Parts 6, 7, 9, 11, 12 shipped; plan approved 2026-10-26 and refreshed; Q5 answered: refuse an Apply over the effects budget; P1, P2, P3a, P3b, P4 and P5 merged; P8 update from USB in review; all parts built; on-device checks listed on the issue) | build | merge-gate | `claude/device-pages-*1270*` |
-| #1342 | Ring carrier firmware updates from the console | in-review | blocked-verify | `claude/ring-update-1342` |
 | #1590, #1672 | Screen audits: every fix is on master; the Penpot writeback listed under each PR's Design writeback is owed (no Penpot tab with the MCP plugin on 2026-11-19) | build | auto | none |
 | #1540 | Drive pedals' aliasing at 48 kHz: four kinds oversampled (#1552); the owner's blind pairs decide whether the built-in Drive is oversampled too | build | plan-gate | `claude/drive-alias-1540` |
 | #1498 | Restart and shut down also wait for RAUC's own install, after an app restart | in-review | blocked-verify | `claude/rauc-power-gate-1498` |
