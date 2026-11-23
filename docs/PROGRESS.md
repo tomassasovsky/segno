@@ -38,7 +38,6 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
 
 | Issue | Thread | Stage | Gate | Branch |
 |-------|--------|-------|----------|--------|
-| SEG-3 | Work tracking moves from GitHub Issues to Jira: open issues copied, tracking contract switched; GitHub issues close after merge | in-review | needs-merge | `claude/jira-tracking-SEG-3` |
 | SEG-61 | NVMe drive drops off the bus mid-recording: the Pi 5 cmdline turns off APST and PCIe ASPM on every link | in-review | needs-hardware | `claude/nvme-power-1795` |
 | SEG-62 | A finished export to a FAT stick is on the device: copies and the export end with a volume sync | in-review | needs-hardware | `claude/usb-export-durable-1797` |
 | SEG-8 | Start helper programs with posix_spawn, never fork the app | in-review | needs-merge | `claude/no-fork-1367` |
