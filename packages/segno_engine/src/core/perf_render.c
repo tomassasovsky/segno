@@ -34,7 +34,9 @@
  * live mix order: `wl = audible ? loopsample*vol : 0`, then fx_apply_chain),
  * summed across channels, then the capture bus's output chain (and, under
  * Follow output, its level and mute). The capture taps sit before the global
- * master gain and the master limiter, so neither is replayed here. This
+ * master gain and the master limiter, so neither is replayed here. A take
+ * armed before capture destinations (#1853) was captured after both, with
+ * lane routes it did not record, so it gets no master (#1855). This
  * uses the engine's OWN fx_apply_chain/le_fx_prepare/le_fx_entry_reset
  * (engine_fx.h) rather than reimplementing per-effect DSP — a fresh, heap-
  * owned `le_fx_state` per channel, never touching any live engine state, so
@@ -354,6 +356,12 @@ typedef struct le_pr_manifest {
   /* armSnapshot.latencyOffsetFrames: the record offset an overdub's write
    * head trails the read head by (#1808), 0 when absent. */
   int32_t latency_offset;
+  /* Whether the render writes stems/wet/master.wav: not for an arm snapshot
+   * written before capture destinations (#1855). Those builds captured the
+   * master after the master gain and limiter, and did not record the lanes'
+   * output routes, so no master rebuilt from the lanes matches the captured
+   * one. */
+  int rebuilds_master;
 } le_pr_manifest;
 
 /* Whether `arm` is an arm snapshot as the builds before capture destinations
@@ -523,6 +531,7 @@ static int32_t le_pr_load_manifest(const char* dir, char** out_text,
   out->arm_output_muted = le_json_bool(muted, 0);
   out->output_enabled_mask = (uint32_t)enabled_number;
   out->arm_output = arm;
+  out->rebuilds_master = !before_destinations;
   *out_text = text;
   *out_root = root;
   return LE_OK;
@@ -3437,7 +3446,8 @@ static void le_pr_channel_open(le_pr_channel_run* c, const char* dir,
    * wet stem itself is written, so master.wav never holds audio for a
    * channel the render reports as failed. */
   c->ok = dry_ok && c->wet != NULL;
-  c->in_master = c->ok;
+  /* With no master to rebuild (#1855), nothing is summed. */
+  c->in_master = c->ok && m->rebuilds_master;
 }
 
 /* Frees what le_pr_channel_open set up; stems still open are dropped. */
@@ -3633,7 +3643,8 @@ static void le_pr_worker_main(void* arg) {
      * whose master a re-render must not lose. */
     const int master_fits = total <= le_wav_sealable_frames(master_channels);
     le_pr_master_run* master =
-        le_pr_master_open(&manifest, log, log_count);
+        manifest.rebuilds_master ? le_pr_master_open(&manifest, log, log_count)
+                                 : NULL;
     le_pr_stem_file master_file = {0};
     char master_path[LE_PR_FULL_PATH_MAX];
     snprintf(master_path, sizeof(master_path), "%s/master.wav", wet_dir);
@@ -3722,8 +3733,11 @@ static void le_pr_worker_main(void* arg) {
        * read, a slot that could not be prepared) fail the render, as they
        * did: no master, and every track reported failed. A master that only
        * could not be written is left out and the stems stand. */
-      const int master_rendered = master != NULL && master->ok;
+      const int master_rendered =
+          !manifest.rebuilds_master || (master != NULL && master->ok);
       if (master_file.open) le_pr_stem_seal(&master_file);
+      /* Also removes the master an earlier build rebuilt for a take that
+       * has none (#1855). */
       le_pr_stem_settle(&master_file, master_path);
       if (!master_rendered) {
         for (int i = 0; i < channel_count; ++i)

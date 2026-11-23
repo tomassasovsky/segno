@@ -65,6 +65,25 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
 
 ---
 
+## November 2026 September takes ship their captured master (SEG-76, #1855)
+
+- A take armed before capture destinations (#1853, the console's September
+  takes) was captured after the master gain and limiter, and its lanes'
+  output routes are in no take file (a lane routed to no output on 13
+  September was set before the arm). No master rebuilt from its lanes can
+  match the captured one.
+- The renderer (`perf_render.c`) writes no `stems/wet/master.wav` for such a
+  take, and sums no lane into a master; its lane stems and index are
+  rendered as before, and a re-render removes a rebuilt master an earlier
+  build wrote. The DAW package and Segno Transfer, which copy every WAV in a
+  take, carry the captured `master.wav` alone.
+- A September take a build with #1854 already rendered keeps its stems and
+  is not rendered again, so its wrong `stems/wet/master.wav` stays on disk
+  until it is deleted by hand (no startup migration, per the engineering
+  principles).
+- Not checked on the console: a September take's DAW package after the
+  update.
+
 ## November 2026 A lane added after a take has the track's length (SEG-69, #1825)
 
 - A lane added to a track that holds a take (`le_engine_set_lane_count`

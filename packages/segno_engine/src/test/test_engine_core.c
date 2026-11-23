@@ -39217,15 +39217,36 @@ static void test_perf_render_requires_explicit_capture_policy(void) {
 
 /* An arm snapshot as the builds before capture destinations wrote it (#1853,
  * the console's September takes: no followOutput, captureMask or other
- * capture keys) renders exactly what the same snapshot with followOutput
+ * capture keys) renders the lane stems the same snapshot with followOutput
  * false and captureMask 3 renders, when channel_layout says the master is
- * stereo. Anything else without the two keys is still refused. */
-static void september_render_bytes(le_engine* e, const char* name,
-                                   const char* arm_capture, int32_t want,
-                                   const char* layout, unsigned char* master,
-                                   size_t* master_len) {
-  char dir[600];
-  snprintf(dir, sizeof(dir), "%s", render_test_dir(name));
+ * stereo. It rebuilds no master (#1855): those builds captured it after the
+ * master gain and limiter, with lane routes the take does not record, and a
+ * master an earlier build rebuilt is removed. Anything else without the two
+ * keys is still refused. */
+static int september_exists(const char* dir, const char* file) {
+  char path[700];
+  snprintf(path, sizeof(path), "%s/%s", dir, file);
+  FILE* f = fopen(path, "rb");
+  if (f != NULL) fclose(f);
+  return f != NULL;
+}
+
+static size_t september_read(const char* dir, const char* file,
+                             unsigned char* out, size_t cap) {
+  char path[700];
+  snprintf(path, sizeof(path), "%s/%s", dir, file);
+  FILE* f = fopen(path, "rb");
+  if (f == NULL) return 0;
+  const size_t got = fread(out, 1, cap, f);
+  fclose(f);
+  return got;
+}
+
+/* Renders a September-shaped take named `name` into `dir`. */
+static void september_render(le_engine* e, const char* name,
+                             const char* arm_capture, int32_t want,
+                             const char* layout, char dir[600]) {
+  snprintf(dir, 600, "%s", render_test_dir(name));
   char loops[700];
   snprintf(loops, sizeof(loops), "%s/loops", dir);
   test_render_mkdir(loops);
@@ -39233,6 +39254,14 @@ static void september_render_bytes(le_engine* e, const char* name,
   char wav[760];
   snprintf(wav, sizeof(wav), "%s/track0-lane0.wav", loops);
   test_write_wav_mono(wav, content, 4, 4800);
+  /* What an earlier build's render of the take left. */
+  char stale[760];
+  snprintf(stale, sizeof(stale), "%s/stems", dir);
+  test_render_mkdir(stale);
+  snprintf(stale, sizeof(stale), "%s/stems/wet", dir);
+  test_render_mkdir(stale);
+  snprintf(stale, sizeof(stale), "%s/stems/wet/master.wav", dir);
+  test_write_wav_mono(stale, content, 4, 4800);
   char manifest[2048];
   snprintf(manifest, sizeof(manifest),
       "{\"sample_rate\": 4800, \"channel_layout\": %s, \"capture_frames\": 8, "
@@ -39252,15 +39281,12 @@ static void september_render_bytes(le_engine* e, const char* name,
   int32_t done = 0, count = -1;
   CHECK(le_perf_render_poll(e, &done, NULL, &count) == want);
   CHECK(done == 1);
-  if (master == NULL) return;
-  CHECK(count == 1);
-  char path[700];
-  snprintf(path, sizeof(path), "%s/stems/wet/master.wav", dir);
-  FILE* f = fopen(path, "rb");
-  CHECK(f != NULL);
-  if (f == NULL) return;
-  *master_len = fread(master, 1, *master_len, f);
-  fclose(f);
+  if (want == LE_OK) {
+    CHECK(count == 1);
+    int32_t channel = -1, succeeded = 0;
+    CHECK(le_perf_render_track_status(e, 0, &channel, &succeeded) == LE_OK);
+    CHECK(channel == 0 && succeeded == 1);
+  }
 }
 
 static void test_perf_render_reads_a_september_arm_snapshot(void) {
@@ -39269,38 +39295,45 @@ static void test_perf_render_reads_a_september_arm_snapshot(void) {
   le_engine* e = le_engine_create();
   const char* stereo = "{\"master_channels\": 2, \"captured_inputs\": [0, 1]}";
   unsigned char september[512], current[512];
-  size_t september_len = sizeof(september), current_len = sizeof(current);
-  september_render_bytes(e, "september-arm", "\"fxStagesVersion\": 1, ",
-                         LE_OK, stereo, september, &september_len);
-  september_render_bytes(e, "september-arm-current",
-                         "\"fxStagesVersion\": 1, \"followOutput\": false, "
-                         "\"captureMask\": 3, ",
-                         LE_OK, stereo, current, &current_len);
-  /* A stereo master: 44-byte header, 8 frames of two floats. */
-  CHECK(september_len == 44 + 8 * 2 * sizeof(float));
-  uint16_t channels = 0;
-  memcpy(&channels, september + 22, 2);
-  CHECK(channels == 2);
-  CHECK(september_len == current_len &&
+  char dir[600];
+  september_render(e, "september-arm", "\"fxStagesVersion\": 1, ", LE_OK,
+                   stereo, dir);
+  const size_t september_len =
+      september_read(dir, "stems/wet/track0-lane0.wav", september,
+                     sizeof(september));
+  /* No master, and the one an earlier render left is gone; the index is
+   * written. */
+  CHECK(!september_exists(dir, "stems/wet/master.wav"));
+  CHECK(september_exists(dir, "stems/stems.json"));
+  september_render(e, "september-arm-current",
+                   "\"fxStagesVersion\": 1, \"followOutput\": false, "
+                   "\"captureMask\": 3, ",
+                   LE_OK, stereo, dir);
+  /* A mono lane stem: 44-byte header, 8 frames of one float. */
+  CHECK(september_len == 44 + 8 * sizeof(float));
+  CHECK(september_read(dir, "stems/wet/track0-lane0.wav", current,
+                       sizeof(current)) == september_len &&
         memcmp(september, current, september_len) == 0);
+  /* The current shape rebuilds its stereo master. */
+  CHECK(september_read(dir, "stems/wet/master.wav", current,
+                       sizeof(current)) == 44 + 8 * 2 * sizeof(float));
 
   /* Not the September shape, or not a stereo master: refused. */
   const char* mono = "{\"master_channels\": 1, \"captured_inputs\": []}";
-  september_render_bytes(e, "september-mono", "\"fxStagesVersion\": 1, ",
-                         LE_ERR_INVALID, mono, NULL, NULL);
-  september_render_bytes(e, "september-no-layout", "\"fxStagesVersion\": 1, ",
-                         LE_ERR_INVALID, "null", NULL, NULL);
-  september_render_bytes(e, "september-legacy-stages", "", LE_ERR_INVALID,
-                         stereo, NULL, NULL);
-  september_render_bytes(e, "september-stages-2", "\"fxStagesVersion\": 2, ",
-                         LE_ERR_INVALID, stereo, NULL, NULL);
-  september_render_bytes(e, "september-master-chain",
-                         "\"fxStagesVersion\": 1, \"masterChainEnabled\": "
-                         "false, ",
-                         LE_ERR_INVALID, stereo, NULL, NULL);
-  september_render_bytes(e, "september-capture-bus",
-                         "\"fxStagesVersion\": 1, \"captureBus\": 0, ",
-                         LE_ERR_INVALID, stereo, NULL, NULL);
+  september_render(e, "september-mono", "\"fxStagesVersion\": 1, ",
+                   LE_ERR_INVALID, mono, dir);
+  september_render(e, "september-no-layout", "\"fxStagesVersion\": 1, ",
+                   LE_ERR_INVALID, "null", dir);
+  september_render(e, "september-legacy-stages", "", LE_ERR_INVALID, stereo,
+                   dir);
+  september_render(e, "september-stages-2", "\"fxStagesVersion\": 2, ",
+                   LE_ERR_INVALID, stereo, dir);
+  september_render(e, "september-master-chain",
+                   "\"fxStagesVersion\": 1, \"masterChainEnabled\": false, ",
+                   LE_ERR_INVALID, stereo, dir);
+  september_render(e, "september-capture-bus",
+                   "\"fxStagesVersion\": 1, \"captureBus\": 0, ",
+                   LE_ERR_INVALID, stereo, dir);
   le_engine_destroy(e);
 }
 
