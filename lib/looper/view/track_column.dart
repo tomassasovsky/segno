@@ -13,6 +13,7 @@ import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/looper/view/loop_count_words.dart';
 import 'package:segno/looper/view/rename_track_dialog.dart';
 import 'package:segno/looper/view/slot_row.dart';
+import 'package:segno/looper/view/track_capture_count.dart';
 import 'package:segno/looper/view/track_meters.dart';
 import 'package:segno/notices/notices.dart';
 import 'package:segno/theme/theme.dart';
@@ -231,6 +232,19 @@ class TrackColumn extends StatelessWidget {
     // (muted included; see LooperTheme.meterColors).
     final meterState = LooperMeterState.of(track.state, muted: track.muted);
     final barColor = looper.meterColor(meterState, mode: mode);
+    // The meter shows what the track captures while it records, and what it
+    // would capture while it is the empty track Record/Play records next: the
+    // selected one, or one with a record arm waiting (#1936, D1). An overdub
+    // shows the loop and the layer it adds together (#1955). Every other
+    // track shows its playback.
+    final meterSource = switch (track.state) {
+      TrackState.recording => MeterSource.input,
+      TrackState.overdubbing => MeterSource.both,
+      TrackState.empty when selected || track.pending => MeterSource.input,
+      TrackState.empty ||
+      TrackState.playing ||
+      TrackState.stopped => MeterSource.playback,
+    };
 
     // The meter conveys state through colour only (WCAG 1.4.1); name the state
     // in words so it reaches the tile's accessible label.
@@ -280,6 +294,7 @@ class TrackColumn extends StatelessWidget {
               layers: layers,
               fxMarker: fxMarker,
               reversed: track.hasContent && track.reversed,
+              recording: track.state == TrackState.recording,
             ),
           ),
           const SizedBox(height: gap),
@@ -362,6 +377,7 @@ class TrackColumn extends StatelessWidget {
                           frozen: track.state == TrackState.stopped,
                           // The accepted stage's red clip cap.
                           clipColor: looper.recordColor,
+                          source: meterSource,
                         ),
                       ),
                       // A queued action sits centrally in its own track,
@@ -442,6 +458,7 @@ class _TrackInfo extends StatelessWidget {
     required this.layers,
     required this.fxMarker,
     required this.reversed,
+    required this.recording,
   });
 
   final int channel;
@@ -455,6 +472,9 @@ class _TrackInfo extends StatelessWidget {
   final int layers;
   final _FxMarker fxMarker;
   final bool reversed;
+
+  /// Whether the track records its take, so its bars slot counts the take.
+  final bool recording;
 
   @override
   Widget build(BuildContext context) {
@@ -510,6 +530,7 @@ class _TrackInfo extends StatelessWidget {
           layers: layers,
           fxMarker: fxMarker,
           reversed: reversed,
+          recording: recording,
         ),
       ],
     );
@@ -528,10 +549,15 @@ class _TrackMeta extends StatelessWidget {
     required this.layers,
     required this.fxMarker,
     required this.reversed,
+    required this.recording,
   });
 
   final int channel;
   final int? bars;
+
+  /// Whether the track records its take: the bars slot then counts the take
+  /// as it records (#1936).
+  final bool recording;
 
   /// The track's length in whole beats when its bars are not whole (a Divide
   /// of a sole loop, #1168), else null.
@@ -616,13 +642,19 @@ class _TrackMeta extends StatelessWidget {
             ),
             RowSlot(
               flex: barsFlex,
-              child: SlotFigure(
-                key: Key('tracks_bars_$channel'),
-                figure: count.figure,
-                unit: count.unit,
-                figureStyle: figure,
-                unitStyle: unit,
-              ),
+              child: recording
+                  ? TrackCaptureCount(
+                      channel: channel,
+                      figureStyle: figure,
+                      unitStyle: unit,
+                    )
+                  : SlotFigure(
+                      key: Key('tracks_bars_$channel'),
+                      figure: count.figure,
+                      unit: count.unit,
+                      figureStyle: figure,
+                      unitStyle: unit,
+                    ),
             ),
             RowSlot(
               flex: layersFlex,

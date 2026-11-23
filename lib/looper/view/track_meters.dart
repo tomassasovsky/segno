@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:looper_repository/looper_repository.dart';
 import 'package:material_ui/material_ui.dart';
@@ -6,8 +7,23 @@ import 'package:segno/looper/view/live_meter.dart';
 import 'package:segno/looper/view/live_playhead.dart';
 import 'package:segno/theme/theme.dart';
 
+/// What a track's tile meter follows (#1936, #1955).
+enum MeterSource {
+  /// The track's playback ([TrackLevels.peak]).
+  playback,
+
+  /// The inputs its lanes record from ([TrackLevels.input]): a track that
+  /// records, or records next, shows what it captures.
+  input,
+
+  /// The louder of the playback and the input: an overdub plays the loop
+  /// while it adds the input, and its meter shows both.
+  both,
+}
+
 /// One track's [PeakMeterBar], following [channel]'s live level from
-/// `LooperRepository.meterLevels` (#1301).
+/// `LooperRepository.meterLevels` (#1301): its playback, the inputs it
+/// records from, or both ([source], #1936, #1955).
 ///
 /// The leaf of the rebuild split (#646/#654/#832): levels are not part of the
 /// looper state at all, so the only thing a meter tick rebuilds is this bar,
@@ -29,11 +45,16 @@ class TrackPeakMeter extends StatelessWidget {
     required this.hasContent,
     required this.frozen,
     this.clipColor,
+    this.source = MeterSource.playback,
     super.key,
   });
 
   /// The channel whose level this bar follows.
   final int channel;
+
+  /// What the bar follows. The input is live whatever the track holds, so
+  /// [hasContent] and [frozen] do not apply to a bar that reads it.
+  final MeterSource source;
 
   /// The bar fill colour (the track's meter-state colour).
   final Color color;
@@ -50,13 +71,22 @@ class TrackPeakMeter extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return LiveMeter<double>(
-      key: ValueKey(channel),
-      select: (levels) => meterPeak(levels.track(channel).peak),
+      // The source is part of the key: switching it starts a new bar rather
+      // than holding the other source's last fill.
+      key: ValueKey((channel, source)),
+      select: (levels) {
+        final track = levels.track(channel);
+        return meterPeak(switch (source) {
+          MeterSource.playback => track.peak,
+          MeterSource.input => track.input,
+          MeterSource.both => math.max(track.peak, track.input),
+        });
+      },
       builder: (context, peak) => PeakMeterBar(
         peak: peak,
         color: color,
-        hasContent: hasContent,
-        frozen: frozen,
+        hasContent: source != MeterSource.playback || hasContent,
+        frozen: source == MeterSource.playback && frozen,
         clipColor: clipColor,
       ),
     );

@@ -13,6 +13,7 @@ import 'package:segno/visualizer/screen_link.dart';
 /// relative to the repository root (where `flutter test` runs).
 const _engine = 'packages/segno_engine';
 const _expected = {
+  'aubio': '$_engine/third_party/aubio/COPYING',
   'clap': '$_engine/third_party/clap/LICENSE',
   'miniaudio': '$_engine/src/miniaudio/LICENSE',
   'signalsmith-dsp': '$_engine/third_party/signalsmith-stretch/dsp/LICENSE.txt',

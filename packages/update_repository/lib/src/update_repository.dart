@@ -34,6 +34,12 @@ class UpdateRepository {
       ? _backend.recover()
       : Future.value(const UpdateRecovery());
 
+  /// The install that was cut off, asked again after the installer finished
+  /// one; see [PlatformUpdateBackend.interruptedInstall]. `null` where
+  /// updates are not supported.
+  Future<Version?> interruptedInstall() =>
+      _backend.isSupported ? _backend.interruptedInstall() : Future.value();
+
   /// Forgets an install that was cut off.
   Future<void> clearInterrupted() => _backend.clearInterrupted();
 

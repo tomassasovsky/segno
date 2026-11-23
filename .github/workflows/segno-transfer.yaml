@@ -34,7 +34,8 @@ permissions:
 
 jobs:
   mac-app:
-    runs-on: macos-15
+    # Xcode 26, the default here, compiles the app's Icon Composer icon.
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v7
       # Renders the plugins' pedal faces from the console's drawing code.

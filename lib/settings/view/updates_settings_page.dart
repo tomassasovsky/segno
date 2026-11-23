@@ -169,13 +169,17 @@ class _UpdatesSettingsPageState extends State<UpdatesSettingsPage> {
         ],
         // One helper at a time: while a USB package is copied or installed,
         // or RAUC is still writing an earlier run's install, the online
-        // flow's actions (and its restart) hold off.
+        // flow's actions (and its restart) hold off. A USB install has its
+        // own panel, so this one dims; RAUC's install is this panel's own
+        // state, which says so (#1507).
         IgnorePointer(
           ignoring: installing,
           child: ExcludeFocus(
             excluding: installing,
             child: Opacity(
-              opacity: installing ? context.surface.disabledOpacity : 1,
+              opacity: state.usbInstalling
+                  ? context.surface.disabledOpacity
+                  : 1,
               child: _StatusPanel(state: state, cubit: cubit, next: _next),
             ),
           ),
@@ -212,12 +216,12 @@ class _UpdatesSettingsPageState extends State<UpdatesSettingsPage> {
               SettingsFactRow(
                 key: const Key('updates_channel_row'),
                 label: l10n.updatesPageChannel,
-                // Locked mid-download rather than hidden: switching would
+                // Locked mid-install rather than hidden: switching would
                 // abandon a bundle already half staged.
                 trailing: LoopSelect<bool>(
                   key: const Key('updates_channel'),
                   value: state.channel == 'experimental',
-                  enabled: state.phase != UpdatePhase.downloading,
+                  enabled: !state.installInFlight,
                   width: UpdatesSettingsPage.controlWidth,
                   height: 56,
                   items: [
@@ -275,7 +279,8 @@ class _UpdatesSettingsPageState extends State<UpdatesSettingsPage> {
       child: BlocListener<UpdateCubit, UpdateState>(
         listenWhen: (previous, current) =>
             previous.phase != current.phase ||
-            previous.failure != current.failure,
+            previous.failure != current.failure ||
+            previous.raucInstalling != current.raucInstalling,
         listener: (_, _) => _focusNext(),
         child: Scaffold(
           body: LoopSettingsFrame(
@@ -333,6 +338,17 @@ class _StatusPanel extends StatelessWidget {
       List<Widget> actions,
     ) = !state.supported
         ? (l10n.updatesPanelSoftware, null, l10n.updatesUnsupportedBanner, [])
+        // RAUC is writing an install whose helper is gone (an app restart
+        // mid-install, #1507): whatever the phase says, the install runs,
+        // and it cannot be cancelled. Its version is known when the helper
+        // recorded the attempt.
+        : state.raucInstalling
+        ? (
+            l10n.updatesPanelInstalling,
+            _meta(l10n, state.interrupted?.toString(), null),
+            l10n.updatesPageRaucInstalling,
+            <Widget>[],
+          )
         : switch (state.phase) {
             UpdatePhase.idle => (
               l10n.updatesPanelSoftware,
@@ -472,6 +488,7 @@ class _StatusPanel extends StatelessWidget {
           };
     final failed =
         state.supported &&
+        !state.raucInstalling &&
         (state.phase == UpdatePhase.error ||
             state.phase == UpdatePhase.interrupted);
 

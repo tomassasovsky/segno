@@ -13,6 +13,7 @@ import 'package:flutter/services.dart';
 /// The VST3 SDK's three subtrees (`base/`, `pluginterfaces/`,
 /// `public.sdk/`) carry byte-identical `LICENSE.txt` files; one is shown.
 const List<(String, String)> _vendoredLicenses = [
+  ('aubio', 'third_party/aubio/COPYING'),
   ('clap', 'third_party/clap/LICENSE'),
   ('miniaudio', 'src/miniaudio/LICENSE'),
   ('signalsmith-dsp', 'third_party/signalsmith-stretch/dsp/LICENSE.txt'),

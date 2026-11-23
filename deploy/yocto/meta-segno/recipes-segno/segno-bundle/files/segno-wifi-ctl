@@ -24,6 +24,10 @@
 #                          update host, 3 s limit
 #   activate <uuid> [secs] {} once the saved profile is up on its stored key
 #                          (up_saved); used by segno-wifi-retry
+#   iface                  the name of the Wi-Fi device the console manages
+#                          (managed_iface), bare, for segno-wifi-retry and
+#                          segno-wifi-dispatch: the one verb whose stdout is
+#                          not JSON
 #
 # NetworkManager owns the radio, and nothing else may: it runs wpa_supplicant
 # itself, as on Raspberry Pi OS (#1843). There is deliberately no second
@@ -45,7 +49,27 @@ held_file=
 trap 'rm -f "$passf" "$up_keyf"; release_profile; resume_autoconnect' EXIT
 trap 'exit 1' HUP INT TERM
 
-IFACE="${SEGNO_WIFI_IFACE:-wlan0}"
+# The Wi-Fi device the console manages (#1963): a USB Wi-Fi adapter when one
+# is plugged in, else the built-in wlan0. An owner plugs an adapter in to use
+# it, and the built-in radio of one console stopped transmitting (#1816), so
+# the adapter wins whenever it is there; two adapters go by name. A Wi-Fi
+# device is one with a phy80211 link, and a USB one is one whose device sits
+# on the usb bus (the built-in CYW43455 sits on sdio). Every verb, the retry
+# service and the dispatcher hook use this one answer (`segno-wifi-ctl
+# iface`); the app reaches Wi-Fi only through this helper.
+SYS_CLASS_NET="${SEGNO_SYS_CLASS_NET:-/sys/class/net}"
+managed_iface() {
+    for dev in "$SYS_CLASS_NET"/*; do
+        [ -e "$dev/phy80211" ] || continue
+        bus=$(readlink "$dev/device/subsystem" 2>/dev/null) || continue
+        if [ "${bus##*/}" = usb ]; then
+            printf '%s\n' "${dev##*/}"
+            return 0
+        fi
+    done
+    echo wlan0
+}
+IFACE="${SEGNO_WIFI_IFACE:-$(managed_iface)}"
 # The join budget. With nothing to fall back to, waiting is better than
 # failing early.
 NM_CONNECT_WAIT_SECS="${SEGNO_WIFI_NM_CONNECT_TIMEOUT:-45}"
@@ -593,6 +617,22 @@ write_passwd_file() {
     printf '\n' >>"$1"
 }
 
+# Pins saved profile <uuid> to the device the console manages, in the stored
+# profile. NetworkManager activates a profile only on the device named in its
+# connection.interface-name, so one saved while another device was managed
+# (the built-in wlan0, before an adapter was plugged in, or the adapter,
+# after it was pulled out) would go up on that device or on none (#1963).
+# Every activation of a saved profile pins it first; the move outlasts a join
+# that fails, since the device it names is the right one either way.
+pin_profile() {
+    [ "$(profile_field "$1" connection.interface-name)" != "$IFACE" ] || return 0
+    if nmcli connection modify uuid "$1" connection.interface-name "$IFACE" >/dev/null 2>&1; then
+        log "pinned $1 to $IFACE"
+    else
+        log "could not pin $1 to $IFACE"
+    fi
+}
+
 # Activates a saved profile on its stored key. NetworkManager does not always
 # use the key it has stored. When the link drops during the 4-way handshake
 # (handle_8021x_or_psk_auth_fail in nm-device-wifi.c), or a join times out
@@ -609,6 +649,7 @@ up_saved() {
     up_wait=$2
     up_cursor=${3:-}
     up_epoch=${4:-}
+    pin_profile "$up_uuid"
     up_key=$(nmcli -s -e no -g 802-11-wireless-security.psk connection show uuid "$up_uuid" 2>/dev/null || true)
     if [ -z "$up_key" ]; then
         nmcli --wait "$up_wait" connection up uuid "$up_uuid"
@@ -861,7 +902,9 @@ do_connect_nm() {
             # A typed key is tested on a copy of the profile in memory
             # (hold_profile), so the activation uses it and the stored key
             # stays until it connects. Autoconnect is off on the copy: NM's
-            # own activation would race this one, as for a new join.
+            # own activation would race this one, as for a new join. The pin
+            # goes to the stored profile, before the copy is made.
+            pin_profile "$existing"
             hold_profile "$existing" "$join_priority" >"$errf" 2>&1
             rc=$?
             if [ "$rc" -eq 0 ]; then
@@ -1066,7 +1109,7 @@ do_activate() {
 }
 
 usage() {
-    log "usage: $0 status|scan|monitor|connect <ssid>|disconnect|forget <ssid>|radio on|off|autoconnect <ssid> on|off|set-password <ssid>|connectivity|activate <uuid> [secs]"
+    log "usage: $0 status|scan|monitor|connect <ssid>|disconnect|forget <ssid>|radio on|off|autoconnect <ssid> on|off|set-password <ssid>|connectivity|activate <uuid> [secs]|iface"
     exit 2
 }
 
@@ -1106,5 +1149,6 @@ case "$verb" in
         [ $# -ge 1 ] || usage
         do_activate "$1" "${2:-}"
         ;;
+    iface) printf '%s\n' "$IFACE" ;;
     *) usage ;;
 esac

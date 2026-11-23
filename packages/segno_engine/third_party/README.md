@@ -1,3 +1,4 @@
+<!-- cspell:words aubio Brossier FFTW BLAS Ooura ooura beattracking cvec fvec lvec mathutils musicutils peakpicker phasevoc specdesc -->
 # Vendored third-party code
 
 ## `vst3sdk/` — Steinberg VST3 SDK (plugin-hosting subset)
@@ -49,6 +50,35 @@
   contract worth knowing: construct with a fixed seed; the native tests assert
   the two preset geometries (cheaper: block 0.1 s / interval 0.04 s; default:
   0.12 s / 0.03 s) so an upgrade cannot change them silently.
+
+## `aubio/` — onset detection and beat tracking (subset)
+
+- **Version:** release tag `0.4.9`, commit `90bd27a` of
+  [aubio/aubio](https://github.com/aubio/aubio), by Paul Brossier and
+  contributors.
+- **Kept:** [`src/`](aubio/src/) holds only what the spectral-flux onset
+  function and the causal tempo tracker need: `fvec`, `cvec`, `lvec`,
+  `mathutils`, `musicutils`, `utils/{log,scale,hist}`,
+  `spectral/{fft,ooura_fft8g,phasevoc,specdesc,statistics}`,
+  `temporal/{filter,biquad}`, `onset/peakpicker` and
+  `tempo/{beattracking,tempo}`, with their headers, `aubio_priv.h` and
+  `types.h`. The FFT is aubio's bundled Ooura; FFTW, Accelerate and BLAS are
+  not used.
+- **Adapted, not a verbatim drop:** every `#include "dir/x.h"` and
+  `#include "x.h"` in a file under a subdirectory was rewritten to a path
+  relative to that file (`"../aubio_priv.h"`, `"fft.h"`), so no include path
+  is added to CMake or to the test and bench scripts. Nothing else changed.
+  An upgrade copies the same files and reruns that rewrite.
+- **License:** **GPL-3.0-or-later** ([`aubio/COPYING`](aubio/COPYING)), the
+  repository's own licence.
+- **Why vendored:** the beat analysis of a free first take (#1936) runs on
+  it. Plain C with no dependencies, so it builds the same on the Mac, in CI
+  and in the appliance image with no recipe.
+- **Used by:** exactly one translation unit, `src/core/le_aubio.c`, which
+  compiles the subset by including its `.c` files and exposes plain-C
+  handles in `src/core/le_aubio.h`; aubio's private macros stay in that TU.
+  Only the analysis worker (`src/core/engine_analysis.c`) calls it, never
+  the audio thread: aubio allocates in its constructors.
 
 ## `clap/` — CLAP plugin ABI (header-only)
 

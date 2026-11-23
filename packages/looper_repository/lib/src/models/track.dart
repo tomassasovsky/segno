@@ -295,22 +295,7 @@ class Track extends Equatable {
   /// nominal tempo's; null without either.
   double? _framesPerBeat(TransportState transport, int sampleRate) {
     if (!hasContent || state == TrackState.recording) return null;
-    if (transport.masterLengthFrames > 0 && transport.loopBeats > 0) {
-      return transport.masterLengthFrames / transport.loopBeats;
-    }
-    if (transport.masterLengthFrames > 0 &&
-        transport.loopBars > 0 &&
-        transport.tsNum > 0) {
-      return transport.masterLengthFrames /
-          (transport.loopBars * transport.tsNum);
-    }
-    if (sampleRate <= 0 ||
-        transport.tempoSource == TempoSource.none ||
-        !transport.tempoBpm.isFinite ||
-        transport.tempoBpm <= 0) {
-      return null;
-    }
-    return sampleRate * 60 / transport.tempoBpm;
+    return transport.framesPerBeat(sampleRate);
   }
 
   /// [lengthFrames] in whole [unit]s within a frame of rounding, else null.

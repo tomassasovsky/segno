@@ -18,6 +18,8 @@ stream audio with seeking, and download selected files with names you choose.
   After installing, rescan plug-ins in Live or restart it. If macOS says it
   cannot verify `Segno.vst3`, approve it in **System Settings → Privacy &
   Security** with **Open Anyway**, as for the app.
+- **An app icon.** Segno Transfer shows the Segno mark over a download arrow
+  in Finder and the Dock.
 
 ## Download and install
 

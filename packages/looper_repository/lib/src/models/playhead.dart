@@ -10,7 +10,13 @@ import 'package:equatable/equatable.dart';
 /// draws a playhead: the progress bars and the waveforms.
 class Playhead extends Equatable {
   /// Creates a [Playhead].
-  const new({this.tracks = const []});
+  const new({
+    this.tracks = const [],
+    this.captures = const [],
+    this.tempoEstimateBpm = 0,
+    this.tempoConfidence = 0,
+    this.tempoEstimateTrack = -1,
+  });
 
   /// Each track's play position as a share of its loop, `0..1`, indexed by
   /// channel. `0` while the track has no length or is recording its take:
@@ -18,10 +24,71 @@ class Playhead extends Equatable {
   /// then, which is no position at all.
   final List<double> tracks;
 
+  /// Each track's take in flight, indexed by channel (#1936):
+  /// [TakeCapture.none] unless the track is recording.
+  final List<TakeCapture> captures;
+
+  /// While a free first take records, the beat analysis's live tempo
+  /// estimate in BPM (#1936); `0` with none. Like the position, it moves on
+  /// every poll.
+  final double tempoEstimateBpm;
+
+  /// How sure the analysis is of [tempoEstimateBpm] (larger is surer); `0`
+  /// with none.
+  final double tempoConfidence;
+
+  /// The track whose take [tempoEstimateBpm] is of, `-1` with none.
+  final int tempoEstimateTrack;
+
+  /// The estimate for [channel]'s take in BPM, `0` unless it is the take
+  /// the beat analysis hears.
+  double tempoEstimateOf(int channel) =>
+      channel == tempoEstimateTrack ? tempoEstimateBpm : 0;
+
   /// [channel]'s position, or `0` when the rig has no such track.
   double track(int channel) =>
       channel >= 0 && channel < tracks.length ? tracks[channel] : 0;
 
+  /// [channel]'s take in flight, or [TakeCapture.none].
+  TakeCapture capture(int channel) => channel >= 0 && channel < captures.length
+      ? captures[channel]
+      : TakeCapture.none;
+
   @override
-  List<Object?> get props => [tracks];
+  List<Object?> get props => [
+    tracks,
+    captures,
+    tempoEstimateBpm,
+    tempoConfidence,
+    tempoEstimateTrack,
+  ];
+}
+
+/// A recording take's progress (#1936): the frames captured since its press,
+/// and where it ends by itself. Like the position, it moves on every poll.
+class TakeCapture extends Equatable {
+  /// Creates a [TakeCapture].
+  const new({this.frames = 0, this.targetFrames = 0, this.vizPoints = 0});
+
+  /// No take in flight.
+  static const none = TakeCapture();
+
+  /// Frames captured since the take's press. A take over a master counts
+  /// from its own start, not from the master's phase.
+  final int frames;
+
+  /// Where the take ends by itself: an armed length preset or a fixed
+  /// multiple of the master loop. `0` when only a press ends it.
+  final int targetFrames;
+
+  /// How many of the track's waveform buckets hold the take so far: toward
+  /// a target they span the target, else what is captured.
+  final int vizPoints;
+
+  /// How much of [targetFrames] is captured, `0..1`; `0` without a target.
+  double get progress =>
+      targetFrames > 0 ? (frames / targetFrames).clamp(0.0, 1.0) : 0;
+
+  @override
+  List<Object?> get props => [frames, targetFrames, vizPoints];
 }

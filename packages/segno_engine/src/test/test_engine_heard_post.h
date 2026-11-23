@@ -120,7 +120,52 @@ static void test_heard_post_rings_past_stop(void) {
   }
 }
 
+/* #1713, option A: a take whose Post entries did not fit records them in.
+ * The lane's copy of the chain has no Post entry (all of it Pre), so the
+ * image is the input chain's whole output: exactly what the monitor played
+ * (the device output, while nothing else sounds), delay included. */
+static void test_heard_printed_post_records_the_whole_chain(void) {
+  printf("test_heard_printed_post_records_the_whole_chain\n");
+  enum { N = 4800, F = 480 };
+  le_engine* e = heard_engine(48000);
+  heard_post_monitor(e, 2, 1, 1);
+  CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_REVERB) == LE_OK);
+  CHECK(le_engine_set_lane_fx(e, 0, 0, 1, LE_FX_DELAY) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 2, 2) == LE_OK);
+  drain(e);
+  le_record_image image = heard_image(52, 1);
+  CHECK(le_engine_record_with_image(e, 0, &image) == LE_OK);
+  static float out[2 * N];
+  heard_feed(e, 0, N, 64, out);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  heard_feed(e, N, 2 * F, 64, NULL);
+  float* pl = NULL;
+  float* pr = NULL;
+  CHECK(le_heard_planes(e, 0, 0, load_i32(&e->tracks[0].lanes[0].a_live), &pl,
+                        &pr));
+  /* The Pre run alone (the reverb): what a lane running the delay live
+   * would have recorded. */
+  le_engine* pre = heard_engine(48000);
+  heard_post_monitor(pre, 1, 1, 1);
+  const float* b = heard_post_take(pre, N);
+  int same = pl != NULL && pr != NULL;
+  int differs = 0;
+  for (int32_t i = F; same && i < N; ++i) {
+    if (pl[i] != out[2 * i] || pr[i] != out[2 * i + 1]) same = 0;
+    if (b != NULL && pl[i] != b[i]) differs = 1;
+  }
+  CHECK(same);
+  CHECK(differs);
+  le_lane_snapshot ls;
+  le_engine_get_lane(e, 0, 0, &ls);
+  CHECK(ls.heard == 1);
+  CHECK(ls.source == LE_LANE_SOURCE_HEARD);
+  le_engine_destroy(e);
+  le_engine_destroy(pre);
+}
+
 static void run_heard_post_tests(void) {
   test_heard_records_the_pre_run();
   test_heard_post_rings_past_stop();
+  test_heard_printed_post_records_the_whole_chain();
 }

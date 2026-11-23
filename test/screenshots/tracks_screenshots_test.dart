@@ -1007,7 +1007,7 @@ void main() {
       );
       await tester.runAsync(() => control.setPedalSetup(PedalSetup.fresh));
       control.setMode(InteractionMode.custom);
-      if (scene == 'bank_b') control.toggleBankWithCursor();
+      if (scene == 'bank_b') control.toggleBank();
       await pump(
         tester,
         locale: scene == 'spanish' ? const Locale('es') : null,
@@ -1348,6 +1348,147 @@ void main() {
       matchesGoldenFile('goldens/tracks_main_window.png'),
     );
   }, skip: !rendersScreenshots);
+
+  // #1936: a track that records, or is the empty track Record/Play records
+  // next, meters its input (MAIN VIEWS / First recording); an overdubbing
+  // one meters the louder of its loop and its input (#1955).
+  for (final scene in ['recording', 'empty_selected', 'overdubbing']) {
+    testWidgets('the meter follows the input: $scene', (tester) async {
+      const status = EngineStatus(
+        isConnected: true,
+        devicePresent: true,
+        deviceName: 'Segno',
+        sampleRate: 48000,
+        inputChannels: 2,
+        outputChannels: 2,
+      );
+      levels(
+        MeterLevels(
+          tracks: [
+            const TrackLevels(peak: 0.4, input: 0.3),
+            const TrackLevels(peak: 0.7, input: 0.3),
+            const TrackLevels(peak: 0.8, input: 0.3),
+            if (scene == 'overdubbing')
+              const TrackLevels(peak: 0.35, input: 0.6)
+            else
+              const TrackLevels(input: 0.3),
+          ],
+        ),
+      );
+      seed(
+        LooperState(
+          status: status,
+          tracks: [
+            const Track(state: TrackState.playing, lengthFrames: 96000),
+            const Track(
+              channel: 1,
+              state: TrackState.playing,
+              lengthFrames: 96000,
+            ),
+            const Track(
+              channel: 2,
+              state: TrackState.playing,
+              lengthFrames: 96000,
+            ),
+            Track(
+              channel: 3,
+              state: switch (scene) {
+                'recording' => TrackState.recording,
+                'overdubbing' => TrackState.overdubbing,
+                _ => TrackState.empty,
+              },
+              lengthFrames: scene == 'empty_selected' ? 0 : 48000,
+            ),
+          ],
+        ),
+      );
+      control.selectTrack(3);
+      await pump(tester);
+      await expectLater(
+        find.byType(TracksView),
+        matchesGoldenFile('goldens/tracks_input_meter_$scene.png'),
+      );
+    }, skip: !rendersScreenshots);
+  }
+
+  // #1936 part 2: a recording take counts toward its end, or shows the time
+  // a free take has run, in the Tracks and Wave views.
+  for (final scene in ['target', 'free', 'estimate', 'estimate_es']) {
+    for (final view in [StageView.track, StageView.wave]) {
+      testWidgets('a recording take counts: $scene, ${view.name} view', (
+        tester,
+      ) async {
+        const sampleRate = 48000;
+        // 120 BPM: a 96000-frame bar, so a 4-bar preset ends at 384000.
+        final target = scene == 'target';
+        levels(
+          const MeterLevels(
+            tracks: [
+              TrackLevels(peak: 0.4),
+              TrackLevels(peak: 0.7),
+              TrackLevels(peak: 0.8),
+              TrackLevels(input: 0.3),
+            ],
+          ),
+        );
+        when(() => repository.playhead).thenReturn(
+          Playhead(
+            // #1936 part 5: a free take the analysis is sure of, at 120.
+            tempoEstimateBpm: scene.startsWith('estimate') ? 120 : 0,
+            tempoEstimateTrack: 3,
+            tracks: [0.3, 0.6, 0.8, if (target) 150000 / 384000 else 0],
+            captures: [
+              TakeCapture.none,
+              TakeCapture.none,
+              TakeCapture.none,
+              TakeCapture(
+                frames: target ? 150000 : 7 * sampleRate + 100,
+                targetFrames: target ? 384000 : 0,
+              ),
+            ],
+          ),
+        );
+        seed(
+          LooperState(
+            status: const EngineStatus(
+              isConnected: true,
+              devicePresent: true,
+              deviceName: 'Segno',
+              sampleRate: sampleRate,
+              inputChannels: 2,
+              outputChannels: 2,
+            ),
+            transport: target
+                ? const TransportState(
+                    tempoBpm: 120,
+                    tempoSource: TempoSource.manual,
+                  )
+                : const TransportState(),
+            tracks: const [
+              Track(state: TrackState.playing, lengthFrames: 96000),
+              Track(channel: 1, state: TrackState.playing, lengthFrames: 96000),
+              Track(channel: 2, state: TrackState.playing, lengthFrames: 96000),
+              Track(
+                channel: 3,
+                state: TrackState.recording,
+                lengthFrames: 150000,
+              ),
+            ],
+          ),
+        );
+        control.selectTrack(3);
+        tracks.showView(view);
+        await pump(
+          tester,
+          locale: scene.endsWith('_es') ? const Locale('es') : null,
+        );
+        await expectLater(
+          find.byType(TracksView),
+          matchesGoldenFile('goldens/tracks_take_${scene}_${view.name}.png'),
+        );
+      }, skip: !rendersScreenshots);
+    }
+  }
 
   testWidgets(
     'console main window with a reversed track: REV in the meta row gap',

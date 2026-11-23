@@ -32,6 +32,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "engine_analysis.h"
 #include "audio_ring.h" /* le_audio_ring_release (capture-ring teardown) */
 #include "engine_cache.h" /* le_cache_init/shutdown (wet-cache lifecycle) */
 #include "engine_render.h" /* le_render_destroy (render recipe jobs) */
@@ -645,6 +646,13 @@ static void le_engine_reset_runtime(le_engine* engine, int32_t sample_rate,
                                     int32_t input_channels,
                                     int32_t output_channels,
                                     int32_t max_loop_frames) {
+  /* No take is fed to the beat analysis, and none awaits its answer, across
+   * a reset (#1936): a configure makes a new analysis, a retained reopen
+   * keeps it for the next take. */
+  engine->ana_on = 0;
+  engine->ana_wait = 0;
+  store_i32(&engine->a_tempo_settling, 0);
+  store_i32(&engine->a_ana_track, -1);
   /* Lane buffers are mono: one input channel in, routed out via the mask. */
   engine->track_count = LE_MAX_TRACKS;
   atomic_store_explicit(&engine->a_record_timing_default, 0, memory_order_seq_cst);
@@ -689,6 +697,8 @@ static void le_engine_reset_runtime(le_engine* engine, int32_t sample_rate,
     store_f32(&tr->a_trk_rms_bits, 0.0f);
     store_f32(&tr->a_trk_peak_bits, 0.0f);
     store_i32(&tr->a_play_pos, 0);
+    store_i32(&tr->a_capture_frames, 0);
+    store_i32(&tr->a_capture_target, 0);
     store_i32(&tr->a_pending, 0);
     store_i32(&tr->a_pending_launch, 0);
     store_i32(&tr->a_launch_grace, 0);
@@ -1093,6 +1103,10 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   }
   le_prefault_start(engine); /* so no take start pays for the thread */
   le_fx_pool_start(engine);  /* the effects workers, if any were asked for */
+  /* The beat analysis of a free first take (#1936), for this rate and the
+   * longest take; configure runs with no callback, so it is safe to swap. */
+  le_analysis_destroy(engine->analysis);
+  engine->analysis = le_analysis_create(sample_rate, max_loop_frames);
   return LE_OK;
 }
 
@@ -1541,6 +1555,8 @@ void le_engine_destroy(le_engine* engine) {
   le_heard_tail_free_all(engine); /* #1713 part 3: worker joined */
   le_bounce_abandon_all(engine); /* #1202: no callback will apply them */
   le_prefault_shutdown(engine); /* its jobs name the pool buffers below */
+  le_analysis_destroy(engine->analysis); /* #1936: joins its worker */
+  engine->analysis = NULL;
   le_collect_retired(engine, 1);
   le_backing_release(engine, 0); /* #1200: no audio thread any more */
   le_audition_release(engine);   /* #1178: likewise */

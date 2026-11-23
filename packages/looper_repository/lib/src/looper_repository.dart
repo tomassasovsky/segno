@@ -225,6 +225,15 @@ class LooperRepository {
         else
           for (final track in s.tracks) _progressOf(track),
       ],
+      captures: [
+        if (importing != null)
+          for (final _ in importing) TakeCapture.none
+        else
+          for (final track in s.tracks) _captureOf(track),
+      ],
+      tempoEstimateBpm: s.tempoEstimateBpm,
+      tempoConfidence: s.tempoConfidence,
+      tempoEstimateTrack: s.tempoEstimateTrack,
     );
   }
 
@@ -235,12 +244,25 @@ class LooperRepository {
     _playheads.add(next);
   }
 
-  /// [track]'s position as a share of its length, `0` with no length or
-  /// while the take records ([Playhead.tracks]).
-  static double _progressOf(TrackSnapshot track) =>
-      track.lengthFrames > 0 && track.state != TrackState.recording
-      ? (track.positionFrames / track.lengthFrames).clamp(0.0, 1.0)
-      : 0;
+  /// [track]'s position as a share of its length ([Playhead.tracks]). While
+  /// the take records it is the share of the take's target, `0` with none
+  /// (#1936): the write head is no position to play against.
+  static double _progressOf(TrackSnapshot track) {
+    if (track.state == TrackState.recording) return _captureOf(track).progress;
+    return track.lengthFrames > 0
+        ? (track.positionFrames / track.lengthFrames).clamp(0.0, 1.0)
+        : 0;
+  }
+
+  /// [track]'s take in flight ([Playhead.captures]).
+  static TakeCapture _captureOf(TrackSnapshot track) =>
+      track.state == TrackState.recording
+      ? TakeCapture(
+          frames: track.captureFrames,
+          targetFrames: track.captureTargetFrames,
+          vizPoints: track.captureVizPoints,
+        )
+      : TakeCapture.none;
 
   void _publishMeters(EngineSnapshot s) {
     final next = MeterLevels(
@@ -250,12 +272,33 @@ class LooperRepository {
       outputPeaks: s.outputPeaks,
       tracks: [
         for (final track in s.tracks)
-          TrackLevels(peak: track.peak, peakL: track.peakL, peakR: track.peakR),
+          TrackLevels(
+            peak: track.peak,
+            peakL: track.peakL,
+            peakR: track.peakR,
+            input: _trackInputPeak(track, s.inputPeaks),
+          ),
       ],
     );
     if (next == _meters) return;
     _meters = next;
     _meterLevels.add(next);
+  }
+
+  /// The loudest input [track]'s lanes record from, after each input's trim
+  /// (#1936). [inputPeaks] are the raw peaks the engine reports; the capture
+  /// multiplies each input by its trim before it reaches a lane, so the level
+  /// shown is the level recorded.
+  double _trackInputPeak(TrackSnapshot track, List<double> inputPeaks) {
+    var loudest = 0.0;
+    for (final lane in track.lanes) {
+      final input = lane.inputChannel;
+      if (input < 0 || input >= inputPeaks.length) continue;
+      final level =
+          inputPeaks[input] * inputTrimGainOfDb(_inputSetup.trimDbOf(input));
+      if (level > loudest) loudest = level;
+    }
+    return loudest;
   }
 
   /// Fired when the repository changes a lane's chain or resets a remembered
@@ -505,6 +548,7 @@ class LooperRepository {
   bool _retrySuperseded = false;
   final _recordRefusals = StreamController<int>.broadcast();
   final _overdubRefusals = StreamController<int>.broadcast();
+  final _fxTakePrinted = StreamController<int>.broadcast();
   final _lengthHistoryRefusals = StreamController<int>.broadcast();
   final _lengthHistoryRefusalCounts = <int, int>{};
 
@@ -1369,12 +1413,19 @@ class LooperRepository {
           }
           onLaneChainChanged?.call(ch, lane);
         }
-        // What a take runs live: its chain where the engine could not give
-        // it an image (#1713), its Post entries over the image where it did
-        // (#1741). When that does not fit, its own chains are switched off,
-        // as a chain the rig cannot run is (R2), never another track's.
-        _holdUnheardTake(ch, pending);
+        // Landed, its lanes are weighed as they now are, not as pending
+        // ([_takeChargesPending]). A take the engine could not give an
+        // image runs its chain live (#1713). When that does not fit, its own
+        // chains are switched off, as a chain the rig cannot run is (R2),
+        // never another track's. One playing its image runs only the Post
+        // entries the press found room for, and is never switched off.
         _pendingImages.remove(ch);
+        _holdUnheardTake(ch, pending);
+        // Said once the take holds its image: a take with none plays its
+        // chain live, and one cancelled never lands.
+        if (pending.printed.any((lane) => _laneHeard.contains((ch, lane)))) {
+          _fxTakePrinted.add(ch);
+        }
         _reproject();
       } else if (commandsSettled &&
           !track.pending &&
@@ -1392,12 +1443,9 @@ class LooperRepository {
     final budget = fxBudgetNs(rate, period: period);
     for (final MapEntry(key: lane, value: effects)
         in pending.inherited.entries) {
-      // A lane playing its image still runs its Post entries (#1741).
-      if (effects.isEmpty) continue;
-      if (_laneHeard.contains((channel, lane)) &&
-          fxPreCount(effects) == effects.length) {
-        continue;
-      }
+      // A lane playing its image is never switched off (#1713): the press
+      // printed whatever of its Post entries did not fit.
+      if (effects.isEmpty || _laneHeard.contains((channel, lane))) continue;
       if (_fxLoadAt(rate, period) <= budget) return;
       final at = FxAddress(stage: FxStage.loop, index: channel, lane: lane);
       _fxHeld.add(at);
@@ -2722,14 +2770,18 @@ class LooperRepository {
     transport: TransportState(
       deviceRunning: s.isRunning,
       masterLengthFrames: s.masterLengthFrames,
-      tempoBpm: s.tempoBpm,
-      tempoSource: s.tempoSource,
+      // While the beat analysis decides a free take's bars (#1936), the
+      // length's reading is provisional: no tempo and no bars until the
+      // answer, a few milliseconds later, so the figures never flip.
+      tempoBpm: s.tempoSettling ? 0 : s.tempoBpm,
+      tempoSource: s.tempoSettling ? TempoSource.none : s.tempoSource,
       tsNum: s.tsNum,
       tsDen: s.tsDen,
       syncTempo: s.syncTempo,
       quantizeDiv: s.quantizeDiv,
-      loopBars: s.loopBars,
-      loopBeats: s.loopBeats,
+      loopBars: s.tempoSettling ? 0 : s.loopBars,
+      tempoSettling: s.tempoSettling,
+      loopBeats: s.tempoSettling ? 0 : s.loopBeats,
       currentBeat: s.currentBeat,
       // Raw mode may change before the callback publishes its command fence.
       // Every repository consumer observes the same receipt-confirmed choice.
@@ -3968,7 +4020,10 @@ class LooperRepository {
     final inheritedHandles = <int, Map<String, PluginSlotHandle>>{};
     final detached = <PluginSlotHandle>[];
     EngineResult? preparationFailure;
+    final printed = <int>{};
     if (state == TrackState.empty) {
+      // The Post entries this press's lanes would run live, lane by lane.
+      final pressCharges = <FxAddress, List<TrackEffect>>{};
       try {
         for (var lane = 0; lane < laneCount(channel); lane++) {
           final chain = _inheritableChain(channel, lane);
@@ -3986,15 +4041,31 @@ class LooperRepository {
             }
             continue;
           }
-          // What a take records is the chain's Pre run (#1741): a chain
-          // with none is recorded clean, its Post entries live on the lane.
-          if (fxPreCount(chain) > 0) heardLanes.add(lane);
           final captured = <TrackEffect>[];
           for (var index = 0; index < chain.length; index++) {
             final fx = _capturePluginForLane(chain[index], input, index);
             if (fx != null) captured.add(fx);
           }
-          final copied = withFreshSlotIds(captured);
+          // What a take records is the chain's Pre run (#1741): its Post
+          // entries run live on the lane, so they ring out past Stop. Where
+          // they do not fit beside the rest of the rig, the take records the
+          // whole chain instead and they land on the lane at Pre (#1713,
+          // the owner's option A): the take sounds as heard, and those
+          // effects stop with it.
+          final at = FxAddress(stage: FxStage.loop, index: channel, lane: lane);
+          final post = captured.sublist(fxPreCount(captured));
+          final print =
+              post.isNotEmpty && !_takeChargeFits(pressCharges, at, post);
+          pressCharges[at] = print ? const [] : post;
+          if (print) printed.add(lane);
+          // A chain with no Pre run is recorded clean, its Post entries live
+          // on the lane, unless they are printed.
+          if (print || fxPreCount(chain) > 0) heardLanes.add(lane);
+          final copied = withFreshSlotIds(
+            print
+                ? [for (final fx in captured) _placed(fx, FxPlacement.pre)]
+                : captured,
+          );
           final edges = fxRackEdges(copied);
           final paths = fxRackPathsToEngine(copied);
           final slots = <FxRecipeSlot>[];
@@ -4128,6 +4199,7 @@ class LooperRepository {
         inheritedInputs,
         inheritedHandles,
         clearOnCommit: state == TrackState.empty,
+        printed: printed,
       );
       _reproject();
     } else {
@@ -4141,6 +4213,40 @@ class LooperRepository {
       }
     }
     return result;
+  }
+
+  /// What the takes that have not landed yet will run live once they do, by
+  /// lane: each one's Post entries (#1741), its chain switched on. A take
+  /// waiting for its start (a count-in, the next bar, a sound) keeps the
+  /// lane's old chain until it lands, so every load counts these instead:
+  /// once landed, a take playing its image is never held (#1713).
+  Map<FxAddress, List<TrackEffect>> _takeChargesPending() => {
+    for (final MapEntry(key: channel, value: pending) in _pendingImages.entries)
+      for (final MapEntry(key: lane, value: effects)
+          in pending.inherited.entries)
+        FxAddress(stage: FxStage.loop, index: channel, lane: lane): effects
+            .sublist(fxPreCount(effects)),
+  };
+
+  /// Whether a take's [post] entries on lane [at] fit the budget beside
+  /// [charges] (the Post entries of the same press's other lanes) and the
+  /// rest of the rig, the takes not landed yet included ([_fxLoadAt]),
+  /// their chains switched on as a take's come in.
+  bool _takeChargeFits(
+    Map<FxAddress, List<TrackEffect>> charges,
+    FxAddress at,
+    List<TrackEffect> post,
+  ) {
+    final rate = _fxRate;
+    final period = _fxPeriod;
+    final replaced = {...charges, at: post};
+    return _fxLoadAt(
+          rate,
+          period,
+          replaced: replaced,
+          switches: {for (final lane in replaced.keys) lane: true},
+        ) <=
+        fxBudgetNs(rate, period: period);
   }
 
   /// Drops the remembered per-lane mutes for [channel] — used when the engine
@@ -6795,6 +6901,9 @@ class LooperRepository {
   /// - once per track lap thereafter, at the wrap, while the track plays;
   /// - never while the track stands still (its last shape is kept).
   ///
+  /// While a take records, the buckets hold the take so far (#1936): all of
+  /// them toward a target, else only the ones drawn.
+  ///
   /// The native tap and playhead both span this track's entire loop, including
   /// multiples, divisions and independent Free/Song clocks.
   Float32List readTrackWaveform(int channel) {
@@ -6810,9 +6919,15 @@ class LooperRepository {
     final progress = playhead.track(channel);
     final entry = _waveforms[channel];
     if (entry == null || entry.key != key) {
-      final samples = _engine.readTrackVisual(channel);
-      _waveforms[channel] = _WaveformRead(key, samples, sweepFrom: progress);
-      return samples;
+      final read = _WaveformRead(
+        key,
+        _engine.readTrackVisual(channel),
+        sweepFrom: progress,
+      );
+      _waveforms[channel] = read;
+      return track.state == TrackState.recording
+          ? _takeShape(channel, read)
+          : read.samples;
     }
     final wrapped = progress < entry.lastProgress;
     if (wrapped) entry.wraps++;
@@ -6827,7 +6942,18 @@ class LooperRepository {
     if (track.isCapturing || (playing && (!swept || justSwept || wrapped))) {
       entry.samples = _engine.readTrackVisual(channel);
     }
+    if (track.state == TrackState.recording) return _takeShape(channel, entry);
     return entry.samples;
+  }
+
+  /// A recording take's shape (#1936): toward a target, every bucket (the
+  /// target's span, filled from the left); without one, the buckets drawn so
+  /// far, which a painter spreads across the row as the take grows.
+  Float32List _takeShape(int channel, _WaveformRead entry) {
+    final capture = playhead.capture(channel);
+    if (capture.targetFrames > 0) return entry.samples;
+    final drawn = capture.vizPoints.clamp(0, entry.samples.length);
+    return Float32List.sublistView(entry.samples, 0, drawn);
   }
 
   /// One copy of each track's waveform, see [readTrackWaveform].
@@ -9004,8 +9130,10 @@ class LooperRepository {
   }) {
     final off = held ?? _fxHeld;
     final controls = reach ?? _fxReach;
+    final pending = _takeChargesPending();
     final chains = <FxAddress, List<TrackEffect>>{
       ..._fxChains(),
+      ...pending,
       for (final MapEntry(key: at, :value) in replaced.entries)
         if (at.stage == FxStage.loop)
           FxAddress(stage: FxStage.loop, index: at.index, lane: at.lane ?? 0):
@@ -9013,7 +9141,8 @@ class LooperRepository {
         else
           at: value,
     };
-    bool chainOn(FxAddress at) => switches[at] ?? _chainSwitchAt(at);
+    bool chainOn(FxAddress at) =>
+        switches[at] ?? (pending.containsKey(at) || _chainSwitchAt(at));
     bool isOn(FxSwitchKey key) {
       final chain = chains[key.address] ?? const <TrackEffect>[];
       if (key.slotId case final slot?) {
@@ -9479,9 +9608,10 @@ class LooperRepository {
   /// R2: while the chains (with [incoming] replaced by [chain], when given)
   /// are over budget, chains are held off, the newest stage first: lane
   /// chains, then track, All tracks, output and monitor chains, the highest
-  /// index first within a stage, until the rest fits. Every chain keeps its
-  /// entries and its saved switch. A chain held here that was not held
-  /// [before] and that the player had on joins the standing notice.
+  /// index first within a stage, until the rest fits. A take playing its
+  /// image is never held (#1713): its Post entries play with it. Every chain
+  /// keeps its entries and its saved switch. A chain held here that was not
+  /// held [before] and that the player had on joins the standing notice.
   ///
   /// The boot restore lands chain by chain after the device has started,
   /// and a reopen replays the rig, so this runs before every recipe goes to
@@ -9563,6 +9693,9 @@ class LooperRepository {
         break;
       }
       if (_fxHeld.contains(at) || chainOf(at).isEmpty) continue;
+      // A take playing its image keeps its Post entries on (#1713): holding
+      // them would play it without effects the player heard.
+      if (_playsImage(at, chainOf(at), chainOn: switchOf(at))) continue;
       // A chain whose hold frees nothing in any state stays as it is: one
       // that charges nothing (off, and no control reaches it, #1723), or
       // only for tails that drain whether it is held or not (#1733).
@@ -9854,6 +9987,19 @@ class LooperRepository {
     return EngineResult.ok;
   }
 
+  /// Reads the loop as twice ([double]) or half its bars, keeping the audio
+  /// (#1936, D4): the derived tempo doubles or halves with them, and nothing
+  /// retimes. The engine decides whether it applies (a derived tempo not
+  /// retimed since, no take recording, one shared loop, an even count to
+  /// halve, a tempo in range); otherwise the loop stays as it is. Stopped,
+  /// it answers [EngineResult.notRunning].
+  EngineResult scaleLoopBars({required bool double}) {
+    if (!_intendRunning) return EngineResult.notRunning;
+    final result = _engine.scaleLoopBars(double: double);
+    if (result.isOk) _reproject();
+    return result;
+  }
+
   /// Sets the time signature to [num]/[den] (only the 17 Sheeran-verified
   /// signatures are valid — the engine rejects anything else without
   /// applying). Remembered and re-applied on every (re)start. Ignored by the
@@ -9921,6 +10067,12 @@ class LooperRepository {
   /// Record presses on a reversed track (the channel): overdub is
   /// unavailable while a track plays reversed, from any surface.
   Stream<int> get overdubRefusals => _overdubRefusals.stream;
+
+  /// Fresh takes (the channel) that record their input chain's Post entries
+  /// into the take, since there was no room to run them live beside the rest
+  /// of the rig (#1713): the take sounds as heard, but those effects stop
+  /// with it on Stop instead of ringing out.
+  Stream<int> get fxTakePrinted => _fxTakePrinted.stream;
 
   /// Undo or Redo taps on a track's length edit that did nothing (the
   /// channel), from any surface (#1168), that their own result could not
@@ -10620,6 +10772,7 @@ class LooperRepository {
     await _recordingInputRequired.close();
     await _recordRefusals.close();
     await _overdubRefusals.close();
+    await _fxTakePrinted.close();
     await _lengthHistoryRefusals.close();
     await _mixSettingsFailures.close();
     await _mix.dispose();
@@ -10762,6 +10915,7 @@ class _PendingImage {
     this.inheritedInputs,
     this.inheritedHandles, {
     required this.clearOnCommit,
+    this.printed = const {},
   });
   final int revision;
   final Map<(int, int), double> images;
@@ -10772,6 +10926,10 @@ class _PendingImage {
   final Map<int, int> inheritedInputs;
   final Map<int, Map<String, PluginSlotHandle>> inheritedHandles;
   final bool clearOnCommit;
+
+  /// The lanes whose Post entries the press recorded into the take, since
+  /// they did not fit live (#1713).
+  final Set<int> printed;
 }
 
 /// One refused fresh-capture press waiting for its retry (#1146).

@@ -199,6 +199,16 @@ void main() {
       verify(() => tempo.tapTempo()).called(1);
     });
 
+    test('÷2 and ×2 reach the tempo settings; the engine decides (#1936)', () {
+      when(() => tempo.scaleLoopBars(double: any(named: 'double')))
+          .thenReturn(EngineResult.ok);
+      commands
+        ..handle(const TempoScaleBars(double: true))
+        ..handle(const TempoScaleBars(double: false));
+      verify(() => tempo.scaleLoopBars(double: true)).called(1);
+      verify(() => tempo.scaleLoopBars(double: false)).called(1);
+    });
+
     test('the signature changes only while nothing is recorded', () {
       follow = TempoFollowState.retimes;
       commands.handle(const SignatureSet(6, 8));

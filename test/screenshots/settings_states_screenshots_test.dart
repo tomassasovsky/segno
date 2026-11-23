@@ -1106,6 +1106,24 @@ void main() {
     );
   }, skip: !rendersScreenshots);
 
+  testWidgets('Updates page, RAUC still installing after an app restart', (
+    tester,
+  ) async {
+    await pumpSystem(
+      tester,
+      const UpdatesSettingsPage(),
+      updateState: _consoleBuild.copyWith(
+        phase: UpdatePhase.interrupted,
+        interrupted: Version.parse('0.1.1'),
+        raucInstalling: true,
+      ),
+    );
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/settings_updates_rauc_installing.png'),
+    );
+  }, skip: !rendersScreenshots);
+
   testWidgets('Updates page, an update on offer', (tester) async {
     await pumpSystem(
       tester,

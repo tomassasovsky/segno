@@ -5,6 +5,8 @@ import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/appliance/power_off/power_step.dart';
 import 'package:segno/logging/app_log.dart';
+import 'package:segno/looper/model/capture_count.dart';
+import 'package:segno/looper/model/loop_bars_scaling.dart';
 import 'package:segno/visualizer/performance_readout.dart';
 import 'package:segno/visualizer/waveform_window_service.dart';
 
@@ -120,7 +122,10 @@ class WaveformDisplayController {
 
   /// The playhead position the latest frame carried.
   double? _sentProgress;
-  (LooperState, WaveformDisplayContext)? _lastReadout;
+
+  /// The selected take's capture the latest frame carried (#1936).
+  TakeCapture? _sentCapture;
+  (LooperState, WaveformDisplayContext, CaptureCount)? _lastReadout;
   int _readoutRevision = 0;
   int _intent = 0;
   int _handledIntent = 0;
@@ -207,7 +212,11 @@ class WaveformDisplayController {
     // Only the selected track's playhead is drawn there; another track
     // moving changes nothing on that screen.
     _playheads = _repository.playheads.listen((playhead) {
-      if (playhead.track(_context.cursor) != _sentProgress) _requestFrame();
+      final cursor = _context.cursor;
+      if (playhead.track(cursor) != _sentProgress ||
+          playhead.capture(cursor) != _sentCapture) {
+        _requestFrame();
+      }
     });
     _readoutTimer = Timer.periodic(_frame, (_) => _pushReadout());
     _onWindowReady();
@@ -249,8 +258,12 @@ class WaveformDisplayController {
     final samples = selected.hasContent
         ? _repository.readTrackWaveform(cursor)
         : Float32List(0);
-    final progress = _repository.playhead.track(cursor);
+    // A recording take has no shape to play over yet (#1936).
+    final progress = selected.state == TrackState.recording
+        ? 0.0
+        : _repository.playhead.track(cursor);
     _sentProgress = progress;
+    _sentCapture = _repository.playhead.capture(cursor);
     unawaited(
       _window.pushWaveform(samples, progress, name).catchError((Object _) {
         if (!_running ||
@@ -277,16 +290,18 @@ class WaveformDisplayController {
   void _pushReadout() {
     if (!_running || _closed) return;
     final state = _repository.lastState;
+    final count = _captureCount(state);
     final last = _lastReadout;
     if (last != null &&
         last.$2 == _context &&
+        last.$3 == count &&
         _sameReadoutFacts(state, last.$1, _context.cursor)) {
       return;
     }
     final revision = ++_readoutRevision;
-    _lastReadout = (state, _context);
+    _lastReadout = (state, _context, count);
     unawaited(
-      _window.pushReadout(_readoutOf(state)).catchError((Object _) {
+      _window.pushReadout(_readoutOf(state, count)).catchError((Object _) {
         if (!_closed && _readoutRevision == revision) _lastReadout = null;
       }),
     );
@@ -306,6 +321,7 @@ class WaveformDisplayController {
     _playheads = null;
     _framePending = false;
     _sentProgress = null;
+    _sentCapture = null;
     _lastReadout = null;
   }
 
@@ -330,6 +346,7 @@ class WaveformDisplayController {
   static bool _sameReadoutFacts(LooperState a, LooperState b, int cursor) {
     if (identical(a, b)) return true;
     if (a.tempoFollow != b.tempoFollow) return false;
+    if (loopBarsScaling(a) != loopBarsScaling(b)) return false;
     final ta = a.transport;
     final tb = b.transport;
     if (ta.tempoBpm != tb.tempoBpm ||
@@ -356,8 +373,29 @@ class WaveformDisplayController {
     return null;
   }
 
-  PerformanceReadout _readoutOf(LooperState looper) {
+  /// The selected take's count while it records (#1936), else nothing.
+  CaptureCount _captureCount(LooperState looper) {
+    final track = _trackAt(looper, _context.cursor);
+    if (track == null || track.state != TrackState.recording) {
+      return kNoCaptureCount;
+    }
+    final sampleRate = looper.status.sampleRate;
+    final playhead = _repository.playhead;
+    return captureCountOf(
+      playhead.capture(_context.cursor),
+      framesPerBar: looper.transport.framesPerBar(sampleRate),
+      sampleRate: sampleRate,
+      estimateFramesPerBar: estimateFramesPerBar(
+        playhead.tempoEstimateOf(_context.cursor),
+        looper.transport.tsNum,
+        sampleRate,
+      ),
+    );
+  }
+
+  PerformanceReadout _readoutOf(LooperState looper, CaptureCount count) {
     final transport = looper.transport;
+    final scaling = loopBarsScaling(looper);
     final track = _trackAt(looper, _context.cursor);
     return PerformanceReadout(
       selected: track == null
@@ -375,9 +413,15 @@ class WaveformDisplayController {
                     sampleRate: looper.status.sampleRate,
                   ) ??
                   0,
+              captureBar: count.bar,
+              captureOfBars: count.ofBars,
+              captureSeconds: count.seconds,
+              captureApproxBars: count.approxBars,
             ),
       tempoBpm: transport.tempoBpm,
       hasTempo: transport.tempoSource != TempoSource.none,
+      canHalveBars: scaling.halve,
+      canDoubleBars: scaling.double,
       tsNum: transport.tsNum,
       tsDen: transport.tsDen,
       mode: _context.mode,

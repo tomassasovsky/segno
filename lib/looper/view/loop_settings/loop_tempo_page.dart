@@ -8,6 +8,7 @@ import 'package:segno/app/app_notices.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
+import 'package:segno/looper/model/loop_bars_scaling.dart';
 import 'package:segno/looper/model/record_start.dart';
 import 'package:segno/looper/model/tempo_state.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
@@ -124,6 +125,10 @@ class _LoopTempoPageState extends State<LoopTempoPage> {
     final transport = context.select<LooperBloc, _TempoValues>(
       (bloc) => _tempoValues(bloc.state),
     );
+    // ÷2 and ×2 (#1936): live only when the engine would apply them.
+    final scaling = context.select<LooperBloc, ({bool halve, bool double})>(
+      (bloc) => loopBarsScaling(bloc.state),
+    );
     final settings = context.watch<TempoCubit>().state;
     final tempo = context.read<TempoCubit>();
     final clickModeSnapshot = context
@@ -213,6 +218,29 @@ class _LoopTempoPageState extends State<LoopTempoPage> {
                     width: 131,
                     height: 56,
                     fontSize: 20,
+                  ),
+                ],
+              ),
+            ),
+            // ÷2 and ×2 (#1936, D4): the loop read as half or twice its
+            // bars, the tempo with them, the audio as it is.
+            Positioned(
+              left: _controlsLeft + 104 + 8 + 131 + context.spacing.xl,
+              top: 81,
+              child: Row(
+                children: [
+                  _ScaleBarsButton(
+                    key: const Key('loop_tempo_halve'),
+                    label: l10n.loopTempoHalve,
+                    semanticLabel: l10n.loopTempoHalveLabel,
+                    onTap: scaling.halve ? tempo.halveLoopBars : null,
+                  ),
+                  const SizedBox(width: 8),
+                  _ScaleBarsButton(
+                    key: const Key('loop_tempo_double'),
+                    label: l10n.loopTempoDouble,
+                    semanticLabel: l10n.loopTempoDoubleLabel,
+                    onTap: scaling.double ? tempo.doubleLoopBars : null,
                   ),
                 ],
               ),
@@ -527,6 +555,36 @@ class LoopTimeSignaturePage extends StatelessWidget {
               ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// A ÷2 or ×2 button on the tools row (#1936): the step buttons' size, dim
+/// and inert while it would do nothing.
+class _ScaleBarsButton extends StatelessWidget {
+  const new({
+    required this.label,
+    required this.semanticLabel,
+    required this.onTap,
+    super.key,
+  });
+
+  final String label;
+  final String semanticLabel;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Opacity(
+      opacity: onTap != null ? 1 : context.surface.disabledOpacity,
+      child: LoopOutlinedButton(
+        width: 104,
+        height: 56,
+        fontSize: 22,
+        label: label,
+        semanticLabel: semanticLabel,
+        onTap: onTap,
       ),
     );
   }

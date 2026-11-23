@@ -1,4 +1,4 @@
-<!-- cspell:words heatsinks Omron lofi powf -->
+<!-- cspell:words heatsinks Omron lofi powf aubio -->
 # Segno — Progress & Roadmap
 
 <!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs multicore -->
@@ -43,7 +43,6 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
 | SEG-62 | A finished export to a FAT stick is on the device: copies and the export end with a volume sync | in-review | needs-hardware | `claude/usb-export-durable-1797` |
 | SEG-8 | Start helper programs with posix_spawn, never fork the app | in-review | needs-merge | `claude/no-fork-1367` |
 | SEG-81 | Retry Wi-Fi after a runtime drop, holding off while performing | in-review | needs-hardware | `claude/wifi-runtime-retry-1337` |
-| SEG-7 | Console negotiates the charger's full 20 V current, with a power-cycle prompt | in-review | needs-hardware | `claude/pd-provisioning-1352` |
 | SEG-46 | Song queue completion | in-review | needs-hardware | `claude/song-queue-comet-1077` |
 | SEG-80 | Song and Band: one section at a time | in-review | needs-merge | `claude/song-one-section-1323` |
 | SEG-50 | Replay audio-history changes in performance stems | build | needs-merge | `claude/stem-history-replay-1143` |
@@ -55,7 +54,6 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
 | SEG-64 | Shared render recipe, Bounce, Save selected | plan | needs-merge | `claude/render-1202-*` |
 | SEG-66 | MIDI clock | plan | needs-merge | `claude/midi-clock-1228-*` |
 | SEG-74 | Device and appliance pages (Parts 6, 7, 9, 11, 12 shipped; plan approved 2026-10-26 and refreshed; Q5 answered: refuse an Apply over the effects budget; P1, P2, P3a, P3b, P4 and P5 merged; P8 update from USB in review; all parts built; on-device checks listed on the issue) | build | needs-merge | `claude/device-pages-*1270*` |
-| SEG-5 | Ring carrier firmware updates from the console | in-review | needs-hardware | `claude/ring-update-1342` |
 | SEG-30, SEG-43 | Screen audits: every fix is on master; the Penpot writeback listed under each PR's Design writeback is owed (no Penpot tab with the MCP plugin on 2026-11-19) | build | agent-merges | none |
 | SEG-24 | Drive pedals' aliasing at 48 kHz: four kinds oversampled (#1552); the owner's blind pairs decide whether the built-in Drive is oversampled too | build | needs-plan-approval | `claude/drive-alias-1540` |
 | SEG-17 | Restart and shut down also wait for RAUC's own install, after an app restart | in-review | needs-hardware | `claude/rauc-power-gate-1498` |
@@ -66,6 +64,62 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
 | SEG-63 | Console WiFi against an ASUS RT-AX89X with 802.11ax on: firmware already matches Pi OS; brcmfmac options aligned with Pi OS and a troubleshooting note; failure not reproduced, issue stays open until it recurs | in-review | agent-merges | `claude/wifi-firmware-1816` |
 
 ---
+
+## November 2026 CI fails a firmware change that keeps the board's version (#1969)
+
+- The boot flashers flash a board only when its version differs from the
+  image's, so #1967's pill fix shipped in build .289 under 2.7 and stayed
+  off the board until #1968 raised it to 2.8.
+- `tool/check_firmware_version_bump.dart`, in the `analyze` job on every
+  pull request and master push: a change under
+  `firmware/console_board` or `firmware/ring_board` must raise that board's
+  `FW_MAJOR.FW_MINOR`, and one under `firmware/libraries` both. Markdown,
+  the console's `pi5-swd.cfg` and C/C++ edits to comments or whitespace
+  only are exempt. Rule and exemptions: `firmware/console_board/README.md`,
+  "Firmware versions"; tests: `test/tool/check_firmware_version_bump_test.dart`.
+- Run over master's first-parent commits that touch the board sources, it
+  flags #1967 (195b9d463) and three earlier changes that kept the version
+  (15e0db4f1, be5712811, the #1534 merge e995e79de), and passes #1968 and
+  the README-only commits. History has no comment-only C/C++ commit; the
+  comment exemption is covered by the unit tests only.
+- On a pull request it compares the merge commit with HEAD^1; on a push to
+  master, with the commit master was on before the push. Arduino core and
+  library pin changes are outside `firmware/` and need a manual bump.
+
+## November 2026 A recording take shows its input, waveform, progress and bars (#1936)
+
+- Plan: `docs/plan/2026-11-21-feat-recording-visuals-plan.md` (decisions
+  D1 to D6 approved as recommended on 2026-11-21; "As built" lists the
+  departures). Five stacked PRs, #1938 to the one closing #1936, each with
+  its design half on Penpot pages 05 and 25 (segno-design #28 to #32).
+- A track meters its input while it records, and while it is the empty
+  track Record/Play records next; the input bar of an empty track is grey
+  (`TrackLevels.input`, the lanes' inputs after trim). An overdubbing track
+  meters the louder of its playback and its input (`MeterSource.both`), and
+  its waveform draws each bucket from the sample the overdub writes, the
+  loop and the new layer together, on the pass it records (#1955,
+  segno-design#35).
+- The engine publishes each recording take's captured frames and its
+  target (`capture_frames`, `capture_target_frames`): the progress bar
+  fills toward a known end, and the bars slot reads `2 / 4` bars, `3` bars,
+  or `0:07` with no grid, in the Tracks and Wave views and on the readout.
+- A recording take draws its waveform as it records (`le_capture_viz_tap`:
+  per block, toward the target or compressing as a free take grows) and is
+  mapped onto the loop when it closes, so the first lap has its shape.
+- A free first take's bar count comes from its beat: aubio 0.4.9 (vendored,
+  `third_party/aubio`) computes spectral flux on an analysis worker
+  (`engine_analysis.c`); at the take's end the power-of-two bar count (1 to
+  64) with a tempo in 60 to 200 BPM whose beat the onsets clearly repeat at
+  wins. Without a clear beat, the length's reading stands: the power of two
+  nearest 120 in that window (`le_grid_derive_bpm`, which no longer picks
+  any whole count first), else any whole count nearest 120. The app shows
+  no tempo for the few milliseconds the analysis takes. ÷2 / ×2
+  (`LE_CMD_SCALE_LOOP_BARS`, 146) read a derived loop as half or twice its
+  bars, on Tempo & click and the readout's Loop panel.
+- While a free take records, `≈ N bars` follows the time once the analysis
+  has been sure of a steady tempo for two seconds.
+- Not checked on the console: the worker's CPU, the callback's added copy,
+  and the bar choice on real guitar and voice takes.
 
 ## November 2026 Custom controls start with a default map (#1908)
 
@@ -1380,6 +1434,18 @@ a take's chains, where it used to hold each effect as it stood at arm.
   with no Pre entry records clean. The rendered tail is the Pre run's. A
   re-amp the Effects page did not weigh that does not fit is held and named
   by the standing notice.
+- Post entries that do not fit (the owner's option A, 2026-11-19): at the
+  press, a take whose input Post entries would not fit beside the rest of
+  the rig (and the takes pressed before it that have not landed,
+  `_takeChargesPending`) copies them onto its lane at Pre. Its lane then
+  carries no Post entry, so the engine records the input chain's whole
+  output into the image (the tap point is the lane's own split, as for an
+  overdub over a dry take), and the take sounds as heard; those effects stop
+  with it on Stop. Its track says so (`fxTakePrinted`, "Effects recorded").
+  Post entries that fit still run live. A lane playing its image is never
+  held: not when its take lands (`_holdUnheardTake`), not by R2
+  (`_fitRig`). An input chain that is all Post and does not fit is recorded
+  heard, where before it recorded clean and could be held dry.
 - Local tool: `SEGNO_HEARD_FORCE=1` runs the whole native core suite with
   every take recording an image of an input with no chain, which must equal
   the clean take after every callback.
@@ -1929,6 +1995,24 @@ a take's chains, where it used to hold each effect as it stood at arm.
   catch SIGUSR1, whose default action would end it. The app keeps five
   captures per screen.
 - Device check owed: run it on the console under both renderers.
+
+## November 2026 Updates page after an app restart mid-install (SEG-18, #1507)
+
+- While RAUC writes an install whose helper is gone (`raucInstalling`), the
+  Updates status panel says Installing, with the attempt's version and no
+  actions, instead of a dimmed Update paused.
+- The helper's `attempt` first stages an install RAUC finished on its own:
+  in the boot that recorded the attempt (`update-attempt-boot-id` next to
+  the marker), with RAUC idle, every inactive slot's `rauc status` entry is
+  `ok` for the attempt's version and was written after the attempt began.
+  The cubit asks it once RAUC goes idle, so the page lands in Ready to
+  install and Restart tries the new slot. Anything else stays Update paused.
+- The app asks RAUC before `recover()` at startup; Retry, Cancel, Check and
+  the channel never drop the attempt while RAUC still writes it.
+- `segno-ota-check` hands its install to `segno-update-ctl install`, so it
+  has the busy check, the attempt marker and the staged-marker handling too.
+- Device check owed: restart the app past 40 % of an install and watch the
+  page go from Installing to Ready to install.
 
 ## November 2026 Power screens only when they say something (#1553)
 
@@ -3366,6 +3450,10 @@ travel and diffuser bridge anchoring still require validation; #1074 stays
   joins. **Off by default**, so a shipped build can never
   present invented networks as real ones; the factory tests assert the flag
   from both sides, so the branch is covered by the ordinary CI run.
+- **Seeing what the pedal shows:** every change of the pedal's lights is a
+  `pedal frame:` line in the app's journal (`ssh root@<console> journalctl
+  -u segno.service | grep 'pedal frame'`): the mode, the ring colour and each
+  lit switch with its colour, at most 20 lines a second (#1957).
 - **Seeing what the console's screens draw:** `ssh root@<console>
   segno-capture` prints one PNG path per screen under `/data/capture`; copy
   them with `scp 'root@<console>:/data/capture/*.png' .`. It is Flutter's

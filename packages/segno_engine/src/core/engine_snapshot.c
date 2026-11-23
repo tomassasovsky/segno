@@ -13,6 +13,7 @@
 #include <stdint.h>
 #include <string.h> /* memset — the NULL-engine telemetry read */
 
+#include "engine_analysis.h"
 #include "engine_core.h"    /* le_lanes_active */
 #include "engine_fx.h"      /* le_octaver_latency */
 #include "engine_heard.h"   /* the heard image (#1713) */
@@ -162,6 +163,10 @@ static void le_fill_track_snapshot(le_engine* engine, int32_t ch,
       active ? atomic_load_explicit(&tr->a_settled_take_id, memory_order_acquire)
              : 0;
   out->position_frames = active ? load_i32(&tr->a_play_pos) : 0;
+  out->capture_frames = active ? load_i32(&tr->a_capture_frames) : 0;
+  out->capture_target_frames = active ? load_i32(&tr->a_capture_target) : 0;
+  out->capture_viz_points =
+      active ? load_i32(&engine->a_cap_viz_filled[tr - engine->tracks]) : 0;
   out->pending_trigger =
       active && out->pending ? load_i32(&tr->a_pending_trigger) : -1;
 }
@@ -594,6 +599,10 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   out->quantize_div = timing.remembered_division;
   out->tempo_source = load_i32(&engine->a_tempo_source);
   out->loop_bars = load_i32(&engine->a_loop_bars);
+  out->tempo_settling = load_i32(&engine->a_tempo_settling);
+  le_analysis_estimate(engine->analysis, &out->tempo_estimate_bpm,
+                       &out->tempo_estimate_confidence);
+  out->tempo_estimate_track = load_i32(&engine->a_ana_track);
   out->loop_beats = load_i32(&engine->a_loop_beats); /* #1168 */
   out->current_beat = load_i32(&engine->a_current_beat);
   /* Click + count-in (trailing block; click-off defaults read 0/0/1/0/0/0). */
