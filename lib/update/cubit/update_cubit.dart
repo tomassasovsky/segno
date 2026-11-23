@@ -59,6 +59,11 @@ class UpdateCubit extends Cubit<UpdateState> {
       await _updates.setChannel(savedChannel);
     }
     final current = await _updates.currentVersion();
+    // Nothing in this run has started an install yet, so an install RAUC
+    // reports now was started by an earlier one and is still writing. Asked
+    // before the recovery: an install RAUC finishes in between is then
+    // either staged by the recovery or followed to its end and settled.
+    final raucInstalling = await _updates.installInProgress();
     final recovery = await _updates.recover();
     var rollback = await _settings.loadUpdateRollback();
     if (rollback != null && !(rollback.attempted > current)) {
@@ -81,9 +86,6 @@ class UpdateCubit extends Cubit<UpdateState> {
       await _updates.clearInterrupted();
       interrupted = null;
     }
-    // Nothing in this run has started an install yet, so an install RAUC
-    // reports now was started by an earlier one and is still writing.
-    final raucInstalling = await _updates.installInProgress();
     if (isClosed) return;
     emit(
       state.copyWith(
@@ -119,14 +121,65 @@ class UpdateCubit extends Cubit<UpdateState> {
   }
 
   /// Asks RAUC again every poll interval until it no longer reports
-  /// an install, then clears [UpdateState.raucInstalling].
+  /// an install, then settles what it left.
   Future<void> _followRaucInstall() async {
     do {
       await Future<void>.delayed(_installPollInterval);
       if (isClosed) return;
     } while (await _updates.installInProgress());
-    if (!isClosed) emit(state.copyWith(raucInstalling: false));
+    await _settleRaucInstall();
   }
+
+  /// Clears [UpdateState.raucInstalling] with what the install left (#1507).
+  /// The helper that started it is gone, so nothing in this run saw it end:
+  /// asking for the cut-off install has the helper stage one RAUC finished,
+  /// and the page then offers Install and restart. An install RAUC did not
+  /// finish stays cut off. With neither, the phase stays, unless it named
+  /// a cut-off install that is no longer on record.
+  Future<void> _settleRaucInstall() async {
+    final interrupted = await _updates.interruptedInstall();
+    final current = await _updates.currentVersion();
+    final staged = await _updates.stagedVersion();
+    if (isClosed) return;
+    if (staged > current) {
+      emit(_stagedState(staged, current).copyWith(raucInstalling: false));
+    } else if (interrupted != null) {
+      emit(
+        state.copyWith(
+          phase: UpdatePhase.interrupted,
+          interrupted: interrupted,
+          clearError: true,
+          raucInstalling: false,
+        ),
+      );
+    } else {
+      // Nothing is on record any more: an Update paused from before would
+      // name an attempt that is gone.
+      emit(
+        state.copyWith(
+          raucInstalling: false,
+          phase: state.phase == UpdatePhase.interrupted
+              ? UpdatePhase.idle
+              : null,
+          clearInterrupted: true,
+        ),
+      );
+    }
+  }
+
+  /// This state with [staged] in the inactive slot, ready to install.
+  UpdateState _stagedState(Version staged, Version current) => state.copyWith(
+    phase: UpdatePhase.staged,
+    available: UpdateManifest(
+      version: staged,
+      bundle: '',
+      channel: _updates.channel,
+    ),
+    currentVersion: current,
+    progress: 1,
+    clearError: true,
+    clearInterrupted: true,
+  );
 
   /// Runs a read-only availability check (no download, no install). No-op on an
   /// unsupported platform.
@@ -141,8 +194,12 @@ class UpdateCubit extends Cubit<UpdateState> {
       ),
     );
     // Checking instead of Retry or Discard still settles the cut-off
-    // attempt, or "Update paused" would return on every start.
-    if (wasInterrupted) await _updates.clearInterrupted();
+    // attempt, or "Update paused" would return on every start. Not while
+    // RAUC is still writing it: its record is what lets the helper stage it
+    // once RAUC finishes.
+    if (wasInterrupted && !state.raucInstalling) {
+      await _updates.clearInterrupted();
+    }
     try {
       final manifest = await _updates.checkForUpdate();
       if (isClosed) return;
@@ -282,27 +339,15 @@ class UpdateCubit extends Cubit<UpdateState> {
     final current = await _updates.currentVersion();
     final staged = await _updates.stagedVersion();
     if (isClosed || !(staged > current)) return;
-    emit(
-      state.copyWith(
-        phase: UpdatePhase.staged,
-        available: UpdateManifest(
-          version: staged,
-          bundle: '',
-          channel: _updates.channel,
-        ),
-        currentVersion: current,
-        progress: 1,
-        clearError: true,
-        clearInterrupted: true,
-      ),
-    );
+    emit(_stagedState(staged, current));
   }
 
   /// Retries an install that was cut off: forgets the cut-off attempt, looks
   /// again, and downloads what the check offers. The check may find the
   /// build gone or superseded; it then shows what it found instead.
   Future<void> retryInterrupted() async {
-    if (state.phase != UpdatePhase.interrupted) return;
+    // While RAUC is still writing it, the install is not cut off yet.
+    if (state.phase != UpdatePhase.interrupted || state.raucInstalling) return;
     // Leaves interrupted before the first await, so a second press is a
     // no-op rather than a second check racing the download.
     emit(state.copyWith(phase: UpdatePhase.checking, clearInterrupted: true));
@@ -315,7 +360,7 @@ class UpdateCubit extends Cubit<UpdateState> {
   /// Drops an install that was cut off. Nothing was changed by it; the panel
   /// goes back to plain Software updates.
   Future<void> discardInterrupted() async {
-    if (state.phase != UpdatePhase.interrupted) return;
+    if (state.phase != UpdatePhase.interrupted || state.raucInstalling) return;
     await _updates.clearInterrupted();
     if (isClosed) return;
     emit(state.copyWith(phase: UpdatePhase.idle, clearInterrupted: true));
@@ -346,9 +391,10 @@ class UpdateCubit extends Cubit<UpdateState> {
   /// Switches between the experimental and production update channels.
   /// Persists the choice, writes the appliance override the OTA helper reads,
   /// clears any in-flight offer from the previous channel, and re-checks.
-  /// No-op while a download is in progress.
+  /// No-op while an update downloads or installs: switching would abandon
+  /// it, or forget the record of an install RAUC is still writing.
   Future<void> setExperimentalChannel({required bool value}) async {
-    if (state.phase == UpdatePhase.downloading) return;
+    if (state.installInFlight) return;
     final channel = value ? 'experimental' : 'production';
     if (channel == state.channel) return;
     if (state.phase == UpdatePhase.interrupted) {

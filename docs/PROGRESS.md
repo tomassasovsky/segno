@@ -1996,6 +1996,24 @@ a take's chains, where it used to hold each effect as it stood at arm.
   captures per screen.
 - Device check owed: run it on the console under both renderers.
 
+## November 2026 Updates page after an app restart mid-install (SEG-18, #1507)
+
+- While RAUC writes an install whose helper is gone (`raucInstalling`), the
+  Updates status panel says Installing, with the attempt's version and no
+  actions, instead of a dimmed Update paused.
+- The helper's `attempt` first stages an install RAUC finished on its own:
+  in the boot that recorded the attempt (`update-attempt-boot-id` next to
+  the marker), with RAUC idle, every inactive slot's `rauc status` entry is
+  `ok` for the attempt's version and was written after the attempt began.
+  The cubit asks it once RAUC goes idle, so the page lands in Ready to
+  install and Restart tries the new slot. Anything else stays Update paused.
+- The app asks RAUC before `recover()` at startup; Retry, Cancel, Check and
+  the channel never drop the attempt while RAUC still writes it.
+- `segno-ota-check` hands its install to `segno-update-ctl install`, so it
+  has the busy check, the attempt marker and the staged-marker handling too.
+- Device check owed: restart the app past 40 % of an install and watch the
+  page go from Installing to Ready to install.
+
 ## November 2026 Power screens only when they say something (#1553)
 
 - Saving shows only once the save has run 500 ms (`PowerCubit.slowSave`,

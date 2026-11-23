@@ -52,6 +52,7 @@ void main() {
         .thenAnswer((_) async => const UpdateRecovery());
     when(() => updates.clearInterrupted()).thenAnswer((_) async {});
     when(() => updates.installInProgress()).thenAnswer((_) async => false);
+    when(() => updates.interruptedInstall()).thenAnswer((_) async => null);
     when(() => settings.loadUpdateRollback()).thenAnswer((_) async => null);
     when(
       () => settings.saveUpdateRollback(
@@ -869,6 +870,19 @@ void main() {
     );
 
     blocTest<UpdateCubit, UpdateState>(
+      'asks RAUC before reading what the last run left',
+      setUp: () =>
+          when(() => settings.loadUpdateAutoCheck())
+              .thenAnswer((_) async => false),
+      build: polling,
+      act: (cubit) => cubit.load(),
+      verify: (_) => verifyInOrder([
+        () => updates.installInProgress(),
+        () => updates.recover(),
+      ]),
+    );
+
+    blocTest<UpdateCubit, UpdateState>(
       'stops asking once closed',
       setUp: () {
         when(() => settings.loadUpdateAutoCheck())
@@ -889,6 +903,185 @@ void main() {
         ),
       ],
       verify: (_) => verify(() => updates.installInProgress()).called(1),
+    );
+  });
+
+  group('when RAUC finishes an install an earlier run started (#1507)', () {
+    UpdateCubit polling() => UpdateCubit(
+      updates: updates,
+      settings: settings,
+      installPollInterval: Duration.zero,
+    );
+
+    // The app restarted past the download: the attempt is on record and
+    // RAUC is writing it.
+    void restartedMidInstall({required List<Version> staged}) {
+      when(() => settings.loadUpdateAutoCheck()).thenAnswer((_) async => false);
+      when(() => updates.recover())
+          .thenAnswer((_) async => UpdateRecovery(interrupted: _v2Number));
+      final answers = [true, false];
+      when(() => updates.installInProgress())
+          .thenAnswer((_) async => answers.removeAt(0));
+      when(() => updates.stagedVersion())
+          .thenAnswer((_) async => staged.removeAt(0));
+    }
+
+    blocTest<UpdateCubit, UpdateState>(
+      'a finished install lands in Ready to install',
+      setUp: () => restartedMidInstall(staged: [Version.none, _v2Number]),
+      build: polling,
+      act: (cubit) async {
+        await cubit.load();
+        await pumpEventQueue();
+      },
+      expect: () => [
+        isA<UpdateState>()
+            .having((s) => s.phase, 'phase', UpdatePhase.interrupted)
+            .having((s) => s.raucInstalling, 'rauc installing', true),
+        isA<UpdateState>()
+            .having((s) => s.phase, 'phase', UpdatePhase.staged)
+            .having((s) => s.available?.version, 'staged', _v2Number)
+            .having((s) => s.interrupted, 'interrupted', isNull)
+            .having((s) => s.raucInstalling, 'rauc installing', false),
+      ],
+      verify: (_) => verify(() => updates.interruptedInstall()).called(1),
+    );
+
+    blocTest<UpdateCubit, UpdateState>(
+      'an install RAUC did not finish stays Update paused',
+      setUp: () {
+        restartedMidInstall(staged: [Version.none, Version.none]);
+        when(() => updates.interruptedInstall())
+            .thenAnswer((_) async => _v2Number);
+      },
+      build: polling,
+      act: (cubit) async {
+        await cubit.load();
+        await pumpEventQueue();
+      },
+      expect: () => [
+        isA<UpdateState>()
+            .having((s) => s.phase, 'phase', UpdatePhase.interrupted)
+            .having((s) => s.raucInstalling, 'rauc installing', true),
+        isA<UpdateState>()
+            .having((s) => s.phase, 'phase', UpdatePhase.interrupted)
+            .having((s) => s.interrupted, 'interrupted', _v2Number)
+            .having((s) => s.raucInstalling, 'rauc installing', false),
+      ],
+    );
+
+    blocTest<UpdateCubit, UpdateState>(
+      'an Update paused whose record is gone goes back to plain updates',
+      setUp: () => restartedMidInstall(staged: [Version.none, Version.none]),
+      build: polling,
+      act: (cubit) async {
+        await cubit.load();
+        await pumpEventQueue();
+      },
+      skip: 1,
+      expect: () => [
+        isA<UpdateState>()
+            .having((s) => s.phase, 'phase', UpdatePhase.idle)
+            .having((s) => s.interrupted, 'interrupted', isNull)
+            .having((s) => s.raucInstalling, 'rauc installing', false),
+      ],
+    );
+
+    blocTest<UpdateCubit, UpdateState>(
+      'an install with nothing on record keeps the phase it had',
+      seed: () =>
+          const UpdateState(supported: true, phase: UpdatePhase.upToDate),
+      setUp: () {
+        final answers = [true, false];
+        when(() => updates.installInProgress())
+            .thenAnswer((_) async => answers.removeAt(0));
+      },
+      build: polling,
+      act: (cubit) async {
+        // A USB run that ends while RAUC writes starts the follow.
+        cubit
+          ..setUsbInstalling(working: true)
+          ..setUsbInstalling(working: false);
+        await pumpEventQueue();
+      },
+      skip: 2,
+      expect: () => [
+        isA<UpdateState>()
+            .having((s) => s.phase, 'phase', UpdatePhase.upToDate)
+            .having((s) => s.raucInstalling, 'rauc installing', true),
+        isA<UpdateState>()
+            .having((s) => s.phase, 'phase', UpdatePhase.upToDate)
+            .having((s) => s.raucInstalling, 'rauc installing', false),
+      ],
+    );
+
+    blocTest<UpdateCubit, UpdateState>(
+      'a download whose helper died lands in Ready to install once RAUC '
+      'finishes it',
+      seed: () => UpdateState(available: _v2),
+      setUp: () {
+        when(() => updates.downloadAndStage(_v2))
+            .thenAnswer((_) => Stream.error(Exception('helper killed')));
+        final answers = [true, false];
+        when(() => updates.installInProgress())
+            .thenAnswer((_) async => answers.removeAt(0));
+        when(() => updates.stagedVersion()).thenAnswer((_) async => _v2Number);
+      },
+      build: polling,
+      act: (cubit) async {
+        await cubit.startDownload();
+        await pumpEventQueue();
+      },
+      skip: 3,
+      expect: () => [
+        isA<UpdateState>()
+            .having((s) => s.phase, 'phase', UpdatePhase.staged)
+            .having((s) => s.errorMessage, 'error', isNull)
+            .having((s) => s.raucInstalling, 'rauc installing', false),
+      ],
+    );
+
+    blocTest<UpdateCubit, UpdateState>(
+      'Retry and Cancel hold off while RAUC is still writing',
+      seed: () => UpdateState(
+        supported: true,
+        phase: UpdatePhase.interrupted,
+        interrupted: _v2Number,
+        raucInstalling: true,
+      ),
+      build: polling,
+      act: (cubit) async {
+        await cubit.retryInterrupted();
+        await cubit.discardInterrupted();
+      },
+      expect: () => const <UpdateState>[],
+      verify: (_) => verifyNever(() => updates.clearInterrupted()),
+    );
+
+    blocTest<UpdateCubit, UpdateState>(
+      'a check while RAUC is still writing keeps the attempt on record',
+      seed: () => UpdateState(
+        supported: true,
+        phase: UpdatePhase.interrupted,
+        interrupted: _v2Number,
+        raucInstalling: true,
+      ),
+      build: polling,
+      act: (cubit) => cubit.check(),
+      verify: (_) => verifyNever(() => updates.clearInterrupted()),
+    );
+
+    blocTest<UpdateCubit, UpdateState>(
+      'the channel stays while RAUC is still writing',
+      seed: () => const UpdateState(
+        supported: true,
+        channel: 'production',
+        raucInstalling: true,
+      ),
+      build: polling,
+      act: (cubit) => cubit.setExperimentalChannel(value: true),
+      expect: () => const <UpdateState>[],
+      verify: (_) => verifyNever(() => updates.setChannel(any())),
     );
   });
 }

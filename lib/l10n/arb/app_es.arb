@@ -2705,6 +2705,8 @@
     "updatesPanelDownloading": "Descargando",
     "updatesPanelReady": "Lista para instalar",
     "updatesPanelPaused": "Actualización en pausa",
+    "updatesPanelInstalling": "Instalando",
+    "updatesPageRaucInstalling": "La actualización se sigue instalando y no se puede detener. Reiniciar y Apagar esperan a que termine.",
     "updatesPageVersion": "Segno {version}",
     "updatesPageVersionSize": "Segno {version} · {megabytes} MB",
     "updatesPageIdle": "Busca una versión más reciente de Segno.",

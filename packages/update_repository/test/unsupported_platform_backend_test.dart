@@ -14,6 +14,7 @@ void main() {
       expect(await backend.stagedVersion(), Version.none);
       expect(await backend.fetchManifest(), isNull);
       expect(await backend.recover(), const UpdateRecovery());
+      expect(await backend.interruptedInstall(), isNull);
       await backend.clearInterrupted();
       expect(await backend.installInProgress(), isFalse);
     });
