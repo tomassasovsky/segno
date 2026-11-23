@@ -89,12 +89,19 @@ jobs:
   #     stalls the audio thread, and a dart:io child running beside
   #     spawn_process takes the exit status of its children;
   #   - no method, function or getter in lib/ or packages/*/lib may return a
-  #     widget (#1697): UI is built from widget classes.
+  #     widget (#1697): UI is built from widget classes;
+  #   - a change to a board's firmware raises that board's FW_MAJOR.FW_MINOR
+  #     (#1969): the boot flashers flash a board only when its version differs
+  #     from the image's. It compares HEAD with HEAD^1, the target branch on a
+  #     pull request's merge commit and the previous master on a push, hence
+  #     fetch-depth: 2.
   analyze:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: "3.50.x"
@@ -128,6 +135,9 @@ jobs:
       - name: No widget-returning methods
         if: ${{ !cancelled() }}
         run: dart run tool/check_no_widget_methods.dart
+      - name: Firmware changes raise the board's version
+        if: ${{ !cancelled() }}
+        run: dart run tool/check_firmware_version_bump.dart HEAD^1
 
   # The root app's suite, as the Very Good flutter_package workflow ran it:
   # every test file in one isolate (`--optimization`), randomized order, and

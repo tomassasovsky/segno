@@ -66,6 +66,22 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 ---
 
+## November 2026 CI fails a firmware change that keeps the board's version (#1969)
+
+- The boot flashers flash a board only when its version differs from the
+  image's, so #1967's pill fix shipped in build .289 under 2.7 and stayed
+  off the board until #1968 raised it to 2.8.
+- `tool/check_firmware_version_bump.dart`, in the `analyze` job on every
+  pull request and master push, compares HEAD with HEAD^1: a change under
+  `firmware/console_board` or `firmware/ring_board` must raise that board's
+  `FW_MAJOR.FW_MINOR`, and one under `firmware/libraries` both. Markdown,
+  the console's `pi5-swd.cfg` and C/C++ edits to comments or whitespace
+  only are exempt. Rule and exemptions: `firmware/console_board/README.md`,
+  "Firmware versions"; tests: `test/tool/check_firmware_version_bump_test.dart`.
+- Run over master's firmware history it flags #1967 and three earlier
+  changes that kept the version (15e0db4f1, be5712811, the #1534 merge),
+  and none of the comment-only ones.
+
 ## November 2026 A recording take shows its input, waveform, progress and bars (#1936)
 
 - Plan: `docs/plan/2026-11-21-feat-recording-visuals-plan.md` (decisions

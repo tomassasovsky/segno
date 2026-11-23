@@ -309,6 +309,46 @@ Point `program` at your own build to try a change; the next boot puts the
 shipped firmware back, which is the intended behaviour — the image is the
 source of truth for what the board runs.
 
+## Firmware versions
+
+The oneshot compares versions, not images: a board that reports the version
+in the image's marker is left alone. So **every change to what the board runs
+raises `FW_MAJOR` or `FW_MINOR` in `console_board.ino`**, with a line in the
+history comment above them. A change without one ships in the image and never
+reaches a board already on that version: #1967 changed the pills under 2.7,
+build .289 logged "board runs firmware 2.7 on link protocol 12; nothing to
+do", and the fix reached the board only with 2.8 (#1968). The ring carrier
+works the same way ([its README](../ring_board/README.md#build)).
+
+CI enforces it (#1969). `tool/check_firmware_version_bump.dart` runs in the
+`analyze` job on every pull request and every push to master, and compares
+the commit with its first parent (on a pull request, the target branch):
+
+| Changed | Raises |
+|---|---|
+| `firmware/console_board/**` | the console board |
+| `firmware/ring_board/**` | the ring carrier (`FW_MAJOR`/`FW_MINOR` in `ring_board.ino`) |
+| `firmware/libraries/**` (SegnoRing, compiled into both) | both |
+
+The version must go up; a lower one fails as well. Not counted as a change:
+
+- Markdown files;
+- `firmware/console_board/pi5-swd.cfg`, since the image ships the Yocto
+  recipe's copy;
+- an edit to a `.c`, `.cpp`, `.h` or `.ino` file that changes only comments,
+  indentation, spaces inside a line or blank lines. The check compares the
+  code with comments removed and each line's whitespace collapsed, so moving
+  code to another line still counts.
+
+Everything else counts, a new, deleted or renamed file included, as do
+`seal.py` and `partition_table.json` for the ring. The tests that build
+against the firmware live in `firmware/test/`, outside the boards, so a
+change to them alone needs no bump. Run it before pushing:
+
+```sh
+dart run tool/check_firmware_version_bump.dart "$(git merge-base origin/master HEAD)"
+```
+
 ## Talk to it from the Pi
 
 With `dtoverlay=uart3-pi5` in place the link is `/dev/ttyAMA3` and segno opens it
