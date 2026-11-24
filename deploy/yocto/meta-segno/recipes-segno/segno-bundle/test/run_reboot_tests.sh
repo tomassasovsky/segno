@@ -3,13 +3,12 @@
 # — and for the check that `reboot` and `poweroff` share: neither resets while
 # RAUC reports an install in progress (#1498), and `install-state` reports it.
 #
-# Staging an update arms the Raspberry Pi one-shot tryboot flag (RAUC's custom
-# backend calls `vcmailbox 0x00038064 4 0 1`). That flag alone is not enough:
-# the reset itself has to carry the tryboot argument, or the firmware comes
-# back on the [all] boot_partition and the staged slot is never tried. Observed
-# live on the Pi 5 console: three consecutive installs of experimental.106 each
-# reported success, and slot B's ext4 superblock still showed mount count 0 —
-# it had never been booted once.
+# Staging an update does not arm the Raspberry Pi one-shot tryboot flag (our
+# RAUC backend leaves it alone, SEG-101): the reset itself has to carry the
+# tryboot argument, or the firmware comes back on the [all] boot_partition and
+# the staged slot is never tried. Observed live on the Pi 5 console: three
+# consecutive installs of experimental.106 each reported success, and slot B's
+# ext4 superblock still showed mount count 0 — it had never been booted once.
 #
 # So what is asserted here is the shape of the reset, not just that we rebooted:
 #
@@ -67,6 +66,13 @@ printf '%s\n' "\$@" > "$work/busctl-args"
 printf 's "%s"\n' "\$(cat "$work/operation")"
 STUB
     chmod +x "$work/bin/busctl"
+
+    # logger: each line the helper sends to the journal, one per line.
+    cat > "$work/bin/logger" <<STUB
+#!/bin/sh
+printf '%s\n' "\$*" >> "$work/journal"
+STUB
+    chmod +x "$work/bin/logger"
 }
 
 teardown() { rm -rf "$work"; }
@@ -108,6 +114,8 @@ check "uses --reboot-argument= (not a positional arg)" yes \
 check "full argv" "reboot --reboot-argument=0 tryboot" "$args"
 check "records that the staged slot was asked for" yes \
     "$([ -e "$work/tryboot-requested" ] && echo yes || echo no)"
+check "journals the decision" yes \
+    "$(grep -qx -- '-t segno-update-ctl rebooting into the staged slot' "$work/journal" && echo yes || echo no)"
 teardown
 
 # The guard the tryboot argument makes necessary: passed unconditionally, a
@@ -122,6 +130,20 @@ args=$(tr '\n' ' ' < "$work/systemctl-args" | sed 's/ *$//')
 check "full argv is a bare reboot" "reboot" "$args"
 check "says why" yes \
     "$(grep -q 'no update staged' "$work/stderr" && echo yes || echo no)"
+check "journals the decision" yes \
+    "$(grep -qx -- '-t segno-update-ctl no update staged; plain reboot' "$work/journal" && echo yes || echo no)"
+teardown
+
+# The journal is a copy, not a dependency: a logger that fails (no /dev/log
+# yet, early in a boot) must not stop the reset.
+echo
+echo "reboot when the journal cannot be written: still reboots"
+setup
+printf '#!/bin/sh\nexit 1\n' > "$work/bin/logger"
+run_reboot
+check "exits 0" 0 "$?"
+check "full argv is a bare reboot" "reboot" \
+    "$(tr '\n' ' ' < "$work/systemctl-args" | sed 's/ *$//')"
 teardown
 
 echo
@@ -166,6 +188,8 @@ status=$?
 check "exits 0" 0 "$status"
 check "full argv" "start --no-block poweroff.target" \
     "$(tr '\n' ' ' < "$work/systemctl-args" | sed 's/ *$//')"
+check "journals the decision" yes \
+    "$(grep -qx -- '-t segno-update-ctl powering off' "$work/journal" && echo yes || echo no)"
 teardown
 
 # RAUC writes a slot only from its daemon: one that is not running is not

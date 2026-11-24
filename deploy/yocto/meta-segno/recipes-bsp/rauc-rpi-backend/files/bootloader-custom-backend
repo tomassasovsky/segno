@@ -222,8 +222,17 @@ get_slot() {
 # 	$ vcmailbox 0x00030064 4 0 0
 # 	0x0000001c 0x80000000 0x00030064 0x00000004 0x80000004 0x00000001 0x00000000
 #
+# Segno (SEG-101): does nothing. Upstream arms the flag here, at the end of
+# every install. The Raspberry Pi kernel's reboot handler leaves an armed flag
+# in place unless the reboot argument carries "tryboot"
+# (rpi_firmware_notify_reboot), so the next reset of any kind tried the new
+# slot: a plain Restart, a watchdog or panic reset. After an install the app
+# had not staged (a shell `rauc install`), a plain Restart booted that slot and
+# mark-good committed it, with no install record. Only the reset meant to try
+# the slot asks for it: `segno-update-ctl reboot` passes "0 tryboot" when an
+# update is staged, and the kernel sets the flag from that argument.
 set_primary_temporary() {
-	vcmailbox 0x00038064 4 0 1
+	:
 }
 
 # Swap the boot_partition configurations in autoboot.txt to cause the firmware

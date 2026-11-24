@@ -219,7 +219,12 @@ The unit recovers from a hang by itself and leaves a record on `/data`
 - A reset during a tryboot trial boot comes back on the committed slot,
   because the tryboot flag only lasts one boot. None of these resets asks for
   the tryboot slot, so one during an update install also comes back on the
-  committed slot, with the install reported as cut off.
+  committed slot, with the install reported as cut off. So does one after an
+  install: only `segno-update-ctl reboot` with an update staged asks for the
+  tryboot slot. Our RAUC backend does not arm the firmware's tryboot flag at
+  install as upstream's does, because the kernel keeps an armed flag across a
+  reset without the tryboot argument (SEG-101). A shell `rauc install` is
+  tried only by `systemctl reboot --reboot-argument="0 tryboot"`.
 
 To check the chain on a unit: `echo c > /proc/sysrq-trigger` panics the
 kernel. The unit is back about a minute later, with a new directory under
