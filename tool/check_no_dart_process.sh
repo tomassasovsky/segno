@@ -38,7 +38,12 @@ repo=$(pwd)
 #   xdg_directories: getUserDirectory runs `xdg-user-dir`. The app reaches it
 #   only through path_provider_linux's documents and downloads lookups,
 #   which the in-repo check forbids too.
-ALLOWED="sky_engine xdg_directories"
+#   jni_util: its JDK lookup runs `flutter config --machine`. Only jni's
+#   `dart run jni:setup` tool (bin/setup.dart) imports it; jni's lib/ does
+#   not. jni itself comes in only through path_provider_android, which runs
+#   only on Android, never on the console or on macOS. If a jni release
+#   imports jni_util from lib/, this reason no longer holds (SEG-105).
+ALLOWED="sky_engine xdg_directories jni_util"
 
 status=0
 process_start='\bProcess\.(run|start|runSync)\b'
