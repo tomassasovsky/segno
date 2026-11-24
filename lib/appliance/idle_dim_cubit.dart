@@ -39,6 +39,9 @@ class IdleDimCubit extends Cubit<IdleDimState> {
   /// Every [activity]: a player is at the console. What waits for the
   /// player to come back listens here (a capture that stopped on its own,
   /// #1767).
+  // An event, not state: one emit per touch or encoder step would rebuild
+  // every listener of the dim state on each of them.
+  // ignore: prefer_void_public_cubit_methods
   Stream<void> get activities => _activities.stream;
 
   /// Restores the saved idle period and starts it.
