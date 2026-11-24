@@ -520,10 +520,14 @@ class SessionRepository {
     _requireId(id);
     final dir = Directory('${await _rootPath()}/$id');
     try {
-      if (dir.existsSync()) dir.deleteSync(recursive: true);
+      if (!dir.existsSync()) return;
+      // The manifest first: whatever a failure leaves after it is a hidden
+      // interrupted save, never a bundle still holding the name.
+      final manifest = File('${dir.path}/${Session.manifestName}');
+      if (manifest.existsSync()) manifest.deleteSync();
+      dir.deleteSync(recursive: true);
     } on FileSystemException {
-      // What is left lists as an interrupted save, or as a bundle when its
-      // manifest stayed; the caller's own failure is the one to report.
+      // The caller's own failure is the one to report.
     }
   }
 
