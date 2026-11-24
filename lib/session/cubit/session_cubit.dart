@@ -437,6 +437,8 @@ class SessionCubit extends Cubit<SessionState> {
   /// Runs a save's write and reports any failure that is not a typed
   /// session refusal as [SessionError.saveFailed], the 19/05 banner's
   /// "Could not save your current session. Nothing was changed."
+  /// The write's own error and stack are logged first: the refusal keeps only
+  /// the error, and the state only its text (SEG-107).
   static Future<T> _asSaveFailure<T>(Future<T> Function() write) async {
     try {
       return await write();
@@ -444,7 +446,8 @@ class SessionCubit extends Cubit<SessionState> {
       rethrow;
     } on _SessionRefusal {
       rethrow;
-    } on Object catch (error) {
+    } on Object catch (error, stack) {
+      AppLog.error('session: save failed', error: error, stack: stack);
       throw _SessionRefusal(SessionError.saveFailed, error);
     }
   }

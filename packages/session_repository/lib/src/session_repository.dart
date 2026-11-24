@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:meta/meta.dart';
@@ -2267,6 +2268,8 @@ class SessionRepository {
         continue;
       }
       if (track.lengthFrames <= 0) continue;
+      final cap = _loopCapFrames(snapshot);
+      _checkLength('track $i length', track.lengthFrames, cap);
       // The kinds name the images (#1164): a redo-side Peel marker holds
       // none, so the image count is not simply undo + 1 + redo.
       final history = _engine.exportHistory(i);
@@ -2278,6 +2281,7 @@ class SessionRepository {
         // buffer is empty (nothing recorded on it).
         final live = _engine.exportLayer(i, l, undoCount);
         if (live.isEmpty) continue;
+        _checkLength('track $i lane $l live layer', live.length, cap);
         final layerPcm = <Float32List>[];
         final layerHeard = <Float32List>[];
         final layerFiles = <SessionLayer>[];
@@ -2286,8 +2290,14 @@ class SessionRepository {
               ? live
               : _engine.exportLayer(i, l, ordinal);
           if (pcm.isEmpty) break; // torn history — drop this lane
+          _checkLength('track $i lane $l layer $ordinal', pcm.length, cap);
           // The image's heard image (#1713), stereo beside the clean take.
           final heard = _engine.exportLayerHeard(i, l, ordinal);
+          _checkLength(
+            'track $i lane $l heard layer $ordinal',
+            heard.length ~/ 2,
+            cap,
+          );
           layerPcm.add(pcm);
           layerHeard.add(heard);
           final name = 'track${i}_lane${l}_L$ordinal';
@@ -2351,6 +2361,21 @@ class SessionRepository {
       playsHeard: playsHeard,
       tracks: tracks,
       trackLevels: trackLevels,
+    );
+  }
+
+  /// The longest loop the engine can hold at [snapshot]'s rate
+  /// ([kMaxLoopSeconds]): no track length or layer image is longer.
+  static int _loopCapFrames(EngineSnapshot snapshot) =>
+      snapshot.sampleRate * kMaxLoopSeconds;
+
+  /// Refuses a save whose [what], [frames] long as the engine reports it, is
+  /// longer than any loop can be ([cap]): a nonsense length must not size a
+  /// buffer or a file (SEG-107).
+  static void _checkLength(String what, int frames, int cap) {
+    if (frames <= cap) return;
+    throw StateError(
+      '$what reads $frames frames, longer than the $cap a loop can hold',
     );
   }
 
@@ -2483,7 +2508,12 @@ class SessionRepository {
   /// Sums every unmuted lane at its part level and balance, with its track
   /// fader applied once, over
   /// the session period — the LCM of the lane lengths, so every lane's loop
-  /// closes cleanly. Lanes are summed, never merged: a two-lane track
+  /// closes cleanly. Lanes on independent clocks (Free and Song, or a
+  /// division that does not divide its primary evenly) can have an LCM of
+  /// hours (SEG-107: 453,792 and 435,680 frames share 32, a 24.7 GB mix);
+  /// when the LCM is longer than any loop can be, the mix spans the longest
+  /// lane and the shorter ones repeat within it. Lanes are summed, never
+  /// merged: a two-lane track
   /// contributes both lanes to the mix. A lane playing its heard image
   /// (#1713) contributes that, its two sides averaged, so the preview sounds
   /// as the take plays.
@@ -2512,9 +2542,15 @@ class SessionRepository {
     }
     if (active.isEmpty) return Float32List(0);
 
+    final cap = _loopCapFrames(captured.snapshot);
     var period = 1;
     for (final (pcm, _) in active) {
       period = _lcm(period, pcm.length);
+      // Past the cap the LCM only grows; stop before it can overflow.
+      if (period > cap) break;
+    }
+    if (period > cap) {
+      period = active.map((a) => a.$1.length).reduce(math.max);
     }
 
     final mix = Float32List(period);
