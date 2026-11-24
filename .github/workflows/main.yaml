@@ -330,7 +330,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Install ccache
-        uses: hendrikmuhs/ccache-action@v1.2.25
+        uses: hendrikmuhs/ccache-action@v1.2.26
         with:
           install: binary
           restore: false
@@ -378,7 +378,7 @@ jobs:
       # (cache-mode above), and ci-caches.yaml does not build the native
       # suites, so nothing saves it for every PR to restore.
       - name: Install ccache
-        uses: hendrikmuhs/ccache-action@v1.2.25
+        uses: hendrikmuhs/ccache-action@v1.2.26
         with:
           install: binary
           restore: false
@@ -546,7 +546,7 @@ jobs:
       # (cache-mode above), and ci-caches.yaml does not build the native
       # suites, so nothing saves it for every PR to restore.
       - name: Install ccache
-        uses: hendrikmuhs/ccache-action@v1.2.25
+        uses: hendrikmuhs/ccache-action@v1.2.26
         with:
           install: binary
           restore: false
@@ -694,7 +694,7 @@ jobs:
       # (cache-mode above), and ci-caches.yaml does not build the native
       # suites, so nothing saves it for every PR to restore.
       - name: Install ccache
-        uses: hendrikmuhs/ccache-action@v1.2.25
+        uses: hendrikmuhs/ccache-action@v1.2.26
         with:
           install: binary
           restore: false
@@ -746,7 +746,7 @@ jobs:
       # (cache-mode above), and ci-caches.yaml does not build the native
       # suites, so nothing saves it for every PR to restore.
       - name: Install ccache
-        uses: hendrikmuhs/ccache-action@v1.2.25
+        uses: hendrikmuhs/ccache-action@v1.2.26
         with:
           install: binary
           restore: false
@@ -786,7 +786,7 @@ jobs:
       # (cache-mode above), and ci-caches.yaml does not build the native
       # suites, so nothing saves it for every PR to restore.
       - name: Install ccache
-        uses: hendrikmuhs/ccache-action@v1.2.25
+        uses: hendrikmuhs/ccache-action@v1.2.26
         with:
           install: binary
           restore: false
