@@ -2365,9 +2365,15 @@ class SessionRepository {
   }
 
   /// The longest loop the engine can hold at [snapshot]'s rate
-  /// ([kMaxLoopSeconds]): no track length or layer image is longer.
-  static int _loopCapFrames(EngineSnapshot snapshot) =>
-      snapshot.sampleRate * kMaxLoopSeconds;
+  /// ([kMaxLoopSeconds]): no track length or layer image is longer. An
+  /// engine holding a take always reports its rate; without one the save
+  /// cannot bound what it writes, and is refused.
+  static int _loopCapFrames(EngineSnapshot snapshot) {
+    if (snapshot.sampleRate <= 0) {
+      throw StateError('the engine reports no sample rate for its takes');
+    }
+    return snapshot.sampleRate * kMaxLoopSeconds;
+  }
 
   /// Refuses a save whose [what], [frames] long as the engine reports it, is
   /// longer than any loop can be ([cap]): a nonsense length must not size a
