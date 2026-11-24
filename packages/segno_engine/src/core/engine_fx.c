@@ -1653,6 +1653,9 @@ static int le_octaver_latency(const le_octaver_state* o) {
   return LE_PV_LATENCY;
 }
 
+/* The grain/dry crossfade's one-pole step: 10 ms at the kernel's rate. */
+#define LE_PSOLA_GATE_K (100.0f / (float)LE_OCT_RATE)
+
 /* TD-PSOLA pitch shift (mode >= 0.5). Grains are repositioned but never resampled,
  * so the grain's spectral shape — the formants — stays fixed while the epoch
  * repetition rate changes the pitch. Lowest-latency, most natural on solo voice;
@@ -1668,9 +1671,6 @@ static int le_octaver_latency(const le_octaver_state* o) {
  * that a pulse-less, near-pure tone (e.g. a flute/whistle/sine) can self-cancel on
  * a large up-shift, where same-period grains land antiphase; harmonic-rich voice
  * (the documented sweet spot) has localized epochs and reinforces. */
-/* The grain/dry crossfade's one-pole step: 10 ms at the kernel's rate. */
-#define LE_PSOLA_GATE_K (100.0f / (float)LE_OCT_RATE)
-
 static float le_psola_tick(le_octaver_state* o, const float* fifo, int head,
                            int cap, float ratio) {
   if (o->out == NULL) return 0.0f;
