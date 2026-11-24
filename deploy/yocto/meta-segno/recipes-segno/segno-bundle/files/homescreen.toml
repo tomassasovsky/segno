@@ -12,6 +12,13 @@
 [global]
 # Nothing on the console is driven by a pointer.
 disable_cursor = true
+# Render each view into a 4x multisampled framebuffer and resolve it into the
+# scanout buffer (toyota-connected/ivi-homescreen#861). Impeller's OpenGL ES
+# backend anti-aliases only through MSAA, and Mesa's V3D has no
+# GL_EXT_multisampled_render_to_texture, so without this every edge on both
+# screens is aliased. Upstream defaults it to off on drm-kms-egl. On the Pi 5
+# at 1080p, 4x kept one view at 60 fps for 112 MiB more V3D memory.
+msaa_samples = 4
 
 # --- Main UI: the 15.6" 1080p touch panel on HDMI-A-2 --------------------------
 # The console's cabling: the 15.6" is on the Pi 5's HDMI1 port (HDMI-A-2) and
@@ -29,7 +36,7 @@ fullscreen = true
   # API ivi-homescreen uses leaves it off. Signed-distance-field shapes kept
   # the Pi 5's V3D 63% busy on the stage against 27%, dropped frames, and
   # took the readout's raster time from 5.9 to 10.4 ms (p50); paths stay
-  # aliased without the 4x MSAA framebuffer (IVI_DRM_MSAA_SAMPLES, #1687), so
+  # aliased without the 4x MSAA framebuffer (msaa_samples, #1687), so
   # it is needed either way. Never write --impeller-use-sdfs=false: the
   # engine only checks whether the switch is present, so that turns SDF on.
   engine = ['--enable-impeller=true']

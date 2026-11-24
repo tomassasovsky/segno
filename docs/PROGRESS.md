@@ -1097,7 +1097,10 @@ a take's chains, where it used to hold each effect as it stood at arm.
   `MakeRenderTargetFromBackingStoreImpeller` is unchanged, so ivi-homescreen
   needed no change for it. ivi-homescreen is now pinned at upstream v3.0
   `9eeee89`, which has the pixel-ratio and shutdown fixes (#1834); the MSAA
-  framebuffer (#1687) is the one patch left.
+  framebuffer (#1687) is the one patch left. Since 2026-11-23 it is pinned at
+  `35e04ad`, the merge of toyota-connected/ivi-homescreen#861, which carries
+  the MSAA framebuffer upstream. Upstream leaves it off on drm-kms-egl, so
+  `homescreen.toml` sets `msaa_samples = 4`, and no patches are left.
 - 3.50 adds `--impeller-use-sdfs`: rects, rounded rects, circles, ovals and
   lines drawn from signed distance fields and anti-aliased in the shader.
   Flutter's GTK, macOS and Windows embedders always pass it; the embedder API

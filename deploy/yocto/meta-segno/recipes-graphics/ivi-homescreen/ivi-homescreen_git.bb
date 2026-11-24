@@ -8,15 +8,15 @@ LICENSE = "Apache-2.0"
 LIC_FILES_CHKSUM = "file://LICENSE;md5=39ae29158ce710399736340c60147314"
 
 # Pinned like every other source in this image (see kas-segno-common.yml);
-# bump deliberately. The v3.0 merge of toyota-connected/ivi-homescreen#860,
-# which with #859 carries the pixel-ratio and shutdown fixes Segno used to
-# patch in (#1834). The MSAA patch is still ours (#1674).
+# bump deliberately. The v3.0 merge of toyota-connected/ivi-homescreen#861,
+# the MSAA backing store Segno used to patch in (#1674). Upstream it is off
+# by default, so homescreen.toml turns it on with [global] msaa_samples. With
+# #859 and #860 (#1834), every patch Segno carried is upstream.
 # gitsm: the build needs every submodule (drm-cxx and its own, fmt,
 # tomlplusplus, cxxopts, asio, rapidjson, Vulkan-Headers, sanitizers-cmake),
 # and fetches nothing at configure or build time once they are present.
-SRCREV = "9eeee8925ef34838418156da21bcec7872db6c9b"
-SRC_URI = "gitsm://github.com/toyota-connected/ivi-homescreen.git;protocol=https;branch=v3.0 \
-           file://0001-drm-render-Flutter-into-a-multisampled-framebuffer-and-resolve-it.patch"
+SRCREV = "35e04ad061fb2be9c12a9378fee667ef796e3046"
+SRC_URI = "gitsm://github.com/toyota-connected/ivi-homescreen.git;protocol=https;branch=v3.0"
 PV = "3.0+git${SRCPV}"
 S = "${WORKDIR}/git"
 
