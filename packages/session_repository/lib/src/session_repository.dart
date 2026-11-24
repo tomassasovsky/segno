@@ -475,8 +475,9 @@ class SessionRepository {
   /// save or another reservation), so a same-second Save as and Duplicate, or
   /// a folder named like an id, can never share a directory.
   ///
-  /// A caller whose save then writes nothing gives the id back with
-  /// [releaseSessionId]; an empty directory would otherwise list as a folder.
+  /// A caller whose save then fails gives the id back with
+  /// [releaseSessionId]; an empty directory would otherwise list as a folder,
+  /// and a half-written one would hold the save's name.
   Future<SessionId> newSessionId() async => _reserveId(await _rootPath());
 
   /// Picks the first free id for this second and creates `parent/<id>`
@@ -510,16 +511,19 @@ class SessionRepository {
   }
 
   /// Gives back an id [newSessionId] reserved when the save that was meant
-  /// to fill it wrote nothing: removes its directory only while it is still
-  /// empty. Anything written into it (a bundle, or an interrupted save's
-  /// layers) is left in place.
+  /// to fill it failed: removes its directory with whatever that save wrote
+  /// into it, as a failed Duplicate removes its partial copy. Only the
+  /// caller that reserved [id] may give it back, and only before its save
+  /// has succeeded: everything in the directory is then that save's own,
+  /// and the live rig still holds it. A missing id is a no-op.
   Future<void> releaseSessionId(SessionId id) async {
     _requireId(id);
     final dir = Directory('${await _rootPath()}/$id');
     try {
-      if (dir.existsSync() && dir.listSync().isEmpty) dir.deleteSync();
+      if (dir.existsSync()) dir.deleteSync(recursive: true);
     } on FileSystemException {
-      // Something landed in it between the check and the delete: keep it.
+      // What is left lists as an interrupted save, or as a bundle when its
+      // manifest stayed; the caller's own failure is the one to report.
     }
   }
 

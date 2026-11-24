@@ -215,7 +215,7 @@ class SessionCubit extends Cubit<SessionState> {
     final device = _looper.state.status.deviceName;
     return _run(
       () => _captureSettings.runExclusive(() async {
-        final (:id, :slug) = await _writeNew(
+        final (:id, :slug, :sessions) = await _writeNew(
           name,
           revision: revision,
           generation: generation,
@@ -225,16 +225,18 @@ class SessionCubit extends Cubit<SessionState> {
           SessionOutcome.savedAs,
           currentId: id,
           currentName: slug,
-          sessions: await _repository.listSessions(),
+          sessions: sessions,
         );
       }),
     );
   }
 
   /// Writes the live rig under a fresh id, named [name] or the next
-  /// automatic name, and records its fingerprint. Runs inside
+  /// automatic name, lists the catalog with it, and records its
+  /// fingerprint. A failure at any step leaves no bundle behind. Runs inside
   /// `runExclusive`.
-  Future<({SessionId id, String slug})> _writeNew(
+  Future<({SessionId id, String slug, List<SessionSummary> sessions})>
+  _writeNew(
     String? name, {
     required int revision,
     required int generation,
@@ -251,7 +253,7 @@ class SessionCubit extends Cubit<SessionState> {
     }
     final id = await _repository.newSessionId();
     try {
-      _savedFingerprint = await _asSaveFailure(
+      final fingerprint = await _asSaveFailure(
         () async => await _saveCurrentRig(
           await _repository.bundlePathOf(id),
           slug,
@@ -260,13 +262,18 @@ class SessionCubit extends Cubit<SessionState> {
           device,
         ),
       );
+      final sessions = await _repository.listSessions();
+      _savedFingerprint = fingerprint;
+      return (id: id, slug: slug, sessions: sessions);
     } on Object {
-      // A save refused before it wrote anything leaves the reserved
-      // directory empty; give it back so it never lists as a folder.
+      // Everything in the reserved directory is this save's own, as a
+      // Duplicate's copy is: give it back with whatever the save wrote, so a
+      // failed save leaves neither an empty reservation (which would list as
+      // a folder) nor a bundle holding the name, which a Retry under that
+      // name would collide with (SEG-106). The live rig still holds it all.
       await _repository.releaseSessionId(id);
       rethrow;
     }
-    return (id: id, slug: slug);
   }
 
   /// The fingerprint ([SessionRepository.fingerprint]) of the rig as of its
@@ -376,7 +383,7 @@ class SessionCubit extends Cubit<SessionState> {
         status: SessionStatus.working,
         currentSessionId: saved.id,
         currentSessionName: saved.slug,
-        sessions: await _repository.listSessions(),
+        sessions: saved.sessions,
       ),
     );
     return saved.slug;
