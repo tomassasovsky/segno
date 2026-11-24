@@ -32,7 +32,7 @@ Smart Tune's screen shows Speed, Tracking, Scale Root, Scale Type, Audio Type an
 **The scale types are the usual sets, with two exceptions.**
 - Locrian plays Phrygian's notes: G, not Gb. The two captures are identical.
 - Penta is the minor pentatonic: C, Eb, F, G and Bb.
-- Min Triad and Root sit below the list's twelfth row, which the screen does not scroll to, so neither was captured. Ours builds their notes from the names: root, minor third and fifth, and the root alone. These are on #1459 for the owner to check by ear, since the device's names are not always literal (its Locrian).
+- Min Triad and Root sit below the list's twelfth row, which the screen does not scroll to, so neither was captured. Ours builds their notes from the names: root, minor third and fifth, and the root alone. The device's names are not always literal (its Locrian), but with no capture there is nothing to compare against: the owner kept the notes from the names on 2026-11-23 (SEG-11), as for the Drum rooms the screen does not reach.
 
 **The correction glides in cents, exponentially.** The time constant is about half the Speed.
 
