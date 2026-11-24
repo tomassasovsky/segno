@@ -12,7 +12,9 @@
  * ones, since #1755 does not touch them. A change that is meant to change
  * the sound of a pitch kind changes this file with it, in the same PR, and
  * says so. Changed since: the Dual Octaver's second voice takes the low
- * band's share by owner (#1616, ref_le_pv_stage_shift2).
+ * band's share by owner (#1616, ref_le_pv_stage_shift2); PSOLA's grain/dry
+ * crossfade follows its gate in 10 ms a sample, so a note sung from silence
+ * does not click (SEG-98, ref_le_psola_tick).
  */
 #ifdef LE_NATIVE_TESTS
 
@@ -339,6 +341,7 @@ static void ref_le_pv_reset_runtime(le_fx_state* fx, int slot, int chan,
   o->out_epoch = 0.0f;
   o->period = 0.0f;
   o->voiced = 0.0f;
+  o->gate = 0.0f;
   if (o->out != NULL) memset(o->out, 0, sizeof(float) * LE_PV_OUT);
   o->analysed = 0;
   if (o->scratch != NULL) {
@@ -1146,7 +1149,9 @@ static float ref_le_psola_tick(le_octaver_state* o, const float* fifo, int head,
   float wv = (o->voiced - 0.3f) / 0.3f; /* soft gate around conf ~0.3..0.6 */
   if (wv < 0.0f) wv = 0.0f;
   if (wv > 1.0f) wv = 1.0f;
-  return wv * y + (1.0f - wv) * dry;
+  /* SEG-98: the crossfade follows the gate in 10 ms a sample. */
+  o->gate += (wv - o->gate) * (100.0f / (float)LE_OCT_RATE);
+  return o->gate * y + (1.0f - o->gate) * dry;
 }
 
 /* ---- The Dual Octaver's low band (#1467; engine_fx.h) ----------------------

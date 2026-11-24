@@ -149,6 +149,9 @@ static const char* const k_moved[] = {
     "dualoct",
     /* #1628: the ladder's level fit to the Looper X; #1888: its corner. */
     "lpf",
+    /* SEG-98: PSOLA's grain/dry crossfade ramps, so a note from silence
+     * does not click. */
+    "smarttune",
     NULL,
 };
 

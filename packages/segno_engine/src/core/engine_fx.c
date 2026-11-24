@@ -599,6 +599,7 @@ static void le_pv_reset_runtime(le_fx_state* fx, int slot, int chan,
   o->out_epoch = 0.0f;
   o->period = 0.0f;
   o->voiced = 0.0f;
+  o->gate = 0.0f;
   if (o->out != NULL) memset(o->out, 0, sizeof(float) * LE_PV_OUT);
   o->analysed = 0;
   if (o->scratch != NULL) {
@@ -1667,6 +1668,9 @@ static int le_octaver_latency(const le_octaver_state* o) {
  * that a pulse-less, near-pure tone (e.g. a flute/whistle/sine) can self-cancel on
  * a large up-shift, where same-period grains land antiphase; harmonic-rich voice
  * (the documented sweet spot) has localized epochs and reinforces. */
+/* The grain/dry crossfade's one-pole step: 10 ms at the kernel's rate. */
+#define LE_PSOLA_GATE_K (100.0f / (float)LE_OCT_RATE)
+
 static float le_psola_tick(le_octaver_state* o, const float* fifo, int head,
                            int cap, float ratio) {
   if (o->out == NULL) return 0.0f;
@@ -1772,7 +1776,11 @@ static float le_psola_tick(le_octaver_state* o, const float* fifo, int head,
 
   /* 4. Soft voiced/unvoiced gate (D4): crossfade the grain voice against the
    *    delay-matched dry by the smoothed confidence. Silence -> voiced ~0 and the
-   *    dry tap is ~0, so the output collapses to silence (no grain buzz). */
+   *    dry tap is ~0, so the output collapses to silence (no grain buzz). The
+   *    confidence moves once a detection, so the crossfade follows it in
+   *    10 ms a sample (SEG-98): the grains are not in phase with the dry,
+   *    and a crossfade that jumped with each detection put a step in the
+   *    output 35-45 ms into a note sung from silence. */
   int didx = head - le_octaver_latency(o) + 1;
   didx %= cap;
   if (didx < 0) didx += cap;
@@ -1780,7 +1788,8 @@ static float le_psola_tick(le_octaver_state* o, const float* fifo, int head,
   float wv = (o->voiced - 0.3f) / 0.3f; /* soft gate around conf ~0.3..0.6 */
   if (wv < 0.0f) wv = 0.0f;
   if (wv > 1.0f) wv = 1.0f;
-  return wv * y + (1.0f - wv) * dry;
+  o->gate += (wv - o->gate) * LE_PSOLA_GATE_K;
+  return o->gate * y + (1.0f - o->gate) * dry;
 }
 
 /* ---- The Dual Octaver's low band (#1467; engine_fx.h) ----------------------

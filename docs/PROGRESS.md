@@ -60,9 +60,33 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
 | SEG-90 | The app's audio callback runs late on screen changes and take starts: it waits on memory (Ed's Racks overflow the caches). Parts 1-4 and 6 merged (#1925, #1926, #1932, #1933, #1935); part 5 in review (Mesa keeps a page transition's render target, made at startup). Steady playback and take starts are clean on the console; the rare xruns were the bench's own reads of the app's memory | in-review | needs-plan-approval | `claude/cb-overhead-1914-p5` |
 | SEG-48 | Effects budget from the app's measured headroom: 10-minute untraced in-app ladder at 48 kHz / 32 (build 279); track job 200 → 300 ns, chains on the callback charged 2.5× (`kFxSerialFactor`); 4 inputs + 7 tracks or + 1 output rack fit | in-review | agent-merges | `claude/fx-headroom-1724-p3` |
 | SEG-22 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track and lane chains) is #1729 | build | needs-plan-approval | `claude/fx-multicore-1515-p1b` |
+| SEG-98 | PSOLA's grain/dry crossfade ramps per sample, so a note sung from silence no longer clicks (Smart Tune, the Octaver in PSOLA mode); the owner listens on the console with the next build | in-review | needs-hardware | `claude/psola-gate-click-SEG-98` |
 | SEG-63 | Console WiFi against an ASUS RT-AX89X with 802.11ax on: firmware already matches Pi OS; brcmfmac options aligned with Pi OS and a troubleshooting note; failure not reproduced, issue stays open until it recurs | in-review | agent-merges | `claude/wifi-firmware-1816` |
 
 ---
+
+## November 2026 A note sung from silence no longer clicks through PSOLA (SEG-98)
+
+- The owner heard clicks singing through Smart Tune on the console (48 kHz /
+  32). The Scarlett stayed on the bus and `bench_rt_faults` was clean, so it
+  was the effect itself.
+- PSOLA plays the delay-matched dry until it hears a pitch, then crossfades
+  to its grains. The crossfade's weight came from the voicing, which moves
+  only when a detection finishes, so it could go from dry to most of the
+  grains in one sample. The grains are not in phase with the dry, and the
+  output stepped by up to half the voice's peak 35-45 ms into the note.
+- The crossfade now follows the voicing's gate in 10 ms a sample
+  (`le_psola_tick`, `le_octaver_state.gate`), as the Dual Octaver's low
+  band already did. Only what runs PSOLA changes: Smart Tune, and the
+  Octaver kind with its mode at PSOLA. Pitch Shift and the Whammy run the
+  phase vocoder and render bit for bit as before. Held notes, vibrato and
+  slides render as before; only the first tens of milliseconds of a note
+  change.
+- `test_smart_tune_onset_from_silence_no_step` pins it: six voice-like notes
+  from silence, each note's largest second difference in its first 100 ms
+  under twice the input's (0.010-0.012 against 0.012 now; 0.041-0.148 before).
+- The pitch oracle's frozen kernels (`pitch_ref.c`) take the same change,
+  and `smarttune` is in `bench_fx_equiv.c`'s `k_moved`.
 
 ## November 2026 September takes ship their captured master (SEG-76, #1855)
 
