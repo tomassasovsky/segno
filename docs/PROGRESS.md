@@ -63,6 +63,20 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
 
 ---
 
+## November 2026 A Retry after a failed Save As saves under its name (SEG-106)
+
+- On the console (build 293), a Save As from the power flow failed with
+  Out of Memory (SEG-107) after its manifest had landed, and every Retry
+  was refused with `a session named "e4t4eg4g" already exists`: the failed
+  attempt's own bundle held the name.
+- A new bundle's save is all or nothing now, as a Duplicate's copy is:
+  when any step after the reservation fails (the write, the mixdown, the
+  catalog re-list), `releaseSessionId` removes the reserved directory with
+  whatever that save wrote. The live rig still holds it all, the banner's
+  "Nothing was changed" is true, and a Retry under the same name saves.
+  This covers Save As, an automatic-name save and an Open's preservation of
+  an unnamed rig. The sheet still refuses another session's name.
+
 ## November 2026 The power panel closes showing what it showed (SEG-100)
 
 - On the console (build 291), Keep playing on the update refusal showed

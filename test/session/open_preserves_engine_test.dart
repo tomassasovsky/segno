@@ -201,6 +201,33 @@ void main() {
       },
     );
 
+    test('a Save As that fails after its manifest landed leaves no bundle, '
+        'and a Retry under the same name saves (SEG-106)', () async {
+      SessionRepository.debugOnSaveWrite = (path) {
+        if (path.endsWith('/${SessionRepository.mixdownName}')) {
+          throw const FileSystemException('Out of Memory');
+        }
+      };
+
+      await session.saveAs('Mine');
+
+      expect(session.state.status, SessionStatus.failure);
+      expect(session.state.error, SessionError.saveFailed);
+      expect(session.state.currentSessionName, isNull);
+      expect(await sessions.listSessions(), isEmpty);
+      expect(directory.listSync(), isEmpty);
+
+      SessionRepository.debugOnSaveWrite = null;
+      await session.saveAs('Mine');
+
+      expect(session.state.status, SessionStatus.success);
+      expect(session.state.currentSessionName, 'Mine');
+      final saved = await sessions.read(
+        await sessions.bundlePathOf(await idOf('Mine')),
+      );
+      expect(saved.laneStems[(0, 0)]!.single, isNotEmpty);
+    });
+
     test('a take still recording is finished and saved, not lost', () async {
       await session.saveAs('Target');
       await session.saveAs('Recording');

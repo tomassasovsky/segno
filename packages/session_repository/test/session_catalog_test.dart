@@ -539,14 +539,18 @@ void main() {
       expect(await repo().listFolders(), isEmpty);
     });
 
-    test('keeps a directory a save wrote into', () async {
+    test('removes what a failed save wrote into it, so its name is free '
+        'again (SEG-106)', () async {
       final id = await repo().newSessionId();
       File('${root.path}/$id/track0_lane0_L0.wav').createSync();
+      File('${root.path}/$id/${Session.manifestName}')
+          .writeAsStringSync(jsonEncode({'formatVersion': 11, 'name': 'Mine'}));
 
       await repo().releaseSessionId(id);
       await repo().releaseSessionId('s-ghost');
 
-      expect(File('${root.path}/$id/track0_lane0_L0.wav').existsSync(), isTrue);
+      expect(Directory('${root.path}/$id').existsSync(), isFalse);
+      expect(await repo().listSessions(), isEmpty);
     });
   });
 
