@@ -543,9 +543,8 @@ void main() {
         'again (SEG-106)', () async {
       final id = await repo().newSessionId();
       File('${root.path}/$id/track0_lane0_L0.wav').createSync();
-      File('${root.path}/$id/${Session.manifestName}').writeAsStringSync(
-        jsonEncode({'formatVersion': 11, 'name': 'Mine'}),
-      );
+      File('${root.path}/$id/${Session.manifestName}')
+          .writeAsStringSync(jsonEncode({'formatVersion': 11, 'name': 'Mine'}));
 
       await repo().releaseSessionId(id);
       await repo().releaseSessionId('s-ghost');
