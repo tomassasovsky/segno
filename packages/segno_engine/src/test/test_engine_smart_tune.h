@@ -366,10 +366,63 @@ static void test_smart_tune_saw_silence_and_96k(void) {
   st_sr = ST_SR;
 }
 
+/* A note sung from silence starts without a click (SEG-98). PSOLA plays the
+ * dry until it hears a pitch, then crossfades to its grains, which are not
+ * in phase with the dry; when that crossfade stepped with each detection,
+ * the output jumped by half the voice's peak in one sample, 35-45 ms into
+ * the note. Six voice-like notes (harmonics to 4 kHz, 20 ms attacks), each
+ * after enough silence to drop the voicing, at pitches and gaps that put
+ * the detections at different points in the note: the output's largest
+ * second difference in each note's first 100 ms stays near the input's. */
+static void test_smart_tune_onset_from_silence_no_step(void) {
+  printf("test_smart_tune_onset_from_silence_no_step\n");
+  static const double hz[6] = {220.0, 246.9, 196.0, 293.7, 329.6, 174.6};
+  static const double gap[6] = {0.25, 0.31, 0.2, 0.37, 0.23, 0.29};
+  const int note = (int)(0.6 * st_sr);
+  int at[6];
+  int n = 0;
+  for (int k = 0; k < 6; ++k) {
+    n += (int)(gap[k] * st_sr);
+    at[k] = n;
+    n += note;
+  }
+  float* x = (float*)calloc((size_t)n, sizeof(float));
+  for (int k = 0; k < 6; ++k) {
+    for (int i = 0; i < note; ++i) {
+      const double t = (double)i / st_sr;
+      double v = 0.0;
+      for (int h = 1; h * hz[k] < 4000.0; ++h) {
+        v += sin(2.0 * 3.14159265358979 * h * hz[k] * t) / pow(h, 1.2);
+      }
+      const double env = fmin(1.0, t / 0.02) * fmin(1.0, (0.6 - t) / 0.04);
+      x[at[k] + i] = (float)(0.15 * v * env);
+    }
+  }
+  double dx = 0.0;
+  for (int i = 2; i < n; ++i) {
+    dx = fmax(dx, fabs((double)x[i] - 2.0 * x[i - 1] + x[i - 2]));
+  }
+  float p[LE_FX_PARAMS];
+  st_params(p, 0.0f, 0, 9, 0.5f); /* Chromatic, the hardest correction */
+  float* y = st_render(p, x, n);
+  for (int k = 0; k < 6; ++k) {
+    double dy = 0.0;
+    for (int i = at[k] + 2; i < at[k] + (int)(0.1 * st_sr); ++i) {
+      dy = fmax(dy, fabs((double)y[i] - 2.0 * y[i - 1] + y[i - 2]));
+    }
+    printf("  %.1f Hz: second difference %.4f, the input's %.4f\n", hz[k], dy,
+           dx);
+    CHECK(dy < 2.0 * dx);
+  }
+  free(y);
+  free(x);
+}
+
 static void run_smart_tune_tests(void) {
   test_smart_tune_scales_match_the_captures();
   test_smart_tune_unmeasured_scales();
   test_smart_tune_speed();
   test_smart_tune_reference_and_level();
   test_smart_tune_saw_silence_and_96k();
+  test_smart_tune_onset_from_silence_no_step();
 }

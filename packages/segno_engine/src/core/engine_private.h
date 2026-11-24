@@ -431,6 +431,10 @@ typedef struct le_octaver_state {
    * until the next synthesis mark, each to a fraction of a sample. */
   float period;
   float voiced;
+  /* PSOLA's grain/dry crossfade, following the voicing's soft gate in
+   * 10 ms a sample (SEG-98): the voicing moves once a detection, and a
+   * crossfade that stepped with it clicked at a note's start. */
+  float gate;
   float in_epoch;
   float out_epoch;
   /* Shared: per-sample param smoothing + mode-switch gain-dip (D1/D2/H3). */

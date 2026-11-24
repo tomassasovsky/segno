@@ -1,7 +1,7 @@
 <!-- cspell:words heatsinks Omron lofi powf aubio -->
 # Segno — Progress & Roadmap
 
-<!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs multicore -->
+<!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs multicore smarttune -->
 
 Living status doc for Segno, the live looping appliance (a Raspberry Pi 5
 console). It began as a Flutter desktop loopstation; the original plan is
@@ -63,6 +63,29 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
 | SEG-63 | Console WiFi against an ASUS RT-AX89X with 802.11ax on: firmware already matches Pi OS; brcmfmac options aligned with Pi OS and a troubleshooting note; failure not reproduced, issue stays open until it recurs | in-review | agent-merges | `claude/wifi-firmware-1816` |
 
 ---
+
+## November 2026 A note sung from silence no longer clicks through PSOLA (SEG-98)
+
+- The owner heard clicks singing through Smart Tune on the console (48 kHz /
+  32). The Scarlett stayed on the bus and `bench_rt_faults` was clean, so it
+  was the effect itself.
+- PSOLA plays the delay-matched dry until it hears a pitch, then crossfades
+  to its grains. The crossfade's weight came from the voicing, which moves
+  only when a detection finishes, so it could go from dry to most of the
+  grains in one sample. The grains are not in phase with the dry, and the
+  output stepped by up to half the voice's peak 35-45 ms into the note.
+- The crossfade now follows the voicing's gate in 10 ms a sample
+  (`le_psola_tick`, `le_octaver_state.gate`), as the Dual Octaver's low
+  band already did. Only what runs PSOLA changes: Smart Tune, and the
+  Octaver kind with its mode at PSOLA. Pitch Shift and the Whammy run the
+  phase vocoder and render bit for bit as before. Held notes, vibrato and
+  slides render as before; only the first tens of milliseconds of a note
+  change.
+- `test_smart_tune_onset_from_silence_no_step` pins it: six voice-like notes
+  from silence, each note's largest second difference in its first 100 ms
+  under twice the input's (0.010-0.012 against 0.012 now; 0.041-0.148 before).
+- The pitch oracle's frozen kernels (`pitch_ref.c`) take the same change,
+  and `smarttune` is in `bench_fx_equiv.c`'s `k_moved`.
 
 ## November 2026 September takes ship their captured master (SEG-76, #1855)
 
