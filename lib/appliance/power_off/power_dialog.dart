@@ -76,9 +76,9 @@ class PowerDialog extends StatelessWidget {
     return _RebuildOn(
       changes: changes,
       builder: (context) => BlocBuilder<PowerCubit, PowerState>(
-        // The host pops the panel on a phase it does not show (idle, the
-        // save, the goodbye), so the panel keeps the contents it had for its
-        // whole close instead of turning into Power options (SEG-100).
+        // On a phase the panel does not show, it keeps the contents it had:
+        // under the Save As sheet, and for the whole close on idle, the save
+        // and the goodbye, instead of turning into Power options (SEG-100).
         buildWhen: (_, current) => current.shownInPanel,
         builder: (context, state) {
           final cubit = context.read<PowerCubit>();

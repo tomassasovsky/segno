@@ -95,9 +95,9 @@ class PowerState extends Equatable {
       phase == PowerPhase.saveFailed;
 
   /// The power panel shows this phase; the host opens the panel on it. In
-  /// any other phase the panel keeps what it showed last: Save As leaves
-  /// Power options under its sheet, and idle, the save and the goodbye
-  /// close the panel.
+  /// any other phase the panel keeps what it showed last: under the Save As
+  /// sheet (Power options, or Segno is staying on after a Retry), and while
+  /// idle, the save and the goodbye close it.
   bool get shownInPanel =>
       phase == PowerPhase.refuse ||
       phase == PowerPhase.options ||
