@@ -76,6 +76,10 @@ class PowerDialog extends StatelessWidget {
     return _RebuildOn(
       changes: changes,
       builder: (context) => BlocBuilder<PowerCubit, PowerState>(
+        // On a phase the panel does not show, it keeps the contents it had:
+        // under the Save As sheet, and for the whole close on idle, the save
+        // and the goodbye, instead of turning into Power options (SEG-100).
+        buildWhen: (_, current) => current.shownInPanel,
         builder: (context, state) {
           final cubit = context.read<PowerCubit>();
           final Widget body;
@@ -132,6 +136,8 @@ class PowerDialog extends StatelessWidget {
                   ),
                 ],
               );
+            // The other phases reach the body only when the panel is first
+            // built after the phase has moved on.
             case PowerPhase.idle:
             case PowerPhase.options:
             case PowerPhase.saveAs:
@@ -182,12 +188,11 @@ class PowerDialog extends StatelessWidget {
                 ],
               );
           }
-          return IgnorePointer(
-            ignoring: !state.isDismissible,
-            child: Align(
-              alignment: Alignment.bottomCenter,
-              child: _PowerPanel(child: body),
-            ),
+          // A closing route ignores pointers itself, so the panel needs no
+          // guard of its own while it goes.
+          return Align(
+            alignment: Alignment.bottomCenter,
+            child: _PowerPanel(child: body),
           );
         },
       ),

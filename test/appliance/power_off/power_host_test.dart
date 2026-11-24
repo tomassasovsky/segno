@@ -159,6 +159,22 @@ void main() {
       await tester.pump(const Duration(milliseconds: 400));
     }
 
+    /// Pumps the panel's close frame by frame. Every frame shows [shown] and
+    /// never Power options, until the panel is gone.
+    Future<void> expectClosesShowing(WidgetTester tester, Finder shown) async {
+      await tester.pump();
+      var frames = 0;
+      while (find.byKey(const Key('power_dialog')).evaluate().isNotEmpty) {
+        expect(shown, findsOneWidget);
+        expect(find.byKey(const Key('power_cancel')), findsNothing);
+        expect(find.byKey(const Key('power_restart')), findsNothing);
+        expect(find.byKey(const Key('power_shut_down')), findsNothing);
+        await tester.pump(const Duration(milliseconds: 16));
+        expect(++frames, lessThan(100), reason: 'the panel never closed');
+      }
+      expect(frames, greaterThan(0), reason: 'the close was not seen');
+    }
+
     Future<void> openOptions(
       WidgetTester tester, {
       UpdateCubit? update,
@@ -313,6 +329,22 @@ void main() {
         expect(log, isEmpty);
       });
 
+      testWidgets('Keep playing closes the update refusal showing it, never '
+          'Power options (SEG-100)', (tester) async {
+        await pumpHost(tester, update: update);
+        await tester.pump();
+        unawaited(update.startDownload());
+        keys.emitPress();
+        await settle(tester);
+        // The refusal opens over the frame settle ends on; let it finish.
+        await settle(tester);
+        expect(find.text('Wait for the update'), findsOneWidget);
+
+        await tester.tap(find.byKey(const Key('power_keep_playing')));
+        await expectClosesShowing(tester, find.text('Wait for the update'));
+        expect(cubit.state.phase, PowerPhase.idle);
+      });
+
       testWidgets('press during a download refuses; once it has staged, the '
           'same press opens Power options with the install line', (
         tester,
@@ -413,6 +445,54 @@ void main() {
       expect(find.byKey(const Key('power_dialog')), findsNothing);
       expect(find.byKey(const Key('power_host_child')), findsOneWidget);
       expect(log, isEmpty);
+    });
+
+    testWidgets('Keep playing closes the refusal showing the refusal, never '
+        'Power options (SEG-100)', (tester) async {
+      whenListen(
+        looper,
+        const Stream<LooperState>.empty(),
+        initialState: const LooperState(
+          tracks: [Track(state: TrackState.recording, lengthFrames: 48000)],
+        ),
+      );
+      await openOptions(tester);
+      // The refusal opens over the frame settle ends on; let it finish.
+      await settle(tester);
+      expect(find.text('Stop the take first'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('power_keep_playing')));
+      await expectClosesShowing(tester, find.text('Stop the take first'));
+      expect(cubit.state.phase, PowerPhase.idle);
+    });
+
+    testWidgets('Stay on and a Retry close Segno is staying on showing it, '
+        'never Power options (SEG-100)', (tester) async {
+      named();
+      stopFails = true;
+      await openOptions(tester);
+      await tester.tap(find.byKey(const Key('power_shut_down')));
+      await settle(tester);
+      expect(find.text('Segno is staying on'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('power_stay_on')));
+      await expectClosesShowing(tester, find.text('Segno is staying on'));
+      expect(cubit.state.phase, PowerPhase.idle);
+
+      // A Retry whose save runs: the panel goes as the save starts.
+      keys.emitPress();
+      await settle(tester);
+      await tester.tap(find.byKey(const Key('power_shut_down')));
+      await settle(tester);
+      stopFails = false;
+      final written = Completer<void>();
+      when(() => session.save()).thenAnswer((_) => written.future);
+      await tester.tap(find.byKey(const Key('power_retry')));
+      await expectClosesShowing(tester, find.text('Segno is staying on'));
+      expect(cubit.state.phase, PowerPhase.saving);
+      written.complete();
+      await settle(tester);
+      expect(cubit.state.phase, PowerPhase.goodbye);
     });
 
     testWidgets('Cancel pops only the power dialog', (tester) async {
