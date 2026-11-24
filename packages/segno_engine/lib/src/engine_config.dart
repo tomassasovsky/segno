@@ -4,6 +4,11 @@ import 'package:meta/meta.dart';
 import 'package:segno_engine/src/ffi_strings.dart';
 import 'package:segno_engine/src/generated/segno_engine_bindings.dart';
 
+/// The longest loop the engine holds, in seconds at the device rate
+/// (`LE_MAX_LOOP_SECONDS`): it clamps [EngineConfig.maxLoopFrames] to this,
+/// so no take, lane image or track length is ever longer.
+const int kMaxLoopSeconds = 600;
+
 /// Requested audio device configuration passed to `AudioEngine.start`.
 ///
 /// Any field left at `0` defers to the device default. This is the pure-Dart

@@ -49,7 +49,7 @@ export 'src/backing.dart'
         DecodedAudio,
         DecodedAudioOwnership,
         DecodedAudioPayload;
-export 'src/engine_config.dart' show EngineConfig;
+export 'src/engine_config.dart' show EngineConfig, kMaxLoopSeconds;
 export 'src/engine_snapshot.dart'
     show
         CallbackTelemetry,

@@ -1455,6 +1455,58 @@ void main() {
     }
   });
 
+  test('a mixdown of lanes on independent clocks spans the longest lane '
+      'instead of their LCM (SEG-107)', () async {
+    // The console's Song-mode rig: 453,792 and 435,680 frames share only
+    // 32, an LCM of 6,178,378,080 frames (a 24.7 GB Float32List).
+    final engine = FakeSessionEngine()
+      ..seedTrack(0, Float32List(453792)..fillRange(0, 453792, 1))
+      ..seedTrack(1, Float32List(435680)..fillRange(0, 435680, .5));
+
+    final wav = await savedMixdown(engine, 'song');
+
+    expect(wav.frames, 453792);
+    expect(wav.samples[0], closeTo(1.5, 1e-6));
+    expect(wav.samples[435679], closeTo(1.5, 1e-6));
+    // The shorter lane repeats within the longer one.
+    expect(wav.samples[435680], closeTo(1.5, 1e-6));
+    expect(wav.samples[453791], closeTo(1.5, 1e-6));
+  });
+
+  test('a mixdown keeps the LCM of independent lanes while it fits a loop',
+      () async {
+    // 1 s and 1.5 s at 48 kHz close together after 3 s.
+    final engine = FakeSessionEngine()
+      ..seedTrack(0, Float32List(48000)..fillRange(0, 48000, 1))
+      ..seedTrack(1, Float32List(72000)..fillRange(0, 72000, .5));
+
+    final wav = await savedMixdown(engine, 'fits');
+
+    expect(wav.frames, 144000);
+    expect(wav.samples, everyElement(closeTo(1.5, 1e-6)));
+  });
+
+  test('a save refuses a track or layer longer than any loop can be, '
+      'before it writes anything (SEG-107)', () async {
+    // At 100 Hz a loop holds at most 60,000 frames.
+    final engine = FakeSessionEngine(sampleRate: 100)
+      ..seedTrack(0, Float32List(100 * kMaxLoopSeconds + 1));
+    final repository = rooted(engine);
+    final dir = await repository.bundlePathOf('too-long');
+
+    await expectLater(
+      repository.save(dir, settings: const SessionSettings()),
+      throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('longer than the 60000 a loop can hold'),
+        ),
+      ),
+    );
+    expect(File('$dir/${Session.manifestName}').existsSync(), isFalse);
+  });
+
   test('mixdown sums a lane playing its heard image as that, its sides '
       'averaged, and one re-amped as its clean take (#1713)', () async {
     final engine = FakeSessionEngine()
