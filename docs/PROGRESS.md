@@ -85,6 +85,11 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   under twice the input's (0.010-0.012 against 0.012 now; 0.041-0.148 before).
 - The pitch oracle's frozen kernels (`pitch_ref.c`) take the same change,
   and `smarttune` is in `bench_fx_equiv.c`'s `k_moved`.
+- On the console (build 293, 2026-11-24) a note from silence no longer
+  clicks: Chromatic at 1 ms by ear, and none of the five onsets of a sung
+  Min Triad take at 1 ms has a burst. Min Triad at 1 ms still clicks where
+  the target note changes and on a held note sung off its target; that is
+  another cause, tracked in SEG-103.
 
 ## November 2026 September takes ship their captured master (SEG-76, #1855)
 
