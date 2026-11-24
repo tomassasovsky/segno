@@ -64,6 +64,18 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
 
 ---
 
+## November 2026 The power panel closes showing what it showed (SEG-100)
+
+- On the console (build 291), Keep playing on the update refusal showed
+  Power options for the half second the panel took to close. The panel
+  drew Power options for every phase but the refusal and Segno is staying
+  on, including `idle`, the phase the host closes it on.
+- The panel's body now follows only the phases it shows
+  (`PowerState.shownInPanel`: refuse, options, save failed). A refusal
+  closes as the refusal, and Segno is staying on closes as itself on Stay
+  on and on a Retry whose save runs. The panel's own pointer guard went
+  with it: a closing route already ignores pointers.
+
 ## November 2026 A note sung from silence no longer clicks through PSOLA (SEG-98)
 
 - The owner heard clicks singing through Smart Tune on the console (48 kHz /
