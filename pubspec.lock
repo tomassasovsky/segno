@@ -5,18 +5,18 @@ packages:
     dependency: transitive
     description:
       name: _fe_analyzer_shared
-      sha256: fdcd9f70f9eb80df3bc5ed0fa67280df2595fd481948df8a9ab082e6a40ad04b
+      sha256: "1c5591cc6f252d5f440d96ab87c03e43504be552a3fa49d7cb7563f04c51fb0a"
       url: "https://pub.dev"
     source: hosted
-    version: "108.0.0"
+    version: "111.0.0"
   analyzer:
     dependency: "direct dev"
     description:
       name: analyzer
-      sha256: a51c769bff3b6dfbe9d60199b8606d808290702a296bef0c26a4ca391d414e46
+      sha256: "6c39bd5486a310e56217bed7cb1691377959f31be4227e41750107db7e6dd55c"
       url: "https://pub.dev"
     source: hosted
-    version: "14.4.0"
+    version: "14.7.0"
   archive:
     dependency: transitive
     description:
@@ -60,10 +60,10 @@ packages:
     dependency: "direct dev"
     description:
       name: bloc_lint
-      sha256: "7cbbc0de0ee041d1efcb522148b9add1b660e55a4d60242a023de0ffd2c60fe2"
+      sha256: "59f63985a04031530f7575404fb48d2290889762de3f97eed52c0cd6e4f737b0"
       url: "https://pub.dev"
     source: hosted
-    version: "0.4.3"
+    version: "0.4.4"
   bloc_test:
     dependency: "direct dev"
     description:
