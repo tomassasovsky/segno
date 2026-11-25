@@ -6711,39 +6711,39 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
     case LE_CMD_COMMIT_SESSION: {
       const int32_t base = cmd->session.base_frames;
       const int32_t beats = cmd->session.loop_beats;
-      if (base <= 0 || beats < 0 || beats > INT32_MAX / 15) break;
-      /* KNOWN GAP (B2b; B4 extends the same guard to SONG), guarded
-       * (adversarial-review BUG 2 fix): this command establishes ONE shared
-       * `base` length for every imported track via a whole-loop multiple —
-       * correct for Multi/Sync/Band, but Free AND Song mode have no single
-       * shared loop to import onto (song-mode-spec §2: Song's transport is
-       * "structurally identical" to Free's — independent per-track lengths,
-       * no shared grid). The control-thread wrapper (le_engine_commit_
-       * session, engine_session.c) already rejects this outright when
-       * a_looper_mode is FREE or SONG, so this command should never reach
-       * here in either mode from the normal session-import path — but
-       * le_engine_post_command is a raw FFI escape hatch that can post ANY
-       * command directly, bypassing that wrapper. Without this second
-       * guard, a raw post here would set e->clock / a_master_len to a
-       * nonzero value while FREE/SONG — the exact invariant ("the shared
-       * master clock stays permanently dormant in this mode") every other
-       * Free/Song-mode code path in this file depends on staying true
-       * (advance_transport_frame's shared-clock tick and mix_tracks_frame's
-       * Multi-mode defaults would otherwise spuriously activate alongside
-       * the per-track Free/Song-mode paths). It would ALSO, independently,
-       * leave imported tracks marked PLAYING with no established free_clock
-       * of their own — reproducing the exact "playback stuck reading
-       * position 0 forever" bug class this PR already found and fixed once
-       * in mix_tracks_frame. Free/Song-mode session import (restoring each
-       * track's own free_clock from the manifest, per D12's phase-marked
-       * freeLengthFrames field) is out of B2b/B4's engine-only scope — the
-       * part-2 plan has no B2b/B4 manifest/session task (that lands with
-       * A7/B5c) — so this simply declines the whole commit rather than
-       * corrupting state or silently mishandling it. */
-      {
-        const int32_t mode = load_i32(&e->a_looper_mode);
-        if (mode == LE_LOOPER_MODE_FREE || mode == LE_LOOPER_MODE_SONG) break;
+      const int32_t mode = load_i32(&e->a_looper_mode);
+      if (mode == LE_LOOPER_MODE_FREE || mode == LE_LOOPER_MODE_SONG) {
+        /* Free and Song (SEG-108): no shared loop. The master clock stays
+         * dormant, the invariant every Free/Song path relies on, so a base
+         * posted raw (le_engine_post_command) is refused here as the control
+         * wrapper refuses it. Each imported take is parked STOPPED on its own
+         * clock at its own length, as a mode switch into Free re-clocks a
+         * recorded one (le_apply_mode_switch): one lap, no division, no
+         * span, and on lap 0, since there is no shared lap to keep. */
+        if (base != 0 || beats != 0) break;
+        le_tempo_latch(e); /* no shared clock: nothing recorded against one */
+        for (int32_t t = 0; t < e->track_count; ++t) {
+          le_track* tr = &e->tracks[t];
+          if (load_i32(&tr->a_state) != LE_TRACK_EMPTY) continue;
+          const int32_t len = load_i32(&tr->lanes[0].a_len);
+          if (len <= 0) continue;
+          store_i32(&tr->a_import_span, 0);
+          store_i32(&tr->a_import_anchor, 0);
+          le_span_set(tr, 0);
+          le_reset_track_playback(tr);
+          le_loop_clock_set_length(&tr->free_clock, len);
+          tr->free_iteration = 0;
+          store_i32(&tr->a_multiple, 1);
+          store_i32(&tr->a_sync_divisor, 0);
+          le_track_anchor_set(tr, 0);
+          le_head_follow(e, tr, frame, 0);
+          le_track_park_head_logged(e, tr, frame);
+          store_i32(&tr->a_state, LE_TRACK_STOPPED);
+        }
+        le_primary_reconcile(e);
+        break;
       }
+      if (base <= 0 || beats < 0 || beats > INT32_MAX / 15) break;
       /* Establish the master loop and park every imported track (EMPTY with a
        * loaded length) at its whole-loop multiple. The PCM and per-track length
        * were written by le_engine_import_track before this command was posted,

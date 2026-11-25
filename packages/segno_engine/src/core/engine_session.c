@@ -675,32 +675,25 @@ int32_t le_engine_finalize_history(le_engine* engine, int32_t channel,
 int32_t le_engine_commit_session(le_engine* engine, int32_t base_frames,
                                   int32_t loop_beats) {
   if (engine == NULL) return LE_ERR_INVALID;
-  if (base_frames <= 0 || loop_beats < 0 || loop_beats > INT32_MAX / 15) {
+  if (base_frames < 0 || loop_beats < 0 || loop_beats > INT32_MAX / 15) {
     return LE_ERR_INVALID;
   }
-  /* Free/Song mode (B2b, adversarial-review BUG 2 fix; broadened to SONG by
-   * B4): session import establishes ONE shared base length for every
-   * imported track (LE_CMD_COMMIT_SESSION's handler, engine_process.c) —
-   * meaningless, and actively harmful, for Free/Song mode's independent
-   * per-track lengths (song-mode-spec §2: Song's transport is "structurally
-   * identical" to Free's): it would set the shared master clock to nonzero
-   * while a_looper_mode is FREE or SONG, violating the invariant every
-   * other Free/Song-mode code path in this file relies on (the master
-   * clock stays permanently dormant in both modes). Free/Song-mode session
-   * import is a documented gap (see the handler's doc) that a later PR
-   * (A7/B5c territory) needs to solve with a proper per-track free_clock
-   * restore from the manifest — not this single-base commit. Rejecting
-   * synchronously here, before the command is even posted, is cleaner than
-   * a silent partial no-op: the caller (the session-load path) gets an
-   * actionable LE_ERR_INVALID instead of imported tracks quietly failing to
-   * establish playable state. The audio-thread handler carries its own
-   * defensive copy of this same guard for the raw le_engine_post_command
-   * escape hatch, which can post this command directly and bypass this
-   * wrapper. */
+  /* Free and Song (SEG-108) have no shared loop: the master clock stays
+   * dormant in both modes, and every take runs on its own clock at its own
+   * length (song-mode-spec section 2). Their commit takes no base and no grid;
+   * the handler parks each staged take on its own clock. A base, or a grid,
+   * would be a loop these modes do not have. */
   const int32_t mode = load_i32(&engine->a_looper_mode);
-  if (mode == LE_LOOPER_MODE_FREE || mode == LE_LOOPER_MODE_SONG) {
-    return LE_ERR_INVALID;
+  const int free_mode =
+      mode == LE_LOOPER_MODE_FREE || mode == LE_LOOPER_MODE_SONG;
+  if (free_mode) {
+    if (base_frames != 0 || loop_beats != 0) return LE_ERR_INVALID;
+    return le_push_cmd(engine,
+                       (le_command){.code = LE_CMD_COMMIT_SESSION,
+                                    .session = {.base_frames = 0,
+                                                .loop_beats = 0}});
   }
+  if (base_frames == 0) return LE_ERR_INVALID;
   /* Every staged track is a whole multiple of the base or exactly base/2 or
    * base/4 (a Sync division, #1168): any other length would be recalled as
    * a division and the mixer would read past its slot. A take imported with

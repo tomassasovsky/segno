@@ -81,6 +81,32 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
 - `SessionCubit` logs a save's own error and stack at E level before it
   wraps them as `saveFailed`.
 
+## November 2026 A saved Free or Song session opens (SEG-108)
+
+- On the console (build 295), opening a Song-mode session with two tracks
+  of different lengths failed, and the failed Open left audio stopped
+  until `segno.service` restarted. A session with tracks saved in Free or
+  Song had never opened: the engine's session commit only knew a shared
+  loop. "New session 5" saved no base, so its takes were never committed
+  ("session import commit was refused"); "t" kept the tempo pair from
+  before its switch into Song, so the recall asked for a shared loop of
+  453,792 frames, which Song refuses ("failed to commit the session:
+  invalid").
+- `le_engine_commit_session` takes base 0 and no grid in Free and Song and
+  parks each imported take stopped on its own clock at its own length (one
+  lap, no span, lap 0); the master stays dormant. A base or a grid is
+  still refused there. A Free or Song rig is never retimed, so a recorded
+  pair left from another mode is not applied.
+- `SessionCubit._applyRig` logs the apply's own error and stack
+  (`session: apply failed`) before the mix rollback, and a boot failure's
+  (`session: boot failed`). After a failed apply rolls back, audio comes
+  back on the emptied rig with a warm start on the last config, as at
+  boot; a refused start leaves the stage's "Audio engine stopped" notice.
+- `packages/looper_repository/test/song_session_native_test.dart` opens
+  both bundles' shapes on the native engine; both console bundles also
+  opened through `SessionRepository.open` in a local check. Waiting on the
+  console check.
+
 ## November 2026 A Retry after a failed Save As saves under its name (SEG-106)
 
 - On the console (build 293), a Save As from the power flow failed with
