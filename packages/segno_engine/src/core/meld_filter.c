@@ -404,7 +404,10 @@ void le_meld_filter_set(le_meld_filter* f, float hz, float m1, float m2) {
     }
     case LE_MELD_FILTER_BANDPASS: {
       /* osr_section.h's circuit at its band tap */
-      f->gin_to = mf_db(24.0f * m2);
+      /* fit: 5.3 dB in at Drive 0, 19.3 at 1 (the Bandpass renders at Drive
+       * 0 sit 5.3 dB under a 0..24 dB law in every band; at 1 a 24 dB
+       * range is 5 dB loud) */
+      f->gin_to = mf_db(5.3f + 14.0f * m2);
       const float q = le_ms2_q(0.99f * m1, hz, rate);
       f->s.osr.g = LE_OSR_G * tanf(fminf(MF_PI * fmaxf(hz, 1.0f) / rate, 1.54f));
       f->s.osr.k = 2.0f * (1.0f - q) - 0.01f;
