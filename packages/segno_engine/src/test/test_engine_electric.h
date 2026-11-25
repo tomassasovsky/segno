@@ -250,7 +250,7 @@ static void test_engine_electric_params_and_switching(void) {
   le_engine_get_snapshot(e, &snap);
   CHECK(snap.instrument_device[1] == LE_INST_DEVICE_ANALOG);
   CHECK(le_electric_active(eng_electric(e, 1)) == 0 && le_electric_fading(eng_electric(e, 1)) == 0);
-  CHECK(le_engine_set_instrument_device(e, 1, LE_INST_DEVICE_TENSION + 1, NULL) == LE_ERR_INVALID);
+  CHECK(le_engine_set_instrument_device(e, 1, LE_INST_DEVICE_COLLISION + 1, NULL) == LE_ERR_INVALID);
   le_engine_destroy(e);
 }
 

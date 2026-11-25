@@ -1,4 +1,4 @@
-<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Metalic Wurli MKII Schroeder Fretless -->
+<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Metalic Wurli MKII Schroeder Fretless Balafon Glockenspiel -->
 # Segno — Progress & Roadmap
 
 <!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs multicore smarttune -->
@@ -61,9 +61,27 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
 | SEG-22 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track and lane chains) is #1729 | build | needs-plan-approval | `claude/fx-multicore-1515-p1b` |
 | SEG-107 | Save As failed with Out of Memory: the mixdown asked for the LCM of two Song-mode tracks (24.7 GB); it now spans the longest lane past 600 s, and the save refuses a length no loop can hold | in-review | needs-hardware | `claude/save-oom-SEG-107` |
 | SEG-63 | Console WiFi against an ASUS RT-AX89X with 802.11ax on: firmware already matches Pi OS; brcmfmac options aligned with Pi OS and a troubleshooting note; failure not reproduced, issue stays open until it recurs | in-review | agent-merges | `claude/wifi-firmware-1816` |
-| SEG-109 | Ableton Live device presets on the pedal, Drift first: presets read from the user's own copy; Drift's behavior learned with rea + Ghidra from Live 12.2.7 and reimplemented, no Ableton code or presets in the repo. Plan approved 2026-11-25 (P1-P6); P1 stereo buses, P2 preset reader, P3 the Drift device and P4 its fit in review; the Operator (P7), Meld (P8), Analog (P9), Electric (P10) and Tension (P11) devices in review | in-review | needs-merge | `claude/ableton-devices-SEG-109`, `claude/ableton-operator-SEG-109-p7`, `claude/ableton-meld-SEG-109-p8`, `claude/ableton-analog-SEG-109-p9`, `claude/ableton-electric-SEG-109-p10`, `claude/ableton-tension-SEG-109-p11` |
+| SEG-109 | Ableton Live device presets on the pedal, Drift first: presets read from the user's own copy; Drift's behavior learned with rea + Ghidra from Live 12.2.7 and reimplemented, no Ableton code or presets in the repo. Plan approved 2026-11-25 (P1-P6); P1 stereo buses, P2 preset reader, P3 the Drift device and P4 its fit in review; the Operator (P7), Meld (P8), Analog (P9), Electric (P10), Tension (P11) and Collision (P12) devices in review | in-review | needs-merge | `claude/ableton-devices-SEG-109`, `claude/ableton-operator-SEG-109-p7`, `claude/ableton-meld-SEG-109-p8`, `claude/ableton-analog-SEG-109-p9`, `claude/ableton-electric-SEG-109-p10`, `claude/ableton-tension-SEG-109-p11`, `claude/ableton-collision-SEG-109-p12` |
 
 ---
+
+## November 2026 The Collision device plays on an instrument slot (SEG-109 P12)
+
+- Live 12.2.7's Collision read with rea + Ghidra from its AAS engine and
+  written as "Collision: behavior" in the Ableton devices brainstorm;
+  `collision_voice.c` is written from it. `LE_INST_DEVICE_COLLISION` takes
+  a Collision preset's 139 values (`le_collision_param`, each in its own
+  unit), one more entry in the device table.
+- Per voice a mallet and a noise source strike two resonators (beam,
+  marimba, string, membrane, plate as banks of up to 70 modes; pipe and
+  tube as waveguides) in series or parallel, with two LFOs and the
+  per-voice modulation matrix.
+- Fitted against 92 Live renders: total 4.6 dB rms, 28 of 59 single
+  changes within 1 dB. Measured: the bundle's x4 reaches the output here,
+  held within +-1. Factory presets 0.4 to 13.9 dB (octave bands); the
+  series structure is the largest gap left.
+- A voice costs 0.8 us per millisecond on the dev machine, two 70-mode
+  resonators 1.4. A device holds 24 voices (0.9 MB).
 
 ## November 2026 The Tension device plays on an instrument slot (SEG-109 P11)
 
