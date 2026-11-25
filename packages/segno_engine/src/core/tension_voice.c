@@ -187,8 +187,10 @@ static float amount(const le_tension* d, int32_t p) {
   return (v < 0.0f ? -1.0f : 1.0f) * 0.1f * powf(160.0f, (float)(m > 127 ? 127 : m) / 127.0f);
 }
 
-/* 2^e for a key or velocity scaling, e held within 8 octaves either way. */
-static float scale2(float e) { return exp2f(le_aas_clamp(e, -8.0f, 8.0f)); }
+/* 2^e for a key or velocity scaling, which a full amount takes 16 octaves
+ * either way (held within 30, short of overflow). fit: Strat Muted Guitar's
+ * and Wurli Mellow's phrase renders, whose velocity amounts reach 15 octaves. */
+static float scale2(float e) { return exp2f(le_aas_clamp(e, -30.0f, 30.0f)); }
 
 /* The unison amounts' curve: Exp(lo, hi) on m = 127 v, exactly 0 at 0. */
 static float unison_expz(float lo, float hi, float v) {
