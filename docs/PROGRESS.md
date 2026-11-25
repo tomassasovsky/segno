@@ -65,6 +65,27 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
 
 ---
 
+## November 2026 Instrument buses are stereo (SEG-109 P1)
+
+- An instrument slot's bus is a stereo pair now, so Drift's Stereo and
+  Unison modes can reach the rig as Live plays them (plan:
+  `docs/plan/2026-11-25-feat-ableton-drift-plan.md`). The 19 Segno patches
+  are mono: the synth renders the left plane and the right plane carries
+  the same samples, so every patch sounds and records exactly as before.
+- What feeds a chain or an output takes both channels: the input chain
+  (`le_fx_monitor_job`), a monitor with no chain, the heard image where
+  there is no chain, and the heard tail's ring, which keeps an instrument's
+  right channel in a second buffer so a take's rendered tail starts from
+  both channels. That buffer is as large as the ring (2^21 floats, 8 MB at
+  96 kHz) and is mapped only for an instrument source a lane holding an
+  image records. A sound-start take arms on the louder channel.
+- What records one channel takes the mono sum (L + R) / 2: the clean take
+  and the raw performance tap (#1805). Equal channels give that channel
+  exactly, so a patch's clean take is bit-identical to the mono bus's.
+- Known limit: re-running effects from the clean take (an edit, SEG-50's
+  replay) starts from the mono sum, so it loses an instrument's own stereo
+  spread. The heard image, which plays by default, keeps it.
+
 ## November 2026 A save of loops with unrelated lengths no longer runs out of memory (SEG-107)
 
 - On the console (build 293), Save As from Power options failed with `Out of

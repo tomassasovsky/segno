@@ -20,7 +20,8 @@ static le_engine* ins_engine(int32_t sr) {
 }
 
 /* Processes `frames` in blocks of `block`, appending each block's bus of
- * `slot` to `out` (NULL: discarded). */
+ * `slot` to `out` (NULL: discarded). A patch voice is mono: the bus's right
+ * channel must equal its left in every block, which this checks. */
 static void ins_run(le_engine* e, int32_t frames, int32_t block, int32_t slot,
                     float* out) {
   static float in[2 * 9000], o[2 * 9000];
@@ -30,7 +31,13 @@ static void ins_run(le_engine* e, int32_t frames, int32_t block, int32_t slot,
     int32_t n = frames - done;
     if (n > block) n = block;
     le_engine_process(e, o, in, (uint32_t)n);
-    if (out != NULL) memcpy(out + done, le_instrument_bus(e, slot), sizeof(float) * (size_t)n);
+    if (n <= LE_INST_BUS_FRAMES) {
+      CHECK(memcmp(le_instrument_bus(e, slot, 0), le_instrument_bus(e, slot, 1),
+                   sizeof(float) * (size_t)n) == 0);
+    }
+    if (out != NULL) {
+      memcpy(out + done, le_instrument_bus(e, slot, 0), sizeof(float) * (size_t)n);
+    }
     done += n;
   }
 }
@@ -183,7 +190,7 @@ static void test_instrument_cut_limit_and_isolation(void) {
   CHECK(le_engine_cut_sound(e) == LE_OK);
   float b0[256], b1[256];
   ins_run(e, 256, 256, 0, b0);
-  memcpy(b1, le_instrument_bus(e, 1), sizeof(b1));
+  memcpy(b1, le_instrument_bus(e, 1, 0), sizeof(b1));
   CHECK(syn_peak(b0, 144) > 0.0f);
   int silent = 1;
   for (int i = 144; i < 256; ++i) silent &= b0[i] == 0.0f && b1[i] == 0.0f;
@@ -311,7 +318,8 @@ static void test_instrument_configure_epoch_and_fallback(void) {
   CHECK(snap.instrument_peaks[0] == 0.0f); /* the oversized block is silent */
   int zero = 1;
   for (int i = 0; i < LE_INST_BUS_FRAMES; ++i) {
-    zero &= le_instrument_bus(e, 0)[i] == 0.0f;
+    zero &= le_instrument_bus(e, 0, 0)[i] == 0.0f &&
+            le_instrument_bus(e, 0, 1)[i] == 0.0f;
   }
   CHECK(zero);
   CHECK(le_engine_configure(e, 44100, 2, 2, 44100 * 4) == LE_OK);
@@ -656,6 +664,162 @@ static void test_source_perf_tap(void) {
   le_perf_disarm(e);
   le_engine_destroy(e);
   free(out);
+}
+
+/* ---- SEG-109 P1: stereo instrument buses ----
+ *
+ * No instrument renders stereo yet (a patch voice is mono), so these tests
+ * write a stereo signal into a slot's bus themselves. The slot has a patch,
+ * which makes it a usable source, and no note: the synth then renders
+ * nothing and leaves the bus as written, and every reader in the block sees
+ * it. */
+
+/* Two different test signals for the left and right channels. */
+static float ins_sig_l(int32_t i) {
+  const float t = (float)i / (float)INS_SR;
+  return 0.2f * expf(-6.0f * t) *
+         (sinf(6.2831853f * 220.0f * t) + 0.5f * sinf(6.2831853f * 517.0f * t));
+}
+static float ins_sig_r(int32_t i) {
+  const float t = (float)i / (float)INS_SR;
+  return 0.15f * expf(-4.0f * t) * sinf(6.2831853f * 331.0f * t);
+}
+
+typedef float (*ins_sig_fn)(int32_t i);
+
+static float ins_sig_zero(int32_t i) {
+  (void)i;
+  return 0.0f;
+}
+
+/* Processes [n] frames from frame [from] in blocks of [blk], with slot
+ * [slot]'s bus holding [fl] on the left and [fr] on the right in every
+ * block, into the stereo [out] (2 * n; NULL: discarded). */
+static void ins_stereo_feed(le_engine* e, int32_t slot, ins_sig_fn fl,
+                            ins_sig_fn fr, int32_t from, int32_t n,
+                            int32_t blk, float* out) {
+  static float in[2 * 512], o[2 * 512];
+  memset(in, 0, sizeof(in));
+  float* bl = e->inst_bus + (int64_t)slot * LE_INST_BUS_CHANNELS * LE_INST_BUS_FRAMES;
+  float* br = bl + LE_INST_BUS_FRAMES;
+  for (int32_t done = 0; done < n;) {
+    int32_t k = n - done < blk ? n - done : blk;
+    if (k > 512) k = 512;
+    for (int32_t i = 0; i < k; ++i) {
+      bl[i] = fl(from + done + i);
+      br[i] = fr(from + done + i);
+    }
+    le_engine_process(e, o, in, (uint32_t)k);
+    if (out != NULL) memcpy(out + 2 * done, o, sizeof(float) * 2 * (size_t)k);
+    done += k;
+  }
+}
+
+/* Source 32 with a reverb on its monitor, recorded with an image on track 0
+ * lane 0 while the bus holds [fl] / [fr]. Returns the engine; [out] gets
+ * the take's output (2 * (n + 2 * f)). */
+static le_engine* ins_stereo_take(ins_sig_fn fl, ins_sig_fn fr, int32_t n,
+                                  int32_t f, float* out) {
+  le_engine* e = ins_engine(INS_SR);
+  CHECK(le_engine_set_instrument(e, 0, syn_patch("pad"), NULL) == LE_OK);
+  CHECK(le_engine_set_lane_input(e, 0, 0, 32) == LE_OK);
+  CHECK(le_engine_set_monitor_input(e, 32, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_input_output(e, 32, 0x3) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx(e, 32, 0, LE_FX_REVERB) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx_param(e, 32, 0, 0, 0.6f) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx_param(e, 32, 0, 1, 0.5f) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx_param(e, 32, 0, 2, 0.5f) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx_count(e, 32, 1) == LE_OK);
+  drain(e);
+  le_record_image image = heard_image(1, 1);
+  CHECK(le_engine_record_with_image(e, 0, &image) == LE_OK);
+  ins_stereo_feed(e, 0, fl, fr, 0, n, 64, out);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* finalize: the seam overlap */
+  ins_stereo_feed(e, 0, fl, fr, n, 2 * f, 64, out + 2 * n);
+  return e;
+}
+
+/* An instrument's two channels reach its input chain as they are: the
+ * heard image is exactly what the monitor played, on each side, the clean
+ * take is the mono sum, and a right channel unlike the left changes what
+ * the chain makes of it. */
+static void test_source_stereo_bus_reaches_chain_and_image(void) {
+  printf("test_source_stereo_bus_reaches_chain_and_image\n");
+  enum { N = 4800, F = 480 };
+  static float out[2 * (N + 2 * F)];
+  static float same[2 * (N + 2 * F)];
+  le_engine* e = ins_stereo_take(ins_sig_l, ins_sig_r, N, F, out);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[0].length_frames == N);
+  le_lane* ln = &e->tracks[0].lanes[0];
+  const int32_t live = load_i32(&ln->a_live);
+  float* pl;
+  float* pr;
+  CHECK(le_heard_planes(e, 0, 0, live, &pl, &pr));
+  if (pl != NULL) {
+    int image_ok = 1;
+    for (int32_t i = F; i < N; ++i) {
+      image_ok &= pl[i] == out[2 * i] && pr[i] == out[2 * i + 1];
+    }
+    CHECK(image_ok);
+  }
+  int clean_ok = 1;
+  for (int32_t i = F; i < N; ++i) {
+    clean_ok &= ln->pool[live][i] == 0.5f * (ins_sig_l(i) + ins_sig_r(i));
+  }
+  CHECK(clean_ok);
+  le_engine_destroy(e);
+
+  /* The same left channel with a copy of it on the right: if the chain only
+   * took one channel, both takes would sound the same. */
+  e = ins_stereo_take(ins_sig_l, ins_sig_l, N, F, same);
+  int right_differs = 0;
+  for (int32_t i = F; i < N; ++i) right_differs |= same[2 * i + 1] != out[2 * i + 1];
+  CHECK(right_differs);
+  le_engine_destroy(e);
+}
+
+/* A monitor with no chain plays the left channel on the left and the right
+ * on the right, at its volume and pan; a sound on the right alone arms a
+ * sound-start take. */
+static void test_source_stereo_dry_monitor_and_sound_start(void) {
+  printf("test_source_stereo_dry_monitor_and_sound_start\n");
+  enum { N = 2400 };
+  le_engine* e = ins_engine(INS_SR);
+  CHECK(le_engine_set_instrument(e, 1, syn_patch("sub"), NULL) == LE_OK);
+  CHECK(le_engine_set_monitor_input(e, 33, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_input_volume(e, 33, 0.5f) == LE_OK);
+  drain(e);
+  static float out[2 * N];
+  ins_stereo_feed(e, 1, ins_sig_l, ins_sig_r, 0, N, 64, out);
+  const float gl = load_f32(&e->monitors[33].a_pan_gl_bits);
+  const float gr = load_f32(&e->monitors[33].a_pan_gr_bits);
+  float worst = 0.0f;
+  for (int32_t i = 0; i < N; ++i) {
+    const float dl = fabsf(out[2 * i] - ins_sig_l(i) * 0.5f * gl);
+    const float dr = fabsf(out[2 * i + 1] - ins_sig_r(i) * 0.5f * gr);
+    if (dl > worst) worst = dl;
+    if (dr > worst) worst = dr;
+  }
+  CHECK(worst < 1e-6f);
+  le_engine_destroy(e);
+
+  e = ins_engine(INS_SR);
+  CHECK(le_engine_set_instrument(e, 0, syn_patch("organ"), NULL) == LE_OK);
+  CHECK(le_engine_set_lane_input(e, 0, 0, 32) == LE_OK);
+  CHECK(record_start_sound(e, 1) == LE_OK);
+  ins_drain(e);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* armed: waits for sound */
+  ins_stereo_feed(e, 0, ins_sig_zero, ins_sig_zero, 0, 640, 64, NULL);
+  le_snapshot snap;
+  le_engine_get_snapshot(e, &snap);
+  CHECK(snap.tracks[0].state == LE_TRACK_EMPTY);
+  ins_stereo_feed(e, 0, ins_sig_zero, ins_sig_r, 0, 640, 64, NULL);
+  le_engine_get_snapshot(e, &snap);
+  CHECK(snap.tracks[0].state == LE_TRACK_RECORDING);
+  le_engine_destroy(e);
 }
 
 /* ---- Part 2c: MIDI routing from the shared input sink ---- */
@@ -1355,6 +1519,8 @@ static void run_instrument_tests(void) {
   test_source_sound_start_is_frame_exact();
   test_source_mix_transaction();
   test_source_perf_tap();
+  test_source_stereo_bus_reaches_chain_and_image();
+  test_source_stereo_dry_monitor_and_sound_start();
   test_midi_routing_splits_layers_ranges();
   test_midi_routing_note_off_survives_route_edits();
   test_midi_routing_remaps();

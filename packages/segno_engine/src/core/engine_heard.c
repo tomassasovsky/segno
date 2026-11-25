@@ -813,9 +813,14 @@ static void le_heard_input(const le_engine* e, const le_fx_par* par,
     return;
   }
   const uint32_t f = b0 + i;
-  const float x = instrument ? le_instrument_source_sample(e, c, f)
-                             : in[f * (uint32_t)ch_in + (uint32_t)c];
-  *wl = x * trim;
+  if (instrument) {
+    float l, r;
+    le_instrument_source_frame(e, c, f, &l, &r);
+    *wl = l * trim;
+    *wr = r * trim;
+    return;
+  }
+  *wl = in[f * (uint32_t)ch_in + (uint32_t)c] * trim;
   *wr = *wl;
 }
 

@@ -69,13 +69,16 @@ typedef struct le_heard_tail {
   int32_t q0;
   uint32_t start_clock;
   /* Per lane: the input window (raw, [window] frames ending at the last
-   * write), the frozen chain, its tempo and the capture trim; the rendered
-   * tail as (L, R) pairs, [frames] of them (0: nothing to add). */
+   * write; an instrument source's right channel in [in_r], NULL for a device
+   * input, whose window feeds both sides), the frozen chain, its tempo and
+   * the capture trim; the rendered tail as (L, R) pairs, [frames] of them
+   * (0: nothing to add). */
   uint32_t lanes;
   int32_t window;
   int32_t sample_rate;
   int32_t fx_cap;
   float* in[LE_MAX_LANES];
+  float* in_r[LE_MAX_LANES];
   le_fx_frozen_chain chain[LE_MAX_LANES];
   le_fx_tempo tempo[LE_MAX_LANES];
   float trim[LE_MAX_LANES];
@@ -95,6 +98,7 @@ static void le_heard_tail_free(le_heard_tail* j) {
   if (j == NULL) return;
   for (int l = 0; l < LE_MAX_LANES; ++l) {
     free(j->in[l]);
+    free(j->in_r[l]);
     free(j->out[l]);
   }
   free(j);
@@ -117,6 +121,7 @@ void le_heard_tail_post(le_engine* e, const le_fx_par* par, const float* in,
     le_heard_ring* r = &e->heard_ring[c];
     float* buf = atomic_load_explicit(&r->buf, memory_order_acquire);
     if (buf == NULL || r->cap <= 0) continue;
+    float* buf_r = atomic_load_explicit(&r->buf_r, memory_order_acquire);
     const uint32_t mask = (uint32_t)r->cap - 1u;
     const int instrument = le_source_is_instrument(c);
     /* An excluded input records silence (le_heard_input), so it leaves no
@@ -149,11 +154,16 @@ void le_heard_tail_post(le_engine* e, const le_fx_par* par, const float* in,
     for (uint32_t i = 0; i < par->n; ++i) {
       const uint32_t f = par->f0 + i;
       float x = 0.0f;
+      float y = 0.0f;
       if (!par->owned[i] && !silent) {
-        x = instrument ? le_instrument_source_sample(e, c, f)
-                       : in[f * (uint32_t)ch_in + (uint32_t)c];
+        if (instrument) {
+          le_instrument_source_frame(e, c, f, &x, &y);
+        } else {
+          x = in[f * (uint32_t)ch_in + (uint32_t)c];
+        }
       }
       buf[(par->clock + i) & mask] = x;
+      if (buf_r != NULL) buf_r[(par->clock + i) & mask] = y;
     }
     atomic_store_explicit(&r->a_end, par->clock + par->n,
                           memory_order_release);
@@ -281,21 +291,34 @@ static void le_heard_tail_rings(le_engine* e) {
                                  (size_t)cap * sizeof(float))
                            : NULL;
       if (buf == NULL) continue; /* no tail for this input */
+      /* An instrument source is stereo: its right channel gets a ring too,
+       * or neither does. */
+      float* buf_r = NULL;
+      if (le_source_is_instrument(c)) {
+        buf_r = (float*)le_rt_alloc_prefaulted((size_t)cap * sizeof(float));
+        if (buf_r == NULL) {
+          le_rt_free(buf);
+          continue;
+        }
+      }
       r->cap = cap;
       atomic_store_explicit(&r->a_started, 0, memory_order_relaxed);
+      atomic_store_explicit(&r->buf_r, buf_r, memory_order_relaxed);
       atomic_store_explicit(&r->buf, buf, memory_order_release);
     }
   }
 }
 
 /* Copies [n] frames of ring [r] ending at clock [last] (inclusive) into
- * [out]; frames outside the ring's current and previous runs read 0.
+ * [out], from its left (or only) channel, or from its right one when
+ * [right]; frames outside the ring's current and previous runs read 0.
  * Returns 0 when the ring has not reached [last], or the callback overwrote
  * part of the window (or may be writing it, a block ahead of what it
  * published) while it was read. */
 static int le_heard_tail_copy(le_heard_ring* r, uint32_t last, int32_t n,
-                              float* out) {
-  const float* buf = atomic_load_explicit(&r->buf, memory_order_acquire);
+                              int right, float* out) {
+  const float* buf =
+      atomic_load_explicit(right ? &r->buf_r : &r->buf, memory_order_acquire);
   if (buf == NULL || !atomic_load_explicit(&r->a_started,
                                            memory_order_relaxed)) {
     return 0;
@@ -385,12 +408,20 @@ static le_heard_tail* le_heard_tail_build(le_engine* e, int32_t t,
     if (le_fx_frozen_has(&j->chain[l], 0, j->chain[l].count, LE_FX_PLUGIN)) {
       continue;
     }
+    le_heard_ring* ring = &e->heard_ring[c];
+    const int stereo =
+        atomic_load_explicit(&ring->buf_r, memory_order_acquire) != NULL;
     j->in[l] = (float*)malloc((size_t)j->window * sizeof(float));
-    if (j->in[l] == NULL ||
-        !le_heard_tail_copy(&e->heard_ring[c], end.last_clock, j->window,
-                            j->in[l])) {
+    j->in_r[l] =
+        stereo ? (float*)malloc((size_t)j->window * sizeof(float)) : NULL;
+    if (j->in[l] == NULL || (stereo && j->in_r[l] == NULL) ||
+        !le_heard_tail_copy(ring, end.last_clock, j->window, 0, j->in[l]) ||
+        (stereo && !le_heard_tail_copy(ring, end.last_clock, j->window, 1,
+                                       j->in_r[l]))) {
       free(j->in[l]);
+      free(j->in_r[l]);
       j->in[l] = NULL;
+      j->in_r[l] = NULL;
       continue;
     }
     j->chain[l].clock0 = j->start_clock - (uint32_t)j->window;
@@ -494,7 +525,7 @@ static int le_heard_tail_render_lane(le_engine* e, le_heard_tail* j, int l) {
       break;
     }
     float a = f < j->window ? j->in[l][f] : 0.0f;
-    float b = a;
+    float b = j->in_r[l] == NULL ? a : f < j->window ? j->in_r[l][f] : 0.0f;
     fx->clock = c->clock0 + (uint32_t)f;
     fx_apply_chain(fx, sr, j->fx_cap, &a, &b, c->count, c->type, c->params,
                    bits);
@@ -587,7 +618,9 @@ void le_heard_tail_free_all(le_engine* e) {
   for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
     le_heard_ring* r = &e->heard_ring[c];
     le_rt_free(atomic_load_explicit(&r->buf, memory_order_relaxed));
+    le_rt_free(atomic_load_explicit(&r->buf_r, memory_order_relaxed));
     atomic_store_explicit(&r->buf, NULL, memory_order_relaxed);
+    atomic_store_explicit(&r->buf_r, NULL, memory_order_relaxed);
     r->cap = 0;
     atomic_store_explicit(&r->a_started, 0, memory_order_relaxed);
   }

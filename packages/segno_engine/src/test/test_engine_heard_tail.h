@@ -244,7 +244,68 @@ static void test_heard_tail_stop_drops_it(void) {
   le_engine_destroy(e);
 }
 
+/* SEG-109 P1: a take of instrument source 32 through a delay, its bus
+ * holding [fl] and [fr] (test_engine_instruments.h's stereo feed); the tail
+ * the worker added into the image, per side, into [dl] and [dr] (N each).
+ * Returns the tail's energy. */
+static double tail_instrument_take(ins_sig_fn fl, ins_sig_fn fr, int32_t n,
+                                   float* dl, float* dr) {
+  enum { F = 480 };
+  le_engine* e = ins_engine(INS_SR);
+  CHECK(le_engine_set_instrument(e, 0, syn_patch("pad"), NULL) == LE_OK);
+  CHECK(le_engine_set_lane_input(e, 0, 0, 32) == LE_OK);
+  CHECK(le_engine_set_monitor_input(e, 32, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_input_output(e, 32, 0x3) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx(e, 32, 0, LE_FX_DELAY) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx_param(e, 32, 0, 0, 0.5f) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx_param(e, 32, 0, 1, 0.5f) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx_param(e, 32, 0, 2, 0.5f) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx_count(e, 32, 1) == LE_OK);
+  drain(e);
+  le_record_image image = heard_image(50, 1);
+  CHECK(le_engine_record_with_image(e, 0, &image) == LE_OK);
+  le_engine_drain_events(e); /* the source's rings, as the app's poll maps them */
+  CHECK(e->heard_ring[32].buf_r != NULL);
+  ins_stereo_feed(e, 0, fl, fr, 0, n, 64, NULL);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  /* From here the bus is silent: nothing renders, so clear what the feed
+   * left in it. */
+  memset(e->inst_bus, 0,
+         sizeof(float) * LE_INST_BUS_CHANNELS * (size_t)LE_INST_BUS_FRAMES);
+  CHECK(le_engine_set_monitor_input_mute(e, 32, 1) == LE_OK);
+  heard_silence(e, 2 * F, 64, NULL); /* the seam overlap closes the pass */
+  float* before_l = (float*)calloc((size_t)n, sizeof(float));
+  float* before_r = (float*)calloc((size_t)n, sizeof(float));
+  tail_image(e, 0, n, before_l, before_r);
+  CHECK(tail_settle(e, 0, 8 * n) < 8 * n);
+  tail_image(e, 0, n, dl, dr);
+  double energy = 0.0;
+  for (int32_t q = 0; q < n; ++q) {
+    dl[q] -= before_l[q];
+    dr[q] -= before_r[q];
+    energy += fabs((double)dl[q]) + fabs((double)dr[q]);
+  }
+  free(before_l);
+  free(before_r);
+  le_engine_destroy(e);
+  return energy;
+}
+
+/* An instrument's tail is rendered from both of its channels: the same left
+ * channel with a different right one gives a different tail. */
+static void test_heard_tail_keeps_an_instruments_right_channel(void) {
+  printf("test_heard_tail_keeps_an_instruments_right_channel\n");
+  enum { N = 48000 };
+  static float al[N], ar[N], bl[N], br[N];
+  CHECK(tail_instrument_take(ins_sig_l, ins_sig_r, N, al, ar) > 1e-2);
+  CHECK(tail_instrument_take(ins_sig_l, ins_sig_l, N, bl, br) > 1e-2);
+  double apart = 0.0;
+  for (int32_t q = 0; q < N; ++q) apart += fabs((double)ar[q] - br[q]);
+  CHECK(apart > 1e-3);
+}
+
 static void run_heard_tail_tests(void) {
+  test_heard_tail_keeps_an_instruments_right_channel();
   test_heard_tail_after_a_take();
   test_heard_tail_keeps_a_delay_past_its_gap();
   test_heard_tail_not_while_capturing();

@@ -1332,12 +1332,16 @@ typedef struct le_monitor_input {
   le_fx_state fx;
 } le_monitor_input;
 
-/* Instrument bus capacity in FRAMES (#1197): each instrument slot's mono bus
- * holds one device callback's worth of frames. 8192 comfortably exceeds any
- * real device/backend period (64-4096 typical); a larger block (only the
- * native tests' synthetic mega-blocks ever exceed this) leaves the instrument
- * sources silent for that block (RT-safe, no allocation). */
+/* Instrument bus capacity in FRAMES (#1197): each channel of an instrument
+ * slot's stereo bus holds one device callback's worth of frames. 8192
+ * comfortably exceeds any real device/backend period (64-4096 typical); a
+ * larger block (only the native tests' synthetic mega-blocks ever exceed
+ * this) leaves the instrument sources silent for that block (RT-safe, no
+ * allocation). */
 #define LE_INST_BUS_FRAMES 8192
+/* An instrument bus is a stereo pair (SEG-109 P1): two planes, left then
+ * right, of LE_INST_BUS_FRAMES each. */
+#define LE_INST_BUS_CHANNELS 2
 
 /* A bus-stage effect chain owner (FX v3 part 1b): the exact chain block shape
  * of le_lane / le_monitor_input — published config atomics, the two-level
@@ -2580,6 +2584,10 @@ typedef struct le_heard_log {
  * current run of frames started (earlier clocks hold an older run). */
 typedef struct le_heard_ring {
   float* _Atomic buf;
+  /* An instrument source's right channel (SEG-109 P1), at the same indices
+   * as [buf] (its left), mapped with it; NULL for a device input, whose
+   * window feeds the chain on both sides. */
+  float* _Atomic buf_r;
   int32_t cap;
   _Atomic int32_t a_started;
   _Atomic uint32_t a_begin;
@@ -2757,8 +2765,10 @@ struct le_engine {
   /* ---- Instruments (#1197; engine_instruments.c) ----
    * `synth` is allocated at create and re-initialised by every configure or
    * reopen (device closed); afterwards only the audio thread touches it.
-   * `inst_bus` holds LE_MAX_INSTRUMENTS mono buses of LE_INST_BUS_FRAMES,
-   * slot-major, allocated with the engine. */
+   * `inst_bus` holds LE_MAX_INSTRUMENTS stereo buses, slot-major: slot k's
+   * left plane is LE_INST_BUS_FRAMES floats at k * LE_INST_BUS_CHANNELS *
+   * LE_INST_BUS_FRAMES, its right plane follows (le_instrument_bus).
+   * Allocated with the engine. */
   struct le_synth* synth;
   float* inst_bus;
   /* audio thread: whether this block's buses hold this block's audio (0 for
