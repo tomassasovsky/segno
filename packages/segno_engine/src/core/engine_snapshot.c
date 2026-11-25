@@ -477,6 +477,7 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   /* Instruments (#1197). */
   for (int k = 0; k < LE_MAX_INSTRUMENTS; ++k) {
     out->instrument_patch[k] = load_i32(&engine->a_inst_patch[k]);
+    out->instrument_device[k] = load_i32(&engine->a_inst_device[k]);
     out->instrument_voices[k] = load_i32(&engine->a_inst_voices[k]);
     out->instrument_peaks[k] = load_f32(&engine->a_inst_peak_bits[k]);
   }

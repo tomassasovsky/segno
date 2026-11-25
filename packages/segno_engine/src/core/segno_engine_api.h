@@ -1887,6 +1887,10 @@ typedef struct le_snapshot {
   /* sustain contributors refused because an instrument already had
    * LE_SYNTH_SUSTAIN_MAX (16) (#1197 Part 2c) */
   uint32_t instrument_sustain_refused;
+  /* instrument_device[k]: the device slot k plays (LE_INST_DEVICE_*; 0:
+   * none, then instrument_patch[k] says what it plays), as applied by the
+   * callback (SEG-109). */
+  int32_t instrument_device[LE_MAX_INSTRUMENTS];
   /* ---- native MIDI input (#1228 Part 1; trailing). Totals across all
    * LE_MAX_MIDI_PORTS ports since the engine was created: events delivered
    * from the current binding, events dropped as stale (pushed by a binding
@@ -5264,6 +5268,124 @@ LE_EXPORT int32_t le_engine_instrument_note_off(le_engine* engine,
  * they never collide with a MIDI port's notes. */
 LE_EXPORT int32_t le_engine_instrument_sustain(le_engine* engine, int32_t slot,
                                                uint32_t origin, int32_t on);
+
+/* ---- Instrument devices (SEG-109) --------------------------------------- *
+ *
+ * A slot plays a Segno patch (le_engine_set_instrument) or a device: a
+ * synthesizer with its own parameter set, rendered in stereo. Drift (the
+ * first, docs/plan/2026-11-25-feat-ableton-drift-plan.md) takes the
+ * parameters of a Live Drift preset in the units the preset stores them in
+ * (Hz, seconds, linear gain, octaves, semitones, -1..1 amounts, 0/1
+ * switches, enum indices in Live's order), indexed by le_drift_param. Notes,
+ * chords, sustain, the MIDI routes, Cut and Reset reach a device slot as
+ * they reach a patch slot. */
+
+#define LE_INST_DEVICE_NONE 0
+#define LE_INST_DEVICE_DRIFT 1
+
+typedef enum le_drift_param {
+  LE_DRIFT_OSC1_TYPE = 0,      /* 0..6: Sine, Triangle, Shark Tooth, Saturated,
+                                * Saw, Pulse, Rectangle */
+  LE_DRIFT_OSC1_SHAPE,         /* 0..1 */
+  LE_DRIFT_OSC1_SHAPE_MOD,     /* -1..1 */
+  LE_DRIFT_OSC1_SHAPE_MOD_SOURCE, /* 0..7, le_drift mod sources */
+  LE_DRIFT_OSC1_TRANSPOSE,     /* octaves, -2..3 */
+  LE_DRIFT_OSC2_TYPE,          /* 0..4: Sine, Triangle, Saturated, Saw,
+                                * Rectangle */
+  LE_DRIFT_OSC2_DETUNE,        /* semitones, -7..7 */
+  LE_DRIFT_OSC2_TRANSPOSE,     /* octaves, -3..2 */
+  LE_DRIFT_OSC1_GAIN,          /* linear, 0..1.995 */
+  LE_DRIFT_OSC1_ON,            /* 0/1 */
+  LE_DRIFT_OSC2_GAIN,          /* linear, 0..1.995 */
+  LE_DRIFT_OSC2_ON,            /* 0/1 */
+  LE_DRIFT_NOISE_GAIN,         /* linear, 0..1.995 */
+  LE_DRIFT_NOISE_ON,           /* 0/1 */
+  LE_DRIFT_FILTER_TYPE,        /* 0: I (12 dB), 1: II */
+  LE_DRIFT_FILTER_FREQ,        /* Hz, 20..20000 */
+  LE_DRIFT_FILTER_RES,         /* 0..1.01 */
+  LE_DRIFT_FILTER_TRACKING,    /* 0..1 */
+  LE_DRIFT_FILTER_HP_FREQ,     /* Hz, 10..20480 */
+  LE_DRIFT_FILTER_MOD_SOURCE1, /* 0..7 */
+  LE_DRIFT_FILTER_MOD_AMOUNT1, /* -1..1 */
+  LE_DRIFT_FILTER_MOD_SOURCE2, /* 0..7 */
+  LE_DRIFT_FILTER_MOD_AMOUNT2, /* -1..1 */
+  LE_DRIFT_FILTER_OSC1_THROUGH, /* 0/1: oscillator 1 passes the filters */
+  LE_DRIFT_FILTER_OSC2_THROUGH, /* 0/1 */
+  LE_DRIFT_FILTER_NOISE_THROUGH, /* 0/1 */
+  LE_DRIFT_ENV1_ATTACK,        /* seconds, 0..60 */
+  LE_DRIFT_ENV1_DECAY,         /* seconds, 0.005..60 */
+  LE_DRIFT_ENV1_SUSTAIN,       /* 0..1 */
+  LE_DRIFT_ENV1_RELEASE,       /* seconds, 0.01..60 */
+  LE_DRIFT_ENV2_ATTACK,
+  LE_DRIFT_ENV2_DECAY,
+  LE_DRIFT_ENV2_SUSTAIN,
+  LE_DRIFT_ENV2_RELEASE,
+  LE_DRIFT_ENV2_CYCLING,       /* 0/1: Envelope 2 is the cycling envelope */
+  LE_DRIFT_CYC_MODE,           /* 0..3: rate in Hz, ratio, time, sync */
+  LE_DRIFT_CYC_RATE,           /* Hz, 0.17..1700 */
+  LE_DRIFT_CYC_RATIO,          /* x note frequency, 0.25..16 */
+  LE_DRIFT_CYC_TIME,           /* seconds per cycle, 0.1..60 */
+  LE_DRIFT_CYC_SYNCED_RATE,    /* 0..21: tempo division */
+  LE_DRIFT_CYC_MIDPOINT,       /* 0..1 (Tilt) */
+  LE_DRIFT_CYC_HOLD,           /* 0..1 */
+  LE_DRIFT_LFO_MODE,           /* 0..3: rate in Hz, ratio, time, sync */
+  LE_DRIFT_LFO_SHAPE,          /* 0..8 */
+  LE_DRIFT_LFO_RATE,           /* Hz, 0.17..1700 */
+  LE_DRIFT_LFO_RATIO,          /* x note frequency, 0.25..16 */
+  LE_DRIFT_LFO_TIME,           /* seconds per cycle, 0.1..60 */
+  LE_DRIFT_LFO_SYNCED_RATE,    /* 0..21 */
+  LE_DRIFT_LFO_AMOUNT,         /* 0..1 */
+  LE_DRIFT_LFO_MOD_SOURCE,     /* 0..7 */
+  LE_DRIFT_LFO_MOD_AMOUNT,     /* -1..1 */
+  LE_DRIFT_LFO_RETRIGGER,      /* 0/1 */
+  LE_DRIFT_PITCH_MOD_SOURCE1,  /* 0..7 */
+  LE_DRIFT_PITCH_MOD_AMOUNT1,  /* -1..1 */
+  LE_DRIFT_PITCH_MOD_SOURCE2,  /* 0..7 */
+  LE_DRIFT_PITCH_MOD_AMOUNT2,  /* -1..1 */
+  LE_DRIFT_MATRIX_SOURCE1,     /* 0..7 */
+  LE_DRIFT_MATRIX_TARGET1,     /* 0..11, 0 = none */
+  LE_DRIFT_MATRIX_AMOUNT1,     /* -1..1 */
+  LE_DRIFT_MATRIX_SOURCE2,
+  LE_DRIFT_MATRIX_TARGET2,
+  LE_DRIFT_MATRIX_AMOUNT2,
+  LE_DRIFT_MATRIX_SOURCE3,
+  LE_DRIFT_MATRIX_TARGET3,
+  LE_DRIFT_MATRIX_AMOUNT3,
+  LE_DRIFT_VOICE_MODE,         /* 0..3: Poly, Mono, Stereo, Unison */
+  LE_DRIFT_VOICE_COUNT,        /* 0..4 */
+  LE_DRIFT_MONO_DEPTH,         /* 0..1 (Thickness) */
+  LE_DRIFT_STEREO_DEPTH,       /* 0..1 (Spread) */
+  LE_DRIFT_UNISON_DEPTH,       /* 0..1 (Strength) */
+  LE_DRIFT_DRIFT_DEPTH,        /* 0..1 */
+  LE_DRIFT_GLIDE,              /* seconds, 0..2 */
+  LE_DRIFT_LEGATO,             /* 0/1 */
+  LE_DRIFT_PITCH_BEND_RANGE,   /* semitones, 0..12 */
+  LE_DRIFT_VOL_VEL,            /* 0..1 */
+  LE_DRIFT_VOLUME,             /* 0..1 */
+  LE_DRIFT_TRANSPOSE,          /* semitones, -48..48 */
+  LE_DRIFT_RESET_OSC_PHASE,    /* 0/1 */
+  LE_DRIFT_HIQUALITY,          /* 0/1 */
+  LE_DRIFT_PARAMS
+} le_drift_param;
+
+/* Gives `slot` device `device` (LE_INST_DEVICE_DRIFT) with `values`
+ * (LE_DRIFT_PARAMS of them, in le_drift_param order; NULL: the device's
+ * defaults; each clamped to its range). Ends a patch or device the slot
+ * played (its voices fade). Returns LE_OK, LE_ERR_INVALID (a bad slot,
+ * device or NaN value), LE_ERR_CAPACITY (the note-on ring is full: nothing
+ * changed, retry) or LE_ERR_NOT_RUNNING before configure. */
+LE_EXPORT int32_t le_engine_set_instrument_device(le_engine* engine,
+                                                  int32_t slot, int32_t device,
+                                                  const float* values);
+
+/* Sets parameter `param` (an le_drift_param) of the device `slot` plays to
+ * `value` (clamped to its range), applied from the next block. Returns LE_OK,
+ * LE_ERR_INVALID, LE_ERR_NO_INSTRUMENT (the slot plays no device) or
+ * LE_ERR_NOT_RUNNING. */
+LE_EXPORT int32_t le_engine_set_instrument_device_param(le_engine* engine,
+                                                        int32_t slot,
+                                                        int32_t param,
+                                                        float value);
 
 /* ---- Instrument MIDI routes (#1197 Part 2c) ---------------------------------
  * Which MIDI each instrument plays, from the ports of the shared input sink

@@ -2771,6 +2771,12 @@ struct le_engine {
    * Allocated with the engine. */
   struct le_synth* synth;
   float* inst_bus;
+  /* SEG-109: one Drift device per slot, LE_MAX_INSTRUMENTS of them in one
+   * allocation, like `synth` (a slot renders its own only while it plays
+   * the device) */
+  struct le_drift* drift;
+  /* audio thread: the device each slot plays (LE_INST_DEVICE_*) */
+  int32_t inst_device[LE_MAX_INSTRUMENTS];
   /* audio thread: whether this block's buses hold this block's audio (0 for
    * a block larger than the scratch, whose instrument sources then read
    * silence) */
@@ -2778,6 +2784,8 @@ struct le_engine {
   /* control thread: the patch last requested per slot (-1: none), the
    * posting sequence, and the event rings' storage */
   int32_t inst_patch_requested[LE_MAX_INSTRUMENTS];
+  /* and the device (LE_INST_DEVICE_*; 0: none), SEG-109 */
+  int32_t inst_device_requested[LE_MAX_INSTRUMENTS];
   uint32_t inst_seq;
   /* the highest posted sequence, published after each push (release): the
    * callback applies only events at or below it, so both rings give it one
@@ -2794,6 +2802,14 @@ struct le_engine {
   _Atomic int32_t a_inst_param_patch[LE_MAX_INSTRUMENTS]; /* the stamp */
   _Atomic uint32_t a_inst_param_rev[LE_MAX_INSTRUMENTS];
   uint32_t inst_param_seen[LE_MAX_INSTRUMENTS]; /* audio thread */
+  /* a device's parameters (SEG-109), the same way: the bits, the device
+   * they are for, the revision */
+  _Atomic uint32_t a_dev_param_bits[LE_MAX_INSTRUMENTS][LE_DRIFT_PARAMS];
+  _Atomic int32_t a_dev_param_device[LE_MAX_INSTRUMENTS];
+  _Atomic uint32_t a_dev_param_rev[LE_MAX_INSTRUMENTS];
+  uint32_t dev_param_seen[LE_MAX_INSTRUMENTS]; /* audio thread */
+  /* published by the callback, read by the snapshot */
+  _Atomic int32_t a_inst_device[LE_MAX_INSTRUMENTS];
   /* published by the callback, read by the snapshot */
   _Atomic int32_t a_inst_patch[LE_MAX_INSTRUMENTS];
   _Atomic int32_t a_inst_voices[LE_MAX_INSTRUMENTS];

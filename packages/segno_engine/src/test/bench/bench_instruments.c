@@ -77,6 +77,7 @@
 #include "engine_read_head.h"
 #include "le_midi_port.h"
 #include "segno_engine_api.h"
+#include "drift_voice.h"
 #include "synth_voice.h"
 
 #include "bench_common.h"
@@ -133,6 +134,44 @@ static stats run_voices(const bench_opts* o, const voice_set* set,
     const double a = now_us();
     for (int32_t i = 0; i < set->n_inst; ++i) keep_voices(&g_synth, i, per[i], &origin);
     le_synth_render(&g_synth, g_bus, LE_SYNTH_MAX_INSTRUMENTS, o->period);
+    t[k] = now_us() - a;
+  }
+  rt_leave();
+  const stats s = stats_of(t, periods);
+  free(t);
+  return s;
+}
+
+/* SEG-109: one Drift slot holding `voices` voices in `mode` (Poly 0, Unison
+ * 3), timed one le_drift_render per period. Informational: the console's
+ * numbers set the device's default voice limit. */
+static le_drift g_drift;
+static float g_drift_l[8192], g_drift_r[8192];
+
+static stats run_drift(const bench_opts* o, int32_t mode, int32_t voices,
+                       double seconds) {
+  le_drift_init(&g_drift, o->rate);
+  float v[LE_DRIFT_PARAMS];
+  for (int p = 0; p < LE_DRIFT_PARAMS; ++p) v[p] = le_drift_default(p);
+  v[LE_DRIFT_VOICE_MODE] = (float)mode;
+  v[LE_DRIFT_VOICE_COUNT] = 4.0f; /* 32 */
+  v[LE_DRIFT_ENV1_SUSTAIN] = 1.0f;
+  v[LE_DRIFT_NOISE_ON] = 1.0f; /* every block of the voice runs */
+  v[LE_DRIFT_NOISE_GAIN] = 0.2f;
+  v[LE_DRIFT_LFO_AMOUNT] = 1.0f;
+  v[LE_DRIFT_FILTER_MOD_AMOUNT2] = 0.2f;
+  le_drift_set_values(&g_drift, v);
+  const int32_t per_note = mode == 3 ? 4 : 1;
+  for (int32_t n = 0; n < voices / per_note; ++n) {
+    le_drift_note_on(&g_drift, (uint32_t)n + 1u, 40 + n * 2, 100, 0);
+  }
+  for (int k = 0; k < 50; ++k) le_drift_render(&g_drift, g_drift_l, g_drift_r, o->period);
+  const size_t periods = (size_t)(seconds * o->rate / o->period);
+  double* t = (double*)malloc(sizeof(double) * (periods ? periods : 1));
+  rt_enter();
+  for (size_t k = 0; k < periods; ++k) {
+    const double a = now_us();
+    le_drift_render(&g_drift, g_drift_l, g_drift_r, o->period);
     t[k] = now_us() - a;
   }
   rt_leave();
@@ -475,6 +514,27 @@ int main(int argc, char** argv) {
   const stats burst_full = run_burst(&o, costliest, 32, 32, iterations);
   print_tail_row("32-note burst, full pool", burst_full);
   const stats burst = burst_full.p999 > burst_idle.p999 ? burst_full : burst_idle;
+  printf("\n");
+
+  /* Drift (SEG-109) */
+  printf("## Drift (one slot, le_drift_render per period; informational)\n\n");
+  print_tail_header();
+  static const int32_t drift_counts[] = {1, 8, 16, 32};
+  for (int m = 0; m < 2; ++m) {
+    const int32_t mode = m == 0 ? 0 : 3;
+    for (int c = 0; c < 4; ++c) {
+      if (mode == 3 && drift_counts[c] < 4) continue;
+      char label[64];
+      const stats s = run_drift(&o, mode, drift_counts[c], o.seconds);
+      snprintf(label, sizeof(label), "Drift %s x %d voices",
+               mode == 0 ? "Poly" : "Unison", drift_counts[c]);
+      print_tail_row(label, s);
+      if (c == 3) {
+        printf("  (%s: %.2f us per voice per period at p50)\n",
+               mode == 0 ? "Poly" : "Unison", s.p50 / drift_counts[c]);
+      }
+    }
+  }
   printf("\n");
 
   /* engine */

@@ -33,6 +33,7 @@
 #include "engine_core.h" /* le_push, valid_channel, le_lanes_active, le_*_reset */
 #include "engine_fx.h"   /* LE_PV_N / LE_PV_BINS */
 #include "engine_heard.h" /* the heard image (#1713) */
+#include "engine_instruments.h" /* le_instrument_requested (SEG-109) */
 #include "engine_private.h"
 #include "engine_internal.h"
 #include "engine_prefault.h" /* the background prefaulter (#900) */
@@ -2255,9 +2256,10 @@ static int32_t le_record_preflight(le_engine* e, int channel,
       const int input = load_i32(&e->tracks[channel].lanes[l].a_input_channel);
       if (input >= 0 && input < e->in_channels && input < LE_MAX_CHANNELS &&
           !(excluded & (1u << input))) source = 1;
-      /* An instrument slot with a patch is a usable source (#1197). */
+      /* An instrument slot with a patch or a device is a usable source
+       * (#1197, SEG-109). */
       if (input >= LE_INSTRUMENT_SOURCE_BASE && input < LE_MAX_SOURCES &&
-          e->inst_patch_requested[input - LE_INSTRUMENT_SOURCE_BASE] >= 0) source = 1;
+          le_instrument_requested(e, input - LE_INSTRUMENT_SOURCE_BASE)) source = 1;
     }
     if (!source) return LE_ERR_INVALID;
   }
@@ -5942,7 +5944,7 @@ void le_perf_capture_sets(le_engine* e, uint64_t* heard, uint64_t* raw) {
   for (int32_t c = 0; c < LE_MAX_SOURCES; ++c) {
     if (c < LE_INSTRUMENT_SOURCE_BASE
             ? c >= limit || (excluded & (1u << c)) != 0
-            : e->inst_patch_requested[c - LE_INSTRUMENT_SOURCE_BASE] < 0) {
+            : !le_instrument_requested(e, c - LE_INSTRUMENT_SOURCE_BASE)) {
       continue;
     }
     *raw |= UINT64_C(1) << c;
