@@ -86,7 +86,7 @@ typedef struct le_tension_voice {
   float bow_f, bow_vc, bow_vb; /* the bow */
   float ys_exc, ys_damp; /* the string's displacement at the contacts */
   /* the finger on the fret */
-  int32_t term;
+  int32_t term, term_was; /* the finger is on; it was at the last strike */
   float te_y, tf_y, tf_v, tf_m, tf_k, ta_k, t_ff, t_fa;
   /* pitches above the strike: the shifter and its crossfade */
   float sh[LE_TENSION_SHIFT];

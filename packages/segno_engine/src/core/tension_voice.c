@@ -406,7 +406,8 @@ static void string_strike(le_tension* d, le_tension_voice* v, float p, float pk,
   if (pick_tap == damp_tap) pick_tap += pick_tap + 1 != len / 2 ? 1 : -1; /* never on the damper */
   if (pick_tap > len / 2) pick_tap = len / 2;
   if (pick_tap < 2) pick_tap = 1;
-  if (fresh || len != v->len || damp_tap != v->damp_tap) {
+  const int reinit = fresh || len != v->len || damp_tap != v->damp_tap;
+  if (reinit) {
     memset(v->a, 0, sizeof(v->a));
     memset(v->b, 0, sizeof(v->b));
     v->lp_x = v->lp_y = v->ap_x = v->ap_y = v->hp_x = v->hp_y = 0.0f;
@@ -476,17 +477,38 @@ static void string_strike(le_tension* d, le_tension_voice* v, float p, float pk,
     const float vd = le_aas_clamp(kexp(0.01f, 100.0f, vf(d, LE_TENSION_DAMPER_VEL)) *
                                       scale2(amount(d, LE_TENSION_DAMPER_VEL_KEY) * p), 6.25e-4f, 1600.0f);
     if (vi(d, LE_TENSION_DAMPER_GATED)) {
-      dm->y = -v->ys_damp;
+      dm->y = v->ys_damp;
       dm->v = -vd;
       dm->grav = -TV_G;
     } else {
       /* resting on it: its weight against the felt and the contact */
       const float w = dm->m * TV_G;
       dm->z = w / 80.0f;
-      dm->y = -v->ys_damp + sqrtf(w / dm->k) + dm->z;
+      dm->y = v->ys_damp + sqrtf(w / dm->k) + dm->z;
       dm->grav = TV_G;
     }
     dm->reach = vd; /* the damper's speed, kept for the release */
+  }
+  /* a string started again with the damper on starts bent under its
+   * weight: the constant waves that the weight's push (half of m g into
+   * each rail, toward the damper's side) and the two lossy reflections
+   * hold, a / (1 + g) on the damper's far side of each rail and -a g /
+   * (1 + g) on its near side */
+  float rest_wave = 0.0f;
+  if (reinit && dm->on) {
+    const float g = fminf(v->g_to, 0.99999f);
+    const float a = 0.5f * dm->m * TV_G;
+    const float far = a / (1.0f + g), near = -a * g / (1.0f + g);
+    rest_wave = far;
+    const int32_t tail = len + (int32_t)v->e + 5;
+    for (int32_t k = 0; k <= len; ++k) v->a[(v->w - k) & TV_MASK] = k > len - damp_tap ? far : near;
+    for (int32_t k = 0; k <= tail; ++k) v->b[(v->w - k) & TV_MASK] = k >= damp_tap ? far : near;
+    /* the bridge's filters and the output's high-pass already settled on
+     * it, so the bent string makes no step */
+    v->ap_x = v->ap_y = v->lp_x = v->lp_y = far;
+    v->hp_x = vi(d, LE_TENSION_PICKUP_ON) ? v->a[(v->w - (len - pick_tap)) & TV_MASK] + v->b[(v->w - pick_tap) & TV_MASK]
+                                          : far;
+    v->hp_y = 0.0f;
   }
   /* the finger on the fret */
   v->term = vi(d, LE_TENSION_TERM_ON);
@@ -497,12 +519,18 @@ static void string_strike(le_tension* d, le_tension_voice* v, float p, float pk,
                     100.0f);
     v->tf_k = kexp(1e3f, 1e12f, vf(d, LE_TENSION_TERM_FINGER_STIFF)) * fkey;
     v->ta_k = kexp(1e3f, 1e12f, vf(d, LE_TENSION_TERM_FRET_STIFF)) * fkey;
-    const float w = v->tf_m * TV_G;
-    v->te_y = -sqrtf(w / v->ta_k);
-    v->tf_y = v->te_y - sqrtf(w / v->tf_k);
-    v->tf_v = 0.0f;
-    v->t_ff = v->t_fa = w;
+    /* a string started again rests on the fret under the finger's weight
+     * and the bent string's own push at the nut */
+    if (reinit || !v->term_was) {
+      const float w = v->tf_m * TV_G, wa = fmaxf(w + 2.0f * rest_wave, 0.0f);
+      v->te_y = -sqrtf(wa / v->ta_k);
+      v->tf_y = v->te_y - sqrtf(w / v->tf_k);
+      v->tf_v = 0.0f;
+      v->t_ff = w;
+      v->t_fa = wa;
+    }
   }
+  v->term_was = v->term;
 }
 
 /* The nut end with a finger pressing the string onto a fret: the two
@@ -618,18 +646,18 @@ static float string_tick(le_tension* d, le_tension_voice* v, int held) {
   } else {
     v->ys_exc += u / rate;
   }
-  /* the damper, from the nut end, on the other side */
+  /* the damper, from the nut end, on the exciter's side */
   if (v->damper.on) {
     le_tension_contact* c = &v->damper;
     float* da = &v->a[(w - (len - v->damp_tap)) & TV_MASK];
     float* db = &v->b[(w - v->damp_tap) & TV_MASK];
     const float ud = *da + *db;
-    const float f = contact_force(c, -v->ys_damp, -ud, 1, rate);
+    const float f = contact_force(c, v->ys_damp, ud, 1, rate);
     contact_step(c, f, 1, rate);
-    *da -= 0.5f * f;
-    *db -= 0.5f * f;
-    v->ys_damp += (ud - 0.5f * f) / rate;
-    if (fabsf(c->y + v->ys_damp) > 1.0f) {
+    *da += 0.5f * f;
+    *db += 0.5f * f;
+    v->ys_damp += (ud + 0.5f * f) / rate;
+    if (fabsf(c->y - v->ys_damp) > 1.0f) {
       /* parked away; at the key's release it returns */
       c->v = 0.0f;
       c->grav = 0.0f;
@@ -758,7 +786,7 @@ static void release_voice(le_tension* d, le_tension_voice* v) {
   if (v->exc_type == EXC_BOUNCE) v->exc.grav = -TV_G;
   if (v->exc_type == EXC_BOW) v->bow_f = 0.0f;
   if (v->damper.on && vi(d, LE_TENSION_DAMPER_GATED)) {
-    v->damper.y = -v->ys_damp - 1e-5f;
+    v->damper.y = v->ys_damp - 1e-5f;
     v->damper.v = v->damper.reach;
     v->damper.grav = TV_G;
     v->damper.z = 0.0f;
