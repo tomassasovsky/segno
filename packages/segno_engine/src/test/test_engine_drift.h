@@ -58,23 +58,28 @@ static void test_drift_every_type_renders(void) {
   }
 }
 
-/* A resonance above 1 self-oscillates with both oscillators and the noise
- * off (the filter's own noise starts it), and stays bounded. */
+/* Resonance modulated past 1 (here velocity through the matrix, to 1.3)
+ * self-oscillates on both filter types with both oscillators and the noise
+ * off (the filter's own noise starts it), and stays bounded. At 1 itself
+ * the fitted filters ring (+29 dB) without oscillating, as Live's do. */
 static void test_drift_filter_self_oscillates(void) {
   printf("test_drift_filter_self_oscillates\n");
   enum { N = 48000 };
   static float l[N], r[N];
-  for (int ft = 0; ft < 1; ++ft) {
+  for (int ft = 0; ft < 2; ++ft) {
     drift_init(&g_drift, DRIFT_SR);
     drift_set(&g_drift, LE_DRIFT_FILTER_TYPE, (float)ft);
     drift_set(&g_drift, LE_DRIFT_OSC1_ON, 0.0f);
     drift_set(&g_drift, LE_DRIFT_OSC2_ON, 0.0f);
     drift_set(&g_drift, LE_DRIFT_FILTER_RES, 1.01f);
-    CHECK(le_drift_note_on(&g_drift, 1, 60, 100, 0) == 0);
+    drift_set(&g_drift, LE_DRIFT_MATRIX_SOURCE1, 4.0f); /* Velocity */
+    drift_set(&g_drift, LE_DRIFT_MATRIX_TARGET1, 7.0f); /* LP Resonance */
+    drift_set(&g_drift, LE_DRIFT_MATRIX_AMOUNT1, 1.0f);
+    CHECK(le_drift_note_on(&g_drift, 1, 60, 127, 0) == 0);
     le_drift_render(&g_drift, l, r, N);
     CHECK(drift_finite(l, N));
     CHECK(drift_peak(l + N / 2, N / 2) > 0.005f);
-    CHECK(drift_peak(l, N) < 2.0f);
+    CHECK(drift_peak(l, N) < 4.0f);
   }
 }
 

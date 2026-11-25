@@ -156,10 +156,11 @@ typedef struct le_drift {
   int32_t mono_note[LE_DRIFT_MONO_STACK];
   uint32_t mono_origin[LE_DRIFT_MONO_STACK];
   float mono_velocity[LE_DRIFT_MONO_STACK];
-  /* per note: the loudness compensation and the per-key tuning in cents,
-   * filled at init */
+  /* per note: the loudness compensation, and the per-key tuning in cents
+   * for each lane of a note (a Stereo or Unison note's voices are tuned
+   * apart), filled at init */
   float note_gain[128];
-  float key_cents[128];
+  float key_cents[4][128];
   /* Poly allocation: where the round robin starts */
   int32_t next_voice;
   int32_t voice_limit; /* sounding voices allowed (the engine's overload) */
