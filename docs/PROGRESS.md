@@ -80,6 +80,11 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
 - Costs more: a filter II voice takes 7 us per period at 96 kHz on the dev
   machine (filter I 3.2); the engine's voice budget fades the excess. The
   console benchmark (hardware) sets the device's voice limit.
+- The voices run at the host rate: Live 12.2.7's renders are bit-identical
+  with HiQuality on and off and match Segno without oversampling, so the
+  2x path and its decimator are gone (half the cost at 48 kHz) and
+  HiQuality is stored without effect. Every filter and oscillator test
+  0.93 dB rms (from 1.28); Euphoria Lead's top octave within 0.2 dB.
 
 ## November 2026 Drift fitted against Live renders (SEG-109 P4, round 3)
 
@@ -160,8 +165,10 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   steals the oldest, glide and legato, Segno's own per-key tuning table and
   the ISO 226 note gain. Parameters land on a 32-frame grid, so a render is
   the same at any block size; everything else runs every sample.
-- HiQuality runs the voices at 2x with a 31-tap half-band FIR below
-  88.2 kHz and at the host rate above it (the appliance), as approved.
+- HiQuality ran the voices at 2x with a 31-tap half-band FIR below
+  88.2 kHz and at the host rate above it (the appliance), as approved. P4
+  round 4 removed it: Live's renders are bit-identical with HiQuality on
+  and off and match the voices at the host rate.
 - A slot plays a patch or a device: `le_engine_set_instrument_device` and
   `le_engine_set_instrument_device_param` take the values in the units a
   Live preset stores (`le_drift_param`). Notes, chords, sustain, the MIDI

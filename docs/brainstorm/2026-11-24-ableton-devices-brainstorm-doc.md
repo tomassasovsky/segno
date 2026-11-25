@@ -108,7 +108,11 @@ written from it.
   sample. **[code]**
 - HiQuality (on in every factory preset) runs all voices at 2× the host
   rate and decimates with a polyphase allpass halfband. Off: host rate, no
-  decimator. Segno uses its own halfband (`halfband.c`). **[code]**
+  decimator. **[code]** Measured (round 4): Live 12.2.7's exported renders
+  are bit-identical with HiQuality on and off, and match Segno running
+  the voices at the host rate (the Saturated oscillator's aliasing, the
+  open filters' top octave), not at 2×. Segno runs every voice at the host
+  rate and stores HiQuality without effect.
 - Stored preset values are in the parameter's display unit (Hz, seconds,
   linear gain, octaves, semitones, −1..1 amounts, enum indices) and reach
   the DSP through a fixed linear map per parameter, two Global parameters
@@ -374,6 +378,10 @@ Bloom Pad within 1.1 dB up to 2 kHz, -1.8 at 4 kHz and -4.7 above 8 kHz.
 Unison's lanes match Live's at Drift 0 exactly (detune and pan at every
 strength). A filter II voice costs 7 us per period at 96 kHz (filter I
 3.2).
+
+Then the voices at the host rate (HiQuality changes nothing in Live's
+renders): every filter and oscillator test 0.93 dB rms (from 1.28), the
+presets 1.67 (from 1.90); Euphoria Lead's top octave within 0.2 dB.
 
 Still open: Bloom Pad's unison beats dip deeper in Segno (its per-voice
 drift values are its own, so beats cannot line up with Live's); a quiet
