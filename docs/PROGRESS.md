@@ -103,12 +103,13 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   loops, the LFO waves, glide, the filters and drive within 0.1 to 2.5 dB
   rms (round totals 1.9, 1.4, 1.9). Measured where the reading was silent:
   the balance's direction, the sustain stage and loops, the glide time's
-  curve, the unison offsets, the LFO triangle's start and the noise ramp;
+  curve, the unison offsets' pattern, the LFO triangle's start and the
+  noise ramp; the unison detune is ExpZ(0.001, 1) octaves (Tension's
+  reading of the shared unison: copies an octave apart at full detune);
   the filter envelope's depth is 16 u^4 octaves (Tension's reading of the
   shared filter), which brought the factory presets from 13.5 to 5.3 dB.
-- 23 factory presets, octave bands rms: 12 within 2.2 dB; Kick Complex
-  Perc 26.5 and Organ Vibrato 36.8 are the open ones (the pitch
-  envelope's shape, the unison detune past 0.5).
+- 23 factory presets, octave bands rms: 13 within 2.2 dB; Kick Complex
+  Perc (26.5) is the open one.
 - A voice of two saw chains through LP24 costs 0.9 us per millisecond on
   the dev machine, four unison copies 3.7, the formant filter 1.0. A
   device holds 40 copies (88 KB).

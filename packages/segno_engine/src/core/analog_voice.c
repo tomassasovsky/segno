@@ -486,6 +486,12 @@ static void start_copy(le_analog* d, le_analog_voice* v, le_analog_copy* cp) {
   }
 }
 
+/* The unison amounts' curve: Exp(lo, hi) on m = 127 v, exactly 0 at 0. */
+static float unison_expz(float lo, float hi, float v) {
+  const float m = 127.0f * clampf(v, 0.0f, 1.0f);
+  return m <= 0.0f ? 0.0f : lo * powf(hi / lo, m / 127.0f);
+}
+
 static void start_voice(le_analog* d, le_analog_voice* v, uint32_t origin, int32_t note, float vel,
                         uint64_t serial, int glide) {
   v->state = LE_ANALOG_VOICE_HELD;
@@ -501,12 +507,14 @@ static void start_voice(le_analog* d, le_analog_voice* v, uint32_t origin, int32
   v->vib_t = 0.0f;
   v->pitch_to = key_pitch(d, note);
   v->pitch = glide ? d->last_pitch : v->pitch_to;
-  /* fit: the unison copies sit 0, +1, -1, +2 steps from the note, a step
-   * 0.374 semitone at Detune 0.5 (the unison renders), taken as a square
-   * law; they start up to 20 ms apart (the delay's law is open) */
+  /* the unison copies sit 0, +1, -1, +2 steps from the note (fit: the
+   * unison renders), a step of ExpZ(0.001, 1) octaves on the stored value
+   * times 127 (Tension's reading of the shared unison; 0.379 semitone at
+   * 0.5 where the renders measure 0.374, an octave at 1 as Organ Vibrato
+   * shows); the copies start ExpZ(0.002, 0.1) s apart */
   static const float kSteps[LE_ANALOG_COPIES] = {0.0f, 1.0f, -1.0f, 2.0f};
-  const float step = c_sq(0.0f, 1.47f / 12.0f, vf(d, LE_ANALOG_UNISON_DETUNE));
-  const float delay = c_lin(0.0f, 0.02f, vf(d, LE_ANALOG_UNISON_DELAY)) * (float)d->sample_rate;
+  const float step = unison_expz(0.001f, 1.0f, vf(d, LE_ANALOG_UNISON_DETUNE));
+  const float delay = unison_expz(0.002f, 0.1f, vf(d, LE_ANALOG_UNISON_DELAY)) * (float)d->sample_rate;
   for (int32_t k = 0; k < v->copies; ++k) {
     le_analog_copy* cp = &v->c[k];
     cp->detune = step * kSteps[k];
