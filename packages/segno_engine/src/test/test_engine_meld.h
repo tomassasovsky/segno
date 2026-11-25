@@ -447,6 +447,27 @@ static void test_meld_fits(void) {
     if (g_meld.voices[i].state != 0) sounding++, note = g_meld.voices[i].note;
   }
   CHECK(sounding == 1 && note == 64);
+  /* LFO 1's Pulsate draws the same pulses on every retriggered note */
+  {
+    static float a[4800], b[4800];
+    meld_reference(&g_meld);
+    meld_eng(&g_meld, 0, LE_MELD_E_LFO1_TYPE, 5.0f);
+    meld_eng(&g_meld, 0, LE_MELD_E_LFO1_MACRO1, 0.34f);
+    meld_eng(&g_meld, 0, LE_MELD_E_LFO1_MACRO2, 1.0f);
+    meld_eng(&g_meld, 0, LE_MELD_E_LFO1_FX1_TYPE, 0.0f);
+    meld_eng(&g_meld, 0, LE_MELD_E_LFO1_FX2_TYPE, 0.0f);
+    meld_eng(&g_meld, 0, LE_MELD_E_LFO1_RATE, 20.0f);
+    meld_set(&g_meld, LE_MELD_MOD_AMOUNT(0, 1, 2), 0.02f);
+    CHECK(le_meld_note_on(&g_meld, 1, 60, 127, 0) == 0);
+    le_meld_render(&g_meld, a, r, 4800);
+    le_meld_note_off(&g_meld, 1);
+    le_meld_render(&g_meld, l, r, 24000);
+    CHECK(le_meld_note_on(&g_meld, 2, 60, 127, 0) == 0);
+    le_meld_render(&g_meld, b, r, 4800);
+    float diff = 0.0f;
+    for (int32_t i = 0; i < 4800; ++i) diff = fmaxf(diff, fabsf(a[i] - b[i]));
+    CHECK(diff < 1e-4f);
+  }
   CHECK(fabs(opr_component(l + 2400, 2400, opr_note_hz(64)) - 0.3536) < 0.01);
 }
 

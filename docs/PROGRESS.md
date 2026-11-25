@@ -102,9 +102,10 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   the random sources reaching LE_SEED: 309 of 385 renders and 16 of 21
   presets after a fourth round (the Bandpass's drive ends) and the
   held-out round's lesson (stealing counts fading voices and drops a note
-  with no victim): 13 of 84 held-out presets, from 8. A fifth round is
-  requested for the stealing and for Live's own spread on the random
-  presets.
+  with no victim): 13 of 84 held-out presets, from 8. A fifth round
+  confirmed the stealing on five fit renders and showed the LFOs' random
+  draws repeat on every note and instance, as Segno's now do with its own
+  seeds.
 - A voice with both engines on a Basic Shapes saw and SVF 12 costs 1.8 us
   per millisecond on the dev machine; MS2 6.8, a Swarm 3.7, three unison
   copies 5.6.

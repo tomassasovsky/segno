@@ -909,6 +909,7 @@ third-octave band, the MS2 pair within 2.6 short of full drive. **[measured]**
   as Live's does. **[measured]**
 - LFO 1: six generators (Basic Shapes, Ramp, Wander, Alternate, Euclid,
   Pulsate) and two of 19 transformers in series; LFO 2: six plain waves.
+  Their random draws restart with the phase, the same on every note.
   Free rates in Hz, Tempo divisions as Drift's; Retrigger restarts the
   phase. **[code]** **[measured]** (rates, phase offset, shapes) The
   Quantizer rounds to steps of 1/(n - 1), symmetric about 0 (at 0.8 it
@@ -1002,9 +1003,14 @@ A fourth round settled the Bandpass's drive ends, showed that Spread's pan
 and Square 5th's Macro 2 match on their own (Woozy Bass's extra side comes
 from elsewhere), and that a retriggered LFO 1 draws the same values on
 every note: Live's Pulsate plays +0.97, -0.49, -0.12, -0.24 at the starts
-of each note's cycles, every note alike. Segno keeps drawing fresh values:
-a Segno seed would repeat its own numbers, not Live's, and Live's
-generator is not to be copied, so this is the owner's call. **[measured]**
+of each note's cycles, every note alike, and a second instance plays the
+same; Detuned String Machine (Pulsate and LFO 2's S&H) renders identically
+in three instances. Segno's LFO 1 and LFO 2 S&H draws restart with their
+phase (at a retrigger, or at the voice's construction) from Segno's own
+seeds, so they repeat on every note but are not Live's values: whether
+measured Live values may be used is the owner's call. **[measured]**
+**[Segno]** (the seeds) The per-copy Random source and the Swarm's phases
+and drift differ from instance to instance in Live too.
 The held-out round (84 presets, three phrases each) found the voice
 stealing above. With the random sources now read through LE_SEED (a
 scratch seed patch), the strict score passes 16 of 21 factory presets.

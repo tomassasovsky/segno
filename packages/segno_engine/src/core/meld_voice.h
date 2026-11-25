@@ -74,6 +74,7 @@ typedef struct le_meld_lfo1 {
   float pulse, pulse_left;
   int32_t quarter;
   le_meld_fx t[2];
+  uint32_t rng; /* the generators' draws, restarted with the phase */
 } le_meld_lfo1;
 
 typedef struct le_meld_engine {
@@ -83,6 +84,7 @@ typedef struct le_meld_engine {
   le_meld_lfo1 lfo1;
   double lfo2_ph;
   float lfo2, lfo2_sh;
+  uint32_t lfo2_rng; /* Random S&H's draws, restarted with the phase */
   /* the note in semitones and its glide */
   float pitch, glide_to, glide_step;
   int32_t glide_left;

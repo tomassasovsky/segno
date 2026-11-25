@@ -14,6 +14,14 @@
 
 #define MV_PI 3.14159265358979323846f
 
+/* fit: the LFOs' random draws are the same on every note and in every
+ * instance, restarting with the phase (the Pulsate renders and their
+ * copies repeat exactly; Detuned String Machine, Pulsate into Trig Env and
+ * LFO 2's S&H, renders identically in three instances). The seeds are
+ * Segno's own, so the values are not Live's. */
+#define MV_LFO1_SEED 0x1b873593u
+#define MV_LFO2_SEED 0xcc9e2d51u
+
 enum {
   LE_MELD_VOICE_FREE = 0,
   LE_MELD_VOICE_HELD,
@@ -198,6 +206,8 @@ int32_t le_meld_init(le_meld* d, int32_t sample_rate) {
       cp->rng = 0x9e3779b9u ^ (uint32_t)((i * LE_MELD_COPIES + c + 1) * 2654435761u);
       for (int32_t e = 0; e < 2; ++e) {
         le_meld_osc_init(&cp->e[e].osc, rate, cp->rng ^ (uint32_t)(e + 1) * 0x85ebca6bu);
+        cp->e[e].lfo1.rng = MV_LFO1_SEED;
+        cp->e[e].lfo2_rng = MV_LFO2_SEED;
         le_meld_filter_init(&cp->e[e].filter, rate);
       }
     }
@@ -479,6 +489,7 @@ static float transform(le_meld_fx* s, int32_t type, float x, float m, float f, d
 }
 
 static void lfo1_reset(le_meld_lfo1* l) {
+  l->rng = MV_LFO1_SEED;
   l->ph = 0.0;
   l->walk = l->from = l->to = 0.0f;
   l->step = 0;
@@ -786,7 +797,11 @@ static void engine_start(le_meld* d, le_meld_voice* v, le_meld_copy* cp, int32_t
   } else {
     for (int i = 0; i < 2; ++i) en->lfo1.t[i].t = 0.0f, en->lfo1.t[i].trig = 0.0f;
   }
-  if (ei(d, e, LE_MELD_E_LFO2_RETRIGGER)) en->lfo2_ph = 0.0;
+  if (ei(d, e, LE_MELD_E_LFO2_RETRIGGER)) {
+    en->lfo2_ph = 0.0;
+    en->lfo2_rng = MV_LFO2_SEED;
+    en->lfo2_sh = 0.0f;
+  }
   en->gl = en->gr = -1.0f; /* set at the first tick without a ramp */
   (void)v;
 }
@@ -1275,7 +1290,7 @@ static void tick_copy(le_meld* d, le_meld_voice* v, le_meld_copy* cp) {
     lfo1_tick(&en->lfo1, d, e, r1, ef(d, e, LE_MELD_E_LFO1_MACRO1) + m.sum[T_LFO1_M1],
               ef(d, e, LE_MELD_E_LFO1_MACRO2) + m.sum[T_LFO1_M2],
               ef(d, e, LE_MELD_E_LFO1_FX1_MACRO) + m.sum[T_LFO1_FX1],
-              ef(d, e, LE_MELD_E_LFO1_FX2_MACRO) + m.sum[T_LFO1_FX2], dt, &cp->rng);
+              ef(d, e, LE_MELD_E_LFO1_FX2_MACRO) + m.sum[T_LFO1_FX2], dt, &en->lfo1.rng);
     {
       const float r2 = lfo_rate(d, e, 1, m.sum[T_LFO2_RATE]);
       double p = en->lfo2_ph + ef(d, e, LE_MELD_E_LFO2_PHASE) / 360.0;
@@ -1284,7 +1299,7 @@ static void tick_copy(le_meld* d, le_meld_voice* v, le_meld_copy* cp) {
       en->lfo2_ph += (double)(r2 * dt);
       if (en->lfo2_ph >= 1.0) {
         en->lfo2_ph -= floor(en->lfo2_ph);
-        en->lfo2_sh = xs_bipolar(&cp->rng);
+        en->lfo2_sh = xs_bipolar(&en->lfo2_rng);
       }
     }
     /* the tone filter: a low-pass below 0, a high-pass above, 6 dB each */
