@@ -65,6 +65,26 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
 
 ---
 
+## November 2026 Drift fitted against Live renders (SEG-109 P4, round 3)
+
+- Rounds 10 to 13 of Live renders, a scoring harness over every filter
+  test and a reading of Live's voice allocation. Filter II is now two
+  MS-20 style sections with the resonance split 1.15 / 0.75 between them
+  (Live's narrow peaks); filter I follows the code reading (base damping
+  cancelled by the resonance, a cubic in the feedback); the filters' input
+  clip has Live's hard edge; Shark Tooth plays inverted, which only the
+  asymmetric clip reveals; voices run in blocks of four (idle voices in a
+  running block keep turning, idle LFOs run), and each block's noise
+  generators start alike, so chords share their noise across blocks as
+  Live's do. Voice counts are 4, 8, 16, 24, 32.
+- Five factory presets, octave bands Segno minus Live: Euphoria Lead and
+  Chirp Pluck within 0.5 dB, Clob Bass within 1.6 dB (width -10.3 against
+  -8.4 dB, from -16), 80s Tape within 1.2 dB up to 2 kHz and -2 dB above
+  4 kHz, Bloom Pad within 1 dB up to 1 kHz and +2.4 dB at 2 to 4 kHz.
+  Levels within 0.7 dB. A Drift voice costs 3.2 us per period at 96 kHz.
+- Still open: Bloom Pad's unison beats (Segno's drift values are its own),
+  both filters' open top octave, Clob Bass's width.
+
 ## November 2026 Drift fitted against Live renders (SEG-109 P4, round 2)
 
 - Six more rounds of Live renders and a second reading of Live's LFO and

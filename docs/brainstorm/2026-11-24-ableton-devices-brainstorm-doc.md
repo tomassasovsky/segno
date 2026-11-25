@@ -147,10 +147,13 @@ written from it.
   - Sine: a parabolic sine through a wavefolder, gain 1 + 4·shape.
   - Triangle: gain 1 + 7·shape, then an asymmetric fold (different
     thresholds above and below zero, so even harmonics appear).
-  - Shark Tooth: a falling ramp with a triangular dip. Fitted: the dip
-    spans about 88 % of the cycle at shape 0 (close to a triangle) and
-    narrows to 17 % at shape 1 (close to a falling saw); no DC at any shape.
-    Shape modulation past 0..1 keeps changing it.
+  - Shark Tooth: a ramp with a triangular dip. Fitted: the dip spans about
+    90 % of the cycle at shape 0 (close to a triangle) and narrows to 16 %
+    at shape 1 (close to a saw); no DC at any shape; shape modulation past
+    0..1 keeps changing it. Its polarity shows only through the filters'
+    asymmetric input clip: Live's is a rising ramp with the dip on top
+    (the inverse of the falling form above), which brought Live's Shark
+    renders at six shapes within 1.5 dB per sixth-octave band.
   - Saturated: a scaled, clipped triangle through a parabola; asymmetric, so
     it carries a DC offset (about −0.33 at shape 0). Not band-limited.
   - Saw: hard sync, slave ratio 1 + 10·shape; the master-reset edge is not
@@ -161,7 +164,13 @@ written from it.
 - Transpose: whole octaves (Osc 1 −2..+3, Osc 2 −3..+2). Osc 2 Detune:
   semitones, −7..+7, fractional. **[inferred from ranges and labels]**
 - Noise: Gaussian white, per voice (xorshift + Box–Muller), clipped at
-  ±10, no colouring. **[code]**
+  ±10, no colouring. **[code]** Fitted: each block of four voices runs
+  its generators only while the block runs, and every block starts from
+  the same state, so notes struck together in different blocks share
+  their noise voice for voice (Stereo, 3 / 4 / 6 notes: +2.1 / +2.9 /
+  +4.7 dB over independent voices; Poly from the 5th note). Noise reaches
+  the filters quieter than the bypass, filter I by 2.4 dB and filter II by
+  3.4 dB, at every level.
 
 ### Filters
 
@@ -176,20 +185,33 @@ written from it.
   trapezoidal prewarp, a cubic soft clip in the feedback solved in closed
   form each sample, resonance pulled back above resonance 1 at high
   cutoffs, and a tiny injected noise that lets self-oscillation start from
-  silence. Input gain about 1.67. **[code]**
+  silence. Input gain about 1.67. **[code]** Fitted: the two poles give a
+  base damping ratio near 1.18 (1.12 fits best) and the resonance
+  feedback, r × (1 + 1/3.3), cancels it at resonance 1, so the section is
+  a state-variable low-pass with damping 1.12 (1 − r) plus the cubic in
+  the resonance path; sixth-octave levels within 1.4 dB rms on Live's
+  filter I renders.
 - Type II: two nonlinear sections in series with a diode-style shaper in
   each feedback path, two fixed iterations per sample, input gain × 3,
   resonance curve q = 4r/(3r + 1) + 4·max(r − 1, 0)² with a limiter at high
   cutoffs. **[code]** The limiter constants, the per-section scales and the
   slope (Live's manual says 24 dB/oct) are **[open]**; the shaper is
-  designed fresh for Segno and fitted to Live's output. Fitted: the two
-  sections behave as if at the same cutoff (spreading them apart makes
-  every measured response worse).
-- Filter input: both types clip their input, linear to about +0.62 and
-  -0.89, then a soft knee to a flat top. A sine at Gain 1 gets 2nd and 3rd
-  harmonics about 27 and 21 dB down and a 0.9 peak ratio; at Gain 0.5 it
-  stays clean. The path around the filters is about 1.8 dB louder for the
-  oscillators than for the noise. **[fitted]**
+  designed fresh for Segno and fitted to Live's output. Fitted: each
+  section behaves as an MS-20 style loop (a one-pole low-pass, then a
+  one-pole low-pass inside a loop closed through a one-pole high-pass,
+  the loop gain setting the resonance, a soft clip on the loop's sum),
+  both at the same cutoff (spreading them apart makes every measured
+  response worse); a loud source rings less and its skirt brightens, as
+  Live's does. The first section takes 1.15 of the loop gain and the
+  second 0.75: Live's resonant peaks are as narrow as one strongly
+  resonant section makes them (about a twelfth of an octave), and an even
+  split leaves them three times as wide.
+- Filter input: both types clip their input: linear to about +0.70 and
+  -0.98, a soft knee, and a hard edge at +0.79 on the positive side. A sine
+  at Gain 1 gets Live's harmonics 2 to 41 within 3 dB (the hard edge gives
+  the slowly falling tail); at Gain 0.5 it stays clean. The path around
+  the filters is about 1.8 dB louder for the oscillators than for the
+  noise. **[fitted]**
 - High-pass: a linear 2-pole state-variable filter, Q about 1.47 (a small
   bump at the corner), 20 Hz..20 kHz, modulated by matrix slots targeting
   HP Frequency at 10 octaves per unit. **[code]**
@@ -244,7 +266,13 @@ written from it.
 - Poly allocation: a repeated note reuses its voice; otherwise the first
   free (silent) voice round-robin among the first n, starting at the voice
   allocated last, so notes that do not overlap stay on one voice; with
-  none free, the oldest is stolen. **[code]**, fitted.
+  none free, the oldest is stolen. A same-note reuse does not move the
+  search's start. **[code]**, fitted.
+- Voices run in blocks of four. While any voice in a block sounds, the
+  silent ones keep turning their oscillators at the rate they last had,
+  so a Stereo note on a fresh pair starts its lanes together only when
+  that pair's block was idle; every silent voice's LFO keeps running.
+  **[code]**, fitted on Live's 16-note Stereo sequence.
 - With ResetOscillatorPhase on, a note on a sounding voice waits for a fast
   fade-out, then starts with reset phases; with it off, the note starts at
   once and the envelope continues from its level. With it off, a voice
@@ -263,8 +291,8 @@ written from it.
     full Strength (Segno orders the lanes flattest first), both scaled
     linearly by Strength; mode gain about −6.5 dB. The pan law is
     **[open]**.
-- Voice counts (0..4) → the voice limit; the table is **[open]** (Live's UI
-  offers 8, 12, 16, 24 and 32 as far as known).
+- Voice counts (0..4): 4, 8, 16, 24 and 32 voices; Stereo plays half as
+  many notes, Unison a quarter. **[code]**
 - Drift Depth: a fixed tuning offset per key plus one per voice, linear
   in depth. Fitted at Depth 1: the per-key part has an rms near 7 cents,
   the two voices of a Stereo pair sit 11.6 cents apart at every key, and
@@ -318,12 +346,24 @@ about 1 dB everywhere; Clob Bass within 1.5 dB up to 4 kHz (+3 dB at
 8 kHz); Bloom Pad within 1.5 dB up to 1 kHz, +4.5 dB at 2 to 4 kHz and
 -9 dB above 8 kHz (filter II's resonant peak near 4 kHz).
 
-Still open: filter II's response near a strong resonant peak (the shaper
-and the limiter constants); filter I's shape around its cutoff on noise
-(+1.2 dB); Clob Bass's phrase is narrower than Live's (-16 against
--8 dB side to mid) although one note matches, which points at voice
-allocation details; the voice-count table; Live's Shark Tooth is a few dB
-off at shape 0.
+Round 3 (rounds 10 to 13, 2026-11-25) settled: filter II as MS-20 style
+sections, filter I from the code reading, the input clip's hard edge,
+voice blocks (idle voices turning, idle LFOs running), the shared block
+noise, the voice-count table, and the noise's level into each filter.
+The five presets then: Euphoria Lead within 0.4 dB per octave band,
+Chirp Pluck within 1.2, Clob Bass within 1.9 (width -10.3 against -8.4
+dB side to mid, from -16), 80s Tape within 1 dB up to 2 kHz and -2 dB
+above 4 kHz, Bloom Pad within 1 dB up to 1 kHz and +3.3 dB at 2 to 4 kHz.
+
+Then the filter II section split, the Shark Tooth's polarity and widths
+through the chain: Chirp Pluck within 0.5 dB per octave band, Bloom Pad
++2.4 dB at 2 to 4 kHz (from +3.3).
+
+Still open: Bloom Pad's unison beats dip deeper in Segno (its per-voice
+drift values are its own, so beats cannot line up with Live's); both
+filters' open top octave is 1 to 2 dB dark (80s Tape -2 dB above 4 kHz);
+Clob Bass's phrase is about 2 dB narrower; Sample & Hold and Wander draw
+different random values, by design.
 
 ## Decisions
 
