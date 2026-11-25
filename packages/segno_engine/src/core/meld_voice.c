@@ -289,7 +289,9 @@ static float env_step(le_meld_env* e, const env_def* p) {
       const int seg = e->state == ENV_ATTACK ? 0 : e->state == ENV_DECAY ? 1 : 2;
       if (e->state == ENV_DECAY) e->y1 = p->sustain;
       e->x += p->dx[seg];
-      if (e->x >= 1.0f) {
+      /* fit: the Mod envelope ends a segment a step early (an AD Loop of
+       * 0.1 + 0.2 s repeats every 0.29933 s in Live's render) */
+      if (e->x >= 1.0f || (p->mod && e->x + p->dx[seg] >= 1.0f - 1e-5f)) {
         e->y = e->y1;
         switch (e->state) {
           case ENV_ATTACK:
@@ -404,8 +406,10 @@ static float transform(le_meld_fx* s, int32_t type, float x, float m, float f, d
       return m <= 0.5f ? uni + 2.0f * m * (half - uni) : half + (2.0f * m - 1.0f) * (full - half);
     }
     case 7: {
-      const float n = floorf(45.0f * (1.0f - m) * (1.0f - m) + 2.0f);
-      return 2.0f * (floorf((0.5f * x + 0.5f) * n) / n - 0.5f);
+      /* fit: x rounded to steps of 1 / (n - 1), symmetric about 0 (the
+       * Quantizer render at 0.8 plays 0, +-0.5 and +-1) */
+      const float n = floorf(45.0f * (1.0f - m) * (1.0f - m) + 2.0f) - 1.0f;
+      return floorf(x * n + 0.5f) / n;
     }
     case 8: {
       const int32_t n = (int32_t)(30.0f * (1.0f - m) * (1.0f - m) + 2.0f);
@@ -598,10 +602,11 @@ static const float kSyncBeats[22] = {
     2.0f, 1.5f, 1.333333f, 1.25f, 1.0f, 0.75f, 0.666667f, 0.5f,
     0.333333f, 0.25f, 0.166667f, 0.125f, 0.083333f, 0.0625f};
 
-/* fit: a free rate's knob position is the cube root of the rate over
- * 78.7 Hz, and the matrix adds to it (the LFO Rate renders: +0.1 at 2 Hz is
- * 2.41 times, -0.1 is 0.287 times) */
-#define MV_RATE_SCALE 78.7f
+/* fit: a free rate's knob position is (rate / 79.5 Hz)^(1 / 3.036), and
+ * the matrix adds to it (the LFO Rate renders: +0.1 at 2 Hz is 2.4122
+ * times, -0.1 is 0.2879 times) */
+#define MV_RATE_SCALE 79.5f
+#define MV_RATE_POWER 3.036f
 
 static float lfo_rate(const le_meld* d, int32_t e, int lfo2, float sum) {
   const int32_t sync = ei(d, e, lfo2 ? LE_MELD_E_LFO2_SYNC : LE_MELD_E_LFO1_SYNC);
@@ -613,8 +618,8 @@ static float lfo_rate(const le_meld* d, int32_t e, int lfo2, float sum) {
   }
   const float hz = ef(d, e, lfo2 ? LE_MELD_E_LFO2_RATE : LE_MELD_E_LFO1_RATE);
   if (sum == 0.0f) return hz;
-  const float pos = cbrtf(hz / MV_RATE_SCALE) + sum;
-  return clampf(MV_RATE_SCALE * pos * pos * pos, 0.01f, 200.0f);
+  const float pos = powf(hz / MV_RATE_SCALE, 1.0f / MV_RATE_POWER) + sum;
+  return pos <= 0.0f ? 0.01f : clampf(MV_RATE_SCALE * powf(pos, MV_RATE_POWER), 0.01f, 200.0f);
 }
 
 /* ---- voices ---- */
@@ -775,6 +780,7 @@ static void engine_start(le_meld* d, le_meld_voice* v, le_meld_copy* cp, int32_t
   const env_def m = mod_def(d, e, en->mod_dx, en->mod_sustain);
   env_start(&en->amp, &a);
   env_start(&en->mod, &m);
+  en->mod_prev = 0.0f;
   if (ei(d, e, LE_MELD_E_LFO1_RETRIGGER)) {
     lfo1_reset(&en->lfo1);
   } else {
@@ -1079,10 +1085,14 @@ typedef struct mv_mods {
   float prod[LE_MELD_MOD_TARGETS];
 } mv_mods;
 
-/* `note_ff`: the Note source as Filter Freq reads it, the engine's own
- * pitch scaled so an amount of 1 tracks the key a semitone per semitone
- * (fit: the Note into Filter Freq renders at notes 36, 60, 84 and an
- * octave transpose). */
+/* The Note source is (note - 60) / 12, octaves from C3; the semitone
+ * targets read it so an amount of 1 tracks the key a semitone per
+ * semitone: Detune as it is, Pitch and Pitch Quant at a quarter (fit: the
+ * C6 render). `note_ff` is the Note source as Filter Freq reads it, the
+ * engine's own pitch scaled the same way (fit: the Note into Filter Freq
+ * renders at notes 36, 60, 84 and an octave transpose). Into Tone it is
+ * the plain source (fit: the Note into Tone render at C1 sits at the
+ * tone's end). */
 static void eval_matrix(const le_meld* d, int32_t e, const float* sb, const float* su, float note_ff,
                         mv_mods* m) {
   for (int32_t t = 0; t < LE_MELD_MOD_TARGETS; ++t) {
@@ -1091,7 +1101,11 @@ static void eval_matrix(const le_meld* d, int32_t e, const float* sb, const floa
   }
   for (int32_t i = 0; i < d->route_n[e]; ++i) {
     const le_meld_route* r = &d->routes[e][i];
-    const float b = r->source == S_NOTE && r->target == T_FILTER_FREQ ? note_ff : sb[r->source];
+    float b = sb[r->source];
+    if (r->source == S_NOTE) {
+      if (r->target == T_FILTER_FREQ) b = note_ff;
+      else if (r->target == T_PITCH || r->target == T_PITCH_QUANT) b *= 0.25f;
+    }
     m->sum[r->target] += r->amount * b;
     m->prod[r->target] *= fmaxf(0.0f, 1.0f + r->amount * su[r->source] - fmaxf(r->amount, 0.0f));
   }
@@ -1114,9 +1128,14 @@ static void tick_copy(le_meld* d, le_meld_voice* v, le_meld_copy* cp) {
       continue;
     }
     const env_def m = mod_def(d, e, en->mod_dx, en->mod_sustain);
+    /* fit: the matrix reads the Mod envelope's value from the tick before,
+     * 0 at the note's first tick (Plate Kick's pitch sweep, the Mod
+     * envelope loop renders) */
+    const float mod_y = en->mod_prev;
+    en->mod_prev = en->mod.y;
     (void)env_step(&en->mod, &m);
     sb[o + 0] = su[o + 0] = en->amp.y;
-    sb[o + 1] = su[o + 1] = en->mod.y;
+    sb[o + 1] = su[o + 1] = mod_y;
     sb[o + 2] = en->lfo1.gen;
     sb[o + 3] = en->lfo1.fx;
     sb[o + 4] = en->lfo2;
@@ -1126,8 +1145,7 @@ static void tick_copy(le_meld* d, le_meld_voice* v, le_meld_copy* cp) {
   }
   sb[S_VELOCITY] = 2.0f * v->velocity - 1.0f;
   su[S_VELOCITY] = v->velocity;
-  /* fit: the Note source is (note - 60) / 48 (the C6 render) */
-  sb[S_NOTE] = ((float)v->note - 60.0f) / 48.0f;
+  sb[S_NOTE] = ((float)v->note - 60.0f) / 12.0f;
   su[S_NOTE] = sat01((float)v->note / 120.0f);
   sb[S_BEND] = d->bend;
   su[S_BEND] = 0.5f * d->bend + 0.5f;
@@ -1187,6 +1205,15 @@ static void tick_copy(le_meld* d, le_meld_voice* v, le_meld_copy* cp) {
     /* fit: the sustains are gain targets (the Amp Sustain render) */
     en->amp_sustain = envf(d, e, LE_MELD_E_AMP_SUSTAIN) * m.prod[T_AMP_SUSTAIN];
     en->mod_sustain = envf(d, e, LE_MELD_E_MOD_SUSTAIN) * m.prod[T_MOD_SUSTAIN];
+    if (e == 1 && vi(d, LE_MELD_LINK_ENVELOPES)) {
+      /* fit: linked, engine B's envelopes take engine A's values as the
+       * matrix moved them (Vertical Bass: B's release follows A's) */
+      const le_meld_engine* a = &cp->e[0];
+      memcpy(en->amp_dx, a->amp_dx, sizeof(en->amp_dx));
+      memcpy(en->mod_dx, a->mod_dx, sizeof(en->mod_dx));
+      en->amp_sustain = a->amp_sustain;
+      en->mod_sustain = a->mod_sustain;
+    }
     /* the LFOs, for the next tick's sources */
     const float r1 = lfo_rate(d, e, 0, m.sum[T_LFO1_RATE]);
     lfo1_tick(&en->lfo1, d, e, r1, ef(d, e, LE_MELD_E_LFO1_MACRO1) + m.sum[T_LFO1_M1],
