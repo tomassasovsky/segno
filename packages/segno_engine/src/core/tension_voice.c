@@ -13,6 +13,9 @@
 #define TV_G 9.81f
 #define TV_MASK (LE_TENSION_RAIL - 1)
 #define TV_SMASK (LE_TENSION_SHIFT - 1)
+/* the filter envelope's segments are straight lines (its Exp switch, which
+ * nothing in Live reaches, stays off) */
+#define TV_FENV_EXP 0.0f
 #define TV_BRIDGE_READ 1.5f /* samples: rail B's read at the bridge sits this much past L + e */
 
 enum {
@@ -753,7 +756,7 @@ static void start_voice(le_tension* d, le_tension_voice* v, uint32_t origin, int
   if (fresh) v->sh_d = 0.0f, v->sh_w = 0;
   /* the filter section */
   if (fresh) memset(&v->f, 0, sizeof(v->f));
-  float k[LE_AAS_ENV_FIELDS] = {1.0f, 0.0f, 0.0f, 0.0f, vf(d, LE_TENSION_FENV_ATTACK_VEL),
+  float k[LE_AAS_ENV_FIELDS] = {TV_FENV_EXP, 0.0f, 0.0f, 0.0f, vf(d, LE_TENSION_FENV_ATTACK_VEL),
                                 vf(d, LE_TENSION_FENV_ATTACK), vf(d, LE_TENSION_FENV_DECAY), vf(d, LE_TENSION_FENV_VEL),
                                 vf(d, LE_TENSION_FENV_SUSTAIN), 1.0f, vf(d, LE_TENSION_FENV_RELEASE)};
   const le_aas_env_set es = le_aas_env_read(k);
@@ -767,7 +770,7 @@ static void start_voice(le_tension* d, le_tension_voice* v, uint32_t origin, int
 }
 
 static le_aas_env_set fenv_set(const le_tension* d) {
-  float k[LE_AAS_ENV_FIELDS] = {1.0f, 0.0f, 0.0f, 0.0f, vf(d, LE_TENSION_FENV_ATTACK_VEL),
+  float k[LE_AAS_ENV_FIELDS] = {TV_FENV_EXP, 0.0f, 0.0f, 0.0f, vf(d, LE_TENSION_FENV_ATTACK_VEL),
                                 vf(d, LE_TENSION_FENV_ATTACK), vf(d, LE_TENSION_FENV_DECAY), vf(d, LE_TENSION_FENV_VEL),
                                 vf(d, LE_TENSION_FENV_SUSTAIN), 1.0f, vf(d, LE_TENSION_FENV_RELEASE)};
   return le_aas_env_read(k);
