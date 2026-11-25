@@ -7,12 +7,13 @@
  */
 #include "analog_voice.h"
 
+#include "aas_parts.h"
+
 #include <math.h>
 #include <string.h>
 
 #include "synth_voice.h" /* LE_SYNTH_BEND, LE_SYNTH_MOD, LE_SYNTH_PRESSURE */
 
-#define AV_PI 3.14159265358979323846f
 #define AV_C4 261.6256f
 
 enum {
@@ -23,9 +24,9 @@ enum {
   LE_ANALOG_VOICE_FADING
 };
 
-/* Envelope segments: attack, decay, the sustain stage, the stage after the
- * sustain time, release, done. */
-enum { SEG_ATTACK = 0, SEG_DECAY, SEG_SUSTAIN, SEG_POST, SEG_RELEASE, SEG_IDLE };
+_Static_assert(LE_ANALOG_ENV_FIELDS == LE_AAS_ENV_FIELDS && LE_ANALOG_ENV_RELEASE == LE_AAS_ENV_RELEASE &&
+                   LE_ANALOG_ENV_EXP == LE_AAS_ENV_EXP,
+               "Analog's envelope fields are the shared envelope's");
 
 /* ---- parameters ---- */
 
@@ -163,47 +164,6 @@ static int32_t ci(const le_analog* d, int32_t c, int32_t f) {
   return (int32_t)d->values[LE_ANALOG_CHAIN(c, f)];
 }
 
-static float clampf(float x, float lo, float hi) { return x < lo ? lo : x > hi ? hi : x; }
-
-/* ---- the knob curves ---- */
-
-/* A knob position 0..1 on the engine's 0..127 scale (0.5 is exactly 64),
- * as a fraction of full scale. */
-static float knob(float v) {
-  v = clampf(v, 0.0f, 1.0f);
-  const float m = v <= 0.5f ? 128.0f * v : 126.0f * v + 1.0f;
-  return m / 127.0f;
-}
-
-static float c_exp(float lo, float hi, float v) { return lo * powf(hi / lo, knob(v)); }
-static float c_lin(float lo, float hi, float v) { return lo + (hi - lo) * knob(v); }
-static float c_sq(float lo, float hi, float v) {
-  const float u = knob(v);
-  return lo + (hi - lo) * u * u;
-}
-
-/* A bipolar amount: its magnitude through the curve, then its sign. */
-static float b_sq(float hi, float v) { return (v < 0.0f ? -1.0f : 1.0f) * c_sq(0.0f, hi, fabsf(v)); }
-/* A bipolar amount through the fourth power of its magnitude (the filter
- * envelope's depth: Tension's reading of the shared filter, and the
- * factory-preset renders). */
-static float b_q4(float hi, float v) {
-  const float u = knob(fabsf(v));
-  return (v < 0.0f ? -1.0f : 1.0f) * hi * u * u * u * u;
-}
-static float b_lin(float hi, float v) { return (v < 0.0f ? -1.0f : 1.0f) * c_lin(0.0f, hi, fabsf(v)); }
-
-static uint32_t xs_next(uint32_t* s) {
-  uint32_t x = *s;
-  x ^= x << 13;
-  x ^= x >> 17;
-  x ^= x << 5;
-  *s = x;
-  return x;
-}
-static float xs_unit(uint32_t* s) { return (float)(xs_next(s) >> 8) * (1.0f / 16777216.0f); }
-static float xs_bipolar(uint32_t* s) { return 2.0f * xs_unit(s) - 1.0f; }
-
 /* The engine's sine: a quintic on the phase in [0, 1) that meets sin(2 pi x)
  * at the quarter points, its small error a faint series of partials. */
 static float av_sine(double ph) {
@@ -227,156 +187,9 @@ static float blep(double ph, double edge, float dt) {
   return 0.5f * u * u;
 }
 
-/* ---- envelopes ---- */
-
-typedef struct av_env {
-  float attack, decay, release, sustain, sustain_time; /* seconds, level */
-  int exp_, loop, free_run;
-  float vel_level, vel_time; /* 0..8 */
-} av_env;
-
-static av_env read_env(const le_analog* d, int32_t c, int32_t base) {
-  av_env e;
-  const int32_t b = LE_ANALOG_CHAIN(c, base);
-  e.attack = c_exp(0.005f, 15.0f, d->values[b + LE_ANALOG_ENV_ATTACK]);
-  e.decay = c_exp(0.005f, 15.0f, d->values[b + LE_ANALOG_ENV_DECAY]);
-  e.release = c_exp(0.005f, 15.0f, d->values[b + LE_ANALOG_ENV_RELEASE]);
-  e.sustain = c_lin(0.0f, 1.0f, d->values[b + LE_ANALOG_ENV_SUSTAIN]);
-  e.sustain_time = c_exp(0.1f, 1000.0f, d->values[b + LE_ANALOG_ENV_SUSTAIN_TIME]);
-  e.exp_ = (int)d->values[b + LE_ANALOG_ENV_EXP];
-  e.loop = (int)d->values[b + LE_ANALOG_ENV_LOOP];
-  e.free_run = (int)d->values[b + LE_ANALOG_ENV_FREE_RUN];
-  e.vel_level = c_lin(0.0f, 8.0f, d->values[b + LE_ANALOG_ENV_VEL]);
-  e.vel_time = c_lin(0.0f, 8.0f, d->values[b + LE_ANALOG_ENV_ATTACK_VEL]);
-  return e;
-}
-
-static void env_segment(le_analog_env* e, int32_t seg, float to, float seconds, int exp_, float rate) {
-  e->seg = seg;
-  e->y0 = e->y;
-  e->to = to;
-  int32_t n = (int32_t)(seconds * rate);
-  if (n < 1) n = 1;
-  e->left = n;
-  e->step = (to - e->y) / (float)n;
-  e->c = exp_ ? 3.4906588f / (float)n : 0.0f;
-  if (e->c > 1.0f) e->c = 1.0f;
-}
-
-static float env_attack_time(const av_env* p, float vel) {
-  return p->attack * exp2f(-p->vel_time * (vel - 0.5f));
-}
-
-static void env_start(le_analog_env* e, const av_env* p, float vel, float rate, int from_current) {
-  e->scale = exp2f(p->vel_level * (vel - 0.5f));
-  if (!from_current) e->y = 0.0f;
-  env_segment(e, SEG_ATTACK, e->scale, env_attack_time(p, vel), p->exp_, rate);
-}
-
-/* fit: what the envelope renders show, where the reading differs. The
- * sustain stage is a fall from the sustain level to 0 over Sustain Time
- * (its top position holds); loop mode 1 repeats attack and decay while the
- * gate is held; mode 2 attack, decay and release; mode 3 lets the sustain
- * fall like mode 0, and at the gate's end rises again over the attack time
- * before the release. */
-static void env_release(le_analog_env* e, const av_env* p, float vel, float rate) {
-  if (e->seg == SEG_IDLE || e->seg == SEG_RELEASE) return;
-  if (p->loop == 3 && !(e->seg == SEG_POST && e->left >= 0)) {
-    env_segment(e, SEG_POST, e->scale, env_attack_time(p, vel), p->exp_, rate);
-    return;
-  }
-  env_segment(e, SEG_RELEASE, 0.0f, p->release, p->exp_, rate);
-}
-
-/* The segment after `seg` ends. `held`: the gate is on. */
-static void env_next(le_analog_env* e, const av_env* p, int held, float vel, float rate) {
-  switch (e->seg) {
-    case SEG_ATTACK:
-      env_segment(e, SEG_DECAY, p->sustain * e->scale, p->decay, p->exp_, rate);
-      break;
-    case SEG_DECAY:
-      if (p->loop == 1 && held) {
-        env_segment(e, SEG_ATTACK, e->scale, env_attack_time(p, vel), p->exp_, rate);
-      } else if (p->free_run || p->loop == 2) {
-        env_segment(e, SEG_RELEASE, 0.0f, p->release, p->exp_, rate);
-      } else if (p->sustain_time >= 999.0f) {
-        e->seg = SEG_SUSTAIN;
-        e->left = -1;
-      } else {
-        env_segment(e, SEG_SUSTAIN, 0.0f, p->sustain_time, p->exp_, rate);
-      }
-      break;
-    case SEG_SUSTAIN:
-      if (p->loop == 3) {
-        /* waits at 0 for the gate's end */
-        e->seg = SEG_POST;
-        e->left = -1;
-      } else {
-        e->seg = SEG_IDLE;
-      }
-      e->y = 0.0f;
-      break;
-    case SEG_POST:
-      /* mode 3's rise at the gate's end, then the release */
-      env_segment(e, SEG_RELEASE, 0.0f, p->release, p->exp_, rate);
-      break;
-    case SEG_RELEASE:
-      if (p->loop == 2 && held) {
-        env_segment(e, SEG_ATTACK, e->scale, env_attack_time(p, vel), p->exp_, rate);
-      } else {
-        e->seg = SEG_IDLE;
-        e->y = 0.0f;
-      }
-      break;
-    default:
-      break;
-  }
-}
-
-static float env_tick(le_analog_env* e, const av_env* p, int held, float vel, float rate) {
-  if (e->seg == SEG_IDLE) return 0.0f;
-  if (e->left < 0) return e->seg == SEG_SUSTAIN ? (e->y = p->sustain * e->scale) : e->y;
-  if (e->c > 0.0f) {
-    /* toward an overshoot so the one-pole lands on the target in time */
-    e->y = e->y * (1.0f - e->c) + e->c * (e->y0 + 1.0313935f * (e->to - e->y0));
-  } else {
-    e->y += e->step;
-  }
-  if (--e->left <= 0) {
-    e->y = e->to;
-    env_next(e, p, held, vel, rate);
-  }
-  return e->y;
-}
-
-/* ---- the LFO ---- */
-
-/* The tempo divisions 1..23 in beats per cycle: 16 bars down to an eighth,
- * each dotted, straight and triplet (index 0 is free running). */
-static float sync_beats(int32_t s) {
-  static const float bars[8] = {16.0f, 8.0f, 4.0f, 2.0f, 1.0f, 0.5f, 0.25f, 0.125f};
-  if (s < 1) s = 1;
-  if (s > 23) s = 23;
-  const int32_t i = (s - 1) / 3, kind = (s - 1) % 3;
-  const float beats = 4.0f * bars[i];
-  return kind == 0 ? 1.5f * beats : kind == 1 ? beats : beats * 2.0f / 3.0f;
-}
-
-static float lfo_shape(int32_t wave, double p, float w, float sh, float sh_prev) {
-  switch (wave) {
-    case 0: return sinf(2.0f * AV_PI * (float)p);
-    case 1: {
-      /* starts at its top (fit: the lfo-wave renders); the fall lasts w of
-       * the cycle */
-      const float x = (float)p;
-      return x < w ? 1.0f - 2.0f * x / w : -1.0f + 2.0f * (x - w) / (1.0f - w);
-    }
-    case 2: return p < w ? 1.0f : -1.0f;
-    case 3: return sh; /* sample and hold */
-    /* fit: noise ramps from one cycle's random value to the next (the
-     * lfo-wave renders) */
-    default: return sh_prev + (sh - sh_prev) * (float)p;
-  }
+/* A chain's envelope settings, from its knobs at `base`. */
+static le_aas_env_set read_env(const le_analog* d, int32_t c, int32_t base) {
+  return le_aas_env_read(&d->values[LE_ANALOG_CHAIN(c, base)]);
 }
 
 /* ---- voices ---- */
@@ -440,7 +253,7 @@ static float key_pitch(const le_analog* d, int32_t note) {
 
 /* fit: the glide time knob, 3 ms .. 9 s (the glide renders' time
  * constants at two settings) */
-static float glide_seconds(const le_analog* d) { return c_exp(0.003f, 9.0f, vf(d, LE_ANALOG_GLIDE_TIME)); }
+static float glide_seconds(const le_analog* d) { return le_aas_exp(0.003f, 9.0f, vf(d, LE_ANALOG_GLIDE_TIME)); }
 
 /* The mono note among the held keys: 0 the highest, 1 the lowest, 2 the
  * newest (fit: the glide renders start at the lower key's release with
@@ -462,15 +275,15 @@ static void start_copy(le_analog* d, le_analog_voice* v, le_analog_copy* cp) {
   cp->noise_lp = 0.0f;
   for (int32_t c = 0; c < 2; ++c) {
     le_analog_chain* ch = &cp->ch[c];
-    const av_env fe = read_env(d, c, LE_ANALOG_FILTER_ENV);
-    const av_env ae = read_env(d, c, LE_ANALOG_AMP_ENV);
-    env_start(&ch->fenv, &fe, v->velocity, rate, 0);
-    env_start(&ch->aenv, &ae, v->velocity, rate, 0);
-    memset(ch->s, 0, sizeof(ch->s));
+    const le_aas_env_set fe = read_env(d, c, LE_ANALOG_FILTER_ENV);
+    const le_aas_env_set ae = read_env(d, c, LE_ANALOG_AMP_ENV);
+    le_aas_env_start(&ch->fenv, &fe, v->velocity, rate, 0);
+    le_aas_env_start(&ch->aenv, &ae, v->velocity, rate, 0);
+    memset(ch->f.s, 0, sizeof(ch->f.s));
     ch->dc = 0.0f;
     ch->noise_lp = 0.0f;
     ch->penv = 1.0f;
-    ch->penv_step = 1.0f / fmaxf(c_exp(0.01f, 10.0f, cf(d, c, LE_ANALOG_OSC_ENV_TIME)) * rate, 1.0f);
+    ch->penv_step = 1.0f / fmaxf(le_aas_exp(0.01f, 10.0f, cf(d, c, LE_ANALOG_OSC_ENV_TIME)) * rate, 1.0f);
     ch->ph = ch->ph2 = 0.0;
     ch->sub_sign = 1;
     if (ci(d, c, LE_ANALOG_LFO_GATE_RESET)) {
@@ -478,8 +291,8 @@ static void start_copy(le_analog* d, le_analog_voice* v, le_analog_copy* cp) {
     }
     /* fit: the random waves start from a random value, noise held there
      * for the first cycle (the lfo-wave renders) */
-    ch->lfo_sh = ch->lfo_sh_prev = xs_bipolar(&cp->rng);
-    ch->lfo_wait = c_exp(0.2f, 5.0f, cf(d, c, LE_ANALOG_LFO_DELAY));
+    ch->lfo_sh = ch->lfo_sh_prev = le_aas_bipolar(&cp->rng);
+    ch->lfo_wait = le_aas_exp(0.2f, 5.0f, cf(d, c, LE_ANALOG_LFO_DELAY));
     if (cf(d, c, LE_ANALOG_LFO_DELAY) <= 0.0f) ch->lfo_wait = 0.0f;
     ch->lfo_amp = cf(d, c, LE_ANALOG_LFO_FADE) <= 0.0f ? 1.0f : 0.0f;
     ch->gl = ch->gr = -1.0f;
@@ -488,7 +301,7 @@ static void start_copy(le_analog* d, le_analog_voice* v, le_analog_copy* cp) {
 
 /* The unison amounts' curve: Exp(lo, hi) on m = 127 v, exactly 0 at 0. */
 static float unison_expz(float lo, float hi, float v) {
-  const float m = 127.0f * clampf(v, 0.0f, 1.0f);
+  const float m = 127.0f * le_aas_clamp(v, 0.0f, 1.0f);
   return m <= 0.0f ? 0.0f : lo * powf(hi / lo, m / 127.0f);
 }
 
@@ -552,10 +365,10 @@ static void release_voice(le_analog* d, le_analog_voice* v) {
   const float rate = (float)d->sample_rate;
   for (int32_t k = 0; k < v->copies; ++k) {
     for (int32_t c = 0; c < 2; ++c) {
-      const av_env fe = read_env(d, c, LE_ANALOG_FILTER_ENV);
-      const av_env ae = read_env(d, c, LE_ANALOG_AMP_ENV);
-      env_release(&v->c[k].ch[c].fenv, &fe, v->velocity, rate);
-      env_release(&v->c[k].ch[c].aenv, &ae, v->velocity, rate);
+      const le_aas_env_set fe = read_env(d, c, LE_ANALOG_FILTER_ENV);
+      const le_aas_env_set ae = read_env(d, c, LE_ANALOG_AMP_ENV);
+      le_aas_env_release(&v->c[k].ch[c].fenv, &fe, v->velocity, rate);
+      le_aas_env_release(&v->c[k].ch[c].aenv, &ae, v->velocity, rate);
     }
   }
 }
@@ -576,7 +389,7 @@ int32_t le_analog_init(le_analog* d, int32_t sample_rate) {
   for (int32_t i = 0; i < LE_ANALOG_VOICE_SLOTS; ++i) {
     for (int32_t k = 0; k < LE_ANALOG_COPIES; ++k) {
       d->voices[i].c[k].rng = 0x9e3779b9u ^ (uint32_t)((i * LE_ANALOG_COPIES + k + 1) * 2654435761u);
-      for (int32_t c = 0; c < 2; ++c) d->voices[i].c[k].ch[c].fenv.seg = d->voices[i].c[k].ch[c].aenv.seg = SEG_IDLE;
+      for (int32_t c = 0; c < 2; ++c) d->voices[i].c[k].ch[c].fenv.seg = d->voices[i].c[k].ch[c].aenv.seg = LE_AAS_SEG_IDLE;
     }
   }
   return 0;
@@ -629,10 +442,10 @@ int32_t le_analog_note_on(le_analog* d, uint32_t origin, int32_t note, int32_t v
           le_analog_chain* ch = &v->c[k].ch[c];
           const int fleg = overlapping && was_held && ci(d, c, LE_ANALOG_FILTER_ENV + LE_ANALOG_ENV_LEGATO);
           const int aleg = overlapping && was_held && ci(d, c, LE_ANALOG_AMP_ENV + LE_ANALOG_ENV_LEGATO);
-          const av_env fe = read_env(d, c, LE_ANALOG_FILTER_ENV);
-          const av_env ae = read_env(d, c, LE_ANALOG_AMP_ENV);
-          if (!fleg) env_start(&ch->fenv, &fe, vel, (float)d->sample_rate, 1);
-          if (!aleg) env_start(&ch->aenv, &ae, vel, (float)d->sample_rate, 1);
+          const le_aas_env_set fe = read_env(d, c, LE_ANALOG_FILTER_ENV);
+          const le_aas_env_set ae = read_env(d, c, LE_ANALOG_AMP_ENV);
+          if (!fleg) le_aas_env_start(&ch->fenv, &fe, vel, (float)d->sample_rate, 1);
+          if (!aleg) le_aas_env_start(&ch->aenv, &ae, vel, (float)d->sample_rate, 1);
         }
       }
       held_push(d, origin, note);
@@ -711,7 +524,7 @@ int32_t le_analog_sustain(le_analog* d, uint32_t origin, int on) {
 void le_analog_expression(le_analog* d, int32_t kind, float value) {
   if (d == NULL || value != value) return;
   const float lo = kind == LE_SYNTH_BEND ? -1.0f : 0.0f;
-  value = clampf(value, lo, 1.0f);
+  value = le_aas_clamp(value, lo, 1.0f);
   if (kind == LE_SYNTH_BEND) d->bend = value;
   else if (kind == LE_SYNTH_MOD) d->mod = value;
   else if (kind == LE_SYNTH_PRESSURE) d->pressure = value;
@@ -796,46 +609,6 @@ void le_analog_set_voice_limit(le_analog* d, int32_t limit) {
 /* Per chain, the values one tick holds. */
 typedef le_analog_tick av_tick;
 
-/* The formant filter's vowels, Peterson and Barney's adult-male averages
- * (1952): F1..F3 in Hz and their levels in dB, for i, I, E, ae, a, open o,
- * U, u, ^ and the r-coloured vowel. fit: a's F1 at 660 Hz, not their 730,
- * where the formant renders put it. */
-static const float kVowelHz[10][3] = {
-    {270.0f, 2290.0f, 3010.0f}, {390.0f, 1990.0f, 2550.0f}, {530.0f, 1840.0f, 2480.0f},
-    {660.0f, 1720.0f, 2410.0f}, {660.0f, 1090.0f, 2440.0f}, {570.0f, 840.0f, 2410.0f},
-    {440.0f, 1020.0f, 2240.0f}, {300.0f, 870.0f, 2240.0f},  {640.0f, 1190.0f, 2390.0f},
-    {490.0f, 1350.0f, 1690.0f}};
-static const float kVowelDb[10][3] = {
-    {-4.0f, -24.0f, -28.0f}, {-3.0f, -23.0f, -27.0f}, {-2.0f, -17.0f, -24.0f}, {-1.0f, -12.0f, -22.0f},
-    {-1.0f, -5.0f, -28.0f},  {0.0f, -7.0f, -34.0f},   {-1.0f, -12.0f, -34.0f}, {-3.0f, -19.0f, -43.0f},
-    {-1.0f, -10.0f, -27.0f}, {-5.0f, -15.0f, -20.0f}};
-
-/* The formant types' coefficients: three band-passes at a vowel's
- * formants. The Q knob's position (plus its modulation, 64 steps an
- * octave) picks the vowel, 0..9 across the knob; the cutoff knob moves all
- * three an octave either way of a 270 Hz reference, by its whole steps,
- * and the cutoff modulation moves them smoothly. Formant 6 rings at Q 20,
- * Formant 12 at 45. */
-static void formant_tick(const le_analog* d, le_analog_chain* ch, int32_t c, float e_cut, float e_q,
-                         float rate) {
-  const float m_q = roundf(knob(cf(d, c, LE_ANALOG_FILTER_Q)) * 127.0f);
-  const float m_c = roundf(knob(cf(d, c, LE_ANALOG_FILTER_CUTOFF)) * 127.0f);
-  const float vowel = 0.072f * (clampf(m_q + 64.0f * e_q, 1.0f, 126.0f) - 1.0f);
-  const int32_t i0 = vowel >= 9.0f ? 8 : (int32_t)vowel;
-  const float w = vowel - (float)i0;
-  const float ref = fmaxf(270.0f * exp2f(e_cut + 2.0f * m_c / 127.0f - 1.0f), 20.0f);
-  const float q = ci(d, c, LE_ANALOG_FILTER_TYPE) == 8 ? 20.0f : 45.0f;
-  for (int32_t b = 0; b < 3; ++b) {
-    const float hz = kVowelHz[i0][b] + w * (kVowelHz[i0 + 1][b] - kVowelHz[i0][b]);
-    const float l0 = powf(10.0f, kVowelDb[i0][b] / 20.0f), l1 = powf(10.0f, kVowelDb[i0 + 1][b] / 20.0f);
-    const float f = clampf(hz / 270.0f * ref, 10.0f, 0.49f * rate);
-    ch->g[b] = tanf(AV_PI * f / rate);
-    /* the band node peaks at q: each band at 1 / q peaks at unity */
-    ch->level[b] = 8.0f / sqrtf(q) * (l0 + w * (l1 - l0)) * (b == 1 ? -1.0f : 1.0f);
-  }
-  ch->k = 1.0f / q;
-}
-
 static void tick_chain(le_analog* d, le_analog_voice* v, le_analog_copy* cp, int32_t c,
                        float pitch_cv, float vib, av_tick* t, float f1_fc) {
   const float rate = (float)d->sample_rate;
@@ -846,46 +619,46 @@ static void tick_chain(le_analog* d, le_analog_voice* v, le_analog_copy* cp, int
   if (ci(d, c, LE_ANALOG_LFO_ON)) {
     float hz;
     if (ci(d, c, LE_ANALOG_LFO_SYNC_ON) && ci(d, c, LE_ANALOG_LFO_SYNC) > 0) {
-      hz = d->bpm / 60.0f / sync_beats(ci(d, c, LE_ANALOG_LFO_SYNC));
+      hz = d->bpm / 60.0f / le_aas_sync_beats(ci(d, c, LE_ANALOG_LFO_SYNC));
     } else {
-      hz = c_exp(3.0f, 1000.0f, cf(d, c, LE_ANALOG_LFO_SPEED)) / 60.0f;
+      hz = le_aas_exp(3.0f, 1000.0f, cf(d, c, LE_ANALOG_LFO_SPEED)) / 60.0f;
     }
-    const float w = 0.05f + 0.9f * knob(cf(d, c, LE_ANALOG_LFO_PW));
+    const float w = 0.05f + 0.9f * le_aas_knob(cf(d, c, LE_ANALOG_LFO_PW));
     const double before = ch->lfo_ph;
     ch->lfo_ph += (double)(hz * dt);
     if (ch->lfo_ph >= 1.0) {
       ch->lfo_ph -= floor(ch->lfo_ph);
       ch->lfo_sh_prev = ch->lfo_sh;
-      ch->lfo_sh = xs_bipolar(&cp->rng);
+      ch->lfo_sh = le_aas_bipolar(&cp->rng);
     }
     const int32_t wave = ci(d, c, LE_ANALOG_LFO_WAVE);
-    float y = lfo_shape(wave, before, w, ch->lfo_sh, ch->lfo_sh_prev);
+    float y = le_aas_lfo_shape(wave, before, w, ch->lfo_sh, ch->lfo_sh_prev);
     if (ch->lfo_wait > 0.0f) {
       ch->lfo_wait -= dt;
       y = 0.0f;
     } else if (ch->lfo_amp < 1.0f) {
-      const float fade = c_exp(0.2f, 5.0f, cf(d, c, LE_ANALOG_LFO_FADE));
+      const float fade = le_aas_exp(0.2f, 5.0f, cf(d, c, LE_ANALOG_LFO_FADE));
       ch->lfo_amp = fminf(ch->lfo_amp + dt / fade, 1.0f);
     }
     lfo = y * ch->lfo_amp;
   }
   ch->lfo = lfo;
   /* the oscillator's pitch */
-  const float det = knob(cf(d, c, LE_ANALOG_OSC_DETUNE)) * 127.0f / 64.0f - 1.0f;
+  const float det = le_aas_knob(cf(d, c, LE_ANALOG_OSC_DETUNE)) * 127.0f / 64.0f - 1.0f;
   const float base = (float)ci(d, c, LE_ANALOG_OSC_OCT) + (float)ci(d, c, LE_ANALOG_OSC_SEMI) / 12.0f +
                      (det < 0.0f ? -0.25f : 0.25f) * det * det;
-  const float m1 = knob(cf(d, c, LE_ANALOG_OSC_MOD1)) * 127.0f / 64.0f;
+  const float m1 = le_aas_knob(cf(d, c, LE_ANALOG_OSC_MOD1)) * 127.0f / 64.0f;
   const float k1 = m1 * m1;
   const float env_amt = cf(d, c, LE_ANALOG_OSC_ENV_AMOUNT) != 0.0f
                             ? (cf(d, c, LE_ANALOG_OSC_ENV_AMOUNT) < 0.0f ? -1.0f : 1.0f) *
-                                  c_exp(0.01f, 6.0f, fabsf(cf(d, c, LE_ANALOG_OSC_ENV_AMOUNT)))
+                                  le_aas_exp(0.01f, 6.0f, fabsf(cf(d, c, LE_ANALOG_OSC_ENV_AMOUNT)))
                             : 0.0f;
-  const float lfo_pitch = b_sq(4.0f, cf(d, c, LE_ANALOG_OSC_LFO_PITCH)) * lfo;
-  const float key = clampf(pitch_cv + cp->detune + vib, -8.0f, 8.0f);
+  const float lfo_pitch = le_aas_bsq(4.0f, cf(d, c, LE_ANALOG_OSC_LFO_PITCH)) * lfo;
+  const float key = le_aas_clamp(pitch_cv + cp->detune + vib, -8.0f, 8.0f);
   const float sync = ci(d, c, LE_ANALOG_OSC_MODE) == 1 && ci(d, c, LE_ANALOG_OSC_SHAPE) != 0;
   const float f_key = AV_C4 * exp2f(base + k1 * key);
   if (sync) {
-    t->ratio = c_exp(1.0f, 20.0f, cf(d, c, LE_ANALOG_OSC_SUB));
+    t->ratio = le_aas_exp(1.0f, 20.0f, cf(d, c, LE_ANALOG_OSC_SUB));
     ch->inc_m = fminf(f_key, 0.25f * rate) / rate;
     ch->inc = fminf(fmaxf(f_key * t->ratio * exp2f(lfo_pitch + env_amt * ch->penv), f_key), 0.45f * rate) / rate;
     t->sub = 0.0f;
@@ -893,58 +666,61 @@ static void tick_chain(le_analog* d, le_analog_voice* v, le_analog_copy* cp, int
     const float f = f_key * exp2f(lfo_pitch + env_amt * ch->penv);
     ch->inc = fminf(f, 0.25f * rate) / rate;
     ch->inc_m = ch->inc;
-    const float s = c_exp(0.01f, 1.0f, cf(d, c, LE_ANALOG_OSC_SUB));
+    const float s = le_aas_exp(0.01f, 1.0f, cf(d, c, LE_ANALOG_OSC_SUB));
     t->sub = s <= 0.0101f ? 0.0f : s;
     t->ratio = 1.0f;
   }
   ch->penv = fmaxf(ch->penv - ch->penv_step * (float)LE_ANALOG_TICK, 0.0f);
   /* the pulse width, folded into its range, then the LFO */
-  float pw = 0.0365f + 0.4635f * knob(cf(d, c, LE_ANALOG_OSC_PW));
-  pw *= 1.0f + 0.8f * b_sq(1.0f, cf(d, c, LE_ANALOG_OSC_LFO_PW)) * lfo;
-  t->pw = clampf(pw, 0.02f, 0.98f);
+  float pw = 0.0365f + 0.4635f * le_aas_knob(cf(d, c, LE_ANALOG_OSC_PW));
+  pw *= 1.0f + 0.8f * le_aas_bsq(1.0f, cf(d, c, LE_ANALOG_OSC_LFO_PW)) * lfo;
+  t->pw = le_aas_clamp(pw, 0.02f, 0.98f);
   /* the routing: equal power into the two filters */
-  const float lvl = ci(d, c, LE_ANALOG_OSC_ON) ? c_exp(0.01f, 3.0f, cf(d, c, LE_ANALOG_OSC_LEVEL)) : 0.0f;
+  const float lvl = ci(d, c, LE_ANALOG_OSC_ON) ? le_aas_exp(0.01f, 3.0f, cf(d, c, LE_ANALOG_OSC_LEVEL)) : 0.0f;
   /* fit: the stored balance runs from filter 2 (0) to filter 1 (1) (the
    * routing renders; the factory presets store osc 1 at 1, osc 2 at 0) */
-  const float bal = knob(cf(d, c, LE_ANALOG_OSC_BALANCE));
-  t->to_f1 = lvl * sinf(0.5f * AV_PI * bal);
-  t->to_f2 = lvl * cosf(0.5f * AV_PI * bal);
+  const float bal = le_aas_knob(cf(d, c, LE_ANALOG_OSC_BALANCE));
+  t->to_f1 = lvl * sinf(0.5f * LE_AAS_PI * bal);
+  t->to_f2 = lvl * cosf(0.5f * LE_AAS_PI * bal);
   /* the filter */
   const float fenv = ch->fenv.y;
-  const float e_cut = b_sq(4.0f, cf(d, c, LE_ANALOG_FILTER_KEY_CUTOFF)) * (pitch_cv + vib) +
-                      b_sq(4.0f, cf(d, c, LE_ANALOG_FILTER_LFO_CUTOFF)) * lfo +
-                      b_q4(16.0f, cf(d, c, LE_ANALOG_FILTER_ENV_CUTOFF)) * fenv;
+  const float e_cut = le_aas_bsq(4.0f, cf(d, c, LE_ANALOG_FILTER_KEY_CUTOFF)) * (pitch_cv + vib) +
+                      le_aas_bsq(4.0f, cf(d, c, LE_ANALOG_FILTER_LFO_CUTOFF)) * lfo +
+                      le_aas_bq4(16.0f, cf(d, c, LE_ANALOG_FILTER_ENV_CUTOFF)) * fenv;
   float fc;
   if (c == 1 && ci(d, 1, LE_ANALOG_CHAIN_LINK)) {
     /* filter 2 follows filter 1, its knob a ratio of +-2 octaves */
-    fc = f1_fc * exp2f(knob(cf(d, 1, LE_ANALOG_FILTER_CUTOFF)) * 127.0f / 32.0f - 2.0f) * exp2f(e_cut);
+    fc = f1_fc * exp2f(le_aas_knob(cf(d, 1, LE_ANALOG_FILTER_CUTOFF)) * 127.0f / 32.0f - 2.0f) * exp2f(e_cut);
   } else {
-    fc = c_exp(30.0f, 22000.0f, cf(d, c, LE_ANALOG_FILTER_CUTOFF)) * exp2f(e_cut);
+    fc = le_aas_exp(30.0f, 22000.0f, cf(d, c, LE_ANALOG_FILTER_CUTOFF)) * exp2f(e_cut);
   }
   fc = fmaxf(fc, 20.0f);
   ch->fc = fc;
-  const float e_q = b_sq(4.0f, cf(d, c, LE_ANALOG_FILTER_KEY_Q)) * pitch_cv +
-                    b_sq(4.0f, cf(d, c, LE_ANALOG_FILTER_LFO_Q)) * lfo +
-                    b_sq(4.0f, cf(d, c, LE_ANALOG_FILTER_ENV_Q)) * fenv;
-  t->q = fminf(c_exp(0.1f, 120.0f, cf(d, c, LE_ANALOG_FILTER_Q)) * exp2f(e_q), 100.0f);
+  const float e_q = le_aas_bsq(4.0f, cf(d, c, LE_ANALOG_FILTER_KEY_Q)) * pitch_cv +
+                    le_aas_bsq(4.0f, cf(d, c, LE_ANALOG_FILTER_LFO_Q)) * lfo +
+                    le_aas_bsq(4.0f, cf(d, c, LE_ANALOG_FILTER_ENV_Q)) * fenv;
+  t->q = fminf(le_aas_exp(0.1f, 120.0f, cf(d, c, LE_ANALOG_FILTER_Q)) * exp2f(e_q), 100.0f);
   t->fc = fminf(fmaxf(fc, 10.0f), 0.49f * rate);
-  if (ci(d, c, LE_ANALOG_FILTER_TYPE) >= 8) formant_tick(d, ch, c, e_cut, e_q, rate);
+  if (ci(d, c, LE_ANALOG_FILTER_TYPE) >= 8) {
+    le_aas_formant_set(&ch->f, ci(d, c, LE_ANALOG_FILTER_TYPE), cf(d, c, LE_ANALOG_FILTER_CUTOFF),
+                       cf(d, c, LE_ANALOG_FILTER_Q), e_cut, e_q, rate);
+  }
   /* the amp: level, envelope, LFO, key; the pan */
   const float aenv = ch->aenv.y;
   float gain = 0.0f;
   if (ci(d, c, LE_ANALOG_AMP_ON)) {
-    gain = c_exp(0.01f, 2.0f, cf(d, c, LE_ANALOG_AMP_LEVEL)) * aenv *
-           (1.0f + b_sq(1.0f, cf(d, c, LE_ANALOG_AMP_LFO_VOL)) * lfo) *
-           expf(b_lin(1.0f, cf(d, c, LE_ANALOG_AMP_KEY_VOL)) * v->pitch);
+    gain = le_aas_exp(0.01f, 2.0f, cf(d, c, LE_ANALOG_AMP_LEVEL)) * aenv *
+           (1.0f + le_aas_bsq(1.0f, cf(d, c, LE_ANALOG_AMP_LFO_VOL)) * lfo) *
+           expf(le_aas_blin(1.0f, cf(d, c, LE_ANALOG_AMP_KEY_VOL)) * v->pitch);
   }
   /* fit: the pan is its stored value, centred exactly at 0.5 (the pan
    * renders), not a 128-step knob position */
-  const float p = clampf(cf(d, c, LE_ANALOG_AMP_PAN), 0.0f, 1.0f);
-  const float pm = clampf(b_lin(1.0f, cf(d, c, LE_ANALOG_AMP_KEY_PAN)) * v->pitch, -1.0f, 1.0f) +
-                   b_lin(1.0f, cf(d, c, LE_ANALOG_AMP_ENV_PAN)) * aenv +
-                   b_sq(1.0f, cf(d, c, LE_ANALOG_AMP_LFO_PAN)) * lfo;
-  const float pp = clampf(p < 0.5f ? p + p * pm : p + pm * (1.0f - p), 0.0f, 1.0f);
-  const float gl = gain * cosf(0.5f * AV_PI * pp), gr = gain * sinf(0.5f * AV_PI * pp);
+  const float p = le_aas_clamp(cf(d, c, LE_ANALOG_AMP_PAN), 0.0f, 1.0f);
+  const float pm = le_aas_clamp(le_aas_blin(1.0f, cf(d, c, LE_ANALOG_AMP_KEY_PAN)) * v->pitch, -1.0f, 1.0f) +
+                   le_aas_blin(1.0f, cf(d, c, LE_ANALOG_AMP_ENV_PAN)) * aenv +
+                   le_aas_bsq(1.0f, cf(d, c, LE_ANALOG_AMP_LFO_PAN)) * lfo;
+  const float pp = le_aas_clamp(p < 0.5f ? p + p * pm : p + pm * (1.0f - p), 0.0f, 1.0f);
+  const float gl = gain * cosf(0.5f * LE_AAS_PI * pp), gr = gain * sinf(0.5f * LE_AAS_PI * pp);
   if (ch->gl < 0.0f) {
     ch->gl = gl;
     ch->gr = gr;
@@ -973,7 +749,7 @@ static float osc_tick(le_analog_chain* ch, int32_t shape, const av_tick* t, uint
       return y;
     }
     case 3:
-      return 0.9f * xs_bipolar(rng);
+      return 0.9f * le_aas_bipolar(rng);
     default:
       break;
   }
@@ -1006,44 +782,15 @@ static float osc_tick(le_analog_chain* ch, int32_t shape, const av_tick* t, uint
   return y - ch->dc;
 }
 
-/* The 2-pole core: low, band, notch or high, Q per stage. */
-static float core(float* s, float x, float g, float k, int32_t type) {
-  const float h = 1.0f / (1.0f + g * (g + k));
-  const float b = (g * (x - s[1]) + s[0]) * h;
-  const float l = s[1] + g * b;
-  s[0] = 2.0f * b - s[0];
-  s[1] = 2.0f * l - s[1];
-  switch (type) {
-    case 0: return l;
-    case 1: return b; /* fit: the band node itself, peaking at Q */
-    case 2: return x - k * b;
-    default: return x - k * b - l;
-  }
-}
-
-/* Drive: unchanged up to 1, bending smoothly toward a ceiling beyond. */
-static float drive(float x, int32_t mode) {
-  static const float kGain[7] = {1.0f, 1.0f, 1.41421356f, 2.0f, 1.0f, 1.41421356f, 2.0f};
-  static const float kPos[7] = {0.0f, 8.0f, 4.0f, 2.0f, 4.0f, 2.0f, 1.3f};
-  if (mode <= 0) return x;
-  const float u = kGain[mode] * x;
-  const float a = fabsf(u);
-  if (a <= 1.0f) return u;
-  const float L = u > 0.0f ? kPos[mode] : (mode >= 4 ? 8.0f : kPos[mode]);
-  const float r = 1.0f + (a - 1.0f) / (3.0f * (L - 1.0f));
-  const float y = L - (L - 1.0f) / (r * r * r);
-  return u > 0.0f ? y : -y;
-}
-
 static void render_voice(le_analog* d, le_analog_voice* v, float* left, float* right, int32_t frames) {
   const float rate = (float)d->sample_rate;
   /* fit: the bundle's x4 does not reach Live's output (the level renders) */
-  const float out_gain = c_sq(0.0f, 2.0f, vf(d, LE_ANALOG_VOLUME));
+  const float out_gain = le_aas_sq(0.0f, 2.0f, vf(d, LE_ANALOG_VOLUME));
   const float fade_step = 1.0f / (float)(LE_ANALOG_FADE_MS * v->fade_len);
   const int noise_on = vi(d, LE_ANALOG_NOISE_ON);
-  const float noise_lvl = noise_on ? c_exp(0.01f, 3.0f, vf(d, LE_ANALOG_NOISE_LEVEL)) : 0.0f;
-  const float noise_bal = knob(vf(d, LE_ANALOG_NOISE_BALANCE));
-  const float noise_a = fminf(2.0f * AV_PI * c_exp(20.0f, 22000.0f, vf(d, LE_ANALOG_NOISE_COLOR)) / rate, 1.0f);
+  const float noise_lvl = noise_on ? le_aas_exp(0.01f, 3.0f, vf(d, LE_ANALOG_NOISE_LEVEL)) : 0.0f;
+  const float noise_bal = le_aas_knob(vf(d, LE_ANALOG_NOISE_BALANCE));
+  const float noise_a = fminf(2.0f * LE_AAS_PI * le_aas_exp(20.0f, 22000.0f, vf(d, LE_ANALOG_NOISE_COLOR)) / rate, 1.0f);
   int32_t i = 0;
   while (i < frames && v->state != LE_ANALOG_VOICE_FREE) {
     if (v->tick_left == 0) {
@@ -1051,7 +798,7 @@ static void render_voice(le_analog* d, le_analog_voice* v, float* left, float* r
       if (vi(d, LE_ANALOG_GLIDE_ON) && v->pitch != v->pitch_to) {
         float T = glide_seconds(d);
         if (vi(d, LE_ANALOG_GLIDE_MODE)) T *= sqrtf(fabsf(v->pitch_to - v->pitch));
-        const float a = fminf(2.0f * AV_PI / (fmaxf(T, 1e-4f) * rate), 1.0f);
+        const float a = fminf(2.0f * LE_AAS_PI / (fmaxf(T, 1e-4f) * rate), 1.0f);
         v->pitch = v->pitch_to + (v->pitch - v->pitch_to) * powf(1.0f - a, (float)LE_ANALOG_TICK);
         if (fabsf(v->pitch - v->pitch_to) < 1e-5f) v->pitch = v->pitch_to;
       } else {
@@ -1061,39 +808,34 @@ static void render_voice(le_analog* d, le_analog_voice* v, float* left, float* r
       const float dtk = (float)LE_ANALOG_TICK / rate;
       v->vib_t += dtk;
       if (vi(d, LE_ANALOG_VIBRATO_ON)) {
-        const float hz = c_lin(0.25f, 10.0f, vf(d, LE_ANALOG_VIBRATO_SPEED));
+        const float hz = le_aas_lin(0.25f, 10.0f, vf(d, LE_ANALOG_VIBRATO_SPEED));
         float depth = (vf(d, LE_ANALOG_VIBRATO_AMOUNT) > 0.0f
-                           ? c_exp(0.0002f, 1.0f / 6.0f, vf(d, LE_ANALOG_VIBRATO_AMOUNT))
+                           ? le_aas_exp(0.0002f, 1.0f / 6.0f, vf(d, LE_ANALOG_VIBRATO_AMOUNT))
                            : 0.0f) +
                       d->mod * (vf(d, LE_ANALOG_VIBRATO_WHEEL) > 0.0f
-                                    ? c_exp(0.0002f, 1.0f / 6.0f, vf(d, LE_ANALOG_VIBRATO_WHEEL))
+                                    ? le_aas_exp(0.0002f, 1.0f / 6.0f, vf(d, LE_ANALOG_VIBRATO_WHEEL))
                                     : 0.0f);
         const float delay =
-            vf(d, LE_ANALOG_VIBRATO_DELAY) > 0.0f ? c_exp(0.05f, 5.0f, vf(d, LE_ANALOG_VIBRATO_DELAY)) : 0.0f;
+            vf(d, LE_ANALOG_VIBRATO_DELAY) > 0.0f ? le_aas_exp(0.05f, 5.0f, vf(d, LE_ANALOG_VIBRATO_DELAY)) : 0.0f;
         const float fade =
-            vf(d, LE_ANALOG_VIBRATO_FADE) > 0.0f ? c_exp(0.05f, 5.0f, vf(d, LE_ANALOG_VIBRATO_FADE)) : 0.0f;
+            vf(d, LE_ANALOG_VIBRATO_FADE) > 0.0f ? le_aas_exp(0.05f, 5.0f, vf(d, LE_ANALOG_VIBRATO_FADE)) : 0.0f;
         if (v->vib_t < delay) depth = 0.0f;
         else if (fade > 0.0f) depth *= fminf((v->vib_t - delay) / fade, 1.0f);
         v->vib_ph += (double)(hz * dtk);
         v->vib_ph -= floor(v->vib_ph);
-        vib = depth * sinf(2.0f * AV_PI * (float)v->vib_ph);
+        vib = depth * sinf(2.0f * LE_AAS_PI * (float)v->vib_ph);
       }
       const float pitch_cv = v->pitch + vf(d, LE_ANALOG_BEND_RANGE) * d->bend;
       for (int32_t k = 0; k < v->copies; ++k) {
         le_analog_copy* cp = &v->c[k];
         tick_chain(d, v, cp, 0, pitch_cv, vib, &cp->ch[0].t, 0.0f);
         tick_chain(d, v, cp, 1, pitch_cv, vib, &cp->ch[1].t, cp->ch[0].fc);
-        cp->ch[0].t.link = knob(cf(d, 0, LE_ANALOG_CHAIN_LINK));
+        cp->ch[0].t.link = le_aas_knob(cf(d, 0, LE_ANALOG_CHAIN_LINK));
         cp->ch[0].t.link = 2.0f * cp->ch[0].t.link * cp->ch[0].t.link;
         for (int32_t c = 0; c < 2; ++c) {
           const float q = cp->ch[c].t.q;
           const int32_t ft = ci(d, c, LE_ANALOG_FILTER_TYPE);
-          if (ft >= 8) continue; /* formant_tick set them */
-          /* fit: BP12's two stages each take the full Q (the BP12 render);
-           * the other 4-pole types take sqrt(Q) each */
-          const float qs = ft % 2 == 1 && ft != 3 ? sqrtf(q) : q;
-          cp->ch[c].g[0] = tanf(AV_PI * cp->ch[c].t.fc / rate);
-          cp->ch[c].k = 1.0f / fmaxf(qs, 0.01f);
+          if (ft < 8) le_aas_filter_set(&cp->ch[c].f, ft, cp->ch[c].t.fc, q, rate);
         }
       }
       v->tick_left = LE_ANALOG_TICK;
@@ -1109,7 +851,7 @@ static void render_voice(le_analog* d, le_analog_voice* v, float* left, float* r
       }
       const int32_t s0 = v->since < cp->delay ? cp->delay - v->since : 0;
       const int held = v->state == LE_ANALOG_VOICE_HELD || v->state == LE_ANALOG_VOICE_SUSTAINED;
-      av_env fe[2], ae[2];
+      le_aas_env_set fe[2], ae[2];
       for (int32_t c = 0; c < 2; ++c) {
         fe[c] = read_env(d, c, LE_ANALOG_FILTER_ENV);
         ae[c] = read_env(d, c, LE_ANALOG_AMP_ENV);
@@ -1118,8 +860,8 @@ static void render_voice(le_analog* d, le_analog_voice* v, float* left, float* r
         float pre[2] = {0.0f, 0.0f};
         for (int32_t c = 0; c < 2; ++c) {
           le_analog_chain* ch = &cp->ch[c];
-          (void)env_tick(&ch->fenv, &fe[c], held, v->velocity, rate);
-          (void)env_tick(&ch->aenv, &ae[c], held, v->velocity, rate);
+          (void)le_aas_env_tick(&ch->fenv, &fe[c], held, v->velocity, rate);
+          (void)le_aas_env_tick(&ch->aenv, &ae[c], held, v->velocity, rate);
           if (ci(d, c, LE_ANALOG_OSC_ON)) {
             const float o = osc_tick(ch, ci(d, c, LE_ANALOG_OSC_SHAPE), &cp->ch[c].t, &cp->rng);
             pre[0] += cp->ch[c].t.to_f1 * o;
@@ -1127,9 +869,9 @@ static void render_voice(le_analog* d, le_analog_voice* v, float* left, float* r
           }
         }
         if (noise_on) {
-          cp->noise_lp += noise_a * (0.9f * xs_bipolar(&cp->rng) - cp->noise_lp);
-          pre[0] += noise_lvl * sinf(0.5f * AV_PI * noise_bal) * cp->noise_lp;
-          pre[1] += noise_lvl * cosf(0.5f * AV_PI * noise_bal) * cp->noise_lp;
+          cp->noise_lp += noise_a * (0.9f * le_aas_bipolar(&cp->rng) - cp->noise_lp);
+          pre[0] += noise_lvl * sinf(0.5f * LE_AAS_PI * noise_bal) * cp->noise_lp;
+          pre[1] += noise_lvl * cosf(0.5f * LE_AAS_PI * noise_bal) * cp->noise_lp;
         }
         float l = 0.0f, r = 0.0f, y1 = 0.0f;
         for (int32_t c = 0; c < 2; ++c) {
@@ -1137,15 +879,8 @@ static void render_voice(le_analog* d, le_analog_voice* v, float* left, float* r
           float x = pre[c] + (c == 1 ? cp->ch[0].t.link * y1 : 0.0f);
           if (ci(d, c, LE_ANALOG_FILTER_ON)) {
             const int32_t ft = ci(d, c, LE_ANALOG_FILTER_TYPE);
-            if (ft >= 8) {
-              x = ch->level[0] * core(ch->s[0], x, ch->g[0], ch->k, 1) +
-                  ch->level[1] * core(ch->s[1], x, ch->g[1], ch->k, 1) +
-                  ch->level[2] * core(ch->s[2], x, ch->g[2], ch->k, 1);
-            } else {
-              x = core(ch->s[0], x, ch->g[0], ch->k, ft / 2);
-              if (ft % 2 == 1) x = core(ch->s[1], x, ch->g[0], ch->k, ft / 2);
-            }
-            x = drive(x, ci(d, c, LE_ANALOG_FILTER_DRIVE));
+            x = le_aas_filter_tick(&ch->f, ft, x);
+            x = le_aas_drive(x, ci(d, c, LE_ANALOG_FILTER_DRIVE));
           }
           if (c == 0) y1 = x;
           ch->gl += ch->gl_step;
@@ -1160,7 +895,7 @@ static void render_voice(le_analog* d, le_analog_voice* v, float* left, float* r
       }
       for (int32_t c = 0; c < 2; ++c) {
         const le_analog_chain* ch = &cp->ch[c];
-        if ((ch->aenv.seg != SEG_IDLE && ci(d, c, LE_ANALOG_AMP_ON)) || fabsf(ch->gl) > 1e-6f || fabsf(ch->gr) > 1e-6f) idle = 0;
+        if ((ch->aenv.seg != LE_AAS_SEG_IDLE && ci(d, c, LE_ANALOG_AMP_ON)) || fabsf(ch->gl) > 1e-6f || fabsf(ch->gr) > 1e-6f) idle = 0;
       }
     }
     v->tick_left -= n;
