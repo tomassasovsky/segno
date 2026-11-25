@@ -110,9 +110,7 @@ static float key_tracking(float tracking, float key) {
 
 /* The paths around the filters: oscillators and noise. Fitted: a sine and
  * noise routed around, each within 0.2 dB. */
-#ifndef LE_DRIFT_BYPASS_OSC
 #define LE_DRIFT_BYPASS_OSC 0.1572f
-#endif
 #define LE_DRIFT_BYPASS_NOISE 0.12821534f
 
 /* ---- parameters ---- */
@@ -338,12 +336,13 @@ static float osc_triangle(float th, float s, float dt) {
 }
 
 /* Shark Tooth's window width w by Shape: a near-triangle at 0 narrowing
- * toward a falling saw at 1. Fitted: the width whose harmonics 2..7 best
- * match Live's at each shape (within 1 to 2 dB from 0.25 up, 3 to 4 dB
- * below), joined linearly. */
+ * toward a saw at 1 (the oscillator plays it inverted, a rising ramp with
+ * the dip on top). Fitted through the filters' input clip, which tells the
+ * polarity apart: Live's renders at six shapes within 1.5 dB rms per
+ * sixth-octave band, joined linearly. */
 static float shark_width(float s) {
   static const float kS[6] = {0.0f, 0.135f, 0.25f, 0.5f, 0.75f, 1.0f};
-  static const float kW[6] = {0.876f, 0.819f, 0.726f, 0.443f, 0.272f, 0.172f};
+  static const float kW[6] = {0.906f, 0.779f, 0.676f, 0.463f, 0.287f, 0.157f};
   /* past the ends (modulation drives the shape outside 0..1) the width
    * follows the nearest segment's slope, within 0.1..1 */
   if (s <= 0.0f) return fminf(1.0f, kW[0] + s * (kW[1] - kW[0]) / kS[1]);
@@ -419,7 +418,7 @@ static float oscillator(int32_t wave, float th, float s, float dt) {
     case WAVE_TRIANGLE:
       return osc_triangle(th, s, dt);
     case WAVE_SHARK:
-      return osc_shark(th, s, dt);
+      return -osc_shark(th, s, dt);
     case WAVE_SATURATED:
       return osc_saturated(th, s);
     case WAVE_SAW:
@@ -1236,12 +1235,13 @@ static float filter1(float* s, float x, float fc, float r, float rate,
  * a loud source rings less and its skirt brightens, as Live's does.
  * Fitted on every filter II render (noise and saws, cutoffs 150 Hz to
  * 4 kHz, resonance 0 to 1, the factory presets' isolations): K per
- * resonance through seven points, the clip at 0.325, the output gain 2.9; sixth-octave
- * levels within 2.5 dB rms on average (the state-variable filter it
- * replaces: 4.5). */
+ * resonance through seven points, shared 1.15 / 0.75 between the sections,
+ * the clip at 0.325, the output gain 2.9; sixth-octave levels within 2.5
+ * dB rms on average (the state-variable filter it replaces: 4.5), the
+ * resonant peaks' shape within 1.5 dB. */
 static float filter2_k(float r) {
   static const float kR[7] = {0.0f, 0.2f, 0.5f, 0.75f, 0.9f, 1.0f, 1.3f};
-  static const float kK[7] = {0.01f, 0.75f, 1.375f, 1.625f, 1.78f, 1.9f, 2.05f};
+  static const float kK[7] = {0.01f, 0.85f, 1.375f, 1.625f, 1.74f, 1.84f, 2.05f};
   if (r <= 0.0f) return kK[0];
   for (int i = 1; i < 7; ++i) {
     if (r <= kR[i]) {
@@ -1279,8 +1279,11 @@ static float filter2(float* s, float x, float fc, float r, float rate,
   const float G = g / (1.0f + g);
   const float K = filter2_k(fminf(r, 1.3f));
   x += 2e-5f * rnd_bipolar(rng);
-  const float a = filter2_section(s, x, G, g, K);
-  return filter2_section(s + 3, a, G, g, K) * 2.9f;
+  /* the first section takes more of the resonance than the second
+   * (fitted: Live's peaks are as narrow as one strongly resonant section
+   * makes them, about a twelfth of an octave) */
+  const float a = filter2_section(s, x, G, g, fmaxf(1.15f * K, 0.001f));
+  return filter2_section(s + 3, a, G, g, fmaxf(0.75f * K, 0.001f)) * 2.9f;
 }
 
 /* The high-pass: a linear two-integrator loop, damping 0.68. */
