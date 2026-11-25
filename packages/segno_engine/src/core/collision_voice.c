@@ -252,17 +252,25 @@ static void build_modes(le_collision_res* r, int32_t type, int32_t n, float aspe
       nn[k] = 0;
     }
   } else if (type == 1) { /* marimba: a tuned bar, five partials then its asymptote */
-    static const float tuned[5] = {1.0f, 3.96f, 10.7f, 19.2f, 27.0f};
+    /* fit: 10.67 and 19.17 measured; past the fifth, sqrt 2 (k + 3/2) pi
+     * over the free beam's first root (type-1's sixth partial at 37.3) */
+    static const float tuned[5] = {1.0f, 3.96f, 10.67f, 19.17f, 27.0f};
     for (int32_t k = 0; k < n; ++k) {
-      ratio[k] = k < 5 ? tuned[k] : powf(((float)(k + 1) + 1.5f) / 1.251f, 2.0f);
+      const float b = 1.41421356f * ((float)k + 1.5f) * CV_PI / beam_root(1);
+      ratio[k] = k < 5 ? tuned[k] : b * b;
       mm[k] = (uint8_t)(k + 1);
       nn[k] = 0;
     }
   } else { /* membrane, plate: rectangular, side ratio `aspect` */
     const int plate = type == 4;
     int32_t got = 0;
-    const int32_t mmax = (int32_t)ceilf(sqrtf((float)n * aspect)) + 2;
-    const int32_t nmax = (int32_t)ceilf(sqrtf((float)n / aspect)) + 2;
+    /* the engine's grid of candidates: m up to floor(sqrt(N a)) + 1, n up to
+     * floor(sqrt(N / a)) + 1 */
+    int32_t mmax = (int32_t)sqrtf((float)n * aspect), nmax = (int32_t)sqrtf((float)n / aspect);
+    if ((float)((mmax + 1) * (mmax + 1)) == (float)n * aspect) mmax++;
+    if ((float)((nmax + 1) * (nmax + 1)) == (float)n / aspect) nmax++;
+    mmax++;
+    nmax++;
     const float base = plate ? (1.0f + aspect * aspect) : sqrtf(1.0f + aspect * aspect);
     for (int32_t m = 1; m <= mmax && m < 256; ++m) {
       for (int32_t q = 1; q <= nmax && q < 256; ++q) {
