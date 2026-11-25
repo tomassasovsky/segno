@@ -85,6 +85,14 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   draw. Round 16: key tracking is a blend in hertz ((1 - t) + t f / 440,
   which fixed Bloom Pad's filter peak), and Live's drift is the same in
   every instance. Strict score 207 of 244 with round 16; held-out 8 of 89.
+- Round 17: Drift Depth now uses Segno's own tables with the statistics
+  measured on Live (per key: mean +1.18, spread 3.63 cents per unit,
+  neighbours correlated 0.53; per voice: mean +2.26, spread 7.2,
+  independent), and Unison's lanes run sharpest first as the code orders
+  them. Strict score 204 of 263 (presets 0 of 5); with measured values in
+  a scratch build 245 of 263: 41 renders fail only on the exact drift
+  values, pending the owner's decision on measured per-key values.
+  Held-out: 8 of 89 (14 of 89 with the measured values).
 
 ## November 2026 Drift's filter II as an MS-20 circuit model (SEG-109 P4, round 4)
 

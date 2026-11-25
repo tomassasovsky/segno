@@ -533,6 +533,42 @@ static void test_drift_filter2_starts_at_rest(void) {
   CHECK(g_drift.voices[0].lfo_hold != 0.0f);
 }
 
+/* Drift Depth's own tables carry the statistics measured on Live: per key
+ * (C1..B5, none outside) a mean near +1.2 cents per unit of depth / 0.58,
+ * a spread near 3.6 and neighbours correlated near 0.5; per voice a mean
+ * near +2.3 and a spread near 7.2. Unison's first lane is the sharpest,
+ * panned left. */
+static void test_drift_tuning_statistics(void) {
+  printf("test_drift_tuning_statistics\n");
+  drift_init(&g_drift, DRIFT_SR);
+  double m = 0.0, s = 0.0, c1 = 0.0;
+  for (int32_t k = 24; k <= 83; ++k) m += g_drift.key_cents[k];
+  m /= 60.0;
+  for (int32_t k = 24; k <= 83; ++k) {
+    const double x = g_drift.key_cents[k] - m;
+    s += x * x;
+    if (k < 83) c1 += x * (g_drift.key_cents[k + 1] - m);
+  }
+  CHECK(fabs(m - 1.18) < 0.3);
+  CHECK(fabs(sqrt(s / 60.0) - 3.63) < 0.3);
+  CHECK(fabs(c1 / s - 0.53) < 0.08);
+  CHECK(g_drift.key_cents[23] == 0.0f && g_drift.key_cents[84] == 0.0f);
+  double vm = 0.0, vs = 0.0;
+  for (int32_t i = 0; i < LE_DRIFT_VOICES; ++i) vm += g_drift.voice_cents[i];
+  vm /= LE_DRIFT_VOICES;
+  for (int32_t i = 0; i < LE_DRIFT_VOICES; ++i) {
+    vs += (g_drift.voice_cents[i] - vm) * (g_drift.voice_cents[i] - vm);
+  }
+  CHECK(fabs(vm - 2.26) < 0.4);
+  CHECK(fabs(sqrt(vs / LE_DRIFT_VOICES) - 7.2) < 0.4);
+  drift_set(&g_drift, LE_DRIFT_DRIFT_DEPTH, 0.0f);
+  drift_set(&g_drift, LE_DRIFT_VOICE_MODE, 3.0f);
+  drift_set(&g_drift, LE_DRIFT_UNISON_DEPTH, 1.0f);
+  CHECK(le_drift_note_on(&g_drift, 1, 60, 100, 0) == 0);
+  CHECK(g_drift.voices[0].ratio > g_drift.voices[3].ratio);
+  CHECK(g_drift.voices[0].gain_l > g_drift.voices[0].gain_r);
+}
+
 /* An LFO in Ratio mode routed to pitch moves the oscillators' phase, not
  * their frequency: the phase accumulators run as without it. In Freq mode
  * the same routing is vibrato and they do not. */
@@ -856,6 +892,7 @@ static void run_drift_tests(void) {
   test_drift_glide_in_hertz();
   test_drift_block_reset_lfo_phase();
   test_drift_filter2_starts_at_rest();
+  test_drift_tuning_statistics();
   test_drift_ratio_lfo_is_phase_modulation();
   test_drift_filter_input_clips_asymmetrically();
   test_drift_voice_blocks();

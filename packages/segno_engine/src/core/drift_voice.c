@@ -453,28 +453,41 @@ static int32_t osc2_wave(int32_t stored) {
 /* ---- Pitch: per-key tuning and note gain ---- */
 
 /* Drift Depth's tuning: a deviation per key plus one per voice, both fixed
- * (neither moves over time nor changes between strikes on the same voice),
- * linear in Drift Depth. Segno's own pseudo-random values, sized to Live's
- * statistics: fitted, at Depth 1 the per-key part has an rms near 7 cents,
- * a Stereo note's two lanes sit 11.6 cents apart at every key, and voices
- * in other pairs up to about 11 cents away, so two lanes of a note, or one
- * key on two voices, differ. Values are stored at 0.58 of Depth 1.
- * The per-key part: C1..B5 (24..83), rms near 4, clipped at +-14. */
-static float key_cents(int32_t note) {
-  if (note < 24 || note > 83) return 0.0f;
-  uint32_t h = (uint32_t)(note * 2654435761u) ^ 0x5e9a7u;
-  float sum = 0.0f;
-  for (int i = 0; i < 4; ++i) sum += rnd_bipolar(&h);
-  return clampf(sum * 3.5f, -14.0f, 14.0f);
+ * (neither moves over time, nor between strikes, nor between instances),
+ * linear in w = Drift Depth / 0.58. The values are Segno's own
+ * pseudo-random draws, shaped to the statistics measured on Live's renders
+ * (cents per unit of w, round 17): the per-key part, C1..B5 (24..83) only,
+ * has a mean of +1.18, a spread of 3.63 and a correlation of 0.53 between
+ * neighbouring keys (0.12 two keys apart); the per-voice part a mean of
+ * +2.26 and a spread of 7.2, independent from voice to voice (so a Stereo
+ * pair's or a Unison group's lanes are as far apart as any two voices).
+ * The streams are Segno's choice among those whose own 60 keys and 32
+ * voices show those statistics: keys mean 1.25, spread 3.67, correlation
+ * 0.55 / 0.12; voices mean 2.14, spread 7.19, from -10.1 to +11.7. */
+
+/* A draw of mean 0 and spread 1 for index k of stream `salt`. */
+static float drift_draw(int32_t k, uint32_t salt) {
+  uint32_t h = (uint32_t)k * 2654435761u ^ salt; /* an integer hash */
+  h ^= h >> 16;
+  h *= 0x7feb352du;
+  h ^= h >> 15;
+  h *= 0x846ca68bu;
+  h ^= h >> 16;
+  return 1.7320508f * ((float)(int32_t)h * (1.0f / 2147483648.0f));
 }
 
-/* The per-voice part: the two voices of each pair sit 6.73 apart (11.6
- * cents at Depth 1, a Stereo note's lanes), around a centre of up to +-3
- * that differs from pair to pair. */
+static float key_cents(int32_t note) {
+  if (note < 24 || note > 83) return 0.0f;
+  /* neighbouring draws smoothed by (a, 1, a): a = 0.319 gives the
+   * correlations 0.53 and 0.09 */
+  const float a = 0.319f;
+  const float e = a * drift_draw(note - 1, 2217u) + drift_draw(note, 2217u) +
+                  a * drift_draw(note + 1, 2217u);
+  return 1.18f + 3.63f * e / sqrtf(1.0f + 2.0f * a * a);
+}
+
 static float voice_cents(int32_t voice) {
-  uint32_t h = 0x7f4a7c15u ^ (uint32_t)((voice / 2) * 2246822519u);
-  const float centre = 3.0f * rnd_bipolar(&h);
-  return centre + (voice % 2 ? 3.365f : -3.365f);
+  return 2.26f + 7.2f * drift_draw(voice, 7172u);
 }
 
 /* The ISO 226:2003 40-phon equal-loudness level at 1/10-decade steps from
@@ -751,11 +764,11 @@ static void lane_setup(const le_drift* d, le_drift_voice* v, int32_t lane,
     ratio = sub[lane];
     gl = gr = lane_gain[lane];
   } else if (mode == MODE_UNISON) {
-    /* lanes from flattest (right) to sharpest (left): fitted, the left side
-     * sharp, and with the per-voice drift (each pair's odd voice higher)
-     * widening the spread, never folding two lanes onto one pitch */
-    static const float pan[4] = {1.0f, 0.5f, -0.5f, -1.0f};
-    static const float detune[4] = {0.9760254f, 0.9879406f, 1.0122024f, 1.0245496f};
+    /* lanes from sharpest (left) to flattest (right), as the code orders
+     * them; measured with each voice's drift (Unison renders at Drift
+     * Depth 0.63 and Bloom Pad) */
+    static const float pan[4] = {-1.0f, -0.5f, 0.5f, 1.0f};
+    static const float detune[4] = {1.0245496f, 1.0122024f, 0.9879406f, 0.9760254f};
     const float s = vf(d, LE_DRIFT_UNISON_DEPTH);
     const float g = 0.4731513f; /* -6.5 dB */
     const float p = pan[lane];

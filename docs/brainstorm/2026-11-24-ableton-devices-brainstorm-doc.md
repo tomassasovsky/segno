@@ -332,17 +332,25 @@ written from it.
     **[open]**.
   - Unison: four voices per note (8 notes at most), the left side sharp:
     +42 and +21 cents panned −1 and −0.5, −21 and −42 at +0.5 and +1 at
-    full Strength (Segno orders the lanes flattest first), both scaled
+    full Strength (lane 0 the sharpest, as the code orders them:
+    measured, with each voice's drift on its lane, Live's Unison renders at
+    Drift Depth 0.63 only line up that way), both scaled
     linearly by Strength; mode gain about −6.5 dB. The pan law is
     **[open]**.
 - Voice counts (0..4): 4, 8, 16, 24 and 32 voices; Stereo plays half as
   many notes, Unison a quarter. **[code]**
 - Drift Depth: a fixed tuning offset per key plus one per voice, linear
-  in depth. Fitted at Depth 1: the per-key part has an rms near 7 cents,
-  the two voices of a Stereo pair sit 11.6 cents apart at every key, and
-  voices of other pairs up to about 11 cents away. The same key on the
-  same voice always gets the same offset. Segno builds its own values with
-  these statistics; Live's table is not copied.
+  in w = depth / 0.58. The same key on the same voice always gets the same
+  offset, in every instance (three Live renders of one patch, each a fresh
+  device, are identical). **[measured]** Statistics, in cents per unit of
+  w, from Live's key sweeps on one voice and all 32 voices above the key
+  range (round 17): per key (C1..B5 only) a mean of +1.18, a spread of
+  3.63, neighbouring keys correlated 0.53 (0.12 two apart); per voice a
+  mean of +2.26 and a spread of 7.2, independent from voice to voice;
+  Stereo pairs and Unison groups are consecutive voices with their own
+  offsets (no fixed split). Segno draws its own values with these
+  statistics **[Segno]**; Live's values are not used. Whether measured
+  per-key values may be used is the owner's call (SEG-109).
 - SerialNumber: a random number per instance, saved in the preset,
   probably the seed for per-instance randomness. **[inferred]**
 - Glide: a one-pole in hertz (not in pitch) with time constant 0.144 x
@@ -455,6 +463,17 @@ What the strict score still fails, and why **[measured]**:
   Sample & Hold and Wander renders and Chirp Pluck's pitch (its Sample &
   Hold moves pitch by up to 8 cents) cannot match draw for draw; Live
   copies (`-r2`, `-r3`) settle how far Live is from itself.
+- Round 17 (2026-11-25): the Drift Depth statistics above, and the
+  held-out phrase (a quiet C2, a loud C4 triad, a hard C5) on twelve
+  isolation patches: velocity to volume and to the filter, release during
+  a long attack, one Unison slot, two Stereo slots, four Poly voices with
+  long releases, Mono, the cycling envelope in Sync and Freq. All twelve
+  pass, so none of those paths explains the held-out failures. With the
+  statistics-matched tables the strict score is 204 of 263 (factory
+  presets 0 of 5); a scratch build with the measured per-key and per-voice
+  values instead (not kept) passes 245 of 263 (presets 2 of 5): 41
+  renders fail only because of the exact drift values (the list is kept
+  with the fit tooling, `dfit/drift_only_list.txt`).
 - Round 16 settled two questions. Live's drift is the same in every
   instance: three Live renders of one Drift Depth patch, each a fresh
   device, correlate 1.0000. And Bloom Pad's filter peak came from key
