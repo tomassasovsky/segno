@@ -380,8 +380,63 @@ static void test_engine_meld_midi(void) {
   le_engine_destroy(e);
 }
 
+/* What the strict fit settled (SEG-109): linked envelopes carry engine A's
+ * modulated times to B, the Note source reaches Tone in octaves from C3,
+ * and the Quantizer is symmetric about 0. */
+static void test_meld_fits(void) {
+  printf("test_meld_fits\n");
+  enum { N = 48000 };
+  static float l[N], r[N];
+  /* engine B alone sounding, its release linked to A's, which velocity
+   * stretches from 0.05 s to about 0.2 s: B still sounds 0.1 s after the
+   * note ends */
+  meld_reference(&g_meld);
+  meld_eng(&g_meld, 0, LE_MELD_E_ON, 0.0f);
+  meld_eng(&g_meld, 1, LE_MELD_E_ON, 1.0f);
+  meld_eng(&g_meld, 0, LE_MELD_E_AMP_RELEASE, 0.05f);
+  meld_eng(&g_meld, 1, LE_MELD_E_AMP_RELEASE, 0.05f);
+  meld_set(&g_meld, LE_MELD_LINK_ENVELOPES, 1.0f);
+  meld_set(&g_meld, LE_MELD_MOD_AMOUNT(0, 16, 10), 0.109375f);
+  CHECK(le_meld_note_on(&g_meld, 1, 60, 127, 0) == 0);
+  le_meld_render(&g_meld, l, r, 9600);
+  const float held = opr_peak(l + 4800, 4800);
+  le_meld_note_off(&g_meld, 1);
+  le_meld_render(&g_meld, l, r, 9600);
+  CHECK(opr_peak(l + 4800, 480) > 0.2f * held);
+  /* Note into Tone at 0.5 plays C1 as Tone -1 does */
+  meld_reference(&g_meld);
+  meld_eng(&g_meld, 0, LE_MELD_E_OSC_MACRO1, 0.67f);
+  meld_set(&g_meld, LE_MELD_MOD_AMOUNT(0, 22, 11), 0.5f);
+  CHECK(le_meld_note_on(&g_meld, 1, 24, 127, 0) == 0);
+  le_meld_render(&g_meld, l, r, 9600);
+  const float by_note = opr_peak(l + 4800, 4800);
+  meld_reference(&g_meld);
+  meld_eng(&g_meld, 0, LE_MELD_E_OSC_MACRO1, 0.67f);
+  meld_eng(&g_meld, 0, LE_MELD_E_TONE, -1.0f);
+  CHECK(le_meld_note_on(&g_meld, 1, 24, 127, 0) == 0);
+  le_meld_render(&g_meld, l, r, 9600);
+  CHECK(fabsf(by_note - opr_peak(l + 4800, 4800)) < 1e-4f);
+  /* LFO 1 through the Quantizer at 0.8 into Pan at 0.5: the steps include
+   * both ends, so each channel falls silent once a cycle */
+  meld_reference(&g_meld);
+  meld_eng(&g_meld, 0, LE_MELD_E_LFO1_FX1_TYPE, 7.0f);
+  meld_eng(&g_meld, 0, LE_MELD_E_LFO1_FX1_MACRO, 0.8f);
+  meld_eng(&g_meld, 0, LE_MELD_E_LFO1_FX2_TYPE, 0.0f);
+  meld_eng(&g_meld, 0, LE_MELD_E_LFO1_RATE, 2.0f);
+  meld_set(&g_meld, LE_MELD_MOD_AMOUNT(0, 23, 3), 0.5f);
+  CHECK(le_meld_note_on(&g_meld, 1, 60, 127, 0) == 0);
+  le_meld_render(&g_meld, l, r, N);
+  float lmin = 1.0f, rmin = 1.0f;
+  for (int32_t i = 0; i + 480 <= N; i += 480) {
+    lmin = fminf(lmin, opr_peak(l + i, 480));
+    rmin = fminf(rmin, opr_peak(r + i, 480));
+  }
+  CHECK(lmin < 0.01f && rmin < 0.01f);
+}
+
 static void run_meld_tests(void) {
   test_meld_sine_level();
+  test_meld_fits();
   test_meld_every_osc_and_filter();
   test_meld_matrix();
   test_meld_envelopes();

@@ -1094,6 +1094,16 @@ void le_meld_osc_snap(le_meld_osc* o) {
   o->m1 = o->m1_to;
   o->m2 = o->m2_to;
   o->ramp_left = 0;
+  /* the tones a note starts with come from its own frequency and macros, so
+   * the tones two chords share start and stay in phase (fit: the Chord
+   * renders, where a shared tone sums at full level) */
+  if (o->type == LE_MELD_OSC_CHORD) {
+    chord_retune(o);
+    o->s.chord.left = MO_CHORD_UPDATE;
+  } else if (o->type >= LE_MELD_OSC_SWARM_SINE && o->type <= LE_MELD_OSC_SWARM_SQUARE) {
+    swarm_retune(o);
+    o->s.swarm.left = MO_SWARM_UPDATE;
+  }
 }
 
 void le_meld_osc_reset(le_meld_osc* o, float phase) {
