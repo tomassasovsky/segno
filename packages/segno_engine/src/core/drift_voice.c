@@ -43,6 +43,10 @@ enum { MODE_POLY = 0, MODE_MONO = 1, MODE_STEREO = 2, MODE_UNISON = 3 };
 /* Steals, restrikes with phase reset, Cut and device changes fade a voice
  * over this many milliseconds. */
 #define LE_DRIFT_FADE_MS 3.0f
+/* A voice waiting to restart (Reset Oscillator Phase) falls exponentially
+ * from full level to silence in this many milliseconds. Measured: Live's
+ * legato restart, 0.866 per sample at 48 kHz. */
+#define LE_DRIFT_PENDING_MS 1.0f
 
 /* ---- P4: the values the behavior description leaves open ----
  *
@@ -82,10 +86,12 @@ static float envelope_coefficient(float seconds, float rate) {
  * filters' gains below (a saw and noise through each path). */
 static float volume_gain(float v) { return 2.58f * v; }
 
-/* Glide: a one-pole in pitch with time constant 0.117 x Glide. Fitted at
- * 0.1, 0.5, 1 and 2 s (Mono, legato, an octave). */
+/* Glide: a one-pole in frequency (hertz, not pitch: a rising glide covers
+ * its first semitones fastest) with time constant 0.144 x Glide.
+ * Fitted on Live's octave glides at 0.5, 1 and 2 s (Mono, legato): the
+ * distance in hertz falls by the same ratio every 50 ms. */
 static float glide_coefficient(float seconds, float rate) {
-  const float n = 0.117f * seconds * rate;
+  const float n = 0.144f * seconds * rate;
   if (n <= 1.0f) return 1.0f;
   return 1.0f - expf(-1.0f / n);
 }
@@ -519,8 +525,24 @@ static float sync_hz(const le_drift* d, int32_t index) {
   return d->bpm / 60.0f / beats;
 }
 
+/* The phase a shape's LFO starts at: Sine and Triangle at their peak
+ * (0.25), the saws at 0.5, the rest at 0. */
+static float lfo_start_phase(int32_t shape) {
+  return shape <= 1 ? 0.25f : shape <= 3 ? 0.5f : 0.0f;
+}
+
 static void derive(le_drift* d) {
   le_drift_derived* x = &d->d;
+  /* The first chunk and a voice mode change reset the voice blocks: every
+   * voice's LFO to its shape's start phase. Measured: a free-running LFO
+   * (Retrigger off) starts Live's renders at that phase plus the time
+   * since the reset. */
+  if (d->block_mode != vi(d, LE_DRIFT_VOICE_MODE)) {
+    d->block_mode = vi(d, LE_DRIFT_VOICE_MODE);
+    for (int32_t i = 0; i < LE_DRIFT_VOICES; ++i) {
+      d->voices[i].lfo_ph = lfo_start_phase(vi(d, LE_DRIFT_LFO_SHAPE));
+    }
+  }
   x->osc1 = osc1_wave(vi(d, LE_DRIFT_OSC1_TYPE));
   x->osc2 = osc2_wave(vi(d, LE_DRIFT_OSC2_TYPE));
   x->osc1_ratio = exp2f(vf(d, LE_DRIFT_OSC1_TRANSPOSE));
@@ -599,6 +621,7 @@ static void derive(le_drift* d) {
                         vf(d, LE_DRIFT_TRANSPOSE) / 12.0f);
   x->glide = glide_coefficient(vf(d, LE_DRIFT_GLIDE), d->rate);
   x->fade_step = 1000.0f / (LE_DRIFT_FADE_MS * d->rate);
+  x->pending_fall = powf(LE_DRIFT_SILENT, 1.0f / (LE_DRIFT_PENDING_MS * 0.001f * d->rate));
   /* a voice never played turns at A4 with its own drift (tick) */
   const float w = vf(d, LE_DRIFT_DRIFT_DEPTH) / 0.58f;
   for (int32_t i = 0; i < LE_DRIFT_VOICES; ++i) {
@@ -608,6 +631,9 @@ static void derive(le_drift* d) {
         440.0f * exp2f(w * (d->key_cents[69] + d->voice_cents[i]) / 1200.0f);
     v->dt1 = fminf(f * x->osc1_ratio / d->rate, 0.4999999f);
     v->dt2 = fminf(f * x->osc2_ratio / d->rate, 0.4999999f);
+    /* and its LFO, in Ratio mode, at Ratio x A4: measured, a free LFO's
+     * phase at a fresh voice's first note */
+    v->lfo_inc = fminf(x->lfo_ratio * 440.0f / d->rate, 0.49999988f);
   }
 }
 
@@ -632,6 +658,7 @@ int32_t le_drift_init(le_drift* d, int32_t sample_rate) {
   for (int32_t p = 0; p < LE_DRIFT_PARAMS; ++p) d->values[p] = kParams[p].def;
   d->rate = (float)sample_rate;
   derive(d);
+  d->block_mode = -1; /* the blocks reset at the first chunk rendered */
   for (int32_t n = 0; n < 128; ++n) {
     d->note_gain[n] = note_gain(note_hz(n));
     d->key_cents[n] = key_cents(n);
@@ -668,6 +695,7 @@ static int sounding(const le_drift_voice* v) {
 static void fade_voice(le_drift_voice* v) {
   if (v->state == LE_DRIFT_VOICE_FREE) return;
   v->state = LE_DRIFT_VOICE_FADING;
+  v->pending = 0;
   if (v->fade <= 0.0f) v->fade = 1.0f;
 }
 
@@ -732,6 +760,8 @@ static void lane_setup(const le_drift* d, le_drift_voice* v, int32_t lane,
   v->gain_r = gr * ng;
 }
 
+static void begin_note(le_drift* d, le_drift_voice* v, int was_silent);
+
 /* Starts (or retriggers) voice `v` on `note`. `retrigger`: the envelopes
  * restart (attack from the current level); otherwise the note only changes
  * pitch (legato). */
@@ -748,13 +778,25 @@ static void start_voice(le_drift* d, le_drift_voice* v, int32_t lane,
   v->serial = ++d->serial;
   /* A voice glides only from a pitch it is sounding (Mono, legato, a voice
    * struck again): fitted, a new Poly voice starts on its note. */
-  v->pitch_target = log2f(note_hz(note));
+  v->pitch_target = note_hz(note);
   if (vf(d, LE_DRIFT_GLIDE) <= 0.0f || was_silent) v->pitch = v->pitch_target;
   lane_setup(d, v, lane, note);
-  if (!retrigger && sounding(v)) {
-    v->state = LE_DRIFT_VOICE_HELD;
+  v->state = LE_DRIFT_VOICE_HELD;
+  /* With Reset Oscillator Phase on, a note on a sounding voice (legato
+   * included) is held while the voice falls silent fast, then starts from
+   * silence with its phases reset (begin_note). Measured: Live's legato
+   * note in Mono goes silent in 1 ms and restarts at phase 0, its glide
+   * running on. */
+  if (!was_silent && vi(d, LE_DRIFT_RESET_OSC_PHASE)) {
+    v->pending = 1;
     return;
   }
+  if (!retrigger && sounding(v)) return;
+  begin_note(d, v, was_silent);
+}
+
+/* The envelopes and the per-note state of a note starting on voice `v`. */
+static void begin_note(le_drift* d, le_drift_voice* v, int was_silent) {
   if (was_silent) {
     v->env1 = v->env2 = 0.0f;
     /* Reset Oscillator Phase starts a silent voice at phase 0; otherwise it
@@ -770,7 +812,7 @@ static void start_voice(le_drift* d, le_drift_voice* v, int32_t lane,
    * Triangle at their peak (0.25), the saws at 0.5, the rest at 0; without
    * it the note continues the phase the voice's LFO stopped at */
   if (vi(d, LE_DRIFT_LFO_RETRIGGER) || shape >= 7) {
-    v->lfo_ph = shape <= 1 ? 0.25f : shape <= 3 ? 0.5f : 0.0f;
+    v->lfo_ph = lfo_start_phase(shape);
     v->lfo_done = 0;
   }
   v->cyc_ph = 0.0f;
@@ -783,7 +825,6 @@ static void start_voice(le_drift* d, le_drift_voice* v, int32_t lane,
   if (v->att2 <= 0.0f) v->att2 = 1.0f;
   v->stage1 = v->stage2 = STAGE_ATTACK;
   v->fade = 0.0f;
-  v->state = LE_DRIFT_VOICE_HELD;
 }
 
 /* The group of `lanes` voices to play a new note on: a group whose first
@@ -1337,14 +1378,27 @@ static void voice_sample(le_drift* d, le_drift_voice* v, float* out_l,
   const float rate = x->rate;
   /* sources */
   drift_sources src;
-  const float env1 = envelope(&v->env1, &v->stage1, v->att1, x->env1_dec,
-                              b->sustain1, x->env1_rel);
+  if (v->pending) {
+    /* falling to silence for a note waiting to start (start_voice) */
+    v->env1 *= x->pending_fall;
+    v->env2 *= x->pending_fall;
+    if (v->env1 <= LE_DRIFT_SILENT) {
+      v->pending = 0;
+      begin_note(d, v, 1);
+      if (v->state != LE_DRIFT_VOICE_HELD) v->stage1 = v->stage2 = STAGE_RELEASE;
+    }
+  }
+  const float env1 =
+      v->pending ? v->env1
+                 : envelope(&v->env1, &v->stage1, v->att1, x->env1_dec,
+                            b->sustain1, x->env1_rel);
   float env2;
   if (b->cycling) {
     env2 = cycling(v->cyc_ph, b->cyc_mid, b->cyc_hold);
   } else {
-    env2 = envelope(&v->env2, &v->stage2, v->att2, x->env2_dec, b->sustain2,
-                    x->env2_rel);
+    env2 = v->pending ? v->env2
+                      : envelope(&v->env2, &v->stage2, v->att2, x->env2_dec,
+                                 b->sustain2, x->env2_rel);
   }
   const int one_shot = b->lfo_shape >= 7;
   src.raw[LE_DRIFT_SRC_ENV1] = env1;
@@ -1418,7 +1472,7 @@ static void voice_sample(le_drift* d, le_drift_voice* v, float* out_l,
   /* the note's frequency alone, for the Ratio rate modes only */
   const int lfo_ratio = b->lfo_mode == RATE_RATIO;
   const float note_f =
-      (lfo_ratio || b->cyc_mode == RATE_RATIO) ? exp2f(v->pitch) * b->bend_ratio
+      (lfo_ratio || b->cyc_mode == RATE_RATIO) ? v->pitch * b->bend_ratio
                                                : 0.0f;
   /* A pitch slot fed by an LFO in Ratio mode (audio rate) moves both
    * oscillators' phase by LFO x amount cycles instead of their pitch:
@@ -1433,7 +1487,7 @@ static void voice_sample(le_drift* d, le_drift_voice* v, float* out_l,
     }
   }
   phase = clampf(phase, -0.9999999f, 0.9999999f);
-  const float base = exp2f(v->pitch + pitch) * v->ratio * b->bend_ratio;
+  const float base = v->pitch * exp2f(pitch) * v->ratio * b->bend_ratio;
   const float f1 = base * x->osc1_ratio;
   const float f2 = base * x->osc2_ratio * exp2f(add_detune);
   const float dt1 = fminf(f1 / rate, 0.4999999f);

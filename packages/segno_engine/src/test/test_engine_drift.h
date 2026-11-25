@@ -26,6 +26,8 @@ static float drift_peak(const float* x, int32_t n) {
   return p;
 }
 
+static float drift_hz(int32_t note) { return 440.0f * exp2f((note - 69) / 12.0f); }
+
 static int drift_finite(const float* x, int32_t n) {
   for (int32_t i = 0; i < n; ++i) {
     if (!isfinite(x[i])) return 0;
@@ -438,6 +440,72 @@ static void test_drift_reset_phase_and_reuse(void) {
   }
 }
 
+/* With Reset Oscillator Phase on, a note struck on a sounding voice (here
+ * Mono legato) waits while the voice falls silent in about 1 ms, then
+ * starts at phase 0 with a new attack, its glide running on; with it off
+ * the legato note only changes pitch. */
+static void test_drift_reset_phase_restart_waits(void) {
+  printf("test_drift_reset_phase_restart_waits\n");
+  static float l[4800], r[4800];
+  for (int reset = 0; reset < 2; ++reset) {
+    drift_init(&g_drift, DRIFT_SR);
+    drift_set(&g_drift, LE_DRIFT_VOICE_MODE, 1.0f);
+    drift_set(&g_drift, LE_DRIFT_LEGATO, 1.0f);
+    drift_set(&g_drift, LE_DRIFT_GLIDE, 0.5f);
+    drift_set(&g_drift, LE_DRIFT_RESET_OSC_PHASE, (float)reset);
+    CHECK(le_drift_note_on(&g_drift, 1, 48, 100, 0) == 0);
+    le_drift_render(&g_drift, l, r, 4800);
+    CHECK(le_drift_note_on(&g_drift, 2, 60, 100, 0) == 0);
+    le_drift_voice* v = &g_drift.voices[0];
+    CHECK(v->pending == reset);
+    le_drift_render(&g_drift, l, r, 40); /* 0.83 ms: still falling */
+    CHECK(v->pending == reset);
+    if (reset) CHECK(v->env1 < 0.01f && v->env1 > 0.001f);
+    le_drift_render(&g_drift, l, r, 20); /* 1.25 ms: restarted */
+    CHECK(v->pending == 0);
+    CHECK(v->stage1 == (reset ? 1 : 2)); /* a new attack, or legato */
+    if (reset) CHECK(v->ph1 < 60.0f * 262.0f / DRIFT_SR);
+    CHECK(v->pitch > drift_hz(48) && v->pitch < drift_hz(60)); /* gliding */
+  }
+}
+
+/* Glide moves evenly in hertz: after one time constant (0.144 x Glide)
+ * the distance to the new note in hertz is 1/e of where it started. */
+static void test_drift_glide_in_hertz(void) {
+  printf("test_drift_glide_in_hertz\n");
+  static float l[13824], r[13824];
+  drift_init(&g_drift, DRIFT_SR);
+  drift_set(&g_drift, LE_DRIFT_VOICE_MODE, 1.0f);
+  drift_set(&g_drift, LE_DRIFT_LEGATO, 1.0f);
+  drift_set(&g_drift, LE_DRIFT_GLIDE, 2.0f);
+  CHECK(le_drift_note_on(&g_drift, 1, 48, 100, 0) == 0);
+  le_drift_render(&g_drift, l, r, 480);
+  CHECK(le_drift_note_on(&g_drift, 2, 60, 100, 0) == 0);
+  le_drift_render(&g_drift, l, r, 13824); /* 0.288 s */
+  const float lo = drift_hz(48), hi = drift_hz(60);
+  const float left = (hi - g_drift.voices[0].pitch) / (hi - lo);
+  CHECK(fabsf(left - 0.3679f) < 0.01f);
+}
+
+/* The first chunk rendered resets the voice blocks: a free-running LFO
+ * (Retrigger off) starts at its shape's start phase and runs while the
+ * voices are idle, in Ratio mode at Ratio x A4. */
+static void test_drift_block_reset_lfo_phase(void) {
+  printf("test_drift_block_reset_lfo_phase\n");
+  static float l[480], r[480];
+  for (int ratio = 0; ratio < 2; ++ratio) {
+    drift_init(&g_drift, DRIFT_SR);
+    drift_set(&g_drift, LE_DRIFT_LFO_MODE, ratio ? 2.0f : 0.0f);
+    drift_set(&g_drift, LE_DRIFT_LFO_SHAPE, 2.0f); /* a saw: starts at 0.5 */
+    drift_set(&g_drift, LE_DRIFT_LFO_RATE, 2.0f);
+    drift_set(&g_drift, LE_DRIFT_LFO_RATIO, 0.25f);
+    le_drift_render(&g_drift, l, r, 480);
+    const float per_s = ratio ? 0.25f * 440.0f : 2.0f;
+    const float want = fmodf(0.5f + per_s * 0.01f, 1.0f);
+    CHECK(fabsf(g_drift.voices[5].lfo_ph - want) < 0.002f);
+  }
+}
+
 /* An LFO in Ratio mode routed to pitch moves the oscillators' phase, not
  * their frequency: the phase accumulators run as without it. In Freq mode
  * the same routing is vibrato and they do not. */
@@ -757,6 +825,9 @@ static void run_drift_tests(void) {
   test_drift_lfo_rate_modes();
   test_drift_shark_has_no_dc();
   test_drift_reset_phase_and_reuse();
+  test_drift_reset_phase_restart_waits();
+  test_drift_glide_in_hertz();
+  test_drift_block_reset_lfo_phase();
   test_drift_ratio_lfo_is_phase_modulation();
   test_drift_filter_input_clips_asymmetrically();
   test_drift_voice_blocks();
