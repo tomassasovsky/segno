@@ -197,7 +197,12 @@ static float m_of(int32_t p, float v) {
  * exponential curve reads it. */
 /* fit: the master volume is not taken down to its step (Vibes Basic's
  * level) */
-static int smooth_param(int32_t p) { return p == LE_COLLISION_VOLUME; }
+static int smooth_param(int32_t p) {
+  /* fit: and the pitch envelope's time (penv-t75's sweep) */
+  if (p >= LE_COLLISION_RES1 && p < LE_COLLISION_STRUCTURE &&
+      (p - LE_COLLISION_RES1) % LE_COLLISION_R_FIELDS == LE_COLLISION_R_PITCH_ENV_TIME) return 1;
+  return p == LE_COLLISION_VOLUME;
+}
 
 static float u_of(int32_t p, float v) {
   if (smooth_param(p)) return m_of(p, v) / 127.0f;
@@ -706,6 +711,8 @@ static void start_voice(le_collision* d, le_collision_voice* v, uint32_t origin,
   }
   for (int32_t r = 0; r < 2; ++r) strike_res(d, v, r, fresh || !same);
   v->age = 0;
+  v->blk_n = 0;
+  v->blk_pk = 0.0f;
 }
 
 static void release_voice(le_collision* d, le_collision_voice* v) {
@@ -1138,6 +1145,20 @@ static void render_voice(le_collision* d, le_collision_voice* v, float* left, fl
       if (v->age < settle) v->age++;
       left[i + s] += yl;
       right[i + s] += yr;
+      /* fit: a voice, held or not, ends at the first 512-sample block whose
+       * resonator outputs (before their volumes) stay below 6e-6 once its
+       * exciters are spent (Live's renders stop at about -94 dBFS) */
+      v->blk_pk = fmaxf(v->blk_pk, fmaxf(fmaxf(fabsf(l1), fabsf(r1)), fmaxf(fabsf(l2), fabsf(r2))));
+      if (++v->blk_n >= 512) {
+        const int dead = v->blk_pk < 6e-6f && v->age >= settle &&
+                         (v->env_seg == ENV_IDLE || (v->env_seg == ENV_SUSTAIN && v->env <= 0.0f));
+        v->blk_n = 0;
+        v->blk_pk = 0.0f;
+        if (dead) {
+          v->state = LE_COLLISION_VOICE_FREE;
+          return;
+        }
+      }
       /* fit: a released voice ends after 50 ms below -100 dBFS */
       if (v->state == LE_COLLISION_VOICE_RELEASED) {
         v->quiet = fmaxf(fabsf(yl), fabsf(yr)) < 1e-5f && v->env_seg == ENV_IDLE && v->age >= settle ? v->quiet + 1 : 0;

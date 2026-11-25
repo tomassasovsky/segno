@@ -453,6 +453,15 @@ static void test_collision_fits(void) {
   le_collision_render(&g_collision, l, r, N); /* 0.2 s: a fifth of the way up */
   const double left = opr_peak(l + N - 480, 480), right = opr_peak(r + N - 480, 480);
   CHECK(right > 1.2 * left && right < 4.0 * left);
+  /* a held note ends once it has decayed to about -94 dBFS: the
+   * reference beam (T 1.36 s) within 2 s, a 35 s one not */
+  for (int32_t k = 0; k < 2; ++k) {
+    collision_reference(&g_collision);
+    if (k) collision_set(&g_collision, LE_COLLISION_RES(0, LE_COLLISION_R_DECAY), 1.0f);
+    CHECK(le_collision_note_on(&g_collision, 1, 60, 100, 0) == 0);
+    for (int32_t b = 0; b < 10; ++b) le_collision_render(&g_collision, l, r, N);
+    CHECK(le_collision_active(&g_collision) == k);
+  }
 }
 
 static void run_collision_tests(void) {

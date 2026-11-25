@@ -122,6 +122,8 @@ typedef struct le_collision_voice {
   int32_t quiet;
   int32_t age;       /* samples since the strike, up to its settling time */
   int32_t pulse_len; /* the mallet pulse's length in samples */
+  int32_t blk_n;     /* samples into the level check's block */
+  float blk_pk;      /* the block's peak so far */
   float dest[LE_COLLISION_D_COUNT]; /* this tick's matrix sums */
   /* the mallet: its pulse filter and its noise's high-pass */
   le_collision_bq pulse, mnoise;
