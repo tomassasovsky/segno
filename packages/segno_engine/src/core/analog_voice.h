@@ -24,6 +24,7 @@
 
 #include <stdint.h>
 
+#include "aas_parts.h"         /* le_aas_env, le_aas_filter */
 #include "segno_engine_api.h" /* le_analog_param, LE_ANALOG_PARAMS */
 
 #ifdef __cplusplus
@@ -40,12 +41,6 @@ extern "C" {
 #define LE_ANALOG_BL_PHASES 512 /* its table's fractional positions */
 #define LE_ANALOG_BL_RING 32   /* the oscillator's output ring (a power of 2) */
 
-typedef struct le_analog_env {
-  int32_t seg;    /* ANALOG_SEG_* (analog_voice.c) */
-  int32_t left;   /* samples left in the segment */
-  float y, y0, to, c, step;
-  float scale;    /* velocity's level scale */
-} le_analog_env;
 
 /* What a chain's control tick holds until the next one (analog_voice.c). */
 typedef struct le_analog_tick {
@@ -65,11 +60,9 @@ typedef struct le_analog_chain {
   float inc, inc_m;    /* per-sample increments: oscillator (slave), master */
   float penv;          /* the pitch envelope, 1 -> 0 */
   float penv_step;
-  float s[3][2];       /* the filter's 2-pole stages (the formants': three) */
-  float g[3], k;       /* their coefficients (one g but for the formants) */
-  float level[3];      /* the formants' band levels */
+  le_aas_filter f;     /* the filter */
   float fc;            /* the modulated cutoff (filter 2 follows it) */
-  le_analog_env fenv, aenv;
+  le_aas_env fenv, aenv;
   double lfo_ph;
   float lfo, lfo_sh, lfo_sh_prev, lfo_amp, lfo_wait;
   float gl, gr, gl_step, gr_step; /* the amp's gains but the envelope, ramped across a tick */
