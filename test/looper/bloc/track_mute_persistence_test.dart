@@ -67,6 +67,8 @@ class _RecordedMuteEngine extends FakeAudioEngine {
 
   void _publishMute(bool muted) {
     nextSnapshot = nextSnapshot.copyWith(
+      // An engine holding a take reports its rate; a save is bounded by it.
+      sampleRate: 48000,
       tracks: [
         le.TrackSnapshot(
           state: le.TrackState.playing,
