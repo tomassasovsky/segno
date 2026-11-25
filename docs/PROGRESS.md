@@ -61,9 +61,36 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
 | SEG-22 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track and lane chains) is #1729 | build | needs-plan-approval | `claude/fx-multicore-1515-p1b` |
 | SEG-107 | Save As failed with Out of Memory: the mixdown asked for the LCM of two Song-mode tracks (24.7 GB); it now spans the longest lane past 600 s, and the save refuses a length no loop can hold | in-review | needs-hardware | `claude/save-oom-SEG-107` |
 | SEG-63 | Console WiFi against an ASUS RT-AX89X with 802.11ax on: firmware already matches Pi OS; brcmfmac options aligned with Pi OS and a troubleshooting note; failure not reproduced, issue stays open until it recurs | in-review | agent-merges | `claude/wifi-firmware-1816` |
-| SEG-109 | Ableton Live device presets on the pedal, Drift first: presets read from the user's own copy; Drift's behavior learned with rea + Ghidra from Live 12.2.7 and reimplemented, no Ableton code or presets in the repo. Plan approved 2026-11-25 (P1-P6); P1 stereo buses, P2 preset reader and P3 the Drift device in review | in-review | needs-merge | `claude/ableton-devices-SEG-109` |
+| SEG-109 | Ableton Live device presets on the pedal, Drift first: presets read from the user's own copy; Drift's behavior learned with rea + Ghidra from Live 12.2.7 and reimplemented, no Ableton code or presets in the repo. Plan approved 2026-11-25 (P1-P6); P1 stereo buses, P2 preset reader, P3 the Drift device and P4 its fit in review; the Operator device (P7, the next instrument) in review | in-review | needs-merge | `claude/ableton-devices-SEG-109`, `claude/ableton-operator-SEG-109-p7` |
 
 ---
+
+## November 2026 The Operator device plays on an instrument slot (SEG-109 P7)
+
+- Live 12.2.7's Operator read with rea + Ghidra (four readers: operators and
+  FM, envelopes, filter and shaper, LFO, routing and voices) and written as
+  "Operator: behavior" in the Ableton devices brainstorm; `operator_voice.c`
+  is written from it. `LE_INST_DEVICE_OPERATOR` takes an Operator preset's
+  507 values (`le_operator_param`: four operator blocks of 98, then the
+  device's own) through the same slot API as Drift.
+- Four table-lookup operators in the eleven algorithms, 23 waveforms (User
+  waves rebuilt on the audio thread, one operator a render call),
+  Antialias at 2x with band-limited tables, Tone, feedback on the
+  unmodulated operators, the shared envelope engine with its loop modes and
+  time scaling, the LFO and pitch envelope, the modulation routes, Spread,
+  glide, Retrigger Mode and the voice table up to 48.
+- Fitted against 255 Live renders: waveforms, FM, feedback, envelopes, LFO,
+  glide, Spread, pan, Tone and the routes within 0.5 dB rms each. Measured
+  where the reading was silent: envelope slopes other than 0 and 1 hold and
+  jump (as Live renders them), EnvTimeIncludeAttack changes nothing, the
+  routes' sources and units (gain destinations only attenuate).
+- The Clean filter and Morph are built (Live's own noise through Segno's
+  filter within 0.5 dB); OSR, MS2, SMP and PRD (21 factory presets) run as
+  Clean until the next part builds them. Ten factory presets, octave bands
+  rms: three within 1 dB, five within 2 to 5, two at 6 and 8 (PRD with
+  drive, and a shaper preset).
+- A voice costs 2.6 us per period at 48 kHz on the dev machine, 5.2 with
+  Antialias (a Drift voice 7.1).
 
 ## November 2026 Drift's filter II as an MS-20 circuit model (SEG-109 P4, round 4)
 

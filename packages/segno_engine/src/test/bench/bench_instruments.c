@@ -78,6 +78,7 @@
 #include "le_midi_port.h"
 #include "segno_engine_api.h"
 #include "drift_voice.h"
+#include "operator_voice.h"
 #include "synth_voice.h"
 
 #include "bench_common.h"
@@ -173,6 +174,50 @@ static stats run_drift(const bench_opts* o, int32_t mode, int32_t voices,
   for (size_t k = 0; k < periods; ++k) {
     const double a = now_us();
     le_drift_render(&g_drift, g_drift_l, g_drift_r, o->period);
+    t[k] = now_us() - a;
+  }
+  rt_leave();
+  const stats s = stats_of(t, periods);
+  free(t);
+  return s;
+}
+
+/* SEG-109: one Operator slot holding `voices` notes of four operators in
+ * algorithm 1 (a stack and a pair: every operator runs) with the Clean
+ * filter and the LFO on, Antialias `aa`, timed one le_operator_render per
+ * period. Informational, like Drift's. */
+static le_operator g_op;
+
+static stats run_operator(const bench_opts* o, int32_t aa, int32_t voices, double seconds) {
+  le_operator_init(&g_op, o->rate);
+  static float v[LE_OPERATOR_PARAMS];
+  for (int p = 0; p < LE_OPERATOR_PARAMS; ++p) v[p] = le_operator_default(p);
+  v[LE_OPERATOR_ALGORITHM] = 1.0f;
+  v[LE_OPERATOR_VOICES] = 15.0f; /* 48 */
+  v[LE_OPERATOR_ANTIALIAS] = (float)aa;
+  v[LE_OPERATOR_FILTER_ON] = 1.0f;
+  v[LE_OPERATOR_FILTER_FREQ] = 2000.0f;
+  v[LE_OPERATOR_FILTER_RES] = 0.4f;
+  v[LE_OPERATOR_LFO_ON] = 1.0f;
+  for (int op = 0; op < 4; ++op) {
+    v[LE_OPERATOR_OP(op, LE_OPERATOR_OP_ON)] = 1.0f;
+    v[LE_OPERATOR_OP(op, LE_OPERATOR_OP_COARSE)] = (float)(op + 1);
+    v[LE_OPERATOR_OP(op, LE_OPERATOR_OP_VOLUME)] = 0.5f;
+    v[LE_OPERATOR_OP(op, LE_OPERATOR_OP_LFO_ON)] = 1.0f;
+  }
+  le_operator_set_values(&g_op, v);
+  le_operator_set_voice_limit(&g_op, LE_OPERATOR_VOICE_SLOTS);
+  for (int k = 0; k < 8; ++k) le_operator_render(&g_op, g_drift_l, g_drift_r, o->period);
+  for (int32_t n = 0; n < voices; ++n) {
+    le_operator_note_on(&g_op, (uint32_t)n + 1u, 40 + n * 2, 100, 0);
+  }
+  for (int k = 0; k < 50; ++k) le_operator_render(&g_op, g_drift_l, g_drift_r, o->period);
+  const size_t periods = (size_t)(seconds * o->rate / o->period);
+  double* t = (double*)malloc(sizeof(double) * (periods ? periods : 1));
+  rt_enter();
+  for (size_t k = 0; k < periods; ++k) {
+    const double a = now_us();
+    le_operator_render(&g_op, g_drift_l, g_drift_r, o->period);
     t[k] = now_us() - a;
   }
   rt_leave();
@@ -533,6 +578,24 @@ int main(int argc, char** argv) {
       if (c == 3) {
         printf("  (%s: %.2f us per voice per period at p50)\n",
                mode == 0 ? "Poly" : "Unison", s.p50 / drift_counts[c]);
+      }
+    }
+  }
+  printf("\n");
+
+  /* Operator (SEG-109) */
+  printf("## Operator (one slot, le_operator_render per period; informational)\n\n");
+  print_tail_header();
+  static const int32_t op_counts[] = {1, 8, 16, 32};
+  for (int aa = 0; aa < 2; ++aa) {
+    for (int c = 0; c < 4; ++c) {
+      char label[64];
+      const stats s = run_operator(&o, aa, op_counts[c], o.seconds);
+      snprintf(label, sizeof(label), "Operator%s x %d voices", aa ? " Antialias" : "", op_counts[c]);
+      print_tail_row(label, s);
+      if (c == 3) {
+        printf("  (%s: %.2f us per voice per period at p50)\n", aa ? "Antialias" : "plain",
+               s.p50 / op_counts[c]);
       }
     }
   }

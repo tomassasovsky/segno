@@ -1,6 +1,6 @@
 # Ableton Live device presets on the pedal — brainstorm
 
-<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance -->
+<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance kModBy kCarriers Celesta -->
 
 **Date:** 2026-11-24
 **Issue:** SEG-109 (related: SEG-57, Segno's own instrument voices)
@@ -388,6 +388,181 @@ layer above 10 kHz in Bloom Pad's full phrase, 12 dB above Segno's yet
 about 55 dB under its loudness, that no single source shows; Clob Bass's
 phrase is about 2 dB narrower; Sample & Hold and Wander draw different
 random values, by design.
+
+## Operator: behavior
+
+Learned 2026-11-25 from Live 12.2.7 (four parallel reads: the operators and
+FM, the envelopes, the filter and shaper, the LFO, routing and voices), then
+measured against 255 Live renders of single-change patches and ten factory
+presets. Tags as for Drift; **[measured]** marks what the renders settled
+where the reading was silent or disagreed. Segno's implementation is
+`operator_voice.c`.
+
+### Structure
+
+- Four operators A..D, each a single-cycle table of 4096 samples read by a
+  phase accumulator in table indices; a voice computes D, C, B, A in that
+  order each sample, and an operator's input is the sum of its modulators'
+  outputs of the same sample. **[code]**
+- Lookup truncates unless Interpolation is on (linear). Antialias runs the
+  whole operator engine at twice the rate, reads band-limited copies of the
+  tables, and decimates with a polyphase allpass half-band. **[code]**
+- One mono filter and the shaper per voice, then the voice's gain pair
+  (volume and pan) into the stereo sum. With the filter off, the shaper is
+  bypassed too. **[code]** **[measured]**
+- Parameters apply per 32-sample chunk; the operators, envelopes, filter
+  and shaper run every sample (Segno's choice, as for Drift).
+
+### Waveforms
+
+- 0 Sine; 1 and 2 Sine 4 and 8 Bit (the sine truncated to 8 or 128 steps a
+  unit); 3..9 Saw 3, 4, 6, 8, 16, 32, 64 (the first N harmonics at 2/(πk));
+  10 Saw D (a drawn ramp from +1 to -1); 11..17 Square 3..64 (the first N
+  odd harmonics at 4/(πk)); 18 Square D (drawn); 19 Triangle (the first 8
+  odd harmonics, alternating, 8/(π²k²)); 20 Noise Looped (a fixed noise
+  table repeating at f/64); 21 Noise White (the table stepped one sample per
+  output sample, from a random place each note); 22 User. **[code]**
+  **[measured: every waveform's harmonics]**
+- An additive table is normalised to a peak of 1 and played with its old
+  peak as its gain, so its level is the plain sum (Saw 3 peaks at 0.92,
+  Square 3 at 1.19, exactly as Live's renders). **[code]** **[measured]**
+- User: 16, 32 or 64 drawn harmonics, a slider v giving 10^((48v − 48)/20)
+  (−48..0 dB, 0 is silent); expansion modes repeat the drawing across the
+  spectrum with a 1/(1 + c(k − 1)) roll-off (c 0.25, 0.5, 1, 3, 4);
+  Normalize sets the peak to 1. **[code]**
+- Band-limited copies keep 1024, 512 ... 1 harmonics (only those below the
+  wave's own top harmonic); the richest copy whose top harmonic times the
+  whole part of the phase increment stays under half the table is read.
+  **[code]**
+
+### Tuning, phase, level
+
+- Ratio: Coarse (0 is 0.5) × (1 + Fine/1000); velocity adds
+  16 × VelCoarse × velocity, rounded when quantized (Live rounds: a ratio of
+  4 at velocity 40 with 50 %). **[code]** **[measured]**
+- Fixed: Frequency × 0, 0.001, 0.01, 0.1, 1 or 10; it follows Spread's
+  detune but not the note, transpose or bend. **[code]** **[measured]**
+- Voice pitch: note (or glide) + Spread's detune + Transpose + bend × range,
+  in semitones from A4 = 440 Hz. **[code]**
+- Phase: Retrigger on starts at Phase % of a cycle; off, at a random phase
+  each note. **[code]**
+- Level: Volume (linear) × 4((v − 0.5)s + 0.5)² for VelScale s ×
+  2^(k(note − 60)/12) for KeyScale k, × the waveform's gain. One sine at
+  0 dB with the global Volume at 0 dB peaks at 1.0 per channel at the
+  centre. **[code]** **[measured: within 0.1 dB]**
+
+### Algorithms and FM
+
+- The eleven algorithms (Segno's table, `kModBy` and `kCarriers`): 0 a
+  four-operator stack D→C→B→A; 1 (C + D)→B→A; 2 C→B, (B + D)→A; 3 D→B and C,
+  (B + C)→A; 4 D→C→A and B; 5 D→C→B and A alone; 6 (B + C + D)→A; 7 B→A and
+  D→C; 8 D→A, B and C; 9 D→C, with B and A alone; 10 all four alone.
+  Carriers are summed, not averaged. **[code]**
+- A modulator's output m moves its carrier's phase by −2 cycles per unit
+  after a one-pole low-pass set by Tone: 30 × (22000/30)^Tone Hz. **[code]**
+  **[measured: the sidebands of every FM render within 0.6 dB]**
+- Feedback exists only on operators nothing modulates: −2 × fb × (0.75
+  y[n−1] + 0.25 y[n−2]) cycles, fb = Feedback % / 300, without Tone's
+  low-pass. On a modulated operator the knob does nothing. **[code]**
+  **[measured]**
+
+### Envelopes
+
+- One engine for every envelope (each operator's, the filter's, the pitch
+  envelope's, the LFO's): initial level → attack → peak → decay → sustain,
+  release from the current value to the end level; times in ms, levels
+  linear (pitch levels in semitones, turned into frequency ratios first).
+  A minimal attack (0.1 ms) starts at the peak. **[code]**
+- Slope 0 is linear; slope 1 a one-pole that comes within 10^−4.2 of its
+  target as the time runs out (its rate is ln(|span|/ε) over the
+  segment). **[code]** **[measured: within 0.02 at every point]** Every
+  other slope (−1, −0.95 .. 0.5 measured) holds the segment's start and
+  jumps to its target at the end: that is what Live 12.2.7 renders,
+  whatever the reading suggests (a crossfade with a curved shape), so
+  Segno does the same. **[measured]**
+- Loop modes: Loop (back to the initial level over LoopTime, then attack
+  again), Beat and Sync (the attack restarts from the current value every
+  RepeatTime, 1/48 to 4 bars; Segno counts both from the note), Trigger
+  (note-off ignored, decay runs into release). **[code]**
+- Times scale by 2^(−8 TimeVel (vel − 70)/127) per envelope and by
+  2^(3 EnvTime − 6 EnvTimeKey (key − 70)/127) for all, attack included
+  whatever EnvTimeIncludeAttack says (Live scales the attack either way).
+  **[code]** **[measured]**
+- A voice ends when every sounding carrier's envelope has ended; a stolen
+  voice fades in 1 ms. **[code]**
+
+### LFO and pitch envelope
+
+- Types 0 Sine, 1 Square, 2 Triangle (from −1, rising), 3 Saw Up, 4 Saw
+  Down, read as from 512-step tables and smoothed by a one-pole at
+  max(16 f, 200 Hz); 5 Sample & Hold (a new value twice a cycle); 6 Noise
+  (white noise through a one-octave band-pass at max(f, 5 Hz)). **[code]**
+  **[measured: the triangle's start]**
+- Rate: a note number, f = 440 × 2^((n − 69)/12), Low 104 semitones below
+  High, key scaling about C4; Sync: 1/48 to 4 bars. Retrigger off starts
+  each note from one free-running phase. **[code]** **[measured]**
+- Amount: 2 Amount² × A%, × 4(0.5 + VelScale (v − 0.5))², × the LFO
+  envelope. Destination A multiplies an operator's phase increment by
+  (1 + L) (linear pitch) and adds 24 semitones per unit to the cutoff
+  through a smoother. **[code]** **[measured: pitch within 0.003]**
+- Pitch envelope: its levels in semitones × Amount × A%, as frequency
+  ratios, multiply the increments of the operators that take it. **[code]**
+  **[measured]**
+
+### Modulation routes **[measured]**
+
+- Sources: velocity runs −1 (0) to 1 (127), the LFO and the pitch
+  envelope's level −1..1, pitch bend −1..1; aftertouch and the mod wheel
+  0..1, resting at 0 (a bipolar reading would close the filters of the
+  presets that route them, which Live does not). The key source is
+  (neutral − note)/80. **[fit]**
+- Destinations that are gains (the operators' volumes, FM Drive, LFO
+  Amount, Volume) only attenuate: 1 − |a|/2 + a s/2 for amount a and source
+  s, so a full positive amount spans 0..1 over its source (velocity −50 %
+  gives 0.5 at 127 and 0.75 at 64, as Live's renders). Others add: Filter
+  Freq 48 semitones per unit, Pan one unit, Tone half its range, Time 3
+  octaves of envelope time, Fixed Frequency 63 semitones, LFO Rate 8
+  octaves. Each within 0.2 dB of Live where rendered.
+
+### Filter and shaper
+
+- Clean (every factory preset but 21): a linear trapezoidal state-variable
+  filter, q = 4r/(3r + 1) with resonance clamped at 0.9 (Q 18.5), 24 dB two
+  sections (the second at half the resonance); Morph sweeps LP → BP → HP →
+  Notch → LP. The cutoff: Frequency × 2^(S/12), S = key and velocity about
+  70, the filter envelope × 1.08 × Amount, the LFO and the routes; clamped
+  to 30 Hz .. min(0.48 fs, 18.5 kHz). **[code]** **[measured: Live's own
+  noise through Segno's Clean filter within 0.5 dB per third-octave]**
+- OSR, MS2 (the circuit Drift's filter II models), SMP and PRD: described
+  in the readings, not yet built: Segno runs them as Clean for now. **[open]**
+- The shaper: (1 − w)x + w 10^(−D/40) T(10^(D/20) x) at twice the rate:
+  Soft (linear to −3 dB, then a knee to 1), Hard (0.68 atan 10x), Sine (a
+  fold), 4-Bit (a triangle fold quantized to eighths). **[code]**
+  **[measured: within 0.5 dB, 4-Bit dry 1.8]**
+
+### Voices
+
+- Voices 1..8, 10, 12, 14, 16, 20, 24, 32 or 48; Spread plays each note
+  twice, ∓0.1 × Spread semitones, one voice on each channel at a single
+  voice's level. **[code]** **[measured]**
+- Stealing: the oldest released note, then sustained, then held; Retrigger
+  Mode gives a repeated note its own voice back. With one voice and
+  Portamento on, a held voice glides to the new note without retriggering;
+  otherwise glide is constant-time and linear in semitones. **[code]**
+  **[measured]**
+- Pan is equal-power, unity at the centre (√2 cos and √2 sin); key and
+  random pan are latched at the note. **[code]** **[measured]**
+
+### The fits so far
+
+Single-change renders (third-octave bands within 60 dB of each render's
+loudest): waveforms, tuning, FM, feedback, envelopes, LFO, glide, Spread,
+pan, Tone and the routes within 0.5 dB rms each, most within 0.2; the
+analog circuits, still Clean, 2 to 9 dB. Ten factory presets (octave
+bands): Bells & Thin Pad 0.2, Buzz Release Keys 0.5, Acid Bass 0.8, OP
+Bass 2.1 (MS2), Bells Brushed Hits 2.1, Sub Sine Bass 3.3, Celesta 4.2,
+Metallic FM 4.8, Three Op Bass 5.7 (PRD with drive), Analog Bouquet Brass
+7.8. A voice costs 2.6 µs per period at 48 kHz, 5.2 with Antialias.
 
 ## Decisions
 

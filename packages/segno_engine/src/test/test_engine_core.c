@@ -39999,6 +39999,7 @@ static void test_session_commit_stays_stopped_until_play(void) {
 #include "test_engine_trk_jobs.h"
 #include "test_engine_post_tail_stopped.h"
 #include "test_engine_drift.h"
+#include "test_engine_operator.h"
 #include "test_engine_lane_chain_sleep.h"
 #include "test_engine_overdub_stop_park.h"
 
@@ -40098,6 +40099,7 @@ int main(void) {
   if (getenv("SEGNO_SYNTH_TESTS_ONLY")) return g_failures ? 1 : 0;
   SHARD(run_instrument_tests);
   SHARD(run_drift_tests);
+  SHARD(run_operator_tests);
   if (getenv("SEGNO_INSTRUMENT_TESTS_ONLY")) return g_failures ? 1 : 0;
   SHARD(run_gate_fade_tests);
   if (getenv("SEGNO_GATE_FADE_TESTS_ONLY")) return g_failures ? 1 : 0;

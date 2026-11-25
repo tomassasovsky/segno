@@ -2775,6 +2775,8 @@ struct le_engine {
    * allocation, like `synth` (a slot renders its own only while it plays
    * the device) */
   struct le_drift* drift;
+  /* and one Operator device per slot */
+  struct le_operator* op;
   /* audio thread: the device each slot plays (LE_INST_DEVICE_*) */
   int32_t inst_device[LE_MAX_INSTRUMENTS];
   /* audio thread: whether this block's buses hold this block's audio (0 for
@@ -2804,7 +2806,7 @@ struct le_engine {
   uint32_t inst_param_seen[LE_MAX_INSTRUMENTS]; /* audio thread */
   /* a device's parameters (SEG-109), the same way: the bits, the device
    * they are for, the revision */
-  _Atomic uint32_t a_dev_param_bits[LE_MAX_INSTRUMENTS][LE_DRIFT_PARAMS];
+  _Atomic uint32_t a_dev_param_bits[LE_MAX_INSTRUMENTS][LE_INST_DEVICE_MAX_PARAMS];
   _Atomic int32_t a_dev_param_device[LE_MAX_INSTRUMENTS];
   _Atomic uint32_t a_dev_param_rev[LE_MAX_INSTRUMENTS];
   uint32_t dev_param_seen[LE_MAX_INSTRUMENTS]; /* audio thread */
