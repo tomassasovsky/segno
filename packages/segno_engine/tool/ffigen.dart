@@ -52,6 +52,7 @@ const _enums = {
   'le_interface_control',
   'le_drift_param',
   'le_operator_param',
+  'le_meld_param',
 };
 
 Future<void> main() async {

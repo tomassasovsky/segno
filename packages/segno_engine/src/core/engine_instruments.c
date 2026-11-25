@@ -39,6 +39,7 @@
 #include "rt_alloc.h" /* le_rt_alloc_prefaulted / le_rt_free */
 #include "segno_engine_api.h"
 #include "drift_voice.h"
+#include "meld_voice.h"
 #include "operator_voice.h"
 #include "synth_voice.h"
 
@@ -121,16 +122,20 @@ int le_instruments_create(le_engine* e) {
       (size_t)LE_MAX_INSTRUMENTS * sizeof(le_drift));
   e->op = (struct le_operator*)le_rt_alloc_prefaulted(
       (size_t)LE_MAX_INSTRUMENTS * sizeof(le_operator));
+  e->meld = (struct le_meld*)le_rt_alloc_prefaulted(
+      (size_t)LE_MAX_INSTRUMENTS * sizeof(le_meld));
   e->inst_bus = (float*)le_rt_alloc_prefaulted(
       (size_t)LE_MAX_INSTRUMENTS * LE_INST_BUS_CHANNELS *
       (size_t)LE_INST_BUS_FRAMES * sizeof(float));
-  if (e->synth == NULL || e->inst_bus == NULL || e->drift == NULL || e->op == NULL) {
+  if (e->synth == NULL || e->inst_bus == NULL || e->drift == NULL || e->op == NULL ||
+      e->meld == NULL) {
     le_instruments_destroy(e);
     return 0;
   }
   for (int k = 0; k < LE_MAX_INSTRUMENTS; ++k) {
     le_drift_init(&e->drift[k], 48000); /* configure re-initialises them */
     le_operator_init(&e->op[k], 48000);
+    le_meld_init(&e->meld[k], 48000);
   }
   ring_init(&e->inst_ring, e->inst_ring_storage, LE_INST_EVENT_CAPACITY);
   ring_init(&e->inst_release_ring, e->inst_release_storage,
@@ -149,10 +154,12 @@ void le_instruments_destroy(le_engine* e) {
   le_rt_free(e->inst_bus);
   le_rt_free(e->drift);
   le_rt_free(e->op);
+  le_rt_free(e->meld);
   e->synth = NULL;
   e->inst_bus = NULL;
   e->drift = NULL;
   e->op = NULL;
+  e->meld = NULL;
 }
 
 void le_instruments_reset(le_engine* e, int32_t sample_rate) {
@@ -178,6 +185,8 @@ void le_instruments_reset(le_engine* e, int32_t sample_rate) {
     le_drift_set_voice_limit(&e->drift[k], LE_INST_DEFAULT_VOICE_LIMIT);
     le_operator_init(&e->op[k], sample_rate);
     le_operator_set_voice_limit(&e->op[k], LE_INST_DEFAULT_VOICE_LIMIT);
+    le_meld_init(&e->meld[k], sample_rate);
+    le_meld_set_voice_limit(&e->meld[k], LE_INST_DEFAULT_VOICE_LIMIT);
     e->inst_device[k] = LE_INST_DEVICE_NONE;
     e->inst_device_requested[k] = LE_INST_DEVICE_NONE;
     e->dev_param_seen[k] = 0;
@@ -268,15 +277,32 @@ LE_EXPORT int32_t le_engine_set_instrument(le_engine* engine, int32_t slot,
 
 /* Each device's parameter count, default and range. */
 static int32_t device_params(int32_t device) {
-  return device == LE_INST_DEVICE_OPERATOR ? LE_OPERATOR_PARAMS : LE_DRIFT_PARAMS;
+  switch (device) {
+    case LE_INST_DEVICE_OPERATOR: return LE_OPERATOR_PARAMS;
+    case LE_INST_DEVICE_MELD: return LE_MELD_PARAMS;
+    default: return LE_DRIFT_PARAMS;
+  }
 }
 
 static float device_clamp(int32_t device, int32_t p, float v) {
-  return device == LE_INST_DEVICE_OPERATOR ? le_operator_clamp(p, v) : le_drift_clamp(p, v);
+  switch (device) {
+    case LE_INST_DEVICE_OPERATOR: return le_operator_clamp(p, v);
+    case LE_INST_DEVICE_MELD: return le_meld_clamp(p, v);
+    default: return le_drift_clamp(p, v);
+  }
 }
 
 static float device_default(int32_t device, int32_t p) {
-  return device == LE_INST_DEVICE_OPERATOR ? le_operator_default(p) : le_drift_default(p);
+  switch (device) {
+    case LE_INST_DEVICE_OPERATOR: return le_operator_default(p);
+    case LE_INST_DEVICE_MELD: return le_meld_default(p);
+    default: return le_drift_default(p);
+  }
+}
+
+static int known_device(int32_t device) {
+  return device == LE_INST_DEVICE_DRIFT || device == LE_INST_DEVICE_OPERATOR ||
+         device == LE_INST_DEVICE_MELD;
 }
 
 /* Stores a slot's device parameters stamped with `device`, then bumps its
@@ -294,7 +320,7 @@ LE_EXPORT int32_t le_engine_set_instrument_device(le_engine* engine,
                                                   int32_t slot, int32_t device,
                                                   const float* values) {
   if (engine == NULL || slot < 0 || slot >= LE_MAX_INSTRUMENTS ||
-      (device != LE_INST_DEVICE_DRIFT && device != LE_INST_DEVICE_OPERATOR)) {
+      !known_device(device)) {
     return LE_ERR_INVALID;
   }
   if (!configured(engine)) return LE_ERR_NOT_RUNNING;
@@ -542,7 +568,7 @@ LE_EXPORT int32_t le_engine_set_instrument_routes(le_engine* engine,
 
 /* ---- audio thread ---- */
 
-/* The Drift or Operator device slot k plays, or NULL when it plays another
+/* The Drift, Operator or Meld device slot k plays, or NULL when it plays another
  * device, a patch or nothing. */
 static le_drift* slot_drift(le_engine* e, int32_t k) {
   return e->inst_device[k] == LE_INST_DEVICE_DRIFT ? &e->drift[k] : NULL;
@@ -550,6 +576,10 @@ static le_drift* slot_drift(le_engine* e, int32_t k) {
 
 static le_operator* slot_op(le_engine* e, int32_t k) {
   return e->inst_device[k] == LE_INST_DEVICE_OPERATOR ? &e->op[k] : NULL;
+}
+
+static le_meld* slot_meld(le_engine* e, int32_t k) {
+  return e->inst_device[k] == LE_INST_DEVICE_MELD ? &e->meld[k] : NULL;
 }
 
 /* Whether slot k plays anything (a patch or a device). */
@@ -561,10 +591,13 @@ static void slot_note_on(le_engine* e, le_synth* s, int32_t k, uint32_t origin,
                          int32_t note, int32_t velocity, int chord) {
   le_drift* d = slot_drift(e, k);
   le_operator* o = slot_op(e, k);
+  le_meld* m = slot_meld(e, k);
   if (d != NULL) {
     le_drift_note_on(d, origin, note, velocity, chord);
   } else if (o != NULL) {
     le_operator_note_on(o, origin, note, velocity, chord);
+  } else if (m != NULL) {
+    le_meld_note_on(m, origin, note, velocity, chord);
   } else if (chord) {
     le_synth_note_on_chord(s, k, origin, note, velocity);
   } else {
@@ -580,6 +613,8 @@ static void all_note_off(le_engine* e, le_synth* s, uint32_t origin) {
     if (d != NULL) le_drift_note_off(d, origin);
     le_operator* o = slot_op(e, k);
     if (o != NULL) le_operator_note_off(o, origin);
+    le_meld* m = slot_meld(e, k);
+    if (m != NULL) le_meld_note_off(m, origin);
   }
 }
 
@@ -587,8 +622,11 @@ static int slot_sustain(le_engine* e, le_synth* s, int32_t k, uint32_t origin,
                         int on) {
   le_drift* d = slot_drift(e, k);
   le_operator* o = slot_op(e, k);
-  if (d == NULL && o == NULL) return le_synth_sustain(s, k, origin, on);
-  const int r = d != NULL ? le_drift_sustain(d, origin, on) : le_operator_sustain(o, origin, on);
+  le_meld* m = slot_meld(e, k);
+  if (d == NULL && o == NULL && m == NULL) return le_synth_sustain(s, k, origin, on);
+  const int r = d != NULL   ? le_drift_sustain(d, origin, on)
+                : o != NULL ? le_operator_sustain(o, origin, on)
+                            : le_meld_sustain(m, origin, on);
   if (r != 0) s->sustain_refused++; /* one count for every instrument */
   return r;
 }
@@ -600,6 +638,8 @@ static void all_sustain_off(le_engine* e, le_synth* s, uint32_t origin) {
     if (d != NULL) le_drift_sustain(d, origin, 0);
     le_operator* o = slot_op(e, k);
     if (o != NULL) le_operator_sustain(o, origin, 0);
+    le_meld* m = slot_meld(e, k);
+    if (m != NULL) le_meld_sustain(m, origin, 0);
   }
 }
 
@@ -607,10 +647,13 @@ static void slot_expression(le_engine* e, le_synth* s, int32_t k, int32_t kind,
                             float value) {
   le_drift* d = slot_drift(e, k);
   le_operator* o = slot_op(e, k);
+  le_meld* m = slot_meld(e, k);
   if (d != NULL) {
     le_drift_expression(d, kind, value);
   } else if (o != NULL) {
     le_operator_expression(o, kind, value);
+  } else if (m != NULL) {
+    le_meld_expression(m, kind, value);
   } else {
     le_synth_expression(s, k, kind, value);
   }
@@ -626,6 +669,8 @@ static void slot_release_matching(le_engine* e, le_synth* s, int32_t k,
     if (d != NULL) le_drift_release_matching(d, mask, value);
     le_operator* o = slot_op(e, j);
     if (o != NULL) le_operator_release_matching(o, mask, value);
+    le_meld* m = slot_meld(e, j);
+    if (m != NULL) le_meld_release_matching(m, mask, value);
   }
 }
 
@@ -639,6 +684,8 @@ static int slot_held(le_engine* e, const le_synth* s, int32_t k,
     if (d != NULL && le_drift_held(d, origin)) return 1;
     le_operator* o = slot_op(e, j);
     if (o != NULL && le_operator_held(o, origin)) return 1;
+    le_meld* m = slot_meld(e, j);
+    if (m != NULL && le_meld_held(m, origin)) return 1;
   }
   return 0;
 }
@@ -654,6 +701,7 @@ void le_instruments_apply_command(le_engine* e, const le_command* cmd) {
         for (int k = 0; k < LE_MAX_INSTRUMENTS; ++k) {
           le_drift_set_voice_limit(&e->drift[k], cmd->arg_i);
           le_operator_set_voice_limit(&e->op[k], cmd->arg_i);
+          le_meld_set_voice_limit(&e->meld[k], cmd->arg_i);
         }
         store_i32(&e->a_voice_limit, cmd->arg_i);
       }
@@ -663,6 +711,7 @@ void le_instruments_apply_command(le_engine* e, const le_command* cmd) {
         le_synth_cut(s, cmd->arg_i);
         le_drift_cut(&e->drift[cmd->arg_i]);
         le_operator_cut(&e->op[cmd->arg_i]);
+        le_meld_cut(&e->meld[cmd->arg_i]);
       }
       break;
     default:
@@ -843,10 +892,11 @@ void le_instruments_midi_event(le_engine* e, int32_t port,
 
 void le_instruments_cut(le_engine* e) {
   if (e->synth != NULL) le_synth_cut((le_synth*)e->synth, -1);
-  if (e->drift == NULL || e->op == NULL) return;
+  if (e->drift == NULL || e->op == NULL || e->meld == NULL) return;
   for (int k = 0; k < LE_MAX_INSTRUMENTS; ++k) {
     le_drift_cut(&e->drift[k]);
     le_operator_cut(&e->op[k]);
+    le_meld_cut(&e->meld[k]);
   }
 }
 
@@ -877,6 +927,8 @@ static void apply_device_params(le_engine* e, int k) {
   }
   if (device == LE_INST_DEVICE_OPERATOR) {
     le_operator_set_values(&e->op[k], v);
+  } else if (device == LE_INST_DEVICE_MELD) {
+    le_meld_set_values(&e->meld[k], v);
   } else {
     le_drift_set_values(&e->drift[k], v);
   }
@@ -900,6 +952,7 @@ static void end_device(le_engine* e, int32_t k) {
   if (e->inst_device[k] == LE_INST_DEVICE_NONE) return;
   le_drift_cut(&e->drift[k]);
   le_operator_cut(&e->op[k]);
+  le_meld_cut(&e->meld[k]);
   e->inst_device[k] = LE_INST_DEVICE_NONE;
   store_i32(&e->a_inst_device[k], LE_INST_DEVICE_NONE);
 }
@@ -940,7 +993,7 @@ static void apply_event(le_engine* e, le_synth* s, const le_inst_event* ev) {
     }
     case LE_INST_SET_DEVICE: {
       if (ev->slot >= LE_MAX_INSTRUMENTS ||
-          (ev->note != LE_INST_DEVICE_DRIFT && ev->note != LE_INST_DEVICE_OPERATOR)) {
+          !known_device(ev->note)) {
         break;
       }
       /* the slot's patch voices fade, as at a patch change */
@@ -949,6 +1002,7 @@ static void apply_event(le_engine* e, le_synth* s, const le_inst_event* ev) {
       /* a device given again starts over, and another device's voices fade */
       le_drift_cut(&e->drift[ev->slot]);
       le_operator_cut(&e->op[ev->slot]);
+      le_meld_cut(&e->meld[ev->slot]);
       e->inst_device[ev->slot] = ev->note;
       store_i32(&e->a_inst_device[ev->slot], ev->note);
       apply_device_params(e, ev->slot);
@@ -995,7 +1049,8 @@ static void enforce_voice_budget(le_engine* e, le_synth* s) {
   int32_t total = le_synth_active(s, -1);
   int32_t active[LE_MAX_INSTRUMENTS];
   for (int k = 0; k < LE_MAX_INSTRUMENTS; ++k) {
-    active[k] = le_drift_active(&e->drift[k]) + le_operator_active(&e->op[k]);
+    active[k] = le_drift_active(&e->drift[k]) + le_operator_active(&e->op[k]) +
+                le_meld_active(&e->meld[k]);
     total += active[k];
   }
   while (total > s->voice_limit) {
@@ -1005,8 +1060,9 @@ static void enforce_voice_budget(le_engine* e, le_synth* s) {
     }
     int32_t faded = active[busiest] > 0 ? le_drift_fade_oldest(&e->drift[busiest]) : 0;
     if (faded == 0 && active[busiest] > 0) faded = le_operator_fade_oldest(&e->op[busiest]);
+    if (faded == 0 && active[busiest] > 0) faded = le_meld_fade_oldest(&e->meld[busiest]);
     if (faded == 0) return; /* only patch voices: the synth keeps its own limit */
-    /* an Operator Spread note is two voices */
+    /* an Operator Spread note is two voices, a Meld note one per unison copy */
     active[busiest] -= faded;
     total -= faded;
   }
@@ -1031,7 +1087,8 @@ void le_instruments_render(le_engine* e, uint32_t frames) {
   for (int k = 0; k < LE_MAX_INSTRUMENTS && !any; ++k) {
     any = (s->inst[k].patch >= 0 && le_synth_active(s, k) > 0) ||
           le_drift_active(&e->drift[k]) > 0 || le_drift_fading(&e->drift[k]) > 0 ||
-          le_operator_active(&e->op[k]) > 0 || le_operator_fading(&e->op[k]) > 0;
+          le_operator_active(&e->op[k]) > 0 || le_operator_fading(&e->op[k]) > 0 ||
+          le_meld_active(&e->meld[k]) > 0 || le_meld_fading(&e->meld[k]) > 0;
   }
   if (!any) {
     /* Nothing sounds: no render and no cost; a bus that last carried audio
@@ -1103,6 +1160,19 @@ void le_instruments_render(le_engine* e, uint32_t frames) {
         }
       }
     }
+    le_meld* m = &e->meld[k];
+    if (le_meld_active(m) > 0 || le_meld_fading(m) > 0) {
+      if (bpm > 0.0f) le_meld_set_tempo(m, bpm);
+      float ml[256], mr[256];
+      for (uint32_t f0 = 0; f0 < frames; f0 += 256) {
+        const uint32_t n = frames - f0 < 256 ? frames - f0 : 256;
+        le_meld_render(m, ml, mr, (int32_t)n);
+        for (uint32_t i = 0; i < n; ++i) {
+          bus[k][f0 + i] += ml[i];
+          right[f0 + i] += mr[i];
+        }
+      }
+    }
     float peak = 0.0f;
     for (uint32_t f = 0; f < frames; ++f) {
       const float a = fabsf(bus[k][f]);
@@ -1113,11 +1183,11 @@ void le_instruments_render(le_engine* e, uint32_t frames) {
     store_f32(&e->a_inst_peak_bits[k], peak);
     store_i32(&e->a_inst_voices[k],
               le_synth_active(s, k) + le_drift_active(&e->drift[k]) +
-                  le_operator_active(&e->op[k]));
+                  le_operator_active(&e->op[k]) + le_meld_active(&e->meld[k]));
   }
   uint32_t stolen = s->stolen;
   for (int k = 0; k < LE_MAX_INSTRUMENTS; ++k) {
-    stolen += e->drift[k].stolen + e->op[k].stolen;
+    stolen += e->drift[k].stolen + e->op[k].stolen + e->meld[k].stolen;
   }
   atomic_store_explicit(&e->a_voices_stolen, stolen, memory_order_relaxed);
   atomic_store_explicit(&e->a_voices_stolen_hard, s->stolen_hard,

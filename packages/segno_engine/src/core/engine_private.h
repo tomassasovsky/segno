@@ -2777,6 +2777,7 @@ struct le_engine {
   struct le_drift* drift;
   /* and one Operator device per slot */
   struct le_operator* op;
+  struct le_meld* meld;
   /* audio thread: the device each slot plays (LE_INST_DEVICE_*) */
   int32_t inst_device[LE_MAX_INSTRUMENTS];
   /* audio thread: whether this block's buses hold this block's audio (0 for

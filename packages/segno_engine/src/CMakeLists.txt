@@ -55,6 +55,9 @@ add_library(segno_engine SHARED
   core/synth_patch.c         # the 19 patches + le_synth_patch_info & co.
   core/drift_voice.c         # the Drift device (drift_voice.h, SEG-109)
   core/operator_voice.c      # the Operator device (operator_voice.h, SEG-109)
+  core/meld_voice.c          # the Meld device (meld_voice.h, SEG-109)
+  core/meld_osc.c            # Meld's oscillators
+  core/meld_filter.c         # Meld's filters
   # The miniaudio device backend (le_device_backend.h), compiled unconditionally
   # — the only device backend this build ships; another backend slots in behind
   # le_select_backend.
