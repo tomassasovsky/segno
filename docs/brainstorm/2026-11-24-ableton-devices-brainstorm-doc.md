@@ -4,9 +4,9 @@
 
 **Date:** 2026-11-24
 **Issue:** SEG-109 (related: SEG-57, Segno's own instrument voices)
-**Status:** brainstorm; the decisions marked *open* need the owner before
-`/plan`. Behavior findings for Drift are filled in as the Ghidra analysis
-lands (section "Drift: behavior").
+**Status:** decisions locked with the owner (2026-11-24); Drift's behavior
+described from the analysis (2026-11-25), with the open items listed;
+ready for `/plan`.
 
 ## Problem / motivation
 
@@ -44,7 +44,7 @@ two mod sources and amounts, per-source filter routing), `Envelope1_*` and
 `CyclingEnvelope_*` (Mode 0..3, Rate 0.17..1700 Hz, Ratio, Time, SyncedRate
 0..21, MidPoint, Hold), `Lfo_*` (Mode 0..3, Shape 0..8, Rate, Ratio, Time,
 SyncedRate, Amount, mod source and amount, Retrigger), `PitchModulation_*`
-and `ModulationMatrix_*` (three slots of source 0..7, target 0..10, amount
+and `ModulationMatrix_*` (three slots of source 0..7, target 0..11 (presets use up to 10), amount
 -1..1), and `Global_*` (VoiceMode Poly / Mono / Stereo / Unison, VoiceCount
 0..4, depth per mode, DriftDepth, Glide 0..2 s, Legato, PitchBendRange,
 VolVelMod, Volume, Transpose -48..48, Envelope2Mode, ResetOscillatorPhase,
@@ -87,25 +87,187 @@ never addresses or decompiled listings.
 
 ## Drift: behavior
 
-*Filled in from the analysis.* For each block: what it computes, its
-parameter curves (stored value → DSP value), its rate (per sample, per
-control block, per note), and its order in the voice.
+Learned 2026-11-25 from Live 12.2.7 (four parallel reads of the voice
+render, the modulation stage, the voice manager and the parameter
+handlers). Tags: **[code]** read from the compiled code, **[inferred]**
+deduced from structure, names, ranges or presets, **[open]** to settle by
+rendering Live with known settings and comparing (section "Open items").
+This is a description of behavior in Segno's words; the implementation is
+written from it.
 
-- Oscillator 1 (seven types) and its shape modulation:
-- Oscillator 2 (five types), detune and transpose:
-- Noise:
-- Mixer and filter routing (which sources pass the filters):
-- Low-pass filter, types I and II, resonance, key tracking, two mod slots:
-- High-pass filter:
-- Envelope 1 (amplitude) and Envelope 2, curves:
-- Cycling envelope (Envelope 2 in cycling mode), its four modes:
-- LFO: four modes, nine shapes, sync, retrigger:
-- Modulation matrix: the eight sources and eleven targets:
-- Voice modes: Poly, Mono (thickness), Stereo (spread), Unison (strength),
-  voice counts, glide and legato:
-- Drift (the per-voice random detune and its depth):
-- Note gain and velocity to volume:
-- HiQuality (oversampling or a quality switch):
+### Rates and structure
+
+- 32 voices, rendered four at a time (one SIMD lane per voice), one sample
+  per call. **[code]**
+- The host buffer is cut into chunks of at most 32 samples. Parameter
+  values are applied once per chunk; every change ramps linearly from its
+  current value over the event's ramp length. MIDI notes start and stop at
+  their exact sample. **[code]**
+- Inside a voice, modulation sources, envelopes, the LFO, the matrix,
+  oscillators and filters (including the filter coefficients) all run every
+  sample. **[code]**
+- HiQuality (on in every factory preset) runs all voices at 2× the host
+  rate and decimates with a polyphase allpass halfband. Off: host rate, no
+  decimator. Segno uses its own halfband (`halfband.c`). **[code]**
+- Stored preset values are in the parameter's display unit (Hz, seconds,
+  linear gain, octaves, semitones, −1..1 amounts, enum indices) and reach
+  the DSP through a fixed linear map per parameter, two Global parameters
+  through a power curve. **[code]** for the shape; the constants **[open]**.
+
+### Voice signal path, per sample
+
+1. Pitch: note frequency (equal temperament, A4 = 440 Hz) → glide →
+   per-key tuning → per-oscillator ratio (transpose, detune) → pitch
+   modulation.
+2. Oscillator 1, oscillator 2 and noise.
+3. Mixer: each source × its gain (× its gain modulation), 0 when its switch
+   is off.
+4. Routing: each source goes into the filter sum or around the filters, by
+   its own switch (stored `Through = true` means filtered **[inferred from
+   presets]**).
+5. Filter sum: hard clip at ±1.6, × 0.25 → low-pass (type I or II) → −10 dB
+   → high-pass.
+6. The bypassed sum × about −17.8 dB (roughly the filter path's pass-band
+   gain, so a routing switch keeps the level) is added after the high-pass;
+   the sum is clipped at a fixed limit **[open: its value]**.
+7. Amplitude: × Envelope 1 × (1 − VolVel + VolVel · velocity) × Main
+   Volume gain (matrix target 11) × note gain × voice-mode gain and pan.
+
+### Oscillators
+
+- Stored type order (the UI's) differs from the DSP's; the reader maps by
+  name. Osc 1: Sine, Triangle, Shark Tooth, Saturated, Saw, Pulse,
+  Rectangle. Osc 2: Sine, Triangle, Saturated, Saw, Rectangle, each its
+  Shape = 0 form. **[code]**
+- Phase accumulator per oscillator, increment f / fs clamped below Nyquist;
+  a phase-offset input moves the read point. Jumps are band-limited with
+  2-sample polyBLEP, slope corners with polyBLAMP. No wavetables.
+  **[code]** What drives the phase offset is **[open]**.
+- What Shape (0..1, plus shape modulation) does per type **[code]**:
+  - Sine: a parabolic sine through a wavefolder, gain 1 + 4·shape.
+  - Triangle: gain 1 + 7·shape, then an asymmetric fold (different
+    thresholds above and below zero, so even harmonics appear).
+  - Shark Tooth: a falling ramp with a triangular dip whose width runs from
+    10 % of the cycle (shape 0) to the whole cycle (shape 1, a triangle).
+  - Saturated: a scaled, clipped triangle through a parabola; asymmetric, so
+    it carries a DC offset (about −0.33 at shape 0). Not band-limited.
+  - Saw: hard sync, slave ratio 1 + 10·shape; the master-reset edge is not
+    band-limited.
+  - Pulse: a pulse whose duty runs 20 %..99 %, crossfading with shape into a
+    train of half-sine bumps that decay to the floor across the cycle.
+  - Rectangle: pulse width 50 %..99 %; negative shape modulation narrows it.
+- Transpose: whole octaves (Osc 1 −2..+3, Osc 2 −3..+2). Osc 2 Detune:
+  semitones, −7..+7, fractional. **[inferred from ranges and labels]**
+- Noise: Gaussian white, per voice (xorshift + Box–Muller), clipped at
+  ±10, no colouring. **[code]**
+
+### Filters
+
+- Low-pass cutoff = Frequency × key tracking × 2^(10 · S), clamped to
+  10 Hz..20 kHz, where S = Σ (filter mod source × amount) + matrix slots
+  targeting LP Frequency: 10 octaves per unit. Resonance = stored 0..1.01 +
+  matrix slots targeting LP Resonance, clamped to 0..1.3. **[code]**
+- Key tracking uses the voice's key value (note − 69)/120 **[code]**; the
+  formula with `Filter_Tracking` is **[open]**.
+- Type I: a two-pole zero-delay filter with two unequal one-pole
+  integrators (capacitor ratio 3.3, so a 12 dB/oct slope with a soft knee),
+  trapezoidal prewarp, a cubic soft clip in the feedback solved in closed
+  form each sample, resonance pulled back above resonance 1 at high
+  cutoffs, and a tiny injected noise that lets self-oscillation start from
+  silence. Input gain about 1.67. **[code]**
+- Type II: two nonlinear sections in series with a diode-style shaper in
+  each feedback path, two fixed iterations per sample, input gain × 3,
+  resonance curve q = 4r/(3r + 1) + 4·max(r − 1, 0)² with a limiter at high
+  cutoffs. **[code]** The limiter constants, the per-section scales and the
+  slope (Live's manual says 24 dB/oct) are **[open]**; the shaper is
+  designed fresh for Segno and fitted to Live's output.
+- High-pass: a linear 2-pole state-variable filter, Q about 1.47 (a small
+  bump at the corner), 20 Hz..20 kHz, modulated by matrix slots targeting
+  HP Frequency at 10 octaves per unit. **[code]**
+
+### Modulation
+
+- Sources 0..7: Env 1, Env 2 / Cyc, LFO, Key, Velocity, Modwheel (one
+  value per device), Pressure, Slide (MPE, per voice). **[code]**
+  Destinations read them raw, bipolar (velocity centred at 64) or unipolar
+  (LFO mapped to 0..1, Key clamped at 0). **[code]**
+- Matrix: three slots (source, target, amount −1..1). Targets 0..11: None,
+  Osc 1 Gain, Osc 1 Shape, Osc 2 Gain, Osc 2 Detune (±1 octave), Noise Gain,
+  LP Frequency, LP Resonance, HP Frequency, LFO Rate (±4 octaves), Cyc Env
+  Rate (±4 octaves), Main Volume. Gain targets use
+  g = (1 − |a|) + |a| · (u, or 1 − u for negative a), and slots on the same
+  gain multiply. **[code]**
+- Pitch modulation (two fixed slots): pitch × 2^(source · amount · range);
+  range ±4 octaves for Env 1, Env 2 and Velocity, ±2 for LFO, Modwheel,
+  Pressure and Slide, 10 octaves per unit of Key (amount 1 tracks the
+  keyboard 1:1). **[code]**
+- Envelopes 1 and 2: attack rises linearly from the current level to 1;
+  decay approaches Sustain and release approaches 0 exponentially; a voice
+  ends below 0.001. **[code]** Time → coefficient mapping **[open]**.
+  `Envelope2Mode` 1 makes Envelope 2 the cycling envelope. **[inferred]**
+- Cycling envelope: a phase per voice; a triangle whose peak moves with
+  MidPoint over the middle 60 % of the knob, crossfading over the outer 20 %
+  into a fourth-power spike; Hold multiplies it by 1/(1 − 0.95·Hold) and
+  clips at 1, flattening the top. Rate by Mode: Hz, ratio to the note,
+  time per cycle, or tempo sync. **[code]** for the curve; the Mode order
+  **[inferred]**.
+- LFO: a phase per voice (Retrigger resets it on a note), increment clamped
+  below Nyquist, rate modes as the cycling envelope. Shapes 0..8: Sine,
+  Triangle, two saws (rising and falling; which one is "Saw Up" is
+  **[open]**), Square, Sample & Hold (two steps per cycle), Wander (smoothed
+  random), Linear Env and Exponential Env (one-shot, 0..1). Output × Amount
+  × the gain from its own mod source. **[code]**
+- Note gain: a pitch-dependent gain from 1 % of the ISO 226 40-phon
+  equal-loudness contour, at most about −0.64 dB. Segno computes it from
+  the standard. **[code]**
+
+### Voices
+
+- Poly allocation: a repeated note reuses its voice; otherwise the next
+  free voice round-robin among the first n; with none free, the oldest is
+  stolen. **[code]**
+- With ResetOscillatorPhase on, a note on a sounding voice waits for a fast
+  fade-out, then starts with reset phases; with it off, the note starts at
+  once and the envelope continues from its level. **[code]**
+- Modes (0..3): **[code]**
+  - Poly: one voice per note. PolyVoiceDepth has no effect.
+  - Mono: four voices on one note at 0, −12, −12 and −24 semitones; Thickness
+    fades the three lower voices in one after another across the knob's
+    thirds; mode gain about −1 dB.
+  - Stereo: two voices per note (16 notes at most); Spread's law is
+    **[open]**.
+  - Unison: four voices per note (8 notes at most), panned −1, −0.5, +0.5,
+    +1 and detuned +42, +21, −21, −42 cents at full Strength, both scaled
+    linearly by Strength; mode gain about −6.5 dB. The pan law is
+    **[open]**.
+- Voice counts (0..4) → the voice limit; the table is **[open]** (Live's UI
+  offers 8, 12, 16, 24 and 32 as far as known).
+- Per-key tuning: notes C1..B5 are blended toward a fixed table of small
+  per-key deviations (rms about 4 cents, −5 to +14 cents), with a weight up
+  to 1.72; the weight's parameter is most likely DriftDepth **[inferred]**.
+  Segno builds its own table with a similar spread; Live's table is not
+  copied.
+- SerialNumber: a random number per instance, saved in the preset,
+  probably the seed for per-instance randomness. **[inferred]**
+- Glide (0..2 s), Legato, Pitch Bend Range, Note Pitch Bend and Transpose:
+  stored and passed on; their exact use in the voice is **[open]**.
+
+### Open items
+
+Settle by rendering Live (Live 12 Suite is on the owner's Mac) with one
+parameter changed at a time against a reference patch, and fitting:
+
+1. Envelope time → coefficient (decay, release; attack in samples).
+2. Filter key tracking; type II's slope, limiter and shaper.
+3. Stereo Spread and the Unison pan law; Volume and Glide curves; glide and
+   legato behavior.
+4. The voice count table; LFO shapes 2 and 3; the SyncedRate division table
+   (from Live's UI).
+5. The output clip limit; DriftDepth's role; the phase-offset source.
+
+Rendering through Live uses Live's own UI (computer use or the owner) to
+set a parameter and export audio; no further decompiling is needed for
+these.
 
 ## Decisions
 
