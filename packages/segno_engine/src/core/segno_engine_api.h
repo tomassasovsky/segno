@@ -5802,8 +5802,8 @@ typedef enum le_tension_param {
   LE_TENSION_UNISON,                 /* 0: 2 voices, 1: 4 */
   LE_TENSION_UNISON_DETUNE,          /* 0..1 */
   LE_TENSION_UNISON_DELAY,           /* 0..1 */
-  LE_TENSION_STRETCH,                /* 0..1 (stored) */
-  LE_TENSION_ERROR,                  /* 0..1 (stored) */
+  LE_TENSION_STRETCH,                /* 0..1: the key 0.992..1.008 times about A4 */
+  LE_TENSION_ERROR,                  /* 0..1: a random rise up to 0.02 octave */
   LE_TENSION_VIBRATO_ON,             /* 0/1 */
   LE_TENSION_VIBRATO_SPEED,          /* 0..1 */
   LE_TENSION_VIBRATO_FADE,

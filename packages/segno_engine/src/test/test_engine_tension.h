@@ -108,6 +108,43 @@ static void test_tension_extremes(void) {
   }
 }
 
+/* Keyboard Stretch scales the key about A4: at full (1.008 times) C2 sounds
+ * 26 cents flat. The fastest hammer's strike bends softly toward the
+ * output's full scale of 4 and never passes it. The body's first line
+ * answers the string 210 samples later at 48 kHz (type 0, size 1: its
+ * all-pass side, 257 - 47), never sooner. */
+static void test_tension_stretch_clip_body(void) {
+  printf("test_tension_stretch_clip_body\n");
+  enum { N = 48000 };
+  static float l[N], r[N], dry[N];
+  tension_reference(&g_tension);
+  tension_set(&g_tension, LE_TENSION_BODY_ON, 0.0f);
+  tension_set(&g_tension, LE_TENSION_STRETCH, 1.0f);
+  CHECK(le_tension_note_on(&g_tension, 1, 36, 100, 0) == 0);
+  le_tension_render(&g_tension, l, r, N);
+  const double f = opr_note_hz(36);
+  CHECK(opr_component(l + 4800, 24000, f * pow(2.0, -26.4 / 1200.0)) > opr_component(l + 4800, 24000, f));
+  tension_reference(&g_tension);
+  tension_set(&g_tension, LE_TENSION_BODY_ON, 0.0f);
+  tension_set(&g_tension, LE_TENSION_EXC_VEL, 1.0f);
+  CHECK(le_tension_note_on(&g_tension, 1, 60, 127, 0) == 0);
+  le_tension_render(&g_tension, l, r, N);
+  CHECK(opr_peak(l, N) <= 4.0f && opr_peak(l, N) > 3.5f);
+  tension_reference(&g_tension);
+  tension_set(&g_tension, LE_TENSION_BODY_ON, 0.0f);
+  CHECK(le_tension_note_on(&g_tension, 1, 60, 100, 0) == 0);
+  le_tension_render(&g_tension, dry, r, 4800);
+  tension_reference(&g_tension);
+  tension_set(&g_tension, LE_TENSION_BODY_ON, 1.0f);
+  tension_set(&g_tension, LE_TENSION_BODY_MIX, 1.0f);
+  CHECK(le_tension_note_on(&g_tension, 1, 60, 100, 0) == 0);
+  le_tension_render(&g_tension, l, r, 4800);
+  int32_t a = 0, b = 0;
+  while (a < 4800 && fabsf(dry[a]) < 1e-4f) a++;
+  while (b < 4800 && fabsf(l[b]) < 1e-4f) b++;
+  CHECK(b - a >= 209 && b - a <= 214);
+}
+
 /* The body rings on after the last string and is reported fading while it
  * does; then it ends, and the device is silent. */
 static void test_tension_body_tail(void) {
@@ -314,6 +351,7 @@ static void test_engine_tension_midi(void) {
 static void run_tension_tests(void) {
   test_tension_exciters();
   test_tension_extremes();
+  test_tension_stretch_clip_body();
   test_tension_body_tail();
   test_tension_voices();
   test_tension_block_size();

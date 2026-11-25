@@ -62,6 +62,11 @@ static float pos(float v) {
 }
 
 static float c_lin(float lo, float hi, float v) { return lo + (hi - lo) * pos(v) / 127.0f; }
+/* The same line, but exactly its midpoint at 64 (the controls whose
+ * centre is a neutral setting). */
+static float c_mid(float lo, float hi, float v) {
+  return pos(v) == 64.0f ? 0.5f * (lo + hi) : c_lin(lo, hi, v);
+}
 static float c_exp(float lo, float hi, float v) { return lo * powf(hi / lo, pos(v) / 127.0f); }
 static float db_curve(float k, float o, float v) { return powf(10.0f, k * pos(v) + o); }
 
@@ -126,7 +131,7 @@ static float key_cv(const le_electric* d, int32_t note) {
 /* The fork's pitch: the key with bend, shifted by Keyboard Stretch (whose
  * scaling about A4 reaches no input in Live, so only its offset is left). */
 static float fork_pitch(const le_electric* d, float key) {
-  const float s = c_lin(0.992f, 1.008f, vf(d, LE_ELECTRIC_STRETCH));
+  const float s = c_mid(0.992f, 1.008f, vf(d, LE_ELECTRIC_STRETCH));
   return key + vf(d, LE_ELECTRIC_BEND_RANGE) * d->bend + 0.75f * (1.0f - s);
 }
 
@@ -370,7 +375,7 @@ static void strike(const le_electric* d, le_electric_voice* v, float key, float 
   const float out = pos(vf(d, LE_ELECTRIC_PICKUP_OUT)) == 0.0f
                         ? 0.0f
                         : db_curve(0.01171875f, -0.3f, vf(d, LE_ELECTRIC_PICKUP_OUT));
-  v->pk_gain = out * exp2f(c_lin(-1.5f, 1.5f, vf(d, LE_ELECTRIC_PICKUP_KEY)) * key);
+  v->pk_gain = out * exp2f(c_mid(-1.5f, 1.5f, vf(d, LE_ELECTRIC_PICKUP_KEY)) * key);
   v->pk_in = db_curve(0.009375f, -1.5f, vf(d, LE_ELECTRIC_PICKUP_IN));
   v->pk_a = pos(vf(d, LE_ELECTRIC_PICKUP_SYMMETRY)) == 0.0f ? 0.0f
                                                             : c_exp(0.02f, 2.0f, vf(d, LE_ELECTRIC_PICKUP_SYMMETRY));
@@ -387,7 +392,7 @@ static void damper(const le_electric* d, le_electric_voice* v, float key, int of
   v->da = sqrtf(g) / (1.0f + g);
   v->np = 1.0f / (1.0f + 19.0f * g);
   v->nb = 19.0f * g / (1.0f + 19.0f * g);
-  const float bal = c_lin(0.0f, 1.0f, vf(d, LE_ELECTRIC_DAMPER_BALANCE));
+  const float bal = c_mid(0.0f, 1.0f, vf(d, LE_ELECTRIC_DAMPER_BALANCE));
   const float share = off ? bal : 1.0f - bal;
   v->e[0] += v->da * share * db_curve(0.0140625f, -1.5f, vf(d, LE_ELECTRIC_DAMPER_AMOUNT));
 }
@@ -427,10 +432,10 @@ static void fork_tune(const le_electric* d, le_electric_voice* v, float p) {
    * balance, as the presets store them (the tine renders) */
   const float a_tine = db_curve(0.021875f, -2.5f, vf(d, LE_ELECTRIC_TINE_VOLUME)) *
                        exp2f((key_exp(vf(d, LE_ELECTRIC_TINE_COLOR)) - 1.0f) * p);
-  const float theta = 0.5f * EV_PI * c_lin(0.0f, 1.0f, vf(d, LE_ELECTRIC_TINE_KEY));
+  const float theta = 0.5f * EV_PI * c_mid(0.0f, 1.0f, vf(d, LE_ELECTRIC_TINE_KEY));
   const float a_noise = db_curve(0.021875f, -2.5f, vf(d, LE_ELECTRIC_NOISE_AMOUNT)) *
                         exp2f((key_exp(vf(d, LE_ELECTRIC_NOISE_KEY)) - 1.0f) * p);
-  const float noise_hz = 367.31f * exp2f(c_lin(-4.5f, 5.5f, vf(d, LE_ELECTRIC_NOISE_PITCH)));
+  const float noise_hz = 367.31f * exp2f(c_mid(-4.5f, 5.5f, vf(d, LE_ELECTRIC_NOISE_PITCH)));
   resonator(&v->r[0], 261.62f * up, held ? EV_LN2 * d_tone * up : 52.80333f * up / release, a_tone, 0.9f, !held,
             rate);
   /* fit: the tine rings 7.349 times the note (1922.7 Hz at C4), its partial
@@ -537,11 +542,22 @@ static void block_start(le_electric* d, le_electric_voice* v) {
   if (v->state == LE_ELECTRIC_VOICE_FADING && v->fade <= 0.0f) v->state = LE_ELECTRIC_VOICE_FREE;
 }
 
+/* The output stage: linear up to 2.8, then bending smoothly (same value
+ * and slope at the knee) toward a ceiling of 4, as Live's output stage
+ * does at a quarter of this scale before its x4. */
+static float out_clip(float x) {
+  const float a = fabsf(x);
+  if (a <= 2.8f) return x;
+  const float u = 1.0f + (a - 2.8f) / 3.6f;
+  return copysignf(4.0f - 1.2f / (u * u * u), x);
+}
+
 void le_electric_render(le_electric* d, float* left, float* right, int32_t frames) {
   if (d == NULL || left == NULL || right == NULL || frames <= 0) return;
   memset(left, 0, sizeof(float) * (size_t)frames);
   const float vol = pos(vf(d, LE_ELECTRIC_VOLUME)) / 127.0f;
-  /* fit: the volume is 2u^2 and the bundle's x4 does not reach the output */
+  /* the volume is 2u^2; fit: the voices' levels already carry Live's final
+   * x4, so the output stage's ceiling sits at 4 */
   const float target = 2.0f * vol * vol;
   int32_t i = 0;
   while (i < frames) {
@@ -560,7 +576,7 @@ void le_electric_render(le_electric* d, float* left, float* right, int32_t frame
     }
     for (int32_t s = 0; s < n; ++s) {
       d->gain += d->gain_step;
-      left[i + s] *= d->gain;
+      left[i + s] = out_clip(left[i + s] * d->gain);
     }
     d->block_left -= n;
     i += n;
