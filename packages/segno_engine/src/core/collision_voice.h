@@ -130,8 +130,8 @@ typedef struct le_collision_voice {
   float pulse_in; /* the impulse waiting for the pulse filter */
   /* the noise source */
   le_collision_bq nf1, nf2;
-  float nf_step[10];  /* the filters' coefficients' steps towards their next values */
   int32_t nf_left;    /* samples to the filters' next update */
+  uint32_t nf_serial; /* the values they were set from */
   int32_t env_seg;
   float env, env_step;
   uint32_t rng;

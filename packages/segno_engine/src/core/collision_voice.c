@@ -669,7 +669,6 @@ static void start_voice(le_collision* d, le_collision_voice* v, uint32_t origin,
     memset(&v->mnoise, 0, sizeof(v->mnoise));
     memset(&v->nf1, 0, sizeof(v->nf1));
     memset(&v->nf2, 0, sizeof(v->nf2));
-    memset(v->nf_step, 0, sizeof(v->nf_step));
     v->nf_left = -1;
     v->env = 0.0f;
     for (int32_t l = 0; l < 2; ++l) v->lfo[l].out = v->lfo[l].rnd = v->lfo[l].rnd_prev = 0.0f;
@@ -925,18 +924,34 @@ static void tick_lfos(le_collision* d, le_collision_voice* v, int advance) {
   }
 }
 
-/* The noise filters' coefficients at the envelope's current value. */
-static void noise_filter(const le_collision* d, const le_collision_voice* v, le_collision_bq* q1, le_collision_bq* q2) {
+/* One biquad's unnormalised coefficients b0 b1 b2 a0 a1 a2 (RBJ; the
+ * band-pass of constant skirt). */
+static void bq_raw(float* q, int32_t type, float f, float qq, float rate) {
+  f = clampf(f, 0.0003f * rate, 0.45f * rate);
+  qq = clampf(qq, 0.05f, 100.0f);
+  const float w = 2.0f * CV_PI * f / rate, c = cosf(w), s = sinf(w), a = s / (2.0f * qq);
+  if (type == 0) q[0] = q[2] = (1.0f - c) / 2.0f, q[1] = 1.0f - c;
+  else if (type == 1) q[0] = q[2] = (1.0f + c) / 2.0f, q[1] = -(1.0f + c);
+  else q[0] = s / 2.0f, q[1] = 0.0f, q[2] = -s / 2.0f;
+  q[3] = 1.0f + a;
+  q[4] = -2.0f * c;
+  q[5] = 1.0f - a;
+}
+
+/* The noise filters' coefficients at the envelope's current value: q1 the
+ * first filter, q2 the low-pass of the LP + HP pair. */
+static void noise_raw(const le_collision* d, const le_collision_voice* v, float* q1, float* q2) {
   const float rate = (float)d->sample_rate;
   const int32_t type = vi(d, LE_COLLISION_NOISE_FILTER);
   const float f = k_exp(d, LE_COLLISION_NOISE_FREQ, 50.0f, 18000.0f) * exp2f(v->dest[LE_COLLISION_D_NOISE_FREQ]) *
                   exp2f(vf(d, LE_COLLISION_NOISE_FREQ_ENV) * v->env);
   if (type == 3) {
     const float w = k_lin(d, LE_COLLISION_NOISE_Q, 0.5f, 9.0f);
-    bq_filter(q1, 1, clampf(f / exp2f(0.5f * w), 50.0f, 18000.0f), 0.707f, rate);
-    bq_filter(q2, 0, clampf(f * exp2f(0.5f * w), 50.0f, 18000.0f), 0.707f, rate);
+    bq_raw(q1, 1, clampf(f / exp2f(0.5f * w), 50.0f, 18000.0f), 0.707f, rate);
+    bq_raw(q2, 0, clampf(f * exp2f(0.5f * w), 50.0f, 18000.0f), 0.707f, rate);
   } else {
-    bq_filter(q1, type, f, k_exp(d, LE_COLLISION_NOISE_Q, 0.2f, 3.0f), rate);
+    bq_raw(q1, type, f, k_exp(d, LE_COLLISION_NOISE_Q, 0.2f, 3.0f), rate);
+    memcpy(q2, q1, sizeof(float) * 6);
   }
 }
 
@@ -1105,27 +1120,22 @@ static void render_voice(le_collision* d, le_collision_voice* v, float* left, fl
           v->env_seg = ENV_IDLE;
           v->env_step = 0.0f;
         }
-        /* the filters move every 10 ms, their coefficients ramping to the
-         * new values across the 10 ms; a fresh voice starts on them */
-        if (v->nf_left <= 0) {
-          le_collision_bq t1 = v->nf1, t2 = v->nf2;
-          noise_filter(d, v, &t1, &t2);
-          const int32_t per = d->sample_rate / 100;
-          float* c[10] = {&v->nf1.b0, &v->nf1.b1, &v->nf1.b2, &v->nf1.a1, &v->nf1.a2,
-                          &v->nf2.b0, &v->nf2.b1, &v->nf2.b2, &v->nf2.a1, &v->nf2.a2};
-          const float tg[10] = {t1.b0, t1.b1, t1.b2, t1.a1, t1.a2, t2.b0, t2.b1, t2.b2, t2.a1, t2.a2};
-          for (int32_t k = 0; k < 10; ++k) {
-            if (v->nf_left < 0) *c[k] = tg[k], v->nf_step[k] = 0.0f;
-            else v->nf_step[k] = (tg[k] - *c[k]) / (float)per;
-          }
-          v->nf_left = per;
+        /* the filters: set at the strike and when a knob moves; then, if the
+         * envelope or a route moves the cutoff, stepped to the new values
+         * every 10 ms (as the engine's own update; fit: Toy Piano Bells,
+         * noise-env) */
+        if (v->nf_left < 0 || v->nf_serial != d->serial_values ||
+            (--v->nf_left <= 0 && (vf(d, LE_COLLISION_NOISE_FREQ_ENV) != 0.0f ||
+                                   v->dest[LE_COLLISION_D_NOISE_FREQ] != 0.0f))) {
+          v->nf_serial = d->serial_values;
+          float q[12];
+          noise_raw(d, v, q, q + 6);
+          bq_set(&v->nf1, q[0], q[1], q[2], q[3], q[4], q[5]);
+          bq_set(&v->nf2, q[6], q[7], q[8], q[9], q[10], q[11]);
         }
-        v->nf_left--;
-        v->nf1.b0 += v->nf_step[0]; v->nf1.b1 += v->nf_step[1]; v->nf1.b2 += v->nf_step[2];
-        v->nf1.a1 += v->nf_step[3]; v->nf1.a2 += v->nf_step[4];
-        v->nf2.b0 += v->nf_step[5]; v->nf2.b1 += v->nf_step[6]; v->nf2.b2 += v->nf_step[7];
-        v->nf2.a1 += v->nf_step[8]; v->nf2.a2 += v->nf_step[9];
+        if (v->nf_left <= 0) v->nf_left = d->sample_rate / 100;
         float z = 2.0f * (float)((v->rng = v->rng * 1664525u + 1013904223u) >> 8) / 16777216.0f - 1.0f;
+
         z = bq_tick(&v->nf1, z);
         if (vi(d, LE_COLLISION_NOISE_FILTER) == 3) z = bq_tick(&v->nf2, z);
         x += z * v->env * ng;

@@ -1466,9 +1466,11 @@ Meld. Segno's implementation is `collision_voice.c`.
 - The noise source: white noise through a low-pass, high-pass, band-pass
   (of constant skirt: its peak gain is Q) or a low-pass and high-pass pair
   a width apart, under a linear ADSR, its cutoff moved by the envelope
-  (Freq < Env octaves) and the routes. The cutoff is recomputed every 10
-  ms and the coefficients ramp to it across the 10 ms. **[code]** A fresh
-  voice starts on its first coefficients. **[Segno]**
+  (Freq < Env octaves) and the routes. The filters are set at the strike
+  and when a knob moves; when the envelope or a route moves the cutoff,
+  they step to the new cutoff every 10 ms. **[code]** **[measured]** (Toy
+  Piano Bells 14.5 to 7.7 dB, noise-env 12.2 to 10.3, against a ramp
+  every 10 ms)
 
 ### Resonators
 
@@ -1552,27 +1554,32 @@ Meld. Segno's implementation is `collision_voice.c`.
 
 ### The fits so far
 
-Round 1 (92 renders: single changes around a plain mallet-on-beam
-reference and the 33 factory presets) and round 2 (18: the chooser's
-pitch unit, the other destinations, the pitch envelope, Off Decay, pipes
-across the keyboard), scored by the strict score with three Segno seeds:
-83 of 108 pass, 18 of the 33 factory presets; round 2 all but penv-t25.
-The held-out round (every preset, a quiet C2, a loud C4 triad and a hard
-C5, with Live's own copies) passes 9 of 33.
+Three rounds of Live renders (single changes around a plain
+mallet-on-beam reference, the 33 factory presets, the matrix units, the
+pitch envelope, Off Decay, pipes across the keyboard, Live copies of the
+random renders, and the noise excitation through a dense 70-mode
+membrane), scored by the strict score with three Segno seeds and Live's
+own spread where copies exist: 96 of 131 pass, 18 of the 33 factory
+presets. The held-out round (every preset, a quiet C3, a loud C4 triad
+and a hard C5, with Live's copies) passes 10 of 33.
 
-What is left is mostly random: the mallet's noise, the noise source and
-the random hit drive narrow modes whose energies vary by several dB
-between strikes. Beyond that: the noise source's low-pass (noise-lp,
-noise-env: Segno too dark above 4 kHz, the envelope's sweep included),
-the modes above 10 kHz the mallet's tiny noise excites (stiff-0, mat-1),
-the noise source's fast Freq < Env presets (Toy Piano Bells, Xylophone
-Dark, Bells Deep), the series structure and a full-volume mallet at the
-limiter (serial, mvol-1, 3.6 dB), and an upward pitch sweep (penv-1,
-penv-t25: after it the second and fourth beam modes end 3 and 9 dB low).
-In the held-out round the side signal above 8 kHz of hard strikes is
-weaker than Live's. Round 3 has Live copies of the random renders and the
-noise excitation through a dense membrane to settle these. Still open
-besides: the MPE destinations.
+What the dense membrane shows: the mallet and its pulse match within 1.4
+dB in every band; the noise source's low-pass matches within Live's
+spread; its high-pass and band-pass lack 7 to 34 dB below 250 Hz against
+Live, and the mallet's noise is 3 to 10 dB too strong above 10 kHz. Two
+guesses did not hold: the filters ramping in from the default low-pass
+(it gives the low end but costs 4 dB of level) and a two-tap average on
+the mallet's noise (right on the membrane, wrong on the plain beam).
+Beyond those: the limiter wants a fast release for a loud strike
+(mvol-08, mvol-09, mvol-1 pass at 5 to 20 ms) and a slow one for the
+series string's slow build (serial, serial-m03 at 70 ms); an upward
+pitch sweep leaves the second and fourth beam modes 3 and 9 dB low
+(penv-1, also on 4 modes and on a string); and in the held-out round the
+side signal below 200 Hz is 3 to 12 dB weaker than Live's over a whole
+phrase (Bell Plate Long, the marimbas) while every note on its own
+matches. Live's notes after the first also land about 1 ms (50 samples)
+early against the first, in every held-out render. Still open besides:
+the MPE destinations.
 
 ## Decisions
 
