@@ -9,6 +9,8 @@ environment:
   flutter: ^3.50.0
 
 dependencies:
+  ableton_preset:
+    path: packages/ableton_preset
   backing_repository:
     path: packages/backing_repository
   bloc: ^9.2.1

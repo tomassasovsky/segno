@@ -1,0 +1,22 @@
+name: ableton_preset
+description: >-
+  Reads Ableton Live device presets (.adv, and .adg racks to list them) from
+  the user's own library: gunzip, XML, schema check, every parameter's stored
+  value and range. A per-device schema (Drift first) types the values, and a
+  scanner lists a folder's presets by device and Live's folder names. Pure
+  Dart, no Flutter dependency. No Ableton presets or data are in this package
+  or its tests.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.14.0
+
+dependencies:
+  meta: ^1.16.0
+  path: ^1.9.0
+  xml: ^7.1.0
+
+dev_dependencies:
+  test: ^1.25.0
+  very_good_analysis: ^11.0.0
