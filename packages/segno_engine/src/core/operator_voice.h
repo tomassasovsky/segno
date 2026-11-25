@@ -60,7 +60,7 @@ typedef struct le_operator_wave {
   int32_t levels;                             /* tables in use */
   float gain;
   float freq_mult; /* 1, or 1/64 for the noises */
-  int32_t white;   /* Noise White: one sample per output sample */
+  int32_t white;   /* Noise White: a fresh random value per engine sample */
 } le_operator_wave;
 
 /* One envelope's run state. */

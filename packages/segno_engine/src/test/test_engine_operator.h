@@ -406,6 +406,36 @@ static void test_operator_controllers_rest(void) {
   CHECK(memcmp(l, ref, sizeof(l)) == 0);
 }
 
+/* Fits against the strict score: Spread under 1 % is off; an operator
+ * envelope's -70 dB floor is silence, so a sustain there is 0; Noise White
+ * never repeats. */
+static void test_operator_strict_fits(void) {
+  printf("test_operator_strict_fits\n");
+  enum { N = 16384 };
+  static float l[N], r[N];
+  opr_reference(&g_opr);
+  opr_set(&g_opr, LE_OPERATOR_SPREAD, 0.5f);
+  CHECK(le_operator_note_on(&g_opr, 1, 60, 127, 0) == 0);
+  CHECK(le_operator_active(&g_opr) == 1);
+  opr_reference(&g_opr);
+  opr_op(&g_opr, 0, LE_OPERATOR_OP_ENV + LE_OPERATOR_ENV_DECAY_TIME, 10.0f);
+  opr_op(&g_opr, 0, LE_OPERATOR_OP_ENV + LE_OPERATOR_ENV_SUSTAIN, 0.00031622799f);
+  CHECK(le_operator_note_on(&g_opr, 1, 60, 127, 0) == 0);
+  le_operator_render(&g_opr, l, r, N);
+  CHECK(opr_peak(l, 240) > 0.2f);
+  CHECK(opr_peak(l + N / 2, N / 2) < 1e-6f); /* not 0.000316 */
+  opr_reference(&g_opr);
+  opr_op(&g_opr, 0, LE_OPERATOR_OP_WAVE, 21.0f);
+  CHECK(le_operator_note_on(&g_opr, 1, 60, 127, 0) == 0);
+  le_operator_render(&g_opr, l, r, N);
+  double c0 = 0.0, c1 = 0.0;
+  for (int32_t i = 0; i < N - 4096; ++i) {
+    c0 += (double)l[i] * l[i];
+    c1 += (double)l[i] * l[i + 4096];
+  }
+  CHECK(c0 > 0.0 && fabs(c1 / c0) < 0.1);
+}
+
 /* Voice bookkeeping: a mono legato note whose held voice was taken still
  * sounds; glide starts only while a voice sounds; fading a Spread note
  * reports its two voices; a Trigger-mode voice frees once it is silent,
@@ -566,6 +596,7 @@ static void run_operator_tests(void) {
   test_operator_circuits_bounded();
   test_operator_controllers_rest();
   test_operator_voice_bookkeeping();
+  test_operator_strict_fits();
   test_engine_operator_slot_matches_offline();
   test_engine_operator_params_and_switching();
   test_engine_operator_midi();

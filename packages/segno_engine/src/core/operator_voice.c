@@ -617,9 +617,11 @@ static float env_tick(le_operator_env* e, const env_def* p, float fv, const env_
   } else if (p->curved) {
     e->y = env_curve(e->y0, e->y1, e->s, e->t);
   }
-  /* Any other slope holds the start value until the segment ends, then
-   * jumps to the target: what Live 12.2.7 renders for every slope but 0 and
-   * 1 (fit: measured at -0.95 .. 0.5 on attack, decay and release). */
+  /* On an operator's or the LFO's envelope any other slope holds the start
+   * value until the segment ends, then jumps to the target: what Live
+   * 12.2.7 renders for every slope but 0 and 1 (fit: measured at -0.95 ..
+   * 0.5 on attack, decay and release). The filter and pitch envelopes
+   * follow the curved shape (measured: Analog Bouquet Brass). */
   return e->y;
 }
 
@@ -683,10 +685,12 @@ void le_operator_set_tempo(le_operator* d, float bpm) {
  * output, the pitch envelope s = its level / 48 semitones, each with
  * u = (s + 1) / 2; aftertouch and the mod wheel have s = u = their value,
  * resting at 0. An adding destination takes amount x s; a gain destination
- * only attenuates, by 1 - a+ + a u (a+ the amount's positive part): a full
- * positive amount spans 0 .. 1 over its source, a negative one 1 .. 0. The
- * LFO's and the pitch envelope's routes scale with their own amounts and
- * are silent while they are off. */
+ * (the volumes, FM Drive, LFO Amount, Filter Env amount, Tone) only
+ * attenuates, by 1 - a+ + a u (a+ the amount's positive part): a full
+ * positive amount spans 0 .. 1 over its source, a negative one 1 .. 0. LFO
+ * Rate takes the gain sum in octaves (8 per unit), the LFO's own route
+ * adding. The LFO's and the pitch envelope's routes scale with their own
+ * amounts and are silent while they are off. */
 typedef struct op_mods {
   float m[LE_OPERATOR_DESTS];  /* the adding sum: amount x s */
   float g[LE_OPERATOR_DESTS];  /* the gain sum: amount x u - a+ */
@@ -1225,7 +1229,21 @@ static lfo_coef lfo_coefs(float f, float rate) {
 /* ---- the filter ---- */
 
 /* The circuits. */
-enum { CIRC_CLEAN = 0, CIRC_OSR, CIRC_MS2, CIRC_SMP, CIRC_PRD };
+enum { CIRC_CLEAN = 0, CIRC_OSR, CIRC_MS2, CIRC_SMP, CIRC_PRD, CIRC_MS2_HP };
+
+/* MS2's and SMP's high-pass: a linear state-variable section's high output
+ * plus c x its band output, so it falls 12 dB an octave just below the
+ * cutoff and 6 below c x cutoff, damped by 2 (1 - feedback x q) (fit: the
+ * HP renders' third-octave bands, c 0.43 for MS2 and 0.49 for SMP) */
+#ifndef OP_MS2_HP_C
+#define OP_MS2_HP_C 0.43f
+#endif
+#ifndef OP_SMP_FB
+#define OP_SMP_FB 0.85f /* fit: the SMP renders' levels (0.904 reads too resonant) */
+#endif
+#ifndef OP_SMP_HP_C
+#define OP_SMP_HP_C 0.49f
+#endif
 
 /* Per-chunk filter targets: the Clean filter's ramped coefficients, and
  * the cutoff, resonance and drive the analog circuits take per chunk. */
@@ -1273,12 +1291,12 @@ static float clean_pick(int32_t type, const float* w, float l, float b, float h)
 }
 
 /* MS2: Segno's MS-20 section (ms2_section.h, Drift's filter II), one for
- * 12 dB, two for 24, the second at (0.5 + 0.2 r) of the first's loop gain;
+ * 12 dB, two for 24, the second at (0.4 + 0.2 r) of the first's loop gain;
  * the signal enters at 0.6 of Drift's level (fit: the MS2 renders and OP
  * Bass, third-octave bands within 2.5 dB rms, at the noise renders' own
  * spread). */
 #ifndef OP_MS2_K2
-#define OP_MS2_K2 0.5f
+#define OP_MS2_K2 0.4f
 #endif
 #ifndef OP_MS2_K2R
 #define OP_MS2_K2R 0.2f
@@ -1303,6 +1321,9 @@ static float clean_pick(int32_t type, const float* w, float l, float b, float h)
  * the reading's 4.04 q, and the pass band made up in full, by (1 + k). */
 #ifndef OP_PRD_IN
 #define OP_PRD_IN 0.5f /* fit: the signal's level inside the ladder */
+#endif
+#ifndef OP_PRD_KB
+#define OP_PRD_KB 0.1f /* fit: below self-oscillation the feedback rises 10 % x (1 - q) */
 #endif
 #ifndef OP_PRD_K
 #define OP_PRD_K 0.8f /* fit: the feedback, 0.8 x 4.04 q */
@@ -1729,24 +1750,38 @@ static void render_voice(le_operator* d, le_operator_voice* v, const chunk_ctx* 
   int32_t circuit = c->filter_on ? c->circuit : CIRC_CLEAN;
   le_ms2_coef ms2 = {0};
   float k1 = 0.0f, k2 = 0.0f;
-  /* MS2's and PRD's high-pass are cores of their own, not built: Clean's */
-  if ((circuit == CIRC_MS2 || circuit == CIRC_PRD) && c->filter_type == 1) circuit = CIRC_CLEAN;
+  /* PRD's high-pass is a core of its own, not built: Clean's */
+  if (circuit == CIRC_PRD && c->filter_type == 1) circuit = CIRC_CLEAN;
   float in_scale = OP_MS2_IN;
+  float hp_c = 0.0f;
+  if ((circuit == CIRC_MS2 || circuit == CIRC_SMP) && c->filter_type == 1) {
+    const float fcs = fminf(fmaxf(ft.fc, 1.0f), 0.48f * rate);
+    ms2.g = tanf(fminf((float)OP_PI * fcs / rate, 1.54f));
+    /* linear: held short of self-oscillation, which bounds it */
+    k1 = fmaxf(2.0f * (1.0f - (circuit == CIRC_SMP ? 0.904249f : LE_MS2_FEEDBACK) *
+                                  le_ms2_q(ft.r, ft.fc, rate)),
+               0.05f);
+    hp_c = circuit == CIRC_SMP ? OP_SMP_HP_C : OP_MS2_HP_C;
+    circuit = CIRC_MS2_HP;
+  }
   if (circuit == CIRC_SMP) {
     /* SMP: MS2's section with SMP's feedback (0.904, MS2 0.914) and input
      * (2.47 V, MS2 2.69); no factory preset uses it */
-    circuit = c->filter_type == 0 ? CIRC_MS2 : CIRC_CLEAN;
+    circuit = CIRC_MS2;
     in_scale = OP_MS2_IN * 2.47474f / LE_MS2_GI;
   }
   if (circuit == CIRC_MS2) {
     const float fcs = fminf(fmaxf(ft.fc, 1.0f), 0.48f * rate);
     ms2 = le_ms2_coefs(tanf(fminf((float)OP_PI * fcs / rate, 1.54f)), rate);
-    k1 = (c->circuit == CIRC_SMP ? 0.904249f : LE_MS2_FEEDBACK) * le_ms2_q(ft.r, ft.fc, rate);
+    k1 = (c->circuit == CIRC_SMP ? OP_SMP_FB : LE_MS2_FEEDBACK) * le_ms2_q(ft.r, ft.fc, rate);
     k2 = k1 * (OP_MS2_K2 + OP_MS2_K2R * ft.r);
   } else if (circuit == CIRC_PRD) {
     const float fcs = fminf(fmaxf(ft.fc, 1.0f), 0.48f * rate);
     ms2.g = tanf(fminf((float)OP_PI * fcs / rate, 1.54f));
-    k1 = OP_PRD_K * 4.04f * prd_q(ft.r, ft.fc, rate);
+    {
+      const float q = prd_q(ft.r, ft.fc, rate);
+      k1 = OP_PRD_K * 4.04f * q * (1.0f + OP_PRD_KB * (1.0f - fminf(q, 1.0f)));
+    }
     k2 = (1.0f + k1) / OP_PRD_IN;
   }
   /* the analog state belongs to one circuit and slope: a change starts it
@@ -1822,6 +1857,15 @@ static void render_voice(le_operator* d, le_operator_voice* v, const chunk_ctx* 
         float yy[5];
         prd_tick(v->f_an, OP_PRD_IN * ft.drive * x, ms2.g, k1, yy);
         y = k2 * (c->slope ? yy[4] : yy[2]);
+      } else if (circuit == CIRC_MS2_HP) {
+        float l, b, h;
+        clean_section(v->f_an, v->f_an + 2, ft.drive * x, ms2.g, k1, &l, &b, &h);
+        y = h + hp_c * b;
+        if (c->slope) {
+          clean_section(v->f_an + 4, v->f_an + 6, y, ms2.g, k1, &l, &b, &h);
+          y = h + hp_c * b;
+        }
+        y = 8.0f * tanhf(0.125f * y); /* the output stage's rails */
       } else if (circuit == CIRC_MS2) {
         y = OP_MS2_OUT / in_scale * le_ms2_section(v->f_an, in_scale * ft.drive * x, &ms2, k1);
         if (c->slope) {
