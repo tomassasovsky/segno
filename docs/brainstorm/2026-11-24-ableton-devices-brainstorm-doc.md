@@ -1432,7 +1432,24 @@ Fretless Bass 3.8 (their partials' levels), Tuned Noise 3.4 (its release
 2 to 4 dB slow), Wood Bass 2.7 (2 to 5 dB loud from 160 to 320 Hz early
 on), Clean Basic Guitar 2.0 at C6 and Hard Picked Guitar 1.8 (level).
 On the held-out round the bowed presets pass 0 of 15 and the bouncing
-hammer's 0 of 6. Error draws Segno's own random rise, so Hard Picked Guitar and Tiny
+hammer's 0 of 6.
+
+Round 3 (50 renders) settles three things. Live repeats itself exactly:
+its copies of the bounce renders and Chord Bouncing are identical to the
+sample, so the bouncing hammer is deterministic there; Segno's second
+strike at C5 comes 8 ms early (its rebound about 7 % slow), and neither
+double precision nor Live's own force iteration (Newton from 0, stopping
+under 0.01 N) moves it: the contact's equations read the same, so the
+gap is in a value the renders have not isolated. The bow's first stick
+pulse is 2.5 % larger than Live's at C4 at every force, speed, friction
+width and velocity swept, and falls 2^-0.1 an octave below C4: with the
+speed's key amount at zero the pulse ratio holds at 1.025 at every pitch,
+but the sustained motion then drifts further from Live's, so neither is
+adopted. Velocity enters the amounts linearly (a curved velocity loses
+every phrase render). Overall with round 3: 98 of 148 renders, 8 of the
+38 factory-preset renders; held-out 32 of 107. The phrase renders' third
+note lands about 51 samples early in Live (a harness effect common to
+the AAS devices, left to the harness). Error draws Segno's own random rise, so Hard Picked Guitar and Tiny
 Tonal Drums cannot match Live's pitch sample for sample. The MPE
 destinations are stored, not played.
 
