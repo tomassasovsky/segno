@@ -67,6 +67,7 @@ typedef struct le_tension_voice {
   int32_t quiet;  /* released samples below the silence floor */
   int32_t tick_left;
   float pitch, pitch_to; /* the played pitch, octaves from C4, glided */
+  float kerr;            /* octaves: Keyboard Error's draw for this strike */
   float p0;              /* the pitch at the strike */
   double vib_ph;
   float vib_t;
