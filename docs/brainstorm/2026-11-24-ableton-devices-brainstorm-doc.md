@@ -481,7 +481,13 @@ What the strict score still fails, and why **[measured]**:
   renders fail only because of the exact drift values (the list is kept
   with the fit tooling, `dfit/drift_only_list.txt`). With the measured tables
   in the product (the owner allowed values measured from renders): 247 of
-  263, factory presets 3 of 5, and every one of those 41 passes.
+  263, factory presets 3 of 5, and every one of those 41 passes. Still open in
+  the tables: a Stereo pair's split inside the key range looks larger than
+  at the notes 84..99 it was measured on (80s Tape's G2 pair: 0.68 against
+  0.29 cents per unit of w; Bloom Pad's lanes 2 and 3 within 0.9 cent), so
+  the per-voice offset may depend on the key; and the keys outside C1..B5.
+  Round 18 measures both (every voice at C3..D#4 and E1..G2, at two depths,
+  and voice 0 from C-1 to B0 and C6 to G9).
 - Round 16 settled two questions. Live's drift is the same in every
   instance: three Live renders of one Drift Depth patch, each a fresh
   device, correlate 1.0000. And Bloom Pad's filter peak came from key
