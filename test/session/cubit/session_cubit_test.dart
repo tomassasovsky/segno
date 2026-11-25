@@ -1292,6 +1292,30 @@ void main() {
     );
 
     blocTest<SessionCubit, SessionState>(
+      'a Save as whose catalog re-list fails after the write gives the id '
+      'back, bundle and all, so a Retry is not refused its name (SEG-106)',
+      setUp: () {
+        stubCatalog();
+        var lists = 0;
+        when(repository.listSessions).thenAnswer((_) async {
+          // The collision check reads the catalog first; the re-list after
+          // the write is the one that fails.
+          if (++lists == 2) throw const FileSystemException('Out of Memory');
+          return summaries;
+        });
+      },
+      build: build,
+      act: (cubit) => cubit.saveAs('Fresh'),
+      skip: 1,
+      expect: () => [
+        isA<SessionState>()
+            .having((s) => s.status, 'st', SessionStatus.failure)
+            .having((s) => s.currentSessionId, 'id', isNull),
+      ],
+      verify: (_) => verify(() => repository.releaseSessionId('new')).called(1),
+    );
+
+    blocTest<SessionCubit, SessionState>(
       'open reads, applies through the looper, sets current, refreshes',
       setUp: () {
         stubCatalog();

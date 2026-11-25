@@ -515,8 +515,8 @@ the `.als` all remain reachable.
   folder, an interrupted save, a reservation), and `newSessionId` creates
   the bundle directory when it issues the id, so a same-second Save as and
   Duplicate, or a folder named like an id, cannot share a directory; a save
-  that then writes nothing gives the empty directory back
-  (`releaseSessionId`) (Part 1 review, finding 1). An empty directory named
+  that then fails gives the directory back with whatever it wrote
+  (`releaseSessionId`, SEG-106) (Part 1 review, finding 1). An empty directory named
   like a minted id is a reservation, never a folder, so one a crash leaves
   behind shows no chip; `createFolder` refuses such a name. A Duplicate whose
   copy fails removes its own partial copy (delta review D1), and it writes
@@ -752,7 +752,7 @@ the empty-mix `mixdown.wav` deletion, `read(path)` unchanged,
 re-based on the saved bundle (D13). Name collisions are checked on display
 names, case-sensitively (D1), and still raise `SessionNameCollision`.
 `newSessionId()` reserves the directory it names; `releaseSessionId(id)`
-removes it again while it is empty.
+removes it again, with whatever a failed save wrote into it (SEG-106).
 
 ### 4.3 The removable-volumes port
 
