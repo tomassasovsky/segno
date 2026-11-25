@@ -65,6 +65,26 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
 
 ---
 
+## November 2026 Drift fitted against Live renders (SEG-109 P4, round 2)
+
+- Six more rounds of Live renders and a second reading of Live's LFO and
+  oscillator code. Fixed: the LFO and cycling envelope's Mode order (Time
+  and Ratio were swapped) and the Sync table (slowest first); Ratio mode
+  follows the transposed note and, routed to pitch, phase-modulates both
+  oscillators; the LFO keeps a phase per voice and restarts at the shape's
+  peak; Shark Tooth's width by shape (it was inverted, and its window did
+  not wrap, which left a DC offset); the filters' input clip and the
+  bypass gain; filter II's open top octave; Glide; Drift Depth as a fixed
+  offset per key plus one per voice; a note reuses the voice allocated last
+  and, with Reset Oscillator Phase off, the phase that voice left.
+- Five factory presets, octave bands Segno minus Live: Euphoria Lead,
+  Chirp Pluck and 80s Tape within about 1 dB; Clob Bass within 1.5 dB up to
+  4 kHz; Bloom Pad within 1.5 dB up to 1 kHz. Every level test within
+  0.1 dB.
+- Still open: filter II near a strong resonant peak (Bloom Pad +4.5 dB at
+  2 to 4 kHz), Clob Bass's phrase width (narrower than Live's; one note
+  matches), the voice-count table.
+
 ## November 2026 Drift fitted against Live renders (SEG-109 P4, round 1)
 
 - Live 12.2.7 renders of controlled patches (one setting changed per render

@@ -147,8 +147,10 @@ written from it.
   - Sine: a parabolic sine through a wavefolder, gain 1 + 4·shape.
   - Triangle: gain 1 + 7·shape, then an asymmetric fold (different
     thresholds above and below zero, so even harmonics appear).
-  - Shark Tooth: a falling ramp with a triangular dip whose width runs from
-    10 % of the cycle (shape 0) to the whole cycle (shape 1, a triangle).
+  - Shark Tooth: a falling ramp with a triangular dip. Fitted: the dip
+    spans about 88 % of the cycle at shape 0 (close to a triangle) and
+    narrows to 17 % at shape 1 (close to a falling saw); no DC at any shape.
+    Shape modulation past 0..1 keeps changing it.
   - Saturated: a scaled, clipped triangle through a parabola; asymmetric, so
     it carries a DC offset (about −0.33 at shape 0). Not band-limited.
   - Saw: hard sync, slave ratio 1 + 10·shape; the master-reset edge is not
@@ -180,7 +182,14 @@ written from it.
   resonance curve q = 4r/(3r + 1) + 4·max(r − 1, 0)² with a limiter at high
   cutoffs. **[code]** The limiter constants, the per-section scales and the
   slope (Live's manual says 24 dB/oct) are **[open]**; the shaper is
-  designed fresh for Segno and fitted to Live's output.
+  designed fresh for Segno and fitted to Live's output. Fitted: the two
+  sections behave as if at the same cutoff (spreading them apart makes
+  every measured response worse).
+- Filter input: both types clip their input, linear to about +0.62 and
+  -0.89, then a soft knee to a flat top. A sine at Gain 1 gets 2nd and 3rd
+  harmonics about 27 and 21 dB down and a 0.9 peak ratio; at Gain 0.5 it
+  stays clean. The path around the filters is about 1.8 dB louder for the
+  oscillators than for the noise. **[fitted]**
 - High-pass: a linear 2-pole state-variable filter, Q about 1.47 (a small
   bump at the corner), 20 Hz..20 kHz, modulated by matrix slots targeting
   HP Frequency at 10 octaves per unit. **[code]**
@@ -208,11 +217,20 @@ written from it.
 - Cycling envelope: a phase per voice; a triangle whose peak moves with
   MidPoint over the middle 60 % of the knob, crossfading over the outer 20 %
   into a fourth-power spike; Hold multiplies it by 1/(1 − 0.95·Hold) and
-  clips at 1, flattening the top. Rate by Mode: Hz, ratio to the note,
-  time per cycle, or tempo sync. **[code]** for the curve; the Mode order
-  **[inferred]**.
-- LFO: a phase per voice (Retrigger resets it on a note), increment clamped
-  below Nyquist, rate modes as the cycling envelope. Shapes 0..8: Sine,
+  clips at 1, flattening the top. Rate by Mode: 0 Hz, 1 time per cycle,
+  2 ratio to the note, 3 tempo sync. **[code]**, and fitted (Time 0.5 s
+  gives 2 Hz).
+- Ratio follows the note's frequency after glide, Transpose and pitch bend,
+  not the oscillators' own Transpose. Sync divisions 0..21 run slowest
+  first, 8 bars to 1/64; the default is 15 (1/8). **[code]**, fitted.
+- LFO: a phase per voice, increment clamped below Nyquist, rate modes as
+  the cycling envelope. Retrigger restarts it at the shape's peak (0.25
+  for Sine and Triangle, 0.5 for the saws, 0 otherwise); without it a note
+  continues the phase the voice's LFO stopped at. **[code]**, fitted.
+- An LFO in Ratio mode routed to a pitch slot becomes phase modulation of
+  both oscillators (LFO × amount cycles, below one cycle) instead of
+  vibrato. **[code]**, fitted (sidebands within 0.1 dB of Live's).
+- LFO shapes 0..8: Sine,
   Triangle, two saws (rising and falling; which one is "Saw Up" is
   **[open]**), Square, Sample & Hold (two steps per cycle), Wander (smoothed
   random), Linear Env and Exponential Env (one-shot, 0..1). Output × Amount
@@ -223,12 +241,16 @@ written from it.
 
 ### Voices
 
-- Poly allocation: a repeated note reuses its voice; otherwise the next
-  free voice round-robin among the first n; with none free, the oldest is
-  stolen. **[code]**
+- Poly allocation: a repeated note reuses its voice; otherwise the first
+  free (silent) voice round-robin among the first n, starting at the voice
+  allocated last, so notes that do not overlap stay on one voice; with
+  none free, the oldest is stolen. **[code]**, fitted.
 - With ResetOscillatorPhase on, a note on a sounding voice waits for a fast
   fade-out, then starts with reset phases; with it off, the note starts at
-  once and the envelope continues from its level. **[code]**
+  once and the envelope continues from its level. With it off, a voice
+  keeps the oscillator phase its last note left (it does not run while
+  silent), so a Stereo note on reused voices starts its lanes apart.
+  **[code]**, fitted.
 - Modes (0..3): **[code]**
   - Poly: one voice per note. PolyVoiceDepth has no effect.
   - Mono: four voices on one note at 0, −12, −12 and −24 semitones; Thickness
@@ -236,17 +258,19 @@ written from it.
     thirds; mode gain about −1 dB.
   - Stereo: two voices per note (16 notes at most); Spread's law is
     **[open]**.
-  - Unison: four voices per note (8 notes at most), panned −1, −0.5, +0.5,
-    +1 and detuned +42, +21, −21, −42 cents at full Strength, both scaled
+  - Unison: four voices per note (8 notes at most), the left side sharp:
+    +42 and +21 cents panned −1 and −0.5, −21 and −42 at +0.5 and +1 at
+    full Strength (Segno orders the lanes flattest first), both scaled
     linearly by Strength; mode gain about −6.5 dB. The pan law is
     **[open]**.
 - Voice counts (0..4) → the voice limit; the table is **[open]** (Live's UI
   offers 8, 12, 16, 24 and 32 as far as known).
-- Per-key tuning: notes C1..B5 are blended toward a fixed table of small
-  per-key deviations (rms about 4 cents, −5 to +14 cents), with a weight up
-  to 1.72; the weight's parameter is most likely DriftDepth **[inferred]**.
-  Segno builds its own table with a similar spread; Live's table is not
-  copied.
+- Drift Depth: a fixed tuning offset per key plus one per voice, linear
+  in depth. Fitted at Depth 1: the per-key part has an rms near 7 cents,
+  the two voices of a Stereo pair sit 11.6 cents apart at every key, and
+  voices of other pairs up to about 11 cents away. The same key on the
+  same voice always gets the same offset. Segno builds its own values with
+  these statistics; Live's table is not copied.
 - SerialNumber: a random number per instance, saved in the preset,
   probably the seed for per-instance randomness. **[inferred]**
 - Glide (0..2 s), Legato, Pitch Bend Range, Note Pitch Bend and Transpose:
@@ -274,18 +298,32 @@ noise. Fitted 2026-11-25, three rounds:
 - Filter modulation: 10 octaves per unit (Live and Segno both move 0.99 /
   2.5 octaves at 0.1 / 0.3). Key tracking about A4: within 0.08 octave at
   C2, C4 and C6. High-pass at 300 Hz: within 1.5 dB.
-- Drift Depth: a fixed offset per key and lane (it neither moves over time
-  nor changes between strikes), linear in depth; a Stereo note's two lanes
-  sit at different offsets, which is what makes a Drift preset wide.
-  Segno's table is its own, so individual offsets differ from Live's.
+- Drift Depth: a fixed offset per key and voice (see Voices), linear in
+  depth; a Stereo note's two lanes sit at different offsets, which is
+  what makes a Drift preset wide. Segno's values are its own, so
+  individual offsets differ from Live's.
 
-Still open, with what showed it (five factory presets, Segno minus Live):
-the Saturated oscillator under shape modulation and the LFO's Time mode
-and per-voice phase (Clob Bass: 6 to 10 dB dark from 250 Hz to 4 kHz,
-narrower); filter II between 0.9 and 1 with a bright source (Bloom Pad:
-+8 dB at 2 to 4 kHz); 80s Tape +9 dB near 1 kHz; Chirp Pluck +10 dB at
-63 Hz; Glide, the voice-count and Sync tables, LFO shapes 2 and 3, the
-voice clip and the phase-offset source.
+Round 2 (rounds 4 to 9 of renders, 2026-11-25) settled: the LFO and
+cycling envelope's Mode order, the Sync table, Ratio mode and its phase
+modulation, the LFO's restart phases and per-voice phase; Shark Tooth's
+width by shape; the filters' input clip and the bypass gain; filter II's
+open top octave (the high-cutoff damping applies to strong resonance
+only); Glide (time constant 0.117 × Glide, no glide on a fresh Poly
+voice); Drift Depth per key and voice; voice reuse and the oscillator
+phase a voice keeps. Every level test is within 0.1 dB of Live.
+
+The five factory presets now (Segno minus Live, octave bands relative to
+each render's own level): Euphoria Lead, Chirp Pluck and 80s Tape within
+about 1 dB everywhere; Clob Bass within 1.5 dB up to 4 kHz (+3 dB at
+8 kHz); Bloom Pad within 1.5 dB up to 1 kHz, +4.5 dB at 2 to 4 kHz and
+-9 dB above 8 kHz (filter II's resonant peak near 4 kHz).
+
+Still open: filter II's response near a strong resonant peak (the shaper
+and the limiter constants); filter I's shape around its cutoff on noise
+(+1.2 dB); Clob Bass's phrase is narrower than Live's (-16 against
+-8 dB side to mid) although one note matches, which points at voice
+allocation details; the voice-count table; Live's Shark Tooth is a few dB
+off at shape 0.
 
 ## Decisions
 
