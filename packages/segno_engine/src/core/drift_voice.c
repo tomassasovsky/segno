@@ -96,10 +96,13 @@ static float glide_coefficient(float seconds, float rate) {
   return 1.0f - expf(-1.0f / n);
 }
 
-/* Key tracking: 10 octaves per unit of the key value at Tracking 1, so 1:1
- * about A4. Being fitted. */
+/* Key tracking: the cutoff scaled by a blend, in hertz, of 1 and the
+ * note's frequency over A4's, weighted by Tracking: 1:1 about A4 at
+ * Tracking 1. Measured: filter II's peak at Tracking 0.3 on C3, C4 and C5
+ * and at 1 on C3, and Bloom Pad's cutoff (an octave scale, the old form,
+ * put C3 at 0.3 190 cents low). */
 static float key_tracking(float tracking, float key) {
-  return exp2f(10.0f * tracking * key);
+  return (1.0f - tracking) + tracking * exp2f(10.0f * key);
 }
 
 /* Stereo mode: the pair panned to -Spread and +Spread with sides

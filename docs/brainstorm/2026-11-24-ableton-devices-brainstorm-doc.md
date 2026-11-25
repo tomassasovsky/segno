@@ -185,8 +185,12 @@ written from it.
   10 Hz..20 kHz, where S = Σ (filter mod source × amount) + matrix slots
   targeting LP Frequency: 10 octaves per unit. Resonance = stored 0..1.01 +
   matrix slots targeting LP Resonance, clamped to 0..1.3. **[code]**
-- Key tracking uses the voice's key value (note − 69)/120 **[code]**; the
-  formula with `Filter_Tracking` is **[open]**.
+- Key tracking uses the voice's key value (note − 69)/120 **[code]**. With
+  `Filter_Tracking` t the cutoff is scaled by (1 − t) + t · f / 440, a blend
+  in hertz of 1 and the note's frequency over A4's **[measured]**: filter
+  II's resonant peak at t = 0.3 on C3, C4 and C5 and at t = 1 on C3, within
+  5 cents (an octave-scaled form put C3 at 0.3 190 cents low, and Bloom
+  Pad's peak 40 cents low).
 - Type I: a two-pole zero-delay filter with two unequal one-pole
   integrators (capacitor ratio 3.3, so a 12 dB/oct slope with a soft knee),
   trapezoidal prewarp, a cubic soft clip in the feedback solved in closed
@@ -451,9 +455,10 @@ What the strict score still fails, and why **[measured]**:
   Sample & Hold and Wander renders and Chirp Pluck's pitch (its Sample &
   Hold moves pitch by up to 8 cents) cannot match draw for draw; Live
   copies (`-r2`, `-r3`) settle how far Live is from itself.
-- Bloom Pad's filter II peak sits 37 cents below Live's with its key
-  tracking and Env 2 modulation; the same filter without them is within 5
-  cents. Which of the two differs needs the renders requested for round 16.
+- Round 16 settled two questions. Live's drift is the same in every
+  instance: three Live renders of one Drift Depth patch, each a fresh
+  device, correlate 1.0000. And Bloom Pad's filter peak came from key
+  tracking (now a blend in hertz, above); its Env 2 modulation matched.
 
 ## Decisions
 

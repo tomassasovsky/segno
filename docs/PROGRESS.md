@@ -82,7 +82,9 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
 - What still fails is Drift Depth (Segno's tuning values are its own by
   rule; with Live's table in a scratch check the drift renders passed) and
   random sources (noise, Sample & Hold) that no render can match draw for
-  draw. Bloom Pad's filter peak (37 cents low) waits on round 16.
+  draw. Round 16: key tracking is a blend in hertz ((1 - t) + t f / 440,
+  which fixed Bloom Pad's filter peak), and Live's drift is the same in
+  every instance. Strict score 207 of 244 with round 16; held-out 8 of 89.
 
 ## November 2026 Drift's filter II as an MS-20 circuit model (SEG-109 P4, round 4)
 
