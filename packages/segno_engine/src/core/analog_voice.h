@@ -118,6 +118,7 @@ typedef struct le_analog {
   int32_t voice_limit;
   uint32_t stolen;
   uint32_t rng;
+  int32_t age; /* samples rendered since init, saturating (the amps' start ramp) */
   /* the band-limited step's residual (analog_voice.c) */
   float bl[LE_ANALOG_BL_PHASES + 1][2 * LE_ANALOG_BL_HALF];
   le_analog_voice voices[LE_ANALOG_VOICE_SLOTS];

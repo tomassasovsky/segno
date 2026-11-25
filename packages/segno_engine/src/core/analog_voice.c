@@ -299,14 +299,14 @@ static float key_pitch(const le_analog* d, int32_t note) {
   return (key - 60.0f) / 12.0f + stretch * (key - 69.0f) + fine;
 }
 
-/* fit: Keyboard Error sharpens each copy of a note by a random amount, up
- * to 24 cents times the knob, u^2 of it for a uniform u (eight strikes at
- * Error 1 and 0.5: all sharp, means 7.6 and 3.6 cents, the largest 23). */
+/* fit: Keyboard Error sharpens each copy of a note by a random amount,
+ * uniform from 0 to 22 cents times Error^1.5 (24 strikes at Error 1 over
+ * three Live instances: all sharp, mean 10.8, the largest 21.5; eight at
+ * 0.5: mean 3.6, the largest 7.8). */
 static float key_error(const le_analog* d, le_analog_copy* cp) {
   const float e = le_aas_clamp(vf(d, LE_ANALOG_ERROR), 0.0f, 1.0f);
   if (e <= 0.0f) return 0.0f;
-  const float u = le_aas_unit(&cp->rng);
-  return e * u * u * 24.0f / 1200.0f;
+  return e * sqrtf(e) * le_aas_unit(&cp->rng) * 22.0f / 1200.0f;
 }
 
 /* fit: the glide time knob, 3 ms .. 9 s (the glide renders' time
@@ -324,6 +324,12 @@ static int32_t priority_index(const le_analog* d) {
     if (pr == 0 ? d->held_note[i] > d->held_note[best] : d->held_note[i] < d->held_note[best]) best = i;
   }
   return best;
+}
+
+/* The LFO's rate in Hz: a tempo division, or Exp(3, 1000) a minute. */
+static float lfo_hz(const le_analog* d, int32_t c) {
+  if (ci(d, c, LE_ANALOG_LFO_SYNC_ON)) return d->bpm / 60.0f / le_aas_sync_beats(ci(d, c, LE_ANALOG_LFO_SYNC));
+  return le_aas_exp(3.0f, 1000.0f, cf(d, c, LE_ANALOG_LFO_SPEED)) / 60.0f;
 }
 
 /* A copy starts from rest: its filters, the integrator's leak and the
@@ -354,12 +360,15 @@ static void start_copy(le_analog* d, le_analog_voice* v, le_analog_copy* cp) {
     ch->ph2 = 0.0;
     ch->sub_sign = -1;
     ch->dc = shape == 2 ? 0.0365f + 0.4635f * le_aas_knob(cf(d, c, LE_ANALOG_OSC_PW)) : 0.0f;
-    /* with Retrigger the LFO restarts at its Phase; without, it runs on
-     * from a random point up to Phase into the cycle */
+    /* with Retrigger the LFO restarts at its Phase at each note; fit:
+     * without, it runs from the device's start, three quarters of Phase
+     * into its cycle (two Live instances render the same free LFO to the
+     * sample, a sine at Phase 1 starting at its bottom) */
     if (ci(d, c, LE_ANALOG_LFO_GATE_RESET)) {
       ch->lfo_ph = cf(d, c, LE_ANALOG_LFO_PHASE);
     } else {
-      ch->lfo_ph = cf(d, c, LE_ANALOG_LFO_PHASE) * le_aas_unit(&cp->rng);
+      const double ph = 0.75 * cf(d, c, LE_ANALOG_LFO_PHASE) + (double)lfo_hz(d, c) * (double)d->age / (double)d->sample_rate;
+      ch->lfo_ph = ph - floor(ph);
     }
     /* fit: the random waves start from a random value, noise held there
      * for the first cycle (the lfo-wave renders) */
@@ -708,12 +717,7 @@ static void tick_chain(le_analog* d, le_analog_voice* v, le_analog_copy* cp, int
   /* the LFO, scaled by its delay and fade */
   float lfo = 0.0f;
   if (ci(d, c, LE_ANALOG_LFO_ON)) {
-    float hz;
-    if (ci(d, c, LE_ANALOG_LFO_SYNC_ON)) {
-      hz = d->bpm / 60.0f / le_aas_sync_beats(ci(d, c, LE_ANALOG_LFO_SYNC));
-    } else {
-      hz = le_aas_exp(3.0f, 1000.0f, cf(d, c, LE_ANALOG_LFO_SPEED)) / 60.0f;
-    }
+    const float hz = lfo_hz(d, c);
     const float w = 0.05f + 0.9f * le_aas_knob(cf(d, c, LE_ANALOG_LFO_PW));
     const double before = ch->lfo_ph;
     ch->lfo_ph += (double)(hz * dt);
@@ -1000,10 +1004,12 @@ static void render_voice(le_analog* d, le_analog_voice* v, float* left, float* r
       }
       for (int32_t s = s0; s < n; ++s) {
         float pre[2] = {0.0f, 0.0f};
-        /* fit: a fresh copy's amps rise from 0 over their first control
-         * period, rate / 441 samples (the attack renders: the gain is the
-         * envelope times that ramp) */
-        const int32_t age = v->since + s - cp->delay;
+        /* fit: the amps' gain smoothing starts from 0 when the device
+         * starts and reaches its value over the first control period, rate
+         * / 441 samples: a note at the very start rises with it (the attack
+         * renders: the gain is the envelope times that ramp), later notes
+         * do not (the event renders' and held-out notes' onsets) */
+        const int32_t age = d->age + i + s;
         const float ramp = age >= ramp_len ? 1.0f : (float)age / (float)ramp_len;
         for (int32_t c = 0; c < 2; ++c) {
           le_analog_chain* ch = &cp->ch[c];
@@ -1072,4 +1078,5 @@ void le_analog_render(le_analog* d, float* left, float* right, int32_t frames) {
     le_analog_voice* v = &d->voices[i];
     if (v->state != LE_ANALOG_VOICE_FREE) render_voice(d, v, left, right, frames);
   }
+  if (d->age < (1 << 30)) d->age += frames;
 }

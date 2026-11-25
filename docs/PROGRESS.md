@@ -102,7 +102,10 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   on the held-out round (from 8). Left: Live's early note-ons (most of the
   held-out failures), the unison delay, the pitch envelope at full depth;
   segno-analog-fit5 isolates event timing, velocity, chords, range and
-  Live's own spread on the random sources.
+  Live's own spread on the random sources. Round 5: the amps' start ramp
+  is the device's, the free LFO runs from the device's start, Keyboard
+  Error is uniform: 240 of 307 fit renders, 13 of 58 held out. Live's
+  later note events land 8 to 68 samples early, beyond any in-block snap.
 - A voice of two saw chains through LP24 costs 0.9 us per millisecond on
   the dev machine, four unison copies 3.7, the formant filter 1.0. A
   device holds 40 copies (88 KB).

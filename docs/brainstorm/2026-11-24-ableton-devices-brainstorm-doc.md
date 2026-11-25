@@ -1202,6 +1202,37 @@ note, after its first note; the held-out round's deterministic presets
 fail on the cells at those onsets), Kick Complex Perc (each oscillator
 alone fits, the two together do not).
 
+Round 5 (segno-analog-fit5, 49 renders, Live copies of the random ones):
+
+- The note events' timing, settled as far as the renders go. Live's
+  event renders are identical between two instances to the sample. Every
+  note-off takes effect on a 16-sample grid, 8 to 43 samples before the
+  note-off, and every later note-on 34 to 68 samples before the note-on,
+  while the first note at time 0 starts 15 samples after it. The shift
+  repeats with the event's position in its 1 ms (48-sample) chunk but is
+  not a quantizer: no snap to a tick (host blocks of 16 to 1024 samples,
+  ticks of 8 to 108, floor, ceiling or nearest, any offset) reproduces it,
+  and a snap within the current block can only move an event later or
+  less than one tick earlier. Live moves them earlier than that, which a
+  device can only do with lookahead; it reads as Live's own compensation of
+  a latency the device reports, with the first note at the song's start
+  unable to move. **[measured]** Segno applies events when they arrive.
+- The amps' start ramp belongs to the device's start, not to each note: a
+  note at the very start rises with it, a later note does not (the event
+  renders and the held-out round's mono basses). **[measured]**
+- A free-running LFO (Retrigger off) is not random: two Live instances
+  render it alike. It runs from the device's start, a sine at Phase 1
+  starting at its bottom (three quarters of Phase into the cycle).
+  **[measured]** Its rate across eight strikes runs about 9 % below the
+  free rate's, unexplained.
+- Keyboard Error over 24 strikes in three Live instances: uniform from 0
+  to 22 cents at Error 1, never flat; 7.8 cents at most at 0.5 (Error^1.5).
+  **[measured]**
+- Velocity into the levels, the filter envelope and the attack time, the
+  poly chord and the mono chords (priority high and last), the saw from C1
+  to C7, key tracking at C2 and C6, key volume at C2, and drive pushed to
+  full level all match Live. **[measured]**
+
 ## Decisions
 
 | Decision | Proposal | State |
