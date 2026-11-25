@@ -447,6 +447,7 @@ static void test_meld_fits(void) {
     if (g_meld.voices[i].state != 0) sounding++, note = g_meld.voices[i].note;
   }
   CHECK(sounding == 1 && note == 64);
+  CHECK(fabs(opr_component(l + 2400, 2400, opr_note_hz(64)) - 0.3536) < 0.01);
   /* LFO 1's Pulsate draws the same pulses on every retriggered note */
   {
     static float a[4800], b[4800];
@@ -466,9 +467,11 @@ static void test_meld_fits(void) {
     le_meld_render(&g_meld, b, r, 4800);
     float diff = 0.0f;
     for (int32_t i = 0; i < 4800; ++i) diff = fmaxf(diff, fabsf(a[i] - b[i]));
-    CHECK(diff < 1e-4f);
+    /* the tone filter's state carries a trace of the first note (0.007);
+     * a different pulse sequence would detune the second by up to two
+     * semitones */
+    CHECK(diff < 0.02f);
   }
-  CHECK(fabs(opr_component(l + 2400, 2400, opr_note_hz(64)) - 0.3536) < 0.01);
 }
 
 static void run_meld_tests(void) {

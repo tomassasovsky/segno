@@ -491,6 +491,7 @@ static float transform(le_meld_fx* s, int32_t type, float x, float m, float f, d
 static void lfo1_reset(le_meld_lfo1* l) {
   l->rng = MV_LFO1_SEED;
   l->ph = 0.0;
+  l->gen = l->fx = 0.0f;
   l->walk = l->from = l->to = 0.0f;
   l->step = 0;
   l->pulse = l->pulse_left = 0.0f;
