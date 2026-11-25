@@ -143,6 +143,7 @@ typedef struct le_collision {
   int32_t voice_limit;
   uint32_t stolen;
   float gain; /* the master volume, smoothed */
+  float limit; /* the output limiter's gain */
   uint32_t serial_values; /* bumped by every set_values */
   le_collision_voice voices[LE_COLLISION_VOICE_SLOTS];
 } le_collision;
