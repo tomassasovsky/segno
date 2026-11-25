@@ -456,6 +456,7 @@ static const uint8_t kCarriers[11] = {1, 1, 1, 1, 3, 3, 1, 5, 7, 7, 15};
 typedef struct env_def {
   float at, al, as, dt, dl, ds, sl, rt, rl, rs, loop_ms, tvel;
   int32_t loop, repeat;
+  int32_t curved; /* slopes other than 0 and 1 follow the curved shape */
 } env_def;
 
 static env_def read_env(const le_operator* d, int32_t base) {
@@ -475,6 +476,14 @@ static env_def read_env(const le_operator* d, int32_t base) {
   e.loop_ms = v[LE_OPERATOR_ENV_LOOP_TIME];
   e.repeat = (int32_t)v[LE_OPERATOR_ENV_REPEAT];
   e.tvel = v[LE_OPERATOR_ENV_TIME_VEL];
+  e.curved = 0;
+  /* an operator's or the LFO's level at its -70 dB floor is silence */
+  if (base < LE_OPERATOR_ALGORITHM || base == LE_OPERATOR_LFO_ENV) {
+    float* lv[4] = {&e.al, &e.dl, &e.sl, &e.rl};
+    for (int32_t i = 0; i < 4; ++i) {
+      if (*lv[i] <= 0.00031623f) *lv[i] = 0.0f;
+    }
+  }
   return e;
 }
 
@@ -502,7 +511,11 @@ static void env_segment(le_operator_env* e, int32_t state, float y1, float ms, f
   e->dt = 1.0 / n;
   /* slope 1: a one-pole that comes within ENV_EPS of the target as its time
    * runs out */
-  const double span = fmax(fabs((double)e->y0 - (double)y1), 2.0 * ENV_EPS);
+  /* the pitch envelope's runs on its frequency ratios */
+  const double d0 = e->ratio != 0.0f
+                        ? exp2((double)e->y0 * (double)e->ratio) - exp2((double)y1 * (double)e->ratio)
+                        : ((double)e->y0 - (double)y1) * (double)e->scale;
+  const double span = fmax(fabs(d0), 2.0 * ENV_EPS);
   e->c = log(span / ENV_EPS) / fmax(n, 10.0);
 }
 
@@ -540,6 +553,22 @@ static void env_start(le_operator_env* e, const env_def* p, float fv, const env_
 static void env_release(le_operator_env* e, const env_def* p, float fv, const env_ctx* c) {
   if (e->state == ENV_OFF || e->state == ENV_RELEASE || p->loop == LOOP_TRIGGER) return;
   env_segment(e, ENV_RELEASE, p->rl, p->rt, fv * c->fglob, p->rs, c->rate);
+}
+
+/* The curved segment from y0 to y1 at progress t for slope s: a crossfade
+ * between the straight line (1 - |s|) and an exponential shape (|s|), fast
+ * first for s > 0 and its mirror for s < 0, reaching 10^-3.95 of the span. */
+#define ENV_CURVE_K 9.0949f
+static float env_curve(float y0, float y1, float s, double t) {
+  const float a = fabsf(s);
+  const float tt = (float)t;
+  float g;
+  if (s > 0.0f) {
+    g = (expf(-ENV_CURVE_K * tt) - expf(-ENV_CURVE_K)) / (1.0f - expf(-ENV_CURVE_K));
+  } else {
+    g = (expf(ENV_CURVE_K) - expf(ENV_CURVE_K * tt)) / (expf(ENV_CURVE_K) - 1.0f);
+  }
+  return y1 + (y0 - y1) * ((1.0f - a) * (1.0f - tt) + a * g);
 }
 
 /* One sample of `e`; returns its value. */
@@ -585,6 +614,8 @@ static float env_tick(le_operator_env* e, const env_def* p, float fv, const env_
     e->y = e->y0 + (e->y1 - e->y0) * (float)e->t;
   } else if (e->s == 1.0f) {
     e->y += (float)e->c * (e->y1 - e->y);
+  } else if (p->curved) {
+    e->y = env_curve(e->y0, e->y1, e->s, e->t);
   }
   /* Any other slope holds the start value until the segment ends, then
    * jumps to the target: what Live 12.2.7 renders for every slope but 0 and
@@ -659,6 +690,8 @@ void le_operator_set_tempo(le_operator* d, float bpm) {
 typedef struct op_mods {
   float m[LE_OPERATOR_DESTS];  /* the adding sum: amount x s */
   float g[LE_OPERATOR_DESTS];  /* the gain sum: amount x u - a+ */
+  float lfo_rate;              /* LFO Rate, octaves */
+  float time;                  /* Time, octaves */
 } op_mods;
 
 static void route_add(op_mods* r, int32_t dst, float amount, float sb, float su) {
@@ -671,11 +704,15 @@ static void route_add(op_mods* r, int32_t dst, float amount, float sb, float su)
 static void route_mods(const le_operator* d, const le_operator_voice* v, float lfo, float penv_st,
                        int with_lfo, op_mods* r) {
   memset(r, 0, sizeof(*r));
+  float self_rate = 0.0f;
   if (with_lfo && vi(d, LE_OPERATOR_LFO_ON)) {
     const float s = clampf(lfo, -1.0f, 1.0f);
-    route_add(r, vi(d, LE_OPERATOR_LFO_DEST),
-              vf(d, LE_OPERATOR_LFO_DEST_AMOUNT) / 100.0f * vf(d, LE_OPERATOR_LFO_AMOUNT), s,
-              0.5f * (s + 1.0f));
+    const float a = vf(d, LE_OPERATOR_LFO_DEST_AMOUNT) / 100.0f * vf(d, LE_OPERATOR_LFO_AMOUNT);
+    if (vi(d, LE_OPERATOR_LFO_DEST) == DST_LFO_RATE) {
+      self_rate = a * s;
+    } else {
+      route_add(r, vi(d, LE_OPERATOR_LFO_DEST), a, s, 0.5f * (s + 1.0f));
+    }
   }
   if (vi(d, LE_OPERATOR_PITCH_ENV_ON)) {
     const float s = clampf(penv_st / 48.0f, -1.0f, 1.0f);
@@ -695,6 +732,11 @@ static void route_mods(const le_operator* d, const le_operator_voice* v, float l
     }
   }
   r->m[DST_OFF] = r->g[DST_OFF] = 0.0f;
+  /* LFO Rate: 8 octaves per unit; the LFO's own route adds, every other
+   * source attenuates like a gain destination (aftertouch at rest with
+   * +20 % slows the rate 1.6 octaves: OP Bass) */
+  r->lfo_rate = 8.0f * (self_rate + r->g[DST_LFO_RATE]);
+  r->time = 3.0f * r->m[DST_TIME]; /* 3 octaves per unit */
 }
 
 static float route_gain(const op_mods* r, int32_t dst) {
@@ -707,8 +749,13 @@ static float route_gain(const op_mods* r, int32_t dst) {
 #define OP_TIME_K 3.0f
 
 static float lfo_periodic(int32_t type, double u);
+static float op_amp(const le_operator* d, const le_operator_voice* v, int32_t op);
 
 /* ---- voices ---- */
+
+/* Spread in whole percent: Live plays 0.5 % as off and 1 % as Spread
+ * (measured) */
+static float spread_pct(const le_operator* d) { return floorf(vf(d, LE_OPERATOR_SPREAD)); }
 
 static const int32_t kVoiceCounts[16] = {1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 14, 16, 20, 24, 32, 48};
 
@@ -744,7 +791,7 @@ static int32_t note_count(const le_operator* d) {
  * two voices). */
 static int32_t voice_count(const le_operator* d) {
   int32_t n = kVoiceCounts[vi(d, LE_OPERATOR_VOICES)];
-  const int32_t lim = vf(d, LE_OPERATOR_SPREAD) > 0.0f ? d->voice_limit / 2 : d->voice_limit;
+  const int32_t lim = spread_pct(d) > 0.0f ? d->voice_limit / 2 : d->voice_limit;
   if (n > lim) n = lim;
   return n < 1 ? 1 : n;
 }
@@ -809,7 +856,7 @@ static void start_voice(le_operator* d, le_operator_voice* v, uint32_t origin, i
   v->serial = serial;
   v->side = side;
   v->velocity = vel;
-  const float spread = vf(d, LE_OPERATOR_SPREAD) / 100.0f;
+  const float spread = spread_pct(d) / 100.0f;
   v->detune = side == SIDE_LEFT ? -0.1f * spread : side == SIDE_RIGHT ? 0.1f * spread : 0.0f;
   v->pan = (vf(d, LE_OPERATOR_PAN_KEY) / 100.0f) * ((float)note - 60.0f) / 64.0f +
            (vf(d, LE_OPERATOR_PAN_RANDOM) / 100.0f) * 2.0f * pan_rnd;
@@ -826,7 +873,6 @@ static void start_voice(le_operator* d, le_operator_voice* v, uint32_t origin, i
     const float u = opi(d, op, LE_OPERATOR_OP_RETRIGGER) ? opf(d, op, LE_OPERATOR_OP_PHASE) / 100.0f
                                                          : lcg_unit(&v->rng);
     v->phase[op] = floor((double)u * N_TABLE);
-    v->white_pos[op] = lcg(&v->rng) % N_TABLE;
   }
   v->lfo_phase = vi(d, LE_OPERATOR_LFO_RETRIGGER) ? 0.0 : d->lfo_free - floor(d->lfo_free);
   v->lfo_sh = lcg_bipolar(&v->rng);
@@ -835,8 +881,13 @@ static void start_voice(le_operator* d, le_operator_voice* v, uint32_t origin, i
   {
     op_mods rm;
     route_mods(d, v, 0.0f, 0.0f, 1, &rm);
-    v->time_mod = exp2f(OP_TIME_K * rm.m[DST_TIME]);
+    v->time_mod = exp2f(rm.time);
   }
+  /* an envelope's one-pole runs on its level times its scale: an operator's
+   * amplitude, 1 for the others */
+  for (int32_t op = 0; op < LE_OPERATOR_OPS; ++op) v->env[op].scale = op_amp(d, v, op);
+  v->fenv.scale = v->penv.scale = v->lenv.scale = 1.0f;
+  v->penv.ratio = penv_amount(d) / 12.0f;
   start_envelopes(d, v);
   v->gl = v->gr = -1.0f; /* set at the first chunk without a ramp */
 }
@@ -922,11 +973,15 @@ int32_t le_operator_note_on(le_operator* d, uint32_t origin, int32_t note, int32
   }
   held_push(d, origin, note);
   /* a new voice glides from the last note only while some voice sounds */
-  const int glide = vi(d, LE_OPERATOR_GLIDE_ON) && d->played && le_operator_active(d) > 0;
+  int glide = vi(d, LE_OPERATOR_GLIDE_ON) && d->played && le_operator_active(d) > 0;
+  int took = 0;
   if (vi(d, LE_OPERATOR_RETRIGGER_MODE)) {
     for (int32_t i = 0; i < LE_OPERATOR_VOICE_SLOTS; ++i) {
       le_operator_voice* v = &d->voices[i];
-      if (sounding(v) && v->note == note) fade_voice(v);
+      if (sounding(v) && v->note == note) {
+        fade_voice(v);
+        took = 1;
+      }
     }
   }
   while (note_count(d) >= count) {
@@ -936,10 +991,13 @@ int32_t le_operator_note_on(le_operator* d, uint32_t origin, int32_t note, int32
     if (v == NULL) break;
     fade_note(d, v->serial);
     d->stolen++;
+    took = 1;
   }
+  /* a note that takes a sounding voice's place starts at its own pitch */
+  if (took) glide = 0;
   const uint64_t serial = ++d->serial;
   const float pan_rnd = lcg_bipolar(&d->rng);
-  if (vf(d, LE_OPERATOR_SPREAD) > 0.0f) {
+  if (spread_pct(d) > 0.0f) {
     le_operator_voice* a = free_slot(d);
     if (a != NULL) start_voice(d, a, origin, note, vel, serial, SIDE_LEFT, pan_rnd, glide);
     le_operator_voice* b = free_slot(d);
@@ -1093,7 +1151,7 @@ static float lfo_hz(const le_operator* d, int32_t note, int keyed) {
 
 /* A periodic shape at phase u (0..1), read as from a 512-entry table. */
 static float lfo_periodic(int32_t type, double u) {
-  const float q = (float)(floor(u * 512.0) / 512.0); /* fit: the shapes */
+  const float q = (float)u;
   switch (type) {
     case 0: return sinf((float)(2.0 * OP_PI) * q);
     case 1: return q < 0.5f ? 1.0f : -1.0f;
@@ -1417,6 +1475,19 @@ static float downsample2(float st[4][2], float x0, float x1) {
 
 /* ---- rendering ---- */
 
+/* Operator op's amplitude: Volume, velocity and key scaling. */
+static float op_amp(const le_operator* d, const le_operator_voice* v, int32_t op) {
+  float lvl = opf(d, op, LE_OPERATOR_OP_VOLUME);
+  const float vs = opf(d, op, LE_OPERATOR_OP_VEL_SCALE) / 100.0f;
+  if (vs != 0.0f) {
+    const float g = (v->velocity - 0.5f) * vs + 0.5f;
+    lvl *= 4.0f * g * g;
+  }
+  const float ks = opf(d, op, LE_OPERATOR_OP_KEY_SCALE) / 100.0f;
+  if (ks != 0.0f) lvl *= exp2f(ks * ((float)v->note - 60.0f) / 12.0f);
+  return lvl;
+}
+
 /* Everything a voice needs for one chunk. */
 typedef struct chunk_ctx {
   int32_t alg, aa, interp, os;
@@ -1451,7 +1522,7 @@ static void voice_chunk(le_operator* d, le_operator_voice* v, const chunk_ctx* c
   route_mods(d, v, v->lfo_out * lfo_gain, penv_st, 1, &rm);
   const float* mod = rm.m;
   /* LFO */
-  float fl = lfo_hz(d, v->note, 1) * exp2f(8.0f * mod[DST_LFO_RATE]);
+  float fl = lfo_hz(d, v->note, 1) * exp2f(rm.lfo_rate);
   if (vi(d, LE_OPERATOR_LFO_PITCH_ENV_ON) && c->penv_active) {
     fl *= exp2f(v->penv.y * c->penv_amount);
   }
@@ -1468,7 +1539,7 @@ static void voice_chunk(le_operator* d, le_operator_voice* v, const chunk_ctx* c
     v->tone_b = t / (1.0f + t);
     v->tone_a = (t - 1.0f) / (1.0f + t);
   }
-  v->time_mod = exp2f(OP_TIME_K * mod[DST_TIME]);
+  v->time_mod = exp2f(rm.time);
   /* pitch */
   const float p = v->pitch + v->detune + vf(d, LE_OPERATOR_TRANSPOSE) +
                   d->bend * vf(d, LE_OPERATOR_PITCH_BEND_RANGE);
@@ -1509,14 +1580,7 @@ static void voice_chunk(le_operator* d, le_operator_voice* v, const chunk_ctx* c
     v->inc[op] = inc;
     v->table[op] = w->white ? 0 : pick_table(w, inc, c->aa);
     /* level */
-    float lvl = opf(d, op, LE_OPERATOR_OP_VOLUME);
-    const float vs = opf(d, op, LE_OPERATOR_OP_VEL_SCALE) / 100.0f;
-    if (vs != 0.0f) {
-      const float g = (v->velocity - 0.5f) * vs + 0.5f;
-      lvl *= 4.0f * g * g;
-    }
-    const float ks = opf(d, op, LE_OPERATOR_OP_KEY_SCALE) / 100.0f;
-    if (ks != 0.0f) lvl *= exp2f(ks * ((float)v->note - 60.0f) / 12.0f);
+    float lvl = op_amp(d, v, op);
     lvl *= w->gain * route_gain(&rm, DST_VOL_A + op);
     /* oversampled white noise gets back the power the decimator drops */
     if (w->white && c->aa) lvl *= 1.41421356f;
@@ -1537,7 +1601,7 @@ static void voice_chunk(le_operator* d, le_operator_voice* v, const chunk_ctx* c
                     (vel127 - 70.0f) * vf(d, LE_OPERATOR_FILTER_VEL) / 100.0f +
                     v->lfo_filter +
                     1.08f * vf(d, LE_OPERATOR_FILTER_ENV_AMOUNT) *
-                        fmaxf(0.0f, 1.0f + mod[DST_FILTER_ENV]) * v->fenv.y +
+                        route_gain(&rm, DST_FILTER_ENV) * v->fenv.y +
                     OP_FILTER_K * mod[DST_FILTER_FREQ];
     float fc = vf(d, LE_OPERATOR_FILTER_FREQ) * exp2f(clampf(s / 12.0f, -31.0f, 31.0f));
     fc = clampf(fc, 30.0f, fminf(0.48f * rate, 18500.0f));
@@ -1598,8 +1662,7 @@ static float operators_tick(le_operator* d, le_operator_voice* v, const chunk_ct
     const le_operator_wave* w = op_wave(d, op);
     float s;
     if (w->white) {
-      s = w->level[0][v->white_pos[op]];
-      v->white_pos[op] = (v->white_pos[op] + 1) & (N_TABLE - 1);
+      s = lcg_bipolar(&v->rng);
     } else {
       double pos = v->phase[op] + (double)off;
       pos -= floor(pos / N_TABLE) * N_TABLE;
@@ -1823,7 +1886,9 @@ static void make_chunk_ctx(const le_operator* d, chunk_ctx* c) {
     c->env[op] = read_env(d, LE_OPERATOR_OP(op, LE_OPERATOR_OP_ENV));
   }
   c->fenv = read_env(d, LE_OPERATOR_FILTER_ENV);
+  c->fenv.curved = 1;
   c->penv = pitch_env(d);
+  c->penv.curved = 1;
   c->penv_amount = penv_amount(d) / 12.0f;
   c->lenv = read_env(d, LE_OPERATOR_LFO_ENV);
   c->lfo_type = vi(d, LE_OPERATOR_LFO_TYPE);
