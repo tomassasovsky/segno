@@ -103,6 +103,54 @@ static float meld_ms2_section(float* s, float x, const le_ms2_coef* c, float kfb
   return w / LE_MS2_GI;
 }
 
+/* Segno's model of the MS-20 high-pass section, from the same parts: the
+ * two capacitors in series in the signal path, the first transconductance
+ * from the first node to the feedback node, the second from the second
+ * node to ground, buffers after each node, the output DC-blocked and fed
+ * back through the diode curve. Each capacitor's voltage is a one-pole
+ * low-pass of what drives it (q1 of the input less the feedback, q2 of the
+ * first buffer), so v1 = u - q1 and v2 = b1 - q2; the nonlinear elements are
+ * linearised at the last estimate and the loop solved in closed form, twice
+ * per sample. Small-signal: s^2 / (s^2 + (2 - k) w s + w^2). s: q1, q2 the
+ * capacitor states, s[2] the output coupling, s[3..5] the secants. */
+static float meld_ms2_hp_section(float* s, float x, const le_ms2_coef* c, float kfb) {
+  const float g = c->g, he = c->he;
+  const float u = LE_MS2_GI * x;
+  float L1 = s[3], L2 = s[4], T = s[5];
+  float X = 0.0f, v1 = 0.0f, v2 = 0.0f, b1 = 0.0f, b2 = 0.0f, w = 0.0f;
+  for (int pass = 0; pass < 2; ++pass) {
+    if (pass == 1) {
+      L1 = le_ms2_ota_secant(LE_MS2_KAPPA * (X - b1) + LE_MS2_OTA_OFS);
+      L2 = le_ms2_ota_secant(-LE_MS2_KAPPA * b2 + 0.01f);
+      T = le_ms2_diode_secant(kfb * w + LE_MS2_DIODE_OFS);
+    }
+    const float G1 = g * L1 / (1.0f + g * L1), G2 = g * L2 / (1.0f + g * L2);
+    /* v1 = (1 - G1)(u - s0) + G1 X, v2 = (1 - G2)(v1 - s1), w = he v2 + F,
+     * X = T (kfb w + ofs) */
+    const float F = -s[2] * he;
+    const float a1 = (1.0f - G1) * (u - s[0]);
+    const float P = T * kfb, Q = T * LE_MS2_DIODE_OFS;
+    const float A = 1.0f - G2;
+    /* X = P he A (a1 + G1 X - s1) + P F + Q */
+    X = (P * (he * A * (a1 - s[1]) + F) + Q) / (1.0f - P * he * A * G1);
+    X = le_ms2_clamp(X, -LE_MS2_X_LIM, LE_MS2_X_LIM);
+    v1 = le_ms2_clamp(a1 + G1 * X, -21.0f, 21.0f);
+    b1 = le_ms2_clamp(v1, LE_MS2_BUF_LO, LE_MS2_BUF_HI);
+    v2 = le_ms2_clamp(A * (b1 - s[1]), -21.0f, 21.0f);
+    b2 = le_ms2_clamp(v2, LE_MS2_BUF_LO, LE_MS2_BUF_HI);
+    w = he * b2 + F;
+  }
+  s[3] = le_ms2_ota_secant(LE_MS2_KAPPA * (X - b1) + LE_MS2_OTA_OFS);
+  s[4] = le_ms2_ota_secant(-LE_MS2_KAPPA * b2 + 0.01f);
+  s[5] = le_ms2_diode_secant(kfb * w + LE_MS2_DIODE_OFS);
+  /* the capacitors: q1 = u - X - v1's low-pass state, q2 = b1 - v2's */
+  const float q1 = u - v1, q2 = b1 - v2;
+  s[0] = 2.0f * q1 - s[0];
+  s[1] = 2.0f * q2 - s[1];
+  s[2] = 2.0f * (b2 - w) - s[2];
+  return w / LE_MS2_GI;
+}
+
 /* ---- DFM ---- */
 
 /* The DFM's loop: y (1 - a) + (a/3) y^3 = S within |y| <= 1, y - a
@@ -290,6 +338,7 @@ void le_meld_filter_init(le_meld_filter* f, float rate) {
 void le_meld_filter_reset(le_meld_filter* f) {
   memset(&f->s, 0, sizeof(f->s));
   if (f->type == LE_MELD_FILTER_LOWPASS) f->s.ms2.s[6] = 1.0f; /* the second OTA's gain */
+  if (f->type == LE_MELD_FILTER_HIGHPASS) f->s.ms2.s[3] = f->s.ms2.s[4] = 1.0f;
   f->gin = f->gin_to;
   f->gout = f->gout_to;
   for (int i = 0; i < 3; ++i) f->w[i] = f->w_to[i];
@@ -340,7 +389,7 @@ void le_meld_filter_set(le_meld_filter* f, float hz, float m1, float m2) {
       f->gin_to = mf_db(42.0f * m2 - 18.0f);
       f->gout_to = mf_db(18.0f * (1.0f - fminf(m2 / 0.7f, 1.0f)));
       const float r = 0.993f * m1;
-      if (f->type == LE_MELD_FILTER_LOWPASS) {
+      {
         const le_ms2_coef c =
             le_ms2_coefs(tanf(fminf(MF_PI * fmaxf(hz, 1.0f) / rate, 1.54f)), rate);
         f->s.ms2.c_g = c.g;
@@ -348,9 +397,6 @@ void le_meld_filter_set(le_meld_filter* f, float hz, float m1, float m2) {
         f->s.ms2.c_c1 = c.c1;
         f->s.ms2.c_inv1g = c.inv1g;
         f->s.ms2.kfb = LE_MS2_FEEDBACK * le_ms2_q(r, hz, rate);
-      } else {
-        /* the high-pass: the loop's small-signal Q, 1 / (2 - k) */
-        f->k1 = fmaxf(2.0f - LE_MS2_FEEDBACK * le_ms2_q(r, hz, rate), 0.02f);
       }
       break;
     }
@@ -492,11 +538,8 @@ float le_meld_filter_tick(le_meld_filter* f, float x) {
       return f->gout * meld_ms2_section(f->s.ms2.s, f->gin * x, &c, f->s.ms2.kfb);
     }
     case LE_MELD_FILTER_HIGHPASS: {
-      /* the circuit's input stage saturates near its rails */
-      const float u = 5.0f * tanhf(LE_MS2_GI * f->gin * x / 5.0f);
-      float hp = 0.0f;
-      (void)le_meld_svf(&f->s.svf.a, u, f->g, f->k1, NULL, &hp);
-      return f->gout * hp / LE_MS2_GI;
+      const le_ms2_coef c = {f->s.ms2.c_g, f->s.ms2.c_he, f->s.ms2.c_c1, f->s.ms2.c_inv1g};
+      return f->gout * meld_ms2_hp_section(f->s.ms2.s, f->gin * x, &c, f->s.ms2.kfb);
     }
     case LE_MELD_FILTER_BANDPASS: {
       float o[3];

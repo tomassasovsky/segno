@@ -91,7 +91,8 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
 - 21 factory presets, octave bands rms: 14 within 1 dB, Sugar Bass among
   them once a third round measured the note's key tracking of Filter Freq;
   that round also settled Chord's fourth voice and Square Sync's second
-  slave. The Highpass circuit is still open (Lively Ringer 10 dB).
+  slave. The Highpass is Segno's model of the MS-20 high-pass circuit
+  (within 2.6 dB short of full drive); Lively Ringer is 9 dB off.
 - A voice with both engines on a Basic Shapes saw and SVF 12 costs 1.8 us
   per millisecond on the dev machine; MS2 6.8, a Swarm 3.7, three unison
   copies 5.6.

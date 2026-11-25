@@ -695,7 +695,7 @@ Chip at min(rate, 10.05 kHz), all read back through a 4-point Hermite.
 ### Filters
 
 All 17 types are built; 13 match Live's renders within 0.5 dB rms per
-third-octave band. **[measured]**
+third-octave band, the MS2 pair within 2.6 short of full drive. **[measured]**
 
 - SVF 12 and 24: a trapezoidal state-variable filter, resonance m1 clamped
   to 0.9 through q = 4r/(3r + 1), morphing low, band, high and notch by
@@ -704,8 +704,11 @@ third-octave band. **[measured]**
   (`ms2_section.h`), with the second integrator's transconductance
   saturating like the first's; drive -18..+24 dB in, made up by 18 dB
   falling to 0 at 0.7. **[code]** **[measured]** (1.4 dB rms; full drive 6)
-- Highpass: the same drive around a state-variable high-pass at the
-  section's small-signal Q. **[open]** (the circuit's own high-pass)
+- Highpass: Segno's model of the same parts as a Sallen-Key high-pass: the
+  capacitors in series in the signal path, the first transconductance to
+  the feedback node, the second to ground, the output fed back through the
+  diode curve; the same drive. **[code]** **[measured]** (0.2..2.6 dB rms;
+  full drive 7)
 - Bandpass: the OSR circuit Operator uses (`osr_section.h`, now shared) at
   its band tap, leaving at 0.55. **[code]** **[measured]**
 - DFM: a two-pole Sallen-Key with unequal capacitors and a cubic soft clip
