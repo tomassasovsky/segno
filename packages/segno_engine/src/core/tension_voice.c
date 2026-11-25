@@ -423,7 +423,7 @@ static void string_strike(le_tension* d, le_tension_voice* v, float p, float pk,
   v->pick_tap = pick_tap;
   v->e = v->e_to = le_aas_clamp(2.0f * (h - (float)len), -(float)exc_tap, (float)(LE_TENSION_RAIL - 8 - len));
   v->e_step = 0.0f;
-  v->p0 = p;
+  v->p0 = pk; /* the pitch handler's: the key's, before glide and vibrato */
   /* the loss ramps in over 1 ms */
   v->g_to = string_loss(d, pk, 1.0f);
   v->g_step = (v->g_to - v->g) / (0.001f * rate);
@@ -1045,18 +1045,22 @@ static void tick_voice(le_tension* d, le_tension_voice* v) {
     v->vib_ph -= floor(v->vib_ph);
     vib = depth * sinf(2.0f * LE_AAS_PI * (float)v->vib_ph);
   }
-  const float p = v->pitch + vib + bend_oct(d);
-  /* the string follows the pitch at or below the strike's; above it the
-   * shifter takes the rest, crossfaded over 100 ms */
-  const float ps = fminf(p, v->p0);
+  /* the pitch handler: the key with bend follows on the string at or below
+   * the strike's pitch; above it the string holds that and the shifter
+   * takes the rest, crossfaded over 100 ms. Glide and vibrato then move
+   * the string's length from the held pitch, so they never reach the
+   * shifter */
+  const float key = v->pitch_to + bend_oct(d);
+  const float up = fmaxf(key - v->p0, 0.0f);
+  const float ps = v->pitch + vib + (fminf(key, v->p0) - v->pitch_to);
   const float h = 0.5f * (rate / (TV_C4 * exp2f(ps)) - v->c_tune);
   float e_to = 2.0f * (h - (float)v->len);
   e_to = fmaxf(e_to, -(float)v->exc_tap);
   e_to = fminf(e_to, (float)(LE_TENSION_RAIL - 8 - v->len));
   v->e_step = (e_to - v->e) / (float)LE_TENSION_TICK;
   v->e_to = e_to;
-  v->sh_ratio = exp2f(fmaxf(p - v->p0, 0.0f));
-  const float target = p > v->p0 + 1e-6f ? 1.0f : 0.0f;
+  v->sh_ratio = exp2f(up);
+  const float target = up > 1e-6f ? 1.0f : 0.0f;
   v->sh_mix_step = (target - v->sh_mix) / fmaxf(0.1f * rate * fabsf(target - v->sh_mix), 1.0f);
   /* the LFO */
   float lfo = 0.0f;
@@ -1275,7 +1279,7 @@ static void render_voice(le_tension* d, le_tension_voice* v, float* out, int32_t
       return;
     }
     const int held = v->state == LE_TENSION_VOICE_HELD || v->state == LE_TENSION_VOICE_SUSTAINED;
-    const float period = rate / (TV_C4 * exp2f(fminf(v->pitch, v->p0)));
+    const float period = rate / (TV_C4 * exp2f(fminf(v->pitch_to + bend_oct(d), v->p0)));
     for (int32_t s = 0; s < n; ++s) {
       float y = string_tick(d, v, held);
       if (v->sh_mix > 0.0f || v->sh_mix_step > 0.0f) {
