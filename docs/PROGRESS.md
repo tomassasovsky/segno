@@ -81,6 +81,12 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   Tine < Key the other way round from their names, the output level.
 - The 17 factory presets, at C4 and six of them also two octaves down or
   up: 19 of 23 within 1.0 dB, twelve within 0.2; Vibes Soft 1.4 to 3.9.
+- Strict score (50 ms cells, attack, level, onset, pitch): 65 of 69
+  renders and 21 of 23 presets pass, from 63 and 22. New: Live's output
+  soft clip (linear to 2.8, toward 4 at Segno's scale), the exact midpoint
+  of the neutral-centred controls, and the fit harness releasing on
+  Live's block. Still failing: four renders where the damper's noise
+  rings a resonance by a random amount per strike.
 - A voice costs 1.4 us per millisecond on the dev machine with the R
   pickup, 0.9 with W. A device holds 40 voices (10 KB).
 

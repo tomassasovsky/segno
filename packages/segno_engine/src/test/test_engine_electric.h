@@ -61,17 +61,15 @@ static void test_electric_strike(void) {
   CHECK(le_electric_active(&g_electric) == 0);
 }
 
-/* Every control at its ends, both pickups: finite on any note, and
- * bounded across the piano's range but for the key and velocity scalings,
- * which grow without bound as read. */
+/* Every control at its ends, both pickups: finite on any note, and never
+ * past the output stage's ceiling of 4, even where the key and velocity
+ * scalings drive the voice without bound. */
 static void test_electric_extremes(void) {
   printf("test_electric_extremes\n");
   enum { N = 4800 };
   static float l[N], r[N];
   static const int32_t notes[4] = {21, 108, 0, 127};
   for (int32_t p = 0; p < LE_ELECTRIC_PARAMS; ++p) {
-    const int scaling = p == LE_ELECTRIC_STIFFNESS_KEY || p == LE_ELECTRIC_FORCE_KEY || p == LE_ELECTRIC_FORCE_VEL ||
-                        p == LE_ELECTRIC_NOISE_KEY || p == LE_ELECTRIC_TINE_COLOR || p == LE_ELECTRIC_PICKUP_KEY;
     for (int m = 0; m < 2; ++m) {
       for (int model = 0; model < 2; ++model) {
         for (int k = 0; k < 4; ++k) {
@@ -81,15 +79,52 @@ static void test_electric_extremes(void) {
           CHECK(le_electric_note_on(&g_electric, 1, notes[k], 127, 0) == 0);
           le_electric_render(&g_electric, l, r, N);
           CHECK(opr_finite(l, N));
-          if (k < 2 && !scaling) CHECK(opr_peak(l, N) < 64.0f);
+          CHECK(opr_peak(l, N) <= 4.0f);
           le_electric_note_off(&g_electric, 1);
           le_electric_render(&g_electric, l, r, N);
           CHECK(opr_finite(l, N));
-          if (k < 2 && !scaling) CHECK(opr_peak(l, N) < 64.0f);
+          CHECK(opr_peak(l, N) <= 4.0f);
         }
       }
     }
   }
+}
+
+/* The output stage passes a quiet note unchanged and bends a loud one's
+ * peaks toward 4: full Force < Velocity at velocity 127 would peak past 6
+ * without it. */
+static void test_electric_output_stage(void) {
+  printf("test_electric_output_stage\n");
+  enum { N = 4800 };
+  static float l[N], r[N];
+  electric_reference(&g_electric);
+  electric_set(&g_electric, LE_ELECTRIC_FORCE_VEL, 1.0f);
+  CHECK(le_electric_note_on(&g_electric, 1, 60, 127, 0) == 0);
+  le_electric_render(&g_electric, l, r, N);
+  CHECK(opr_peak(l, N) > 3.0f);
+  CHECK(opr_peak(l, N) < 4.0f);
+  electric_reference(&g_electric);
+  CHECK(le_electric_note_on(&g_electric, 1, 60, 100, 0) == 0);
+  le_electric_render(&g_electric, l, r, N);
+  CHECK(opr_peak(l, N) < 1.0f);
+}
+
+/* A centred Noise Pitch puts the mallet noise exactly half an octave over
+ * its base, 519.5 Hz (the line's own midpoint, not 64/127 of the way). */
+static void test_electric_centred_noise_pitch(void) {
+  printf("test_electric_centred_noise_pitch\n");
+  enum { N = 48000 };
+  static float l[N], r[N];
+  electric_reference(&g_electric);
+  electric_set(&g_electric, LE_ELECTRIC_NOISE_AMOUNT, 1.0f);
+  electric_set(&g_electric, LE_ELECTRIC_NOISE_DECAY, 1.0f);
+  electric_set(&g_electric, LE_ELECTRIC_TONE_VOLUME, 0.0f);
+  electric_set(&g_electric, LE_ELECTRIC_TINE_VOLUME, 0.0f);
+  CHECK(le_electric_note_on(&g_electric, 1, 60, 100, 0) == 0);
+  le_electric_render(&g_electric, l, r, N);
+  const double at = opr_component(l + 480, N - 480, 367.31 * 1.41421356);
+  CHECK(at > 3.0 * opr_component(l + 480, N - 480, 533.7));
+  CHECK(at > 3.0 * opr_component(l + 480, N - 480, 505.6));
 }
 
 /* Notes ended, stolen or struck again before their strike stay silent and
@@ -284,6 +319,8 @@ static void test_engine_electric_midi(void) {
 static void run_electric_tests(void) {
   test_electric_strike();
   test_electric_extremes();
+  test_electric_output_stage();
+  test_electric_centred_noise_pitch();
   test_electric_before_the_strike();
   test_electric_voices();
   test_electric_block_size();

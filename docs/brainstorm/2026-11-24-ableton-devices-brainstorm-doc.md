@@ -929,14 +929,24 @@ two octaves down or up. Tags as for Meld. Segno's implementation is
 
 - Per voice: a mallet pulse and a damper's noise burst excite a fork of
   four resonators, whose sum goes through a pickup. The voices sum, then
-  Volume (2u^2, nothing after it), copied to both channels. **[code]**
-  **[measured]** (no further gain)
+  Volume (2u^2) and the output stage, copied to both channels. **[code]**
+- The output stage is a soft clip: linear up to 0.7 of full scale, then
+  1 - 0.3 / (1 + (|x| - 0.7) / 0.9)^3, which meets the line in value and
+  slope at the knee and tends to full scale; Live multiplies by 4 after
+  it. Segno's voice levels already carry that 4, so Segno clips at 2.8
+  toward 4. **[code]** **[measured]** (the scale: a loud strike peaks at
+  3.85 in Live, where the unclipped voice reaches 6.4)
 - The engine moves in 1 ms blocks: a note strikes at the start of the
   block after the one it arrives in. A key struck again while its voice
   still rings fades that voice out across the block, then the fork and
   pickup restart from rest. **[code]**
-- Knob positions follow the engine's 0..127 scale, as in Analog.
-  **[code]**
+- Knob positions follow the engine's 0..127 scale, as in Analog. The
+  linear controls whose centre is neutral (Noise Pitch, Tine < Key,
+  Damper Balance, Pickup Amp < Key, Keyboard Stretch) give exactly their
+  midpoint at 64, not 64/127 of the way: a centred Noise Pitch is
+  519.5 Hz, not 533.7. Force < Key and Force < Vel are plain lines.
+  **[code]** **[measured]** (the noise renders; whole knob steps fit the
+  presets worse than the stored fractions)
 
 ### Mallet
 
@@ -993,16 +1003,37 @@ two octaves down or up. Tags as for Meld. Segno's implementation is
 ### The fits so far
 
 69 renders (third-octave bands within 60 dB of each render's loudest,
-from the strike): total 1.09 dB rms; the reference at 0.5, every single
-change within 1.6 dB but six. The factory presets (octave bands): 19 of
-23 renders within 1.0 dB, twelve within 0.2 (E-Piano MKII Old, Short
-Sharp, Short Soft, Organ Soft, Wurli Classic, Wurli Short at 0.0); Vibes
-Soft 1.4 to 3.9 across its three octaves.
+from the strike): total 1.09 dB rms after the first fit.
 
-Still open: at full Force < Velocity (20.4 dB) and full Tone Bar Volume
-(8.3 dB) Live's output carries more above 10 kHz in the first 0.3 s;
-Stiffness at 0 (5.9 dB); Live strikes about 16 samples later in its
-block than Segno.
+The strict score (third-octave x 50 ms cells, the attack in 5 ms frames,
+level, onset, pitch; `strict.py`): 65 of 69 renders and 21 of the 23
+factory presets pass, from 63 and 22 before this round. The output
+stage brought full Force < Velocity from 7.1 dB to 0.03 and full Tone
+Bar Volume from 2.4 to 0.02; the midpoint rule brought the mallet noise
+render at full decay from 3.9 to 0.7 and the pitch error everywhere to
+0.00 cents. Live hands a note-off to the device at the start of the 1 ms
+block that holds it, and a note's end a hair before its time, so a note
+ending on a block boundary releases one block early: the fit harness
+does the same, which brought Organ Soft from 0.42 to 0.02, E-Piano MKII
+Old from 0.35 to 0.03 and Damper Balance 1 from 1.22 to 0.51.
+**[measured]**
+
+Live's whole output sits 16 samples later than Segno's (every render,
+strike and release alike, sample for sample once shifted): a fixed
+latency outside the device, which Segno does not copy. **[measured]**
+
+Still open, all where the damper's noise rings a resonance: Stiffness 0,
+Damper Balance 0, E-Piano MKII Bright (which passed before the release
+change: its release burst rings the tine partial and the 10.7 kHz mallet
+noise 3 and 6 dB weaker on average than Live's) and Vibes Soft two
+octaves up (its 4.2 kHz mallet noise 7 dB over Live's, at C6 only).
+A noise burst gives each resonance a random size per strike, so these
+renders differ between two Segno renders with different noise too: over
+eight noise seeds, Segno against Segno reaches tfz 3 to 8 on them, and
+the attack score 3 to 5. Stiffness 0 stands out: Live's tine there is
+20 dB below the mean of Segno's eight seeds. Repeated Live renders would
+settle whether that is chance. The E-Piano
+MKII presets lean 1 dB darker above 1 kHz. **[measured]**
 
 ## Decisions
 
