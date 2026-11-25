@@ -106,9 +106,9 @@ typedef struct le_drift_voice {
   float lfo_inc;                    /* the LFO's last increment (Ratio) */
   float lfo_hold, lfo_from, lfo_to; /* S&H and Wander */
   int32_t lfo_done;                 /* a one-shot LFO shape ended */
-  /* filters: the low-pass (type I uses two, type II six: two sections of
-   * two states and the band output), the high-pass */
-  float lp[6];
+  /* filters: the low-pass (type I three states, type II twelve: two
+   * sections of four capacitor states and two secant gains), the high-pass */
+  float lp[12];
   float hp[2];
   /* fade (stolen, struck again, cut, device change) */
   float fade;
