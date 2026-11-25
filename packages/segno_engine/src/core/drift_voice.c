@@ -336,17 +336,19 @@ static float osc_triangle(float th, float s, float dt) {
 }
 
 /* Shark Tooth's window width w by Shape: a near-triangle at 0 narrowing
- * toward a saw at 1 (the oscillator plays it inverted, a rising ramp with
- * the dip on top). Fitted through the filters' input clip, which tells the
- * polarity apart: Live's renders at six shapes within 1.5 dB rms per
- * sixth-octave band, joined linearly. */
+ * toward a saw at 1. The oscillator plays it negated and backwards in
+ * time: at 1 a falling ramp that rises back fast (the dip). Fitted: Live's
+ * renders at six shapes within 1.5 dB rms per sixth-octave band, and
+ * Live's waveform under an LFO sweeping the shape from -1 to 1 (each
+ * period's correlation 0.99 up to shape 0.5, where the old direction gave
+ * -1, and the narrow top widths), joined linearly. */
 static float shark_width(float s) {
   static const float kS[6] = {0.0f, 0.135f, 0.25f, 0.5f, 0.75f, 1.0f};
-  static const float kW[6] = {0.906f, 0.779f, 0.676f, 0.463f, 0.287f, 0.157f};
+  static const float kW[6] = {0.906f, 0.779f, 0.676f, 0.463f, 0.24f, 0.06f};
   /* past the ends (modulation drives the shape outside 0..1) the width
-   * follows the nearest segment's slope, within 0.1..1 */
+   * follows the nearest segment's slope, within 0.03..1 */
   if (s <= 0.0f) return fminf(1.0f, kW[0] + s * (kW[1] - kW[0]) / kS[1]);
-  if (s >= 1.0f) return fmaxf(0.1f, kW[5] + (s - 1.0f) * (kW[5] - kW[4]) / 0.25f);
+  if (s >= 1.0f) return fmaxf(0.03f, kW[5] + (s - 1.0f) * (kW[5] - kW[4]) / 0.25f);
   for (int i = 1; i < 6; ++i) {
     if (s <= kS[i]) {
       const float t = (s - kS[i - 1]) / (kS[i] - kS[i - 1]);
@@ -418,7 +420,7 @@ static float oscillator(int32_t wave, float th, float s, float dt) {
     case WAVE_TRIANGLE:
       return osc_triangle(th, s, dt);
     case WAVE_SHARK:
-      return -osc_shark(th, s, dt);
+      return -osc_shark(frac(1.0f - th), s, dt);
     case WAVE_SATURATED:
       return osc_saturated(th, s);
     case WAVE_SAW:

@@ -414,6 +414,13 @@ static void test_drift_shark_has_no_dc(void) {
     const double rms = sqrt(sq / DRIFT_SR);
     CHECK(rms > 0.01);
     CHECK(fabs(sum / DRIFT_SR) < 0.01 * rms);
+    /* at shape 1 and past it, a falling ramp that rises back fast: the
+     * output falls on most samples (around the filters, no clip) */
+    if (shapes[i] >= 1.0f) {
+      int32_t falls = 0;
+      for (int32_t f = 1; f < DRIFT_SR; ++f) falls += l[f] < l[f - 1];
+      CHECK(falls > DRIFT_SR * 8 / 10);
+    }
   }
 }
 
