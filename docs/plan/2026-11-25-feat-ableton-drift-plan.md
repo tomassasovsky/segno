@@ -7,7 +7,9 @@ instrument voices), SEG-50 (stem history replay).
 **Brainstorm:** `docs/brainstorm/2026-11-24-ableton-devices-brainstorm-doc.md`
 (decisions, the owner's answers, and Drift's behavior, which is the
 specification every part below implements).
-**Status:** awaiting the owner's approval. No code before it.
+**Status:** approved by the owner on 2026-11-25 as written, including
+HiQuality at the host rate from 88.2 kHz (P3). P4's render source is asked
+when P4 starts.
 
 ## Goal
 
