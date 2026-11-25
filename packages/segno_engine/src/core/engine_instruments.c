@@ -116,7 +116,9 @@ static void* dev_at(le_engine* e, int i, int32_t k) {
 }
 
 void* le_instruments_device(le_engine* e, int32_t device, int32_t slot) {
-  return dev_at(e, (int)(le_inst_device_find(device) - le_inst_devices), slot);
+  const le_inst_device* dv = le_inst_device_find(device);
+  if (dv == NULL || slot < 0 || slot >= LE_MAX_INSTRUMENTS) return NULL;
+  return dev_at(e, (int)(dv - le_inst_devices), slot);
 }
 
 /* ---- lifecycle (no callback running) ---- */

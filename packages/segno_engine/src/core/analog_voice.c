@@ -391,7 +391,7 @@ static int sounding(const le_analog_voice* v) {
 static void fade_voice(le_analog_voice* v) {
   if (v->state == LE_ANALOG_VOICE_FREE) return;
   v->state = LE_ANALOG_VOICE_FADING;
-  if (v->fade <= 0.0f) v->fade = 1.0f;
+  if (v->fade_left <= 0) v->fade_left = LE_ANALOG_FADE_MS * v->fade_len;
 }
 
 static int32_t copies_per_note(const le_analog* d) {
@@ -455,15 +455,20 @@ static int32_t priority_index(const le_analog* d) {
   return best;
 }
 
-static void start_copy(le_analog* d, le_analog_voice* v, le_analog_copy* cp, int from_current) {
+/* A copy starts from rest: its filters, the integrator's leak and the
+ * noise filter cleared, so nothing of the slot's last note rings on. */
+static void start_copy(le_analog* d, le_analog_voice* v, le_analog_copy* cp) {
   const float rate = (float)d->sample_rate;
+  cp->noise_lp = 0.0f;
   for (int32_t c = 0; c < 2; ++c) {
     le_analog_chain* ch = &cp->ch[c];
     const av_env fe = read_env(d, c, LE_ANALOG_FILTER_ENV);
     const av_env ae = read_env(d, c, LE_ANALOG_AMP_ENV);
-    env_start(&ch->fenv, &fe, v->velocity, rate, from_current);
-    env_start(&ch->aenv, &ae, v->velocity, rate, from_current);
-    if (from_current) continue;
+    env_start(&ch->fenv, &fe, v->velocity, rate, 0);
+    env_start(&ch->aenv, &ae, v->velocity, rate, 0);
+    memset(ch->s, 0, sizeof(ch->s));
+    ch->dc = 0.0f;
+    ch->noise_lp = 0.0f;
     ch->penv = 1.0f;
     ch->penv_step = 1.0f / fmaxf(c_exp(0.01f, 10.0f, cf(d, c, LE_ANALOG_OSC_ENV_TIME)) * rate, 1.0f);
     ch->ph = ch->ph2 = 0.0;
@@ -491,7 +496,8 @@ static void start_voice(le_analog* d, le_analog_voice* v, uint32_t origin, int32
   v->copies = copies_per_note(d);
   v->tick_left = 0;
   v->since = 0;
-  v->fade = 0.0f;
+  v->fade_left = 0;
+  v->fade_len = (int32_t)lroundf(0.001f * (float)d->sample_rate);
   v->vib_t = 0.0f;
   v->pitch_to = key_pitch(d, note);
   v->pitch = glide ? d->last_pitch : v->pitch_to;
@@ -505,7 +511,7 @@ static void start_voice(le_analog* d, le_analog_voice* v, uint32_t origin, int32
     le_analog_copy* cp = &v->c[k];
     cp->detune = step * kSteps[k];
     cp->delay = (int32_t)(delay * (float)k / (float)(v->copies > 1 ? v->copies - 1 : 1));
-    start_copy(d, v, cp, 0);
+    start_copy(d, v, cp);
   }
   d->last_pitch = v->pitch_to;
   d->played = 1;
@@ -602,6 +608,8 @@ int32_t le_analog_note_on(le_analog* d, uint32_t origin, int32_t note, int32_t v
         return 0; /* the held key keeps the voice */
       }
       d->held_n--; /* pushed again below */
+      /* legato only for a voice still held: one let go above restarts */
+      const int was_held = v->state == LE_ANALOG_VOICE_HELD;
       v->note = note;
       v->origin = origin;
       v->velocity = vel;
@@ -611,8 +619,8 @@ int32_t le_analog_note_on(le_analog* d, uint32_t origin, int32_t note, int32_t v
       for (int32_t k = 0; k < v->copies; ++k) {
         for (int32_t c = 0; c < 2; ++c) {
           le_analog_chain* ch = &v->c[k].ch[c];
-          const int fleg = overlapping && ci(d, c, LE_ANALOG_FILTER_ENV + LE_ANALOG_ENV_LEGATO);
-          const int aleg = overlapping && ci(d, c, LE_ANALOG_AMP_ENV + LE_ANALOG_ENV_LEGATO);
+          const int fleg = overlapping && was_held && ci(d, c, LE_ANALOG_FILTER_ENV + LE_ANALOG_ENV_LEGATO);
+          const int aleg = overlapping && was_held && ci(d, c, LE_ANALOG_AMP_ENV + LE_ANALOG_ENV_LEGATO);
           const av_env fe = read_env(d, c, LE_ANALOG_FILTER_ENV);
           const av_env ae = read_env(d, c, LE_ANALOG_AMP_ENV);
           if (!fleg) env_start(&ch->fenv, &fe, vel, (float)d->sample_rate, 1);
@@ -639,22 +647,27 @@ int32_t le_analog_note_on(le_analog* d, uint32_t origin, int32_t note, int32_t v
   return 0;
 }
 
+/* A held voice whose key is up: in mono it moves to the held key the
+ * priority picks, otherwise it is let go. */
+static void key_up(le_analog* d, le_analog_voice* v) {
+  if (mono(d) && d->held_n > 0) {
+    const int32_t pi = priority_index(d);
+    v->note = d->held_note[pi];
+    v->origin = d->held_origin[pi];
+    v->pitch_to = key_pitch(d, v->note);
+    if (!vi(d, LE_ANALOG_GLIDE_ON)) v->pitch = v->pitch_to;
+    d->last_pitch = v->pitch_to;
+    return;
+  }
+  let_go(d, v);
+}
+
 void le_analog_note_off(le_analog* d, uint32_t origin) {
   if (d == NULL) return;
   held_drop(d, origin);
   for (int32_t i = 0; i < LE_ANALOG_VOICE_SLOTS; ++i) {
     le_analog_voice* v = &d->voices[i];
-    if (v->state != LE_ANALOG_VOICE_HELD || v->origin != origin) continue;
-    /* mono: to the held key the priority picks */
-    if (mono(d) && d->held_n > 0) {
-      const int32_t pi = priority_index(d);
-      v->note = d->held_note[pi];
-      v->origin = d->held_origin[pi];
-      v->pitch_to = key_pitch(d, v->note);
-      if (!vi(d, LE_ANALOG_GLIDE_ON)) v->pitch = v->pitch_to;
-      continue;
-    }
-    let_go(d, v);
+    if (v->state == LE_ANALOG_VOICE_HELD && v->origin == origin) key_up(d, v);
   }
 }
 
@@ -707,7 +720,7 @@ void le_analog_release_matching(le_analog* d, uint32_t mask, uint32_t value) {
   for (int32_t i = 0; i < LE_ANALOG_VOICE_SLOTS; ++i) {
     le_analog_voice* v = &d->voices[i];
     if (v->state == LE_ANALOG_VOICE_HELD && (v->origin & mask) == value) {
-      let_go(d, v);
+      key_up(d, v);
     } else if (v->state == LE_ANALOG_VOICE_SUSTAINED && d->sustain_n == 0) {
       release_voice(d, v);
     }
@@ -1018,7 +1031,7 @@ static void render_voice(le_analog* d, le_analog_voice* v, float* left, float* r
   const float rate = (float)d->sample_rate;
   /* fit: the bundle's x4 does not reach Live's output (the level renders) */
   const float out_gain = c_sq(0.0f, 2.0f, vf(d, LE_ANALOG_VOLUME));
-  const float fade_step = 1.0f / (0.001f * rate);
+  const float fade_step = 1.0f / (float)(LE_ANALOG_FADE_MS * v->fade_len);
   const int noise_on = vi(d, LE_ANALOG_NOISE_ON);
   const float noise_lvl = noise_on ? c_exp(0.01f, 3.0f, vf(d, LE_ANALOG_NOISE_LEVEL)) : 0.0f;
   const float noise_bal = knob(vf(d, LE_ANALOG_NOISE_BALANCE));
@@ -1133,22 +1146,24 @@ static void render_voice(le_analog* d, le_analog_voice* v, float* left, float* r
           r += ch->gr * x;
         }
         float g = out_gain;
-        if (v->state == LE_ANALOG_VOICE_FADING) g *= fmaxf(v->fade - fade_step * (float)s, 0.0f);
+        if (v->state == LE_ANALOG_VOICE_FADING) g *= fade_step * (float)(v->fade_left > s ? v->fade_left - s : 0);
         left[i + s] += g * l;
         right[i + s] += g * r;
       }
       for (int32_t c = 0; c < 2; ++c) {
-        if (cp->ch[c].aenv.seg != SEG_IDLE && ci(d, c, LE_ANALOG_AMP_ON)) idle = 0;
+        const le_analog_chain* ch = &cp->ch[c];
+        if ((ch->aenv.seg != SEG_IDLE && ci(d, c, LE_ANALOG_AMP_ON)) || fabsf(ch->gl) > 1e-6f || fabsf(ch->gr) > 1e-6f) idle = 0;
       }
     }
+    v->tick_left -= n;
     if (v->state == LE_ANALOG_VOICE_FADING) {
-      v->fade -= fade_step * (float)n;
-      if (v->fade <= 0.0f) v->state = LE_ANALOG_VOICE_FREE;
-    } else if (idle && v->state != LE_ANALOG_VOICE_HELD) {
+      v->fade_left -= n;
+      if (v->fade_left <= 0) v->state = LE_ANALOG_VOICE_FREE;
+    } else if (idle && v->tick_left == 0 && v->state != LE_ANALOG_VOICE_HELD) {
+      /* on a tick's edge, so in any block size */
       v->state = LE_ANALOG_VOICE_FREE;
     }
-    v->tick_left -= n;
-    v->since += n;
+    if (v->since < (1 << 30)) v->since += n; /* only the copies' delays read it */
     i += n;
   }
 }
