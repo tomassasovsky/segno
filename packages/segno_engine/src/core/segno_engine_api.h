@@ -956,7 +956,7 @@ typedef struct le_config {
 
 /* Maximum number of simultaneous looper tracks (two banks of four). */
 #define LE_MAX_TRACKS 8
-/* Instrument slots (#1197): each a synthesized mono source. */
+/* Instrument slots (#1197): each a synthesized stereo source (SEG-109 P1). */
 #define LE_MAX_INSTRUMENTS 8
 /* The source index space every input-keyed route, monitor and mix entry uses
  * (#1197): sources [0, LE_MAX_CHANNELS) are device input channels, and

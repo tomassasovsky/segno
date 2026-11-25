@@ -42,7 +42,7 @@
 #include <unistd.h>
 
 #include "engine_fx.h"          /* fx_apply_chain, le_flush_denormals */
-#include "engine_instruments.h" /* le_instrument_source_sample */
+#include "engine_instruments.h" /* le_instrument_source_frame */
 #include "engine_platform.h"    /* the worker setup, wait and wake */
 #include "engine_prof.h"        /* measuring builds only (#1914) */
 
@@ -101,11 +101,15 @@ static void le_fx_monitor_job(le_engine* e, int32_t c) {
     if (p->owned[i]) continue; /* the latency harness's frame: no monitors */
     const uint32_t f = p->f0 + i;
     atomic_store_explicit(&t->a_frame, p->clock + i, memory_order_relaxed);
-    const float clean =
-        instrument ? le_instrument_source_sample(e, c, f)
-                   : p->in[f * (uint32_t)p->ch_in + (uint32_t)c];
-    float l = clean;
-    float r = clean;
+    /* The chain takes an instrument's two channels as they are, a device
+     * input's one channel on both sides. */
+    float l, r;
+    if (instrument) {
+      le_instrument_source_frame(e, c, f, &l, &r);
+    } else {
+      l = p->in[f * (uint32_t)p->ch_in + (uint32_t)c];
+      r = l;
+    }
     if ((e->heard_tap_mask >> c) & 1u) {
       /* A take records the Pre run (#1741): the chain in two, with the
        * signal between them noted. */

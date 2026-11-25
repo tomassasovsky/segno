@@ -62,11 +62,16 @@ void le_instruments_midi_gone(le_engine* e, int32_t port);
 /* Audio thread: Cut all sound fades every instrument voice out. */
 void le_instruments_cut(le_engine* e);
 
-/* The bus of `slot` (LE_INST_BUS_FRAMES floats; the current block's
- * frames start at 0), or NULL. */
-static inline const float* le_instrument_bus(const le_engine* e, int32_t slot) {
-  if (e->inst_bus == NULL || slot < 0 || slot >= LE_MAX_INSTRUMENTS) return NULL;
-  return e->inst_bus + (int64_t)slot * LE_INST_BUS_FRAMES;
+/* Channel `ch` (0 left, 1 right) of the bus of `slot` (LE_INST_BUS_FRAMES
+ * floats; the current block's frames start at 0), or NULL. */
+static inline const float* le_instrument_bus(const le_engine* e, int32_t slot,
+                                             int32_t ch) {
+  if (e->inst_bus == NULL || slot < 0 || slot >= LE_MAX_INSTRUMENTS ||
+      ch < 0 || ch >= LE_INST_BUS_CHANNELS) {
+    return NULL;
+  }
+  return e->inst_bus +
+         ((int64_t)slot * LE_INST_BUS_CHANNELS + ch) * LE_INST_BUS_FRAMES;
 }
 
 /* Whether `source` names an instrument slot (#1197 Part 2b). */
@@ -75,14 +80,32 @@ static inline int le_source_is_instrument(int32_t source) {
 }
 
 /* Frame `f` of instrument source `source` (an instrument slot) in the current
- * block: its bus sample, or silence when this block's buses are not live
- * (a block larger than the scratch). An empty slot's bus is silence. */
-static inline float le_instrument_source_sample(const le_engine* e,
-                                                int32_t source, uint32_t f) {
-  if (!e->inst_bus_live) return 0.0f;
-  return e->inst_bus[(int64_t)(source - LE_INSTRUMENT_SOURCE_BASE) *
-                         LE_INST_BUS_FRAMES +
-                     f];
+ * block, left in *l and right in *r: its bus, or silence when this block's
+ * buses are not live (a block larger than the scratch). An empty slot's bus
+ * is silence. What feeds a chain or an output takes both channels. */
+static inline void le_instrument_source_frame(const le_engine* e,
+                                              int32_t source, uint32_t f,
+                                              float* l, float* r) {
+  if (!e->inst_bus_live) {
+    *l = 0.0f;
+    *r = 0.0f;
+    return;
+  }
+  const float* bus = e->inst_bus + (int64_t)(source - LE_INSTRUMENT_SOURCE_BASE) *
+                                       LE_INST_BUS_CHANNELS * LE_INST_BUS_FRAMES;
+  *l = bus[f];
+  *r = bus[LE_INST_BUS_FRAMES + f];
+}
+
+/* The mono sum (L + R) / 2 of frame `f` of instrument source `source`: what
+ * a mono stage records (the clean take, the raw performance tap). Equal
+ * channels give that channel exactly, so a patch voice (both channels the
+ * same) records as it did on a mono bus. */
+static inline float le_instrument_source_mono(const le_engine* e,
+                                              int32_t source, uint32_t f) {
+  float l, r;
+  le_instrument_source_frame(e, source, f, &l, &r);
+  return 0.5f * (l + r);
 }
 
 #ifdef __cplusplus

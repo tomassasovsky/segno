@@ -115,7 +115,8 @@ int le_instruments_create(le_engine* e) {
    * are fork-shielded and prefaulted here, on the control thread (rt_alloc.h). */
   e->synth = (struct le_synth*)le_rt_alloc_prefaulted(sizeof(le_synth));
   e->inst_bus = (float*)le_rt_alloc_prefaulted(
-      (size_t)LE_MAX_INSTRUMENTS * (size_t)LE_INST_BUS_FRAMES * sizeof(float));
+      (size_t)LE_MAX_INSTRUMENTS * LE_INST_BUS_CHANNELS *
+      (size_t)LE_INST_BUS_FRAMES * sizeof(float));
   if (e->synth == NULL || e->inst_bus == NULL) {
     le_instruments_destroy(e);
     return 0;
@@ -738,8 +739,11 @@ void le_instruments_render(le_engine* e, uint32_t frames) {
     for (int k = 0; k < LE_MAX_INSTRUMENTS; ++k) {
       store_i32(&e->a_inst_voices[k], 0);
       if (load_f32(&e->a_inst_peak_bits[k]) != 0.0f) {
-        memset(e->inst_bus + (int64_t)k * LE_INST_BUS_FRAMES, 0,
-               sizeof(float) * (size_t)LE_INST_BUS_FRAMES);
+        memset(e->inst_bus + (int64_t)k * LE_INST_BUS_CHANNELS *
+                                 LE_INST_BUS_FRAMES,
+               0,
+               sizeof(float) * LE_INST_BUS_CHANNELS *
+                   (size_t)LE_INST_BUS_FRAMES);
         store_f32(&e->a_inst_peak_bits[k], 0.0f);
       }
     }
@@ -752,22 +756,29 @@ void le_instruments_render(le_engine* e, uint32_t frames) {
     atomic_fetch_add_explicit(&e->a_inst_fallback_blocks, 1u,
                               memory_order_relaxed);
     memset(e->inst_bus, 0,
-           sizeof(float) * (size_t)LE_MAX_INSTRUMENTS * LE_INST_BUS_FRAMES);
+           sizeof(float) * (size_t)LE_MAX_INSTRUMENTS * LE_INST_BUS_CHANNELS *
+               LE_INST_BUS_FRAMES);
     for (int k = 0; k < LE_MAX_INSTRUMENTS; ++k) {
       store_f32(&e->a_inst_peak_bits[k], 0.0f);
     }
     return;
   }
+  /* The patch voice is mono: it renders into each bus's left plane, and the
+   * right plane carries the same samples. */
   float* bus[LE_MAX_INSTRUMENTS];
   for (int k = 0; k < LE_MAX_INSTRUMENTS; ++k) {
-    bus[k] = e->inst_bus + (int64_t)k * LE_INST_BUS_FRAMES;
+    bus[k] = e->inst_bus + (int64_t)k * LE_INST_BUS_CHANNELS * LE_INST_BUS_FRAMES;
   }
   le_synth_render(s, bus, LE_MAX_INSTRUMENTS, (int32_t)frames);
   for (int k = 0; k < LE_MAX_INSTRUMENTS; ++k) {
+    float* right = bus[k] + LE_INST_BUS_FRAMES;
+    memcpy(right, bus[k], sizeof(float) * (size_t)frames);
     float peak = 0.0f;
     for (uint32_t f = 0; f < frames; ++f) {
       const float a = fabsf(bus[k][f]);
+      const float b = fabsf(right[f]);
       if (a > peak) peak = a;
+      if (b > peak) peak = b;
     }
     store_f32(&e->a_inst_peak_bits[k], peak);
     store_i32(&e->a_inst_voices[k], le_synth_active(s, k));

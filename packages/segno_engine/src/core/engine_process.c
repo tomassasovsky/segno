@@ -7168,7 +7168,8 @@ static void perf_tap_raw_block(le_engine* e, uint32_t frames) {
     const int device = !instrument && in != NULL && c < ch_in;
     le_audio_ring* ring = &e->perf_raw_ring[c];
     for (uint32_t f = 0; f < frames; ++f) {
-      const float x = instrument ? le_instrument_source_sample(e, c, f)
+      /* The raw tap is one channel per source: an instrument's mono sum. */
+      const float x = instrument ? le_instrument_source_mono(e, c, f)
                       : device   ? in[(size_t)f * (size_t)ch_in + (size_t)c]
                                  : 0.0f;
       if (!le_audio_ring_push_frame(ring, &x, 1)) {
@@ -8772,8 +8773,11 @@ static inline int process_input_frame(le_engine* e, const float* in,
       const int source = load_i32(&t->lanes[l].a_input_channel);
       float value;
       if (le_source_is_instrument(source)) {
-        /* An instrument arms the take like a jack (#1197). */
-        value = fabsf(le_instrument_source_sample(e, source, f));
+        /* An instrument arms the take like a jack (#1197), on its louder
+         * channel. */
+        float il, ir;
+        le_instrument_source_frame(e, source, f, &il, &ir);
+        value = fabsf(il) > fabsf(ir) ? fabsf(il) : fabsf(ir);
       } else {
         if (source < 0 || source >= ch_in || source >= LE_MAX_CHANNELS ||
             (excluded & (1u << source))) continue;
@@ -8889,9 +8893,10 @@ static inline void mix_monitors_frame(
     if (mon_has_fx[c]) {
       ml = par->mon_l[c][i];
       mr = par->mon_r[c][i];
+    } else if (instrument) {
+      le_instrument_source_frame(e, c, f, &ml, &mr);
     } else {
-      ml = instrument ? le_instrument_source_sample(e, c, f)
-                      : in[f * ch_in + c];
+      ml = in[f * ch_in + c];
       mr = ml;
     }
     ml *= mon_vol[c] * mon_gl[c];
@@ -10256,8 +10261,9 @@ LE_AUDIO_HOT_AT(4) void mix_tracks_frame_heard(
          * path, the meters and the trigger read the untrimmed input. */
         insample = in[f * ch_in + ic] * in_trim[ic];
       } else if (le_source_is_instrument(ic)) {
-        /* An instrument source (#1197): its bus, no trim. */
-        insample = le_instrument_source_sample(e, ic, f);
+        /* An instrument source (#1197): its bus's mono sum, no trim. The
+         * heard image keeps its stereo (le_heard_input). */
+        insample = le_instrument_source_mono(e, ic, f);
       }
 
       /* Real-time null-guard: a lane whose buffer is not yet allocated (the
