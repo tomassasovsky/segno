@@ -1473,18 +1473,20 @@ void main() {
     expect(wav.samples[453791], closeTo(1.5, 1e-6));
   });
 
-  test('a mixdown keeps the LCM of independent lanes while it fits a loop',
-      () async {
-    // 1 s and 1.5 s at 48 kHz close together after 3 s.
-    final engine = FakeSessionEngine()
-      ..seedTrack(0, Float32List(48000)..fillRange(0, 48000, 1))
-      ..seedTrack(1, Float32List(72000)..fillRange(0, 72000, .5));
+  test(
+    'a mixdown keeps the LCM of independent lanes while it fits a loop',
+    () async {
+      // 1 s and 1.5 s at 48 kHz close together after 3 s.
+      final engine = FakeSessionEngine()
+        ..seedTrack(0, Float32List(48000)..fillRange(0, 48000, 1))
+        ..seedTrack(1, Float32List(72000)..fillRange(0, 72000, .5));
 
-    final wav = await savedMixdown(engine, 'fits');
+      final wav = await savedMixdown(engine, 'fits');
 
-    expect(wav.frames, 144000);
-    expect(wav.samples, everyElement(closeTo(1.5, 1e-6)));
-  });
+      expect(wav.frames, 144000);
+      expect(wav.samples, everyElement(closeTo(1.5, 1e-6)));
+    },
+  );
 
   test('a save refuses a track or layer longer than any loop can be, '
       'before it writes anything (SEG-107)', () async {
