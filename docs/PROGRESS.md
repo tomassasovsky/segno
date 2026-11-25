@@ -1,4 +1,4 @@
-<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Metalic Wurli MKII -->
+<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Metalic Wurli MKII Perc halvings -->
 # Segno — Progress & Roadmap
 
 <!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs multicore smarttune -->
