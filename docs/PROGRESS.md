@@ -97,9 +97,12 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   13 samples late, the rectangle without its DC offset (most of the
   presets' 2 to 6 dB excess), the amp envelope per sample with a start
   ramp, the tempo divisions and LFO depths on the amp, the mono
-  retrigger. Left: Live's early note events, its random sources (S&H and
-  noise LFOs, Keyboard Error), and the LFO and unison-delay laws the Live
-  round segno-analog-fit4 measures.
+  retrigger. Round 4 added Keyboard Stretch and Error, the pan's knob law
+  and free LFO starts: 206 of 266 fit renders, 14 of 41 presets, 10 of 58
+  on the held-out round (from 8). Left: Live's early note-ons (most of the
+  held-out failures), the unison delay, the pitch envelope at full depth;
+  segno-analog-fit5 isolates event timing, velocity, chords, range and
+  Live's own spread on the random sources.
 - A voice of two saw chains through LP24 costs 0.9 us per millisecond on
   the dev machine, four unison copies 3.7, the formant filter 1.0. A
   device holds 40 copies (88 KB).
