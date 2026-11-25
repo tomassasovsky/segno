@@ -35,6 +35,7 @@ extern "C" {
 #define LE_ANALOG_TICK 32
 #define LE_ANALOG_SUSTAIN_MAX 16
 #define LE_ANALOG_HELD_MAX 16
+#define LE_ANALOG_FADE_MS 1 /* a stolen or cut voice's fade */
 
 typedef struct le_analog_env {
   int32_t seg;    /* ANALOG_SEG_* (analog_voice.c) */
@@ -93,8 +94,9 @@ typedef struct le_analog_voice {
   double vib_ph;
   float vib_t;           /* seconds since the note (vibrato delay and fade) */
   int32_t tick_left;
-  int32_t since;
-  float fade;
+  int32_t since;      /* samples since the note, saturating */
+  int32_t fade_left;  /* stolen or cut: samples of fade left */
+  int32_t fade_len;   /* samples a millisecond */
   le_analog_copy c[LE_ANALOG_COPIES];
 } le_analog_voice;
 

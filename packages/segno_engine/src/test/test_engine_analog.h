@@ -259,7 +259,27 @@ static void test_analog_voices(void) {
   CHECK(le_analog_active(&g_analog) == 0 && le_analog_fading(&g_analog) == 0);
 }
 
-/* Rendering in any block size gives the same samples. */
+/* Renders n frames in blocks of `block`, a stealing note at 4000 and its
+ * release at 6000 landing inside whatever block they fall in. */
+static void analog_play(le_analog* d, float* l, float* r, int32_t n, int32_t block) {
+  static const int32_t at[2] = {4000, 6000};
+  int32_t i = 0, ev = 0;
+  while (i < n) {
+    int32_t m = n - i < block ? n - i : block;
+    if (ev < 2 && i + m > at[ev]) m = at[ev] - i;
+    if (m > 0) le_analog_render(d, l + i, r + i, m);
+    i += m;
+    if (ev < 2 && i == at[ev]) {
+      if (ev == 0) CHECK(le_analog_note_on(d, 2, 64, 100, 0) == 0);
+      else le_analog_note_off(d, 2);
+      ev++;
+    }
+  }
+}
+
+/* Rendering in any block size gives the same samples: the notes, a
+ * delayed unison copy, a release that ends and a voice stolen by a note
+ * the budget cannot also hold. */
 static void test_analog_block_size(void) {
   printf("test_analog_block_size\n");
   enum { N = 9600 };
@@ -272,19 +292,79 @@ static void test_analog_block_size(void) {
     analog_chain(&g_analog, 0, LE_ANALOG_FILTER_TYPE, 1.0f);
     analog_chain(&g_analog, 0, LE_ANALOG_LFO_ON, 1.0f);
     analog_chain(&g_analog, 0, LE_ANALOG_FILTER_LFO_CUTOFF, 0.5f);
+    analog_chain(&g_analog, 0, LE_ANALOG_AMP_ENV + LE_ANALOG_ENV_EXP, 0.0f);
+    analog_chain(&g_analog, 0, LE_ANALOG_AMP_ENV + LE_ANALOG_ENV_RELEASE, 0.05f);
     analog_set(&g_analog, LE_ANALOG_UNISON_ON, 1.0f);
     analog_set(&g_analog, LE_ANALOG_UNISON_DELAY, 0.3f);
+    le_analog_set_voice_limit(&g_analog, 2); /* one two-copy note */
     CHECK(le_analog_note_on(&g_analog, 1, 57, 100, 0) == 0);
+    analog_play(&g_analog, b < 0 ? ref_l : l, b < 0 ? ref_r : r, N, b < 0 ? N : blocks[b]);
     if (b < 0) {
-      le_analog_render(&g_analog, ref_l, ref_r, N);
+      CHECK(g_analog.stolen == 1 && le_analog_active(&g_analog) == 0);
       continue;
-    }
-    for (int32_t i = 0; i < N; i += blocks[b]) {
-      const int32_t n = N - i < blocks[b] ? N - i : blocks[b];
-      le_analog_render(&g_analog, l + i, r + i, n);
     }
     CHECK(memcmp(ref_l, l, sizeof(l)) == 0);
     CHECK(memcmp(ref_r, r, sizeof(r)) == 0);
+  }
+}
+
+/* A note starts from rest: nothing of the slot's last note rings on. */
+static void test_analog_fresh_voice(void) {
+  printf("test_analog_fresh_voice\n");
+  enum { N = 9600 };
+  static float l[N], r[N];
+  analog_reference(&g_analog);
+  analog_set(&g_analog, LE_ANALOG_POLYPHONY, 0.0f);
+  analog_chain(&g_analog, 0, LE_ANALOG_OSC_SHAPE, 1.0f);
+  analog_chain(&g_analog, 0, LE_ANALOG_FILTER_ON, 1.0f);
+  analog_chain(&g_analog, 0, LE_ANALOG_FILTER_Q, 1.0f);
+  analog_chain(&g_analog, 0, LE_ANALOG_AMP_ENV + LE_ANALOG_ENV_RELEASE, 0.0f);
+  CHECK(le_analog_note_on(&g_analog, 1, 48, 127, 0) == 0);
+  le_analog_render(&g_analog, l, r, N);
+  le_analog_note_off(&g_analog, 1);
+  le_analog_render(&g_analog, l, r, N);
+  CHECK(le_analog_active(&g_analog) == 0);
+  analog_chain(&g_analog, 0, LE_ANALOG_OSC_ON, 0.0f);
+  CHECK(le_analog_note_on(&g_analog, 2, 48, 127, 0) == 0);
+  le_analog_render(&g_analog, l, r, N);
+  CHECK(opr_peak(l, N) == 0.0f);
+}
+
+/* Mono hand-offs: a key pressed again while another is held sounds with
+ * Legato on, and a glide starts from the key the voice last moved to. */
+static void test_analog_mono_hand_offs(void) {
+  printf("test_analog_mono_hand_offs\n");
+  enum { N = 9600 };
+  static float l[N], r[N];
+  analog_reference(&g_analog);
+  analog_set(&g_analog, LE_ANALOG_POLYPHONY, 0.0f);
+  analog_set(&g_analog, LE_ANALOG_PRIORITY, 2.0f);
+  analog_chain(&g_analog, 0, LE_ANALOG_AMP_ENV + LE_ANALOG_ENV_LEGATO, 1.0f);
+  analog_chain(&g_analog, 0, LE_ANALOG_AMP_ENV + LE_ANALOG_ENV_RELEASE, 0.0f);
+  CHECK(le_analog_note_on(&g_analog, 1, 48, 100, 0) == 0);
+  CHECK(le_analog_note_on(&g_analog, 2, 60, 100, 0) == 0);
+  le_analog_render(&g_analog, l, r, N);
+  CHECK(le_analog_note_on(&g_analog, 2, 60, 100, 0) == 0);
+  le_analog_render(&g_analog, l, r, N);
+  CHECK(opr_component(l + N / 2, N / 2, opr_note_hz(60)) > 0.8 * kAnalogSinePeak);
+  /* glide: 48, 60, back to 48, let go; the next key glides from 48 */
+  analog_reference(&g_analog);
+  analog_set(&g_analog, LE_ANALOG_POLYPHONY, 0.0f);
+  analog_set(&g_analog, LE_ANALOG_PRIORITY, 2.0f);
+  analog_set(&g_analog, LE_ANALOG_GLIDE_ON, 1.0f);
+  analog_set(&g_analog, LE_ANALOG_GLIDE_TIME, 0.0f);
+  analog_chain(&g_analog, 0, LE_ANALOG_AMP_ENV + LE_ANALOG_ENV_RELEASE, 0.0f);
+  CHECK(le_analog_note_on(&g_analog, 1, 48, 100, 0) == 0);
+  CHECK(le_analog_note_on(&g_analog, 2, 60, 100, 0) == 0);
+  le_analog_render(&g_analog, l, r, N);
+  le_analog_note_off(&g_analog, 2);
+  le_analog_render(&g_analog, l, r, N);
+  le_analog_note_off(&g_analog, 1);
+  le_analog_render(&g_analog, l, r, N);
+  CHECK(le_analog_active(&g_analog) == 0);
+  CHECK(le_analog_note_on(&g_analog, 3, 55, 100, 0) == 0);
+  for (int32_t i = 0; i < LE_ANALOG_VOICE_SLOTS; ++i) {
+    if (g_analog.voices[i].state == 1) CHECK(fabsf(g_analog.voices[i].pitch - (-1.0f)) < 1e-6f);
   }
 }
 
@@ -384,6 +464,8 @@ static void run_analog_tests(void) {
   test_analog_unison();
   test_analog_voices();
   test_analog_block_size();
+  test_analog_fresh_voice();
+  test_analog_mono_hand_offs();
   test_engine_analog_slot_matches_offline();
   test_engine_analog_params_and_switching();
   test_engine_analog_midi();
