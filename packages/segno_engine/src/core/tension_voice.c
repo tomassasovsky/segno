@@ -1031,7 +1031,7 @@ static void tick_voice(le_tension* d, le_tension_voice* v) {
   float lfo = 0.0f;
   if (vi(d, LE_TENSION_LFO_ON)) {
     float hz;
-    if (vi(d, LE_TENSION_LFO_SYNC_ON) && vi(d, LE_TENSION_LFO_SYNC) > 0) {
+    if (vi(d, LE_TENSION_LFO_SYNC_ON)) {
       hz = d->bpm / 60.0f / le_aas_sync_beats(vi(d, LE_TENSION_LFO_SYNC));
     } else {
       hz = kexp(3.0f, 1000.0f, vf(d, LE_TENSION_LFO_SPEED)) / 60.0f;
@@ -1064,7 +1064,7 @@ static void tick_voice(le_tension* d, le_tension_voice* v) {
                       le_aas_bsq(4.0f, vf(d, LE_TENSION_FILTER_ENV_Q)) * fenv;
     const int32_t type = vi(d, LE_TENSION_FILTER_TYPE);
     const float fc = fmaxf(kexp(30.0f, 22000.0f, vf(d, LE_TENSION_FILTER_CUTOFF)) * exp2f(e_cut), 20.0f);
-    const float q = fminf(kexp(0.1f, 120.0f, vf(d, LE_TENSION_FILTER_Q)) * exp2f(e_q), 100.0f);
+    const float q = kexp(0.1f, 120.0f, vf(d, LE_TENSION_FILTER_Q)) * exp2f(e_q); /* each stage clamps its own */
     if (type >= 8) {
       le_aas_formant_set(&v->f, type, vf(d, LE_TENSION_FILTER_CUTOFF), vf(d, LE_TENSION_FILTER_Q), e_cut, e_q, rate);
     } else {
