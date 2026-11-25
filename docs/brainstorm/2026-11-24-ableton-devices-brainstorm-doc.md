@@ -1442,9 +1442,10 @@ Meld. Segno's implementation is `collision_voice.c`.
   range; Fine Tune and the bipolar knobs with 0 at step 64, 63 steps up
   and 63.5 down; Radius inverted), a matrix amount as is. The linear,
   square and cube curves put step 64 at exactly their middle, the
-  exponential curve does not. **[code]** The master Volume and the LFOs'
-  free Rate are not taken down to their step. **[measured]** (Vibes
-  Basic's level; lfo-pitch's rate, 0.641 Hz against 0.624 for the step)
+  exponential curve does not. **[code]** The master Volume, the LFOs'
+  free Rate and the Pitch Env. Time are not taken down to their step.
+  **[measured]** (Vibes Basic's level; lfo-pitch's rate, 0.641 Hz against
+  0.624 for the step; penv-t75's sweep, 1.3 to 0.3 dB)
 - A per-voice matrix sums amount x source into each destination: key
   ((note - 60) / 12 with bend), velocity ((vel - 64) / 63), bend, mod
   wheel, pressure, both LFOs. The "< Vel" and "< Key" knobs are fixed
@@ -1452,7 +1453,8 @@ Meld. Segno's implementation is `collision_voice.c`.
   destinations, each in its own unit (an octave of cutoff, a doubling of
   a gain, a rate or a depth, a unit of pan or hit). **[code]** A chooser's
   amount moves a resonator's pitch by an eighth of an octave a unit.
-  **[measured]** (lfo-pitch: 0.25 swings 37.7 cents; Music Box Slide)
+  **[measured]** (lfo-pitch: 0.25 swings 37.7 cents; Music Box Slide;
+  amounts 0.5, 1, 2.5 and -1, half depth and resonator 2 in round 2)
 
 ### Exciters
 
@@ -1530,8 +1532,14 @@ Meld. Segno's implementation is `collision_voice.c`.
   5/16, 1/4, 3/16, 1/6, 1/8, 1/12, 1/16, 1/24, 1/32, 1/48, 1/64 whole
   notes. A strike reads each LFO at its start phase. A released voice
   ends after 50 ms below -100 dBFS, counted once the mallet's pulse and
-  both waveguides' round trips have passed. **[code]** **[measured]**
-  (Bells Attack's synced pan, 21.7 to 3.9 dB) **[Segno]** (the voice end)
+  both waveguides' round trips have passed; any voice, held or not, ends
+  at the first 512-sample block in which its resonators' outputs (before
+  their volumes) stay below 6e-6 with its exciters spent. **[code]**
+  **[measured]** (Bells Attack's synced pan, 21.7 to 3.9 dB; Live's held
+  notes stop at about -94 dBFS, at 512-sample steps, 6 dB higher with a
+  resonator or master volume of 1; a metal note, mat-1, stops about 12 dB
+  higher, which the output level does not explain) **[Segno]** (the
+  released voice's 50 ms)
 - The output is the voices' sum times Volume (Sq(0, 2)), then times 4,
   then a look-ahead peak limiter at 1: the gain each sample needs is held
   as the least over the next 17 samples, released towards 1 with a 70 ms
@@ -1544,29 +1552,27 @@ Meld. Segno's implementation is `collision_voice.c`.
 
 ### The fits so far
 
-92 Live renders (single changes around a plain mallet-on-beam reference,
-and the 33 factory presets) scored by the strict score (third-octave x 50
-ms cells, the first 150 ms in octave x 5 ms cells, stereo, pitch, level
-and onset, each against a limit; renders with randomness against two
-Segno seeds' own difference): 51 of 92 pass, 6 of the 33 factory presets
-(Bell Plate Long, Bells Mellow, Digital String, E-Piano Dreamy, Marimba
-Classic, Vibes Basic), from 32 and 1. Every single-change waveguide,
-membrane and plate render passes.
+Round 1 (92 renders: single changes around a plain mallet-on-beam
+reference and the 33 factory presets) and round 2 (18: the chooser's
+pitch unit, the other destinations, the pitch envelope, Off Decay, pipes
+across the keyboard), scored by the strict score with three Segno seeds:
+83 of 108 pass, 18 of the 33 factory presets; round 2 all but penv-t25.
+The held-out round (every preset, a quiet C2, a loud C4 triad and a hard
+C5, with Live's own copies) passes 9 of 33.
 
-What is left is mostly random. The mallet's noise, the noise source and
+What is left is mostly random: the mallet's noise, the noise source and
 the random hit drive narrow modes whose energies vary by several dB
-between strikes; for most of the failing presets two Segno seeds differ
-from each other as much as Segno differs from Live (the score's noise
-check still fails both). Clearly beyond that: the noise source's low-pass
-(Segno 9 dB too strong at the fundamental and 10 to 20 dB too weak above
-10 kHz in noise-lp and noise-env), the modes above 10 kHz the mallet's
-tiny noise excites (stiff-0, mat-1, bright-1), the series structure at
-full drive (serial 3.6 dB) and a mallet at full volume (mvol-1 3.7 dB),
-the pitch envelope's sweep (penv-1 3.5 dB), and Bells Deep, Balafon
-Bright, Toy Piano Bells and Xylophone Dark (noise source with a fast
-Freq < Env, 8 to 15 dB). Live also ends a held voice once it falls to
-about -94 dBFS (Segno lets it ring), which the score barely sees. Still
-open besides: the MPE destinations.
+between strikes. Beyond that: the noise source's low-pass (noise-lp,
+noise-env: Segno too dark above 4 kHz, the envelope's sweep included),
+the modes above 10 kHz the mallet's tiny noise excites (stiff-0, mat-1),
+the noise source's fast Freq < Env presets (Toy Piano Bells, Xylophone
+Dark, Bells Deep), the series structure and a full-volume mallet at the
+limiter (serial, mvol-1, 3.6 dB), and an upward pitch sweep (penv-1,
+penv-t25: after it the second and fourth beam modes end 3 and 9 dB low).
+In the held-out round the side signal above 8 kHz of hard strikes is
+weaker than Live's. Round 3 has Live copies of the random renders and the
+noise excitation through a dense membrane to settle these. Still open
+besides: the MPE destinations.
 
 ## Decisions
 
