@@ -76,27 +76,58 @@ static void test_tension_exciters(void) {
   }
 }
 
-/* Every control at its ends on the keyboard's ends: finite. */
+/* Every control at its ends on the keyboard's ends, with every exciter,
+ * the damper and the termination on: finite, and no louder than a string
+ * struck at the fastest hammer speed rings (the string is linear, so the
+ * fastest strikes are loud, about +47 dB at worst). */
 static void test_tension_extremes(void) {
   printf("test_tension_extremes\n");
   enum { N = 4800 };
   static float l[N], r[N];
   static const int32_t notes[3] = {0, 60, 127};
   for (int32_t p = 0; p < LE_TENSION_PARAMS; ++p) {
-    for (int m = 0; m < 2; ++m) {
-      for (int k = 0; k < 3; ++k) {
-        tension_reference(&g_tension);
-        tension_set(&g_tension, LE_TENSION_EXC_TYPE, (float)(p % 4));
-        tension_set(&g_tension, p, le_tension_clamp(p, m ? 1e9f : -1e9f));
-        CHECK(le_tension_note_on(&g_tension, 1, notes[k], 127, 0) == 0);
-        le_tension_render(&g_tension, l, r, N);
-        CHECK(opr_finite(l, N));
-        le_tension_note_off(&g_tension, 1);
-        le_tension_render(&g_tension, l, r, N);
-        CHECK(opr_finite(l, N));
+    for (int32_t type = 0; type < 4; ++type) {
+      if (p == LE_TENSION_EXC_TYPE && type > 0) continue;
+      for (int m = 0; m < 2; ++m) {
+        for (int k = 0; k < 3; ++k) {
+          tension_reference(&g_tension);
+          tension_set(&g_tension, LE_TENSION_EXC_TYPE, (float)type);
+          tension_set(&g_tension, LE_TENSION_DAMPER_ON, 1.0f);
+          tension_set(&g_tension, LE_TENSION_TERM_ON, 1.0f);
+          tension_set(&g_tension, p, le_tension_clamp(p, m ? 1e9f : -1e9f));
+          CHECK(le_tension_note_on(&g_tension, 1, notes[k], k == 1 ? 1 : 127, 0) == 0);
+          le_tension_render(&g_tension, l, r, N);
+          CHECK(opr_finite(l, N) && opr_finite(r, N));
+          CHECK(opr_peak(l, N) < 1000.0f && opr_peak(r, N) < 1000.0f);
+          le_tension_note_off(&g_tension, 1);
+          le_tension_render(&g_tension, l, r, N);
+          CHECK(opr_finite(l, N) && opr_peak(l, N) < 1000.0f);
+        }
       }
     }
   }
+}
+
+/* The body rings on after the last string and is reported fading while it
+ * does; then it ends, and the device is silent. */
+static void test_tension_body_tail(void) {
+  printf("test_tension_body_tail\n");
+  enum { N = 4800 };
+  static float l[N], r[N];
+  tension_reference(&g_tension);
+  tension_set(&g_tension, LE_TENSION_BODY_ON, 1.0f);
+  tension_set(&g_tension, LE_TENSION_BODY_MIX, 1.0f);
+  tension_set(&g_tension, LE_TENSION_BODY_DECAY, 1.0f);
+  CHECK(le_tension_note_on(&g_tension, 1, 60, 100, 0) == 0);
+  le_tension_render(&g_tension, l, r, N);
+  le_tension_cut(&g_tension);
+  le_tension_render(&g_tension, l, r, N); /* the strings end */
+  CHECK(le_tension_active(&g_tension) == 0);
+  CHECK(le_tension_fading(&g_tension) == 1); /* the body alone */
+  CHECK(opr_peak(l + N / 2, N / 2) > 0.0f);
+  CHECK(tension_until_silent(&g_tension, l, r, N, 100) < 100);
+  le_tension_render(&g_tension, l, r, N);
+  CHECK(opr_peak(l, N) == 0.0f && opr_peak(r, N) == 0.0f);
 }
 
 /* Voice counts, unison, the same key again, sustain and Cut. */
@@ -144,7 +175,8 @@ static void test_tension_voices(void) {
 }
 
 /* Rendering in any block size gives the same samples: a strike, a
- * release inside a block, a stolen note. */
+ * release inside a block, a stolen note, bend, vibrato, glide and a knob
+ * moved while sounding. */
 static void tension_play(le_tension* d, float* l, float* r, int32_t n, int32_t block) {
   static const int32_t at[2] = {4000, 6000};
   int32_t i = 0, ev = 0;
@@ -154,8 +186,13 @@ static void tension_play(le_tension* d, float* l, float* r, int32_t n, int32_t b
     if (m > 0) le_tension_render(d, l + i, r + i, m);
     i += m;
     if (ev < 2 && i == at[ev]) {
-      if (ev == 0) CHECK(le_tension_note_on(d, 2, 64, 100, 0) == 0);
-      else le_tension_note_off(d, 2);
+      if (ev == 0) {
+        CHECK(le_tension_note_on(d, 2, 64, 100, 0) == 0);
+        le_tension_expression(d, LE_SYNTH_BEND, 0.5f);
+        tension_set(d, LE_TENSION_BODY_LEVEL, 0.3f);
+      } else {
+        le_tension_note_off(d, 2);
+      }
       ev++;
     }
   }
@@ -175,6 +212,10 @@ static void test_tension_block_size(void) {
     tension_set(&g_tension, LE_TENSION_LFO_ON, 1.0f);
     tension_set(&g_tension, LE_TENSION_FILTER_LFO_CUTOFF, 0.5f);
     tension_set(&g_tension, LE_TENSION_DAMPER_ON, 1.0f);
+    tension_set(&g_tension, LE_TENSION_VIBRATO_ON, 1.0f);
+    tension_set(&g_tension, LE_TENSION_VIBRATO_AMOUNT, 0.5f);
+    tension_set(&g_tension, LE_TENSION_GLIDE_ON, 1.0f);
+    tension_set(&g_tension, LE_TENSION_GLIDE_TIME, 0.4f);
     le_tension_set_voice_limit(&g_tension, 2); /* one two-string note */
     CHECK(le_tension_note_on(&g_tension, 1, 57, 100, 0) == 0);
     tension_play(&g_tension, b < 0 ? ref_l : l, b < 0 ? ref_r : r, N, b < 0 ? N : blocks[b]);
@@ -273,6 +314,7 @@ static void test_engine_tension_midi(void) {
 static void run_tension_tests(void) {
   test_tension_exciters();
   test_tension_extremes();
+  test_tension_body_tail();
   test_tension_voices();
   test_tension_block_size();
   test_engine_tension_slot_matches_offline();

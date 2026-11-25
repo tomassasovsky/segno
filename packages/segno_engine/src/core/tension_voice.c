@@ -149,6 +149,9 @@ static float expz(float lo, float hi, float v) {
 /* A key or velocity amount: ExpZ(0.1, 16) of its magnitude, with its sign. */
 static float amount(float v) { return (v < 0.0f ? -1.0f : 1.0f) * expz(0.1f, 16.0f, fabsf(v)); }
 
+/* 2^e for a key or velocity scaling, e held within 8 octaves either way. */
+static float scale2(float e) { return exp2f(le_aas_clamp(e, -8.0f, 8.0f)); }
+
 /* The unison amounts' curve: Exp(lo, hi) on m = 127 v, exactly 0 at 0. */
 static float unison_expz(float lo, float hi, float v) {
   const float m = 127.0f * le_aas_clamp(v, 0.0f, 1.0f);
@@ -176,11 +179,17 @@ static int32_t copies_per_note(const le_tension* d) {
   return vi(d, LE_TENSION_UNISON_ON) ? (vi(d, LE_TENSION_UNISON) ? 4 : 2) : 1;
 }
 
-/* The notes sounding: one per unison group (its copy 0). */
+/* The notes sounding: one per unison group, whichever of its strings are
+ * left. */
 static int32_t note_count(const le_tension* d) {
   int32_t n = 0;
   for (int32_t i = 0; i < LE_TENSION_VOICE_SLOTS; ++i) {
-    n += sounding(&d->voices[i]) && d->voices[i].copy == 0;
+    if (!sounding(&d->voices[i])) continue;
+    int first = 1;
+    for (int32_t j = 0; j < i && first; ++j) {
+      first = !(sounding(&d->voices[j]) && d->voices[j].serial == d->voices[i].serial);
+    }
+    n += first;
   }
   return n;
 }
@@ -196,12 +205,12 @@ static le_tension_voice* oldest(le_tension* d, int32_t state) {
   le_tension_voice* old = NULL;
   for (int32_t i = 0; i < LE_TENSION_VOICE_SLOTS; ++i) {
     le_tension_voice* v = &d->voices[i];
-    if (v->state == state && v->copy == 0 && (old == NULL || v->serial < old->serial)) old = v;
+    if (v->state == state && (old == NULL || v->serial < old->serial)) old = v;
   }
   return old;
 }
 
-/* Every voice of the note `v` leads (its unison group). */
+/* Every voice of the note `v` is a string of (its unison group). */
 static void fade_note(le_tension* d, const le_tension_voice* lead) {
   const uint64_t serial = lead->serial;
   for (int32_t i = 0; i < LE_TENSION_VOICE_SLOTS; ++i) {
@@ -328,7 +337,7 @@ static void string_strike(le_tension* d, le_tension_voice* v, float p, float pk,
   const float fkey = exp2f(pk);
   /* the damping low-pass, the dispersion all-pass */
   const float fc = le_aas_exp(200.0f, 200000.0f, vf(d, LE_TENSION_STRING_DAMPING)) *
-                   exp2f(amount(vf(d, LE_TENSION_STRING_DAMPING_KEY)) * pk);
+                   scale2(amount(vf(d, LE_TENSION_STRING_DAMPING_KEY)) * pk);
   const float wl = 2.0f * LE_AAS_PI * fc / rate;
   v->lp_b = wl / (wl + 2.0f);
   v->lp_a = (wl - 2.0f) / (wl + 2.0f);
@@ -347,13 +356,13 @@ static void string_strike(le_tension* d, le_tension_voice* v, float p, float pk,
   const float c4_len = 0.5f * (rate / TV_C4 - v->c_tune);
   const float pkey = fmaxf(p, pk);
   float pe = position(vf(d, LE_TENSION_EXC_POS)) *
-             exp2f(amount(vf(d, LE_TENSION_EXC_POS_KEY)) * pkey + amount(vf(d, LE_TENSION_EXC_POS_VEL)) * vel);
+             scale2(amount(vf(d, LE_TENSION_EXC_POS_KEY)) * pkey + amount(vf(d, LE_TENSION_EXC_POS_VEL)) * vel);
   float pd = position(vf(d, LE_TENSION_DAMPER_POS)) *
-             exp2f((amount(vf(d, LE_TENSION_DAMPER_POS_KEY)) + amount(vf(d, LE_TENSION_DAMPER_POS_VEL))) * pkey);
+             scale2((amount(vf(d, LE_TENSION_DAMPER_POS_KEY)) + amount(vf(d, LE_TENSION_DAMPER_POS_VEL))) * pkey);
   const float base_e = vi(d, LE_TENSION_EXC_POS_ABS) ? c4_len : (float)len;
   const float base_d = vi(d, LE_TENSION_DAMPER_POS_ABS) ? c4_len : (float)len;
-  const int32_t exc_tap = clampi((int32_t)(pe * base_e), 1, len / 2 - 1);
-  const int32_t damp_tap = clampi((int32_t)(pd * base_d), 1, len / 2);
+  const int32_t exc_tap = clampi((int32_t)le_aas_clamp(pe * base_e, 1.0f, (float)len), 1, len / 2 - 1);
+  const int32_t damp_tap = clampi((int32_t)le_aas_clamp(pd * base_d, 1.0f, (float)len), 1, len / 2);
   int32_t pick_tap = clampi((int32_t)(position(vf(d, LE_TENSION_PICKUP_POS)) * (float)len), 1, len / 2);
   if (pick_tap == damp_tap) pick_tap += pick_tap > 1 ? -1 : 1;
   if (fresh || len != v->len || damp_tap != v->damp_tap) {
@@ -367,7 +376,7 @@ static void string_strike(le_tension* d, le_tension_voice* v, float p, float pk,
   v->exc_tap = exc_tap;
   v->damp_tap = damp_tap;
   v->pick_tap = pick_tap;
-  v->e = v->e_to = fmaxf(2.0f * (h - (float)len), -(float)exc_tap);
+  v->e = v->e_to = le_aas_clamp(2.0f * (h - (float)len), -(float)exc_tap, (float)(LE_TENSION_RAIL - 8 - len));
   v->e_step = 0.0f;
   v->p0 = p;
   /* the loss ramps in over 1 ms */
@@ -375,10 +384,10 @@ static void string_strike(le_tension* d, le_tension_voice* v, float p, float pk,
   v->g_step = (v->g_to - v->g) / (0.001f * rate);
   if (fresh) v->g = v->g_to, v->g_step = 0.0f;
   /* the exciter, scaled by key and velocity */
-  const float X = exp2f(amount(vf(d, LE_TENSION_EXC_X_KEY)) * p + amount(vf(d, LE_TENSION_EXC_X_VEL)) * vel);
+  const float X = scale2(amount(vf(d, LE_TENSION_EXC_X_KEY)) * p + amount(vf(d, LE_TENSION_EXC_X_VEL)) * vel);
   const float S =
-      exp2f(amount(vf(d, LE_TENSION_EXC_STIFF_KEY)) * p + amount(vf(d, LE_TENSION_EXC_STIFF_VEL)) * vel);
-  const float V = exp2f(amount(vf(d, LE_TENSION_EXC_VEL_KEY)) * p + amount(vf(d, LE_TENSION_EXC_VEL_VEL)) * vel);
+      scale2(amount(vf(d, LE_TENSION_EXC_STIFF_KEY)) * p + amount(vf(d, LE_TENSION_EXC_STIFF_VEL)) * vel);
+  const float V = scale2(amount(vf(d, LE_TENSION_EXC_VEL_KEY)) * p + amount(vf(d, LE_TENSION_EXC_VEL_VEL)) * vel);
   static const int32_t kType[4] = {EXC_BOW, EXC_HAMMER, EXC_BOUNCE, EXC_PLECTRUM};
   v->exc_type = vi(d, LE_TENSION_EXC_ON) ? kType[vi(d, LE_TENSION_EXC_TYPE)] : EXC_OFF;
   le_tension_contact* c = &v->exc;
@@ -389,9 +398,10 @@ static void string_strike(le_tension* d, le_tension_voice* v, float p, float pk,
     case EXC_HAMMER:
     case EXC_BOUNCE:
       c->on = 1;
-      c->m = X * le_aas_exp(1e-5f, 0.01f, xk);
-      c->k = S * le_aas_exp(1e3f, 1e11f, sk);
-      c->v = V * le_aas_exp(0.01f, 100.0f, vk);
+      /* each held to its knob's range taken 16 times further either way */
+      c->m = le_aas_clamp(X * le_aas_exp(1e-5f, 0.01f, xk), 6.25e-7f, 0.16f);
+      c->k = le_aas_clamp(S * le_aas_exp(1e3f, 1e11f, sk), 62.5f, 1.6e12f);
+      c->v = le_aas_clamp(V * le_aas_exp(0.01f, 100.0f, vk), 6.25e-4f, 1600.0f);
       c->r = le_aas_exp(0.01f, 1000.0f, damping);
       c->grav = v->exc_type == EXC_BOUNCE ? TV_G : -TV_G;
       c->y = v->ys_exc - 1e-4f;
@@ -399,8 +409,8 @@ static void string_strike(le_tension* d, le_tension_voice* v, float p, float pk,
     case EXC_PLECTRUM:
       c->on = 1;
       c->reach = fminf(X * le_aas_exp(1e-4f, 0.01f, xk), 0.01f);
-      c->k = S * le_aas_exp(1e3f, 1e11f, sk);
-      c->v = V * le_aas_exp(0.01f, 5.0f, vk);
+      c->k = le_aas_clamp(S * le_aas_exp(1e3f, 1e11f, sk), 62.5f, 1.6e12f);
+      c->v = le_aas_clamp(V * le_aas_exp(0.01f, 5.0f, vk), 6.25e-4f, 80.0f);
       c->r = le_aas_exp(0.001f, 1000.0f, damping);
       c->y = -1e-4f; /* behind the string's rest line */
       break;
@@ -416,14 +426,14 @@ static void string_strike(le_tension* d, le_tension_voice* v, float p, float pk,
   le_tension_contact* dm = &v->damper;
   memset(dm, 0, sizeof(*dm));
   if (vi(d, LE_TENSION_DAMPER_ON)) {
-    const float kk = exp2f(amount(vf(d, LE_TENSION_DAMPER_MASS_KEY)) * pk);
+    const float kk = scale2(amount(vf(d, LE_TENSION_DAMPER_MASS_KEY)) * pk);
     dm->on = 1;
-    dm->m = le_aas_exp(1e-4f, 0.5f, vf(d, LE_TENSION_DAMPER_MASS)) * kk;
-    dm->k = le_aas_exp(1e4f, 1e12f, vf(d, LE_TENSION_DAMPER_STIFF)) *
-            exp2f(amount(vf(d, LE_TENSION_DAMPER_STIFF_KEY)) * pk);
+    dm->m = le_aas_clamp(le_aas_exp(1e-4f, 0.5f, vf(d, LE_TENSION_DAMPER_MASS)) * kk, 6.25e-6f, 8.0f);
+    dm->k = le_aas_clamp(le_aas_exp(1e4f, 1e12f, vf(d, LE_TENSION_DAMPER_STIFF)) *
+                             scale2(amount(vf(d, LE_TENSION_DAMPER_STIFF_KEY)) * pk), 625.0f, 1.6e13f);
     dm->r = le_aas_exp(0.01f, 1000.0f, vf(d, LE_TENSION_DAMPER_DAMPING));
-    const float vd = le_aas_exp(0.01f, 100.0f, vf(d, LE_TENSION_DAMPER_VEL)) *
-                     exp2f(amount(vf(d, LE_TENSION_DAMPER_VEL_KEY)) * p);
+    const float vd = le_aas_clamp(le_aas_exp(0.01f, 100.0f, vf(d, LE_TENSION_DAMPER_VEL)) *
+                                      scale2(amount(vf(d, LE_TENSION_DAMPER_VEL_KEY)) * p), 6.25e-4f, 1600.0f);
     if (vi(d, LE_TENSION_DAMPER_GATED)) {
       dm->y = -v->ys_damp;
       dm->v = -vd;
@@ -590,6 +600,15 @@ static float string_tick(le_tension* d, le_tension_voice* v, int held) {
   } else {
     y = lp;
   }
+  if (!(y == y) || fabsf(y) > 1e9f) {
+    /* blown up: the string starts again from rest */
+    memset(v->a, 0, sizeof(v->a));
+    memset(v->b, 0, sizeof(v->b));
+    v->lp_x = v->lp_y = v->ap_x = v->ap_y = v->hp_x = v->hp_y = 0.0f;
+    v->ys_exc = v->ys_damp = 0.0f;
+    v->exc.on = 0;
+    y = 0.0f;
+  }
   /* a 10 Hz high-pass and a gain of 2 */
   const float hw = 62.8f / rate;
   v->hp_y = (y - v->hp_x + (1.0f - hw) * v->hp_y) / (1.0f + hw);
@@ -643,7 +662,7 @@ static void start_voice(le_tension* d, le_tension_voice* v, uint32_t origin, int
   v->detune = unison_expz(0.001f, 1.0f, vf(d, LE_TENSION_UNISON_DETUNE)) * kSteps[copy];
   v->delay = (int32_t)(unison_expz(0.002f, 0.1f, vf(d, LE_TENSION_UNISON_DELAY)) * rate * (float)copy /
                        (float)(copies > 1 ? copies - 1 : 1));
-  v->since = 0;
+  if (fresh) v->since = 0; /* a re-strike keeps the copies' delays behind them */
   v->quiet = 0;
   v->fade_left = 0;
   v->fade_len = (int32_t)lroundf(0.001f * rate);
@@ -657,6 +676,7 @@ static void start_voice(le_tension* d, le_tension_voice* v, uint32_t origin, int
   v->sh_ratio = 1.0f;
   v->sh_mix = 0.0f;
   v->sh_mix_step = 0.0f;
+  if (fresh) v->sh_d = 0.0f, v->sh_w = 0;
   /* the filter section */
   if (fresh) memset(&v->f, 0, sizeof(v->f));
   float k[LE_AAS_ENV_FIELDS] = {1.0f, 0.0f, 0.0f, 0.0f, vf(d, LE_TENSION_FENV_ATTACK_VEL),
@@ -757,7 +777,7 @@ int32_t le_tension_note_on(le_tension* d, uint32_t origin, int32_t note, int32_t
   /* the same key again strikes its sounding strings without resetting them */
   for (int32_t i = 0; i < LE_TENSION_VOICE_SLOTS; ++i) {
     le_tension_voice* v = &d->voices[i];
-    if (sounding(v) && v->note == note && v->copy == 0) {
+    if (sounding(v) && v->note == note) {
       const uint64_t serial = ++d->serial;
       const uint64_t old = v->serial;
       for (int32_t j = 0; j < LE_TENSION_VOICE_SLOTS; ++j) {
@@ -886,7 +906,7 @@ int32_t le_tension_fade_oldest(le_tension* d) {
   le_tension_voice* old = NULL;
   for (int32_t i = 0; i < LE_TENSION_VOICE_SLOTS; ++i) {
     le_tension_voice* v = &d->voices[i];
-    if (sounding(v) && v->copy == 0 && (old == NULL || v->serial < old->serial)) old = v;
+    if (sounding(v) && (old == NULL || v->serial < old->serial)) old = v;
   }
   if (old == NULL) return 0;
   int32_t n = 0;
@@ -903,14 +923,12 @@ int32_t le_tension_active(const le_tension* d) {
   return n;
 }
 
-/* The voices fading, and the body while it still rings. */
+/* The voices fading, and the body while its tail rings. */
 int32_t le_tension_fading(const le_tension* d) {
   if (d == NULL) return 0;
   int32_t n = 0;
   for (int32_t i = 0; i < LE_TENSION_VOICE_SLOTS; ++i) n += d->voices[i].state == LE_TENSION_VOICE_FADING;
-  float e = 0.0f;
-  for (int32_t k = 0; k < 4; ++k) e = fmaxf(e, fabsf(d->body.fb[k]));
-  return n + (e > 1e-7f);
+  return n + (d->body.tail_left > 0);
 }
 
 void le_tension_set_voice_limit(le_tension* d, int32_t limit) {
@@ -1032,6 +1050,18 @@ static int32_t prime_below(int32_t n) {
   return n;
 }
 
+/* The body's lines and filters at rest. */
+static void body_clear(le_tension_body* b) {
+  memset(b->line, 0, sizeof(b->line));
+  memset(b->apb, 0, sizeof(b->apb));
+  b->apw = 0;
+  memset(b->hp_y, 0, sizeof(b->hp_y));
+  memset(b->hp_x, 0, sizeof(b->hp_x));
+  memset(b->lp_y, 0, sizeof(b->lp_y));
+  memset(b->fb, 0, sizeof(b->fb));
+  b->w = 0;
+}
+
 static void body_build(le_tension* d) {
   le_tension_body* b = &d->body;
   const int32_t type = vi(d, LE_TENSION_BODY_TYPE), size = vi(d, LE_TENSION_BODY_SIZE);
@@ -1044,14 +1074,7 @@ static void body_build(le_tension* d) {
     b->tap[k] = clampi(prime_below((int32_t)(kBodyTap[type][k] * scale)), 2,
                        b->len[k] / 2 < LE_TENSION_BODY_AP - 1 ? b->len[k] / 2 : LE_TENSION_BODY_AP - 1);
   }
-  memset(b->line, 0, sizeof(b->line));
-  memset(b->apb, 0, sizeof(b->apb));
-  b->apw = 0;
-  memset(b->hp_y, 0, sizeof(b->hp_y));
-  memset(b->hp_x, 0, sizeof(b->hp_x));
-  memset(b->lp_y, 0, sizeof(b->lp_y));
-  memset(b->fb, 0, sizeof(b->fb));
-  b->w = 0;
+  body_clear(b);
 }
 
 /* The body on a block of the voices' sum, in place. */
@@ -1082,8 +1105,17 @@ static void body_render(le_tension* d, float* x, int32_t n) {
     lpa[k] = (g - gn) / (g + gn);
     lpb[k] = g * (1.0f - lpa[k]);
   }
-  const float lvl_step = (level - b->level) / 4000.0f;
-  const float dry_step = (dry_to - b->mix_dry) / 500.0f, wet_step = (wet_to - b->mix_wet) / 500.0f;
+  /* the ramps: a new target sets its step, kept until it arrives */
+  if (level != b->level_to) b->level_to = level, b->level_step = (level - b->level) / 4000.0f;
+  if (dry_to != b->dry_to) b->dry_to = dry_to, b->dry_step = (dry_to - b->mix_dry) / 500.0f;
+  if (wet_to != b->wet_to) b->wet_to = wet_to, b->wet_step = (wet_to - b->mix_wet) / 500.0f;
+  /* the tail: as long as a line's decay lasts after the last string, then
+   * the lines are cleared */
+  int sounding_any = 0;
+  for (int32_t i = 0; i < LE_TENSION_VOICE_SLOTS && !sounding_any; ++i) {
+    sounding_any = d->voices[i].state != LE_TENSION_VOICE_FREE;
+  }
+  const int32_t tail_len = (int32_t)(rate * (2.0f * tb + 0.05f));
   for (int32_t s = 0; s < n; ++s) {
     const float in = x[s];
     float wet = 0.0f;
@@ -1110,10 +1142,19 @@ static void body_render(le_tension* d, float* x, int32_t n) {
       b->w = (b->w + 1) % LE_TENSION_BODY_LINE;
       b->apw = (b->apw + 1) % LE_TENSION_BODY_AP;
     }
-    b->level += fabsf(level - b->level) > fabsf(lvl_step) ? lvl_step : level - b->level;
-    b->mix_dry += fabsf(dry_to - b->mix_dry) > fabsf(dry_step) ? dry_step : dry_to - b->mix_dry;
-    b->mix_wet += fabsf(wet_to - b->mix_wet) > fabsf(wet_step) ? wet_step : wet_to - b->mix_wet;
+    b->level = fabsf(level - b->level) > fabsf(b->level_step) ? b->level + b->level_step : level;
+    b->mix_dry = fabsf(dry_to - b->mix_dry) > fabsf(b->dry_step) ? b->mix_dry + b->dry_step : dry_to;
+    b->mix_wet = fabsf(wet_to - b->mix_wet) > fabsf(b->wet_step) ? b->mix_wet + b->wet_step : wet_to;
     x[s] = b->level * (b->mix_dry * in + b->mix_wet * wet);
+    if (sounding_any) {
+      b->tail_left = tail_len;
+    } else if (b->tail_left > 0 && --b->tail_left == 0) {
+      body_clear(b);
+    }
+  }
+  if (!on && b->mix_wet == 0.0f && b->tail_left > 0 && !sounding_any) {
+    b->tail_left = 0;
+    body_clear(b);
   }
 }
 
@@ -1129,6 +1170,10 @@ static void render_voice(le_tension* d, le_tension_voice* v, float* out, int32_t
   int32_t i = 0;
   while (i < frames && v->state != LE_TENSION_VOICE_FREE) {
     if (v->since < v->delay) {
+      if (v->state == LE_TENSION_VOICE_FADING) {
+        v->state = LE_TENSION_VOICE_FREE; /* never started */
+        return;
+      }
       const int32_t n = v->delay - v->since < frames - i ? v->delay - v->since : frames - i;
       v->since += n;
       i += n;
@@ -1138,7 +1183,12 @@ static void render_voice(le_tension* d, le_tension_voice* v, float* out, int32_t
       tick_voice(d, v);
       v->tick_left = LE_TENSION_TICK;
     }
-    const int32_t n = v->tick_left < frames - i ? v->tick_left : frames - i;
+    int32_t n = v->tick_left < frames - i ? v->tick_left : frames - i;
+    if (v->state == LE_TENSION_VOICE_FADING && v->fade_left < n) n = v->fade_left > 0 ? v->fade_left : 0;
+    if (n == 0) {
+      v->state = LE_TENSION_VOICE_FREE;
+      return;
+    }
     const int held = v->state == LE_TENSION_VOICE_HELD || v->state == LE_TENSION_VOICE_SUSTAINED;
     const float period = rate / (TV_C4 * exp2f(fminf(v->pitch, v->p0)));
     for (int32_t s = 0; s < n; ++s) {
@@ -1156,7 +1206,6 @@ static void render_voice(le_tension* d, le_tension_voice* v, float* out, int32_t
       if (v->state == LE_TENSION_VOICE_FADING) {
         y *= fade_step * (float)(v->fade_left > s ? v->fade_left - s : 0);
       }
-      if (!(y == y) || fabsf(y) > 1e6f) y = 0.0f;
       out[i + s] += y;
       /* fit: a released string ends after 50 ms below -100 dBFS, counted
        * by the sample */
