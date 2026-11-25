@@ -1103,6 +1103,9 @@ void le_meld_osc_snap(le_meld_osc* o) {
   } else if (o->type >= LE_MELD_OSC_SWARM_SINE && o->type <= LE_MELD_OSC_SWARM_SQUARE) {
     swarm_retune(o);
     o->s.swarm.left = MO_SWARM_UPDATE;
+  } else if (o->type == LE_MELD_OSC_TARP && o->s.tarp.n == 0) {
+    /* a note's sweep takes its time and curve from the note's macros */
+    sweep_start(o, tarp_time(o->m1), 7.5f * (0.5f + 0.5f * o->m2));
   }
 }
 

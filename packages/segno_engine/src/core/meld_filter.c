@@ -249,8 +249,10 @@ static const float kVowelDb[5][4] = {
 
 /* ---- the modal banks ---- */
 
-/* The membrane's mode ratios: the zeros of the Bessel functions J_m over
- * the first zero of J_0, sorted. Computed once. */
+/* The membrane's mode ratios: the zeros of the Bessel functions J_0 to
+ * J_8 over the first zero of J_0, sorted, the lowest 32 (fit: the Membrane
+ * render rings at J_4's fourth zero, 7.325, and not at J_9's or J_10's
+ * first). Computed once. */
 static float g_membrane[LE_MELD_MODES];
 static int g_membrane_built;
 
@@ -271,7 +273,7 @@ static void membrane_build(void) {
   if (g_membrane_built) return;
   double zeros[256];
   int n = 0;
-  for (int m = 0; m < 24 && n < 250; ++m) {
+  for (int m = 0; m < 9 && n < 250; ++m) {
     double prev = mf_jm(m, 0.5 + (double)m);
     for (double x = 0.5 + (double)m + 0.01; x < 22.0 && n < 250; x += 0.01) {
       const double y = mf_jm(m, x);
