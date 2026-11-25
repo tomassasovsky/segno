@@ -59,31 +59,185 @@ static void test_collision_types(void) {
   CHECK(second[0] > 0.01 && second[1] < 0.001);
 }
 
-/* Every control at its ends, on the keyboard's ends: finite and within
- * the output's +-1. */
+/* Every sounding resonator is stable (each mode's poles inside the unit
+ * circle, each waveguide losing energy a round trip) and its state finite;
+ * the output is clamped, so this is where a blow-up would show. */
+static int collision_stable(const le_collision* d) {
+  for (int32_t i = 0; i < LE_COLLISION_VOICE_SLOTS; ++i) {
+    const le_collision_voice* v = &d->voices[i];
+    if (v->state == 0) continue;
+    for (int32_t r = 0; r < 2; ++r) {
+      const le_collision_res* rs = &v->r[r];
+      if (rs->kind == 1) {
+        for (int32_t k = 0; k < rs->n; ++k) {
+          if (!(fabsf(rs->a2[k]) < 1.0f) || !isfinite(rs->v1[k]) || !isfinite(rs->v2[k])) return 0;
+        }
+      } else if (rs->kind >= 2) {
+        if (!(rs->loss < 1.0f)) return 0;
+        for (int32_t k = 0; k < LE_COLLISION_PIPE; ++k) {
+          if (!isfinite(rs->fw[k]) || !isfinite(rs->bw[k])) return 0;
+        }
+      }
+    }
+  }
+  return 1;
+}
+
+/* Every control at its ends, on the keyboard's ends, at 44.1, 48 and
+ * 96 kHz and at both velocity ends: finite and within the output's +-1,
+ * every resonator stable. */
 static void test_collision_extremes(void) {
   printf("test_collision_extremes\n");
   enum { N = 4800 };
   static float l[N], r[N];
   static const int32_t notes[3] = {0, 60, 127};
+  static const int32_t rates[3] = {44100, OPR_SR, 96000};
   for (int32_t p = 0; p < LE_COLLISION_PARAMS; ++p) {
     for (int m = 0; m < 2; ++m) {
       for (int k = 0; k < 3; ++k) {
-        collision_reference(&g_collision);
+        CHECK(le_collision_init(&g_collision, rates[(p + k) % 3]) == 0);
         collision_set(&g_collision, LE_COLLISION_NOISE_ON, 1.0f);
         collision_set(&g_collision, LE_COLLISION_RES(1, LE_COLLISION_R_ON), 1.0f);
         collision_set(&g_collision, LE_COLLISION_RES(0, LE_COLLISION_R_TYPE), (float)(p % 7));
+        collision_set(&g_collision, LE_COLLISION_RES(1, LE_COLLISION_R_TYPE), (float)((p / 7) % 6));
         collision_set(&g_collision, p, le_collision_clamp(p, m ? 1e9f : -1e9f));
-        CHECK(le_collision_note_on(&g_collision, 1, notes[k], 127, 0) == 0);
+        CHECK(le_collision_note_on(&g_collision, 1, notes[k], (p + m) % 2 ? 1 : 127, 0) == 0);
         le_collision_render(&g_collision, l, r, N);
         CHECK(opr_finite(l, N) && opr_finite(r, N));
         CHECK(opr_peak(l, N) <= 1.0f && opr_peak(r, N) <= 1.0f);
+        CHECK(collision_stable(&g_collision));
         le_collision_note_off(&g_collision, 1);
         le_collision_render(&g_collision, l, r, N);
         CHECK(opr_finite(l, N) && opr_finite(r, N));
+        CHECK(collision_stable(&g_collision));
       }
     }
   }
+}
+
+/* Renders until no voice is left, at most `seconds`; the seconds taken. */
+static float collision_until_free(le_collision* d, float* l, float* r, int32_t n, float seconds) {
+  int32_t k = 0;
+  const int32_t limit = (int32_t)(seconds * (float)d->sample_rate / (float)n);
+  while (k < limit && le_collision_active(d) > 0) {
+    le_collision_render(d, l, r, n);
+    k++;
+  }
+  return (float)k * (float)n / (float)d->sample_rate;
+}
+
+/* A released voice ends: with every decay route at its ends, the decays
+ * at their longest and the off decay keeping them; when Noise is turned
+ * off while it sounds. A short series pipe-into-pipe note sounds before
+ * it ends. */
+static void test_collision_voices_end(void) {
+  printf("test_collision_voices_end\n");
+  enum { N = 4800 };
+  static float l[N], r[N];
+  for (int32_t c = 0; c < 8; ++c) {
+    collision_reference(&g_collision);
+    const float s = c & 1 ? 1.0f : -1.0f;
+    for (int32_t q = 0; q < 2; ++q) {
+      collision_set(&g_collision, LE_COLLISION_RES(q, LE_COLLISION_R_ON), 1.0f);
+      collision_set(&g_collision, LE_COLLISION_RES(q, LE_COLLISION_R_TYPE), c & 2 ? 5.0f : (float)q * 2.0f);
+      collision_set(&g_collision, LE_COLLISION_RES(q, LE_COLLISION_R_DECAY), 1.0f);
+      collision_set(&g_collision, LE_COLLISION_RES(q, LE_COLLISION_R_OFF_DECAY), 1.0f);
+      collision_set(&g_collision, LE_COLLISION_RES(q, LE_COLLISION_R_DECAY_VEL), 5.0f * s);
+      collision_set(&g_collision, LE_COLLISION_RES(q, LE_COLLISION_R_DECAY_KEY), 2.0f * s);
+      collision_set(&g_collision, LE_COLLISION_RES(q, LE_COLLISION_R_MATERIAL), c & 4 ? 1.0f : -1.0f);
+    }
+    collision_set(&g_collision, LE_COLLISION_STRUCTURE, (float)((c >> 2) & 1));
+    CHECK(le_collision_note_on(&g_collision, 1, s > 0 ? 120 : 6, s > 0 ? 127 : 1, 0) == 0);
+    le_collision_render(&g_collision, l, r, N);
+    le_collision_note_off(&g_collision, 1);
+    CHECK(collision_until_free(&g_collision, l, r, N, 200.0f) < 200.0f);
+  }
+  /* Noise turned off while the note sounds */
+  collision_reference(&g_collision);
+  collision_set(&g_collision, LE_COLLISION_NOISE_ON, 1.0f);
+  collision_set(&g_collision, LE_COLLISION_RES(0, LE_COLLISION_R_OFF_DECAY), 0.0f);
+  CHECK(le_collision_note_on(&g_collision, 1, 60, 100, 0) == 0);
+  le_collision_render(&g_collision, l, r, N);
+  collision_set(&g_collision, LE_COLLISION_NOISE_ON, 0.0f);
+  le_collision_note_off(&g_collision, 1);
+  CHECK(collision_until_free(&g_collision, l, r, N, 10.0f) < 10.0f);
+  /* a pipe into a pipe, note 12, released at once: resonator 2 speaks
+   * after both lines, and the voice lasts until it has */
+  collision_reference(&g_collision);
+  collision_set(&g_collision, LE_COLLISION_RES(0, LE_COLLISION_R_TYPE), 5.0f);
+  collision_set(&g_collision, LE_COLLISION_RES(0, LE_COLLISION_R_VOLUME), 0.0f);
+  collision_set(&g_collision, LE_COLLISION_RES(1, LE_COLLISION_R_ON), 1.0f);
+  collision_set(&g_collision, LE_COLLISION_RES(1, LE_COLLISION_R_TYPE), 5.0f);
+  collision_set(&g_collision, LE_COLLISION_STRUCTURE, 0.0f);
+  CHECK(le_collision_note_on(&g_collision, 1, 12, 100, 0) == 0);
+  le_collision_note_off(&g_collision, 1);
+  le_collision_render(&g_collision, l, r, N);
+  CHECK(opr_peak(l, N) > 0.01f);
+}
+
+/* The strike is the same whatever the slot played before: two earlier
+ * notes of different lengths leave the LFO at different values, and the
+ * next strike reads it at its start phase either way. The Hit
+ * destination moves the hit. */
+static void test_collision_matrix(void) {
+  printf("test_collision_matrix\n");
+  enum { N = 9600 };
+  static float a_l[N], a_r[N], b_l[N], b_r[N];
+  for (int32_t k = 0; k < 2; ++k) {
+    collision_reference(&g_collision);
+    collision_set(&g_collision, LE_COLLISION_POLYPHONY, 0.0f);
+    collision_set(&g_collision, LE_COLLISION_LFO(0, LE_COLLISION_L_ON), 1.0f);
+    collision_set(&g_collision, LE_COLLISION_LFO(0, LE_COLLISION_L_TARGET1), (float)LE_COLLISION_D_STIFFNESS);
+    collision_set(&g_collision, LE_COLLISION_LFO(0, LE_COLLISION_L_AMOUNT1), 1.0f);
+    collision_set(&g_collision, LE_COLLISION_LFO(0, LE_COLLISION_L_RATE), 1.0f);
+    collision_set(&g_collision, LE_COLLISION_LFO(0, LE_COLLISION_L_SHAPE), 3.0f); /* saw: -1 at its start */
+    collision_set(&g_collision, LE_COLLISION_RES(0, LE_COLLISION_R_OFF_DECAY), 0.0f);
+    CHECK(le_collision_note_on(&g_collision, 1, 48, 100, 0) == 0);
+    le_collision_render(&g_collision, b_l, b_r, k ? 1234 : 3000);
+    le_collision_note_off(&g_collision, 1);
+    CHECK(collision_until_free(&g_collision, b_l, b_r, 480, 10.0f) < 10.0f);
+    CHECK(le_collision_note_on(&g_collision, 2, 60, 100, 0) == 0);
+    le_collision_render(&g_collision, k ? b_l : a_l, k ? b_r : a_r, N);
+  }
+  CHECK(opr_peak(a_l, N) > 0.01f);
+  CHECK(memcmp(a_l, b_l, sizeof(a_l)) == 0);
+  /* the wheel on Res 1 Hit: a string struck at its middle loses its even
+   * partials; moved off the middle, the second comes back */
+  double second[2];
+  for (int32_t k = 0; k < 2; ++k) {
+    collision_reference(&g_collision);
+    collision_set(&g_collision, LE_COLLISION_RES(0, LE_COLLISION_R_TYPE), 2.0f);
+    collision_set(&g_collision, LE_COLLISION_RES(0, LE_COLLISION_R_HIT), 0.0f);
+    collision_set(&g_collision, LE_COLLISION_WHEEL_TARGET1, (float)LE_COLLISION_D_R1_HIT);
+    collision_set(&g_collision, LE_COLLISION_WHEEL_AMOUNT1, 0.2f);
+    le_collision_expression(&g_collision, LE_SYNTH_MOD, (float)k);
+    CHECK(le_collision_note_on(&g_collision, 1, 60, 100, 0) == 0);
+    le_collision_render(&g_collision, a_l, a_r, N);
+    second[k] = opr_component(a_l + 2400, 7200, 2.0 * opr_note_hz(60)) /
+                opr_component(a_l + 2400, 7200, opr_note_hz(60));
+  }
+  CHECK(second[1] > 10.0 * second[0]);
+}
+
+/* The voice budget: a lower limit fades the oldest, fade_oldest fades one
+ * note, release_matching lets go of the matching origins. */
+static void test_collision_budget(void) {
+  printf("test_collision_budget\n");
+  enum { N = 480 };
+  static float l[N], r[N];
+  collision_reference(&g_collision);
+  for (uint32_t o = 1; o <= 4; ++o) CHECK(le_collision_note_on(&g_collision, o, 60 + (int)o, 100, 0) == 0);
+  CHECK(le_collision_active(&g_collision) == 4);
+  le_collision_set_voice_limit(&g_collision, 2);
+  CHECK(le_collision_active(&g_collision) == 2);
+  CHECK(le_collision_fading(&g_collision) == 2);
+  CHECK(le_collision_held(&g_collision, 4) == 1);
+  CHECK(le_collision_fade_oldest(&g_collision) == 1);
+  CHECK(le_collision_active(&g_collision) == 1);
+  le_collision_render(&g_collision, l, r, N);
+  CHECK(le_collision_fading(&g_collision) == 0);
+  le_collision_release_matching(&g_collision, 0xffu, 4u);
+  CHECK(le_collision_held(&g_collision, 4) == 0);
 }
 
 /* Voice counts, a key struck again, mono, sustain, the release and Cut. */
@@ -256,6 +410,9 @@ static void test_engine_collision_midi(void) {
 static void run_collision_tests(void) {
   test_collision_types();
   test_collision_extremes();
+  test_collision_voices_end();
+  test_collision_matrix();
+  test_collision_budget();
   test_collision_voices();
   test_collision_block_size();
   test_engine_collision_slot_matches_offline();

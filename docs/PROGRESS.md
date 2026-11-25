@@ -76,12 +76,12 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   marimba, string, membrane, plate as banks of up to 70 modes; pipe and
   tube as waveguides) in series or parallel, with two LFOs and the
   per-voice modulation matrix.
-- Fitted against 92 Live renders: total 4.6 dB rms, 28 of 59 single
+- Fitted against 92 Live renders: total 4.5 dB rms, 28 of 59 single
   changes within 1 dB. Measured: the bundle's x4 reaches the output here,
   held within +-1. Factory presets 0.4 to 13.9 dB (octave bands); the
   series structure is the largest gap left.
 - A voice costs 0.8 us per millisecond on the dev machine, two 70-mode
-  resonators 1.4. A device holds 24 voices (0.9 MB).
+  resonators 1.4. A device holds 24 voices (1.7 MB).
 
 ## November 2026 The Tension device plays on an instrument slot (SEG-109 P11)
 

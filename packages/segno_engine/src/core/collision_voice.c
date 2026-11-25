@@ -425,19 +425,25 @@ static void strike_res(le_collision* d, le_collision_voice* v, int32_t r, int fr
   rs->pe = a * exp2f(vv * v->vel);
   const float tm = k_exp(d, LE_COLLISION_RES(r, LE_COLLISION_R_PITCH_ENV_TIME), 0.001f, 10.0f);
   rs->pe_step = rs->pe / fmaxf(tm * (float)d->sample_rate, 1.0f);
-  /* the hit position, with its random offset */
-  const float hit_m = floorf(64.0f + 31.5f * clampf(rf(d, r, LE_COLLISION_R_HIT), 0.0f, 1.0f));
-  float hit = 0.05f + 0.9f * hit_m / 127.0f;
+  /* the hit's random offset, drawn at each strike */
+  rs->hit_rand = 0.0f;
   const float ru = u_of(LE_COLLISION_RES(r, LE_COLLISION_R_HIT_RANDOM), rf(d, r, LE_COLLISION_R_HIT_RANDOM));
   if (ru > 0.0f) {
     const float u1 = fmaxf((float)((v->rng = v->rng * 1664525u + 1013904223u) >> 8) / 16777216.0f, 1e-7f);
     const float u2 = (float)((v->rng = v->rng * 1664525u + 1013904223u) >> 8) / 16777216.0f;
-    const float g = sqrtf(-2.0f * logf(u1)) * cosf(2.0f * CV_PI * u2);
-    const float edge = fminf(hit, 1.0f - hit);
-    hit += clampf(0.2f * ru * ru * g, -edge, edge);
+    rs->hit_rand = 0.2f * ru * ru * sqrtf(-2.0f * logf(u1)) * cosf(2.0f * CV_PI * u2);
   }
-  rs->hit = clampf(hit, 0.02f, 0.98f);
   rs->released = -1; /* the next tick sets the coefficients for this hit */
+}
+
+/* The hit position: the knob plus the Hit destination, held to the knob's
+ * window, then the strike's random offset within the nearest edge. */
+static float hit_at(const le_collision* d, const le_collision_voice* v, int32_t r) {
+  const float hit_m = floorf(64.0f + 31.5f * clampf(rf(d, r, LE_COLLISION_R_HIT), 0.0f, 1.0f));
+  const int32_t po = r * (LE_COLLISION_D_R2_PITCH - LE_COLLISION_D_R1_PITCH);
+  const float hit = clampf(0.05f + 0.9f * hit_m / 127.0f + v->dest[LE_COLLISION_D_R1_HIT + po], 0.5f, 0.72323f);
+  const float edge = fminf(hit, 1.0f - hit);
+  return clampf(hit + clampf(v->r[r].hit_rand, -edge, edge), 0.02f, 0.98f);
 }
 
 /* The resonator's coefficients at pitch `pitch` (octaves). */
@@ -454,7 +460,9 @@ static void tune_res(le_collision* d, le_collision_voice* v, int32_t r, float pi
     const float c = u_of(LE_COLLISION_RES(r, LE_COLLISION_R_OFF_DECAY), rf(d, r, LE_COLLISION_R_OFF_DECAY));
     T = 0.05f + (T - 0.05f) * c * c * c;
   }
-  const float dd = t[LE_COLLISION_D_R1_DECAY + ko];
+  /* the decay's routes keep the decay time within 10 ms and the knob's
+   * 35 s, and no mode rings longer than that */
+  const float dd = clampf(t[LE_COLLISION_D_R1_DECAY + ko], log2f(0.01f / T), log2f(35.0f / T));
   const float vol = k_sq(d, LE_COLLISION_RES(r, LE_COLLISION_R_VOLUME), 0.0f, 2.0f);
   const float pan = clampf(k_lin(d, LE_COLLISION_RES(r, LE_COLLISION_R_PAN), -1.0f, 1.0f) +
                                t[LE_COLLISION_D_R1_PAN + po], -1.0f, 1.0f);
@@ -466,7 +474,7 @@ static void tune_res(le_collision* d, le_collision_voice* v, int32_t r, float pi
     /* the pipe (all harmonics) or the tube (odd ones, the far end closed) */
     const int tube = type == 6;
     rs->kind = tube ? 3 : 2;
-    rs->delay = clampf(rate / ((tube ? 4.0f : 2.0f) * f0) - 0.75f, 2.0f, (float)(LE_COLLISION_PIPE - 3));
+    rs->delay = clampf(rate / ((tube ? 4.0f : 2.0f) * f0) - 0.75f, 3.0f, (float)(LE_COLLISION_PIPE - 3));
     rs->loss = expf(-4.0f / (T * f0 * exp2f(dd)));
     float radius = k_exp(d, LE_COLLISION_RES(r, LE_COLLISION_R_RADIUS), 0.005f, 0.4f);
     radius = 0.005f * 0.4f / radius; /* the knob runs narrow to wide inverted */
@@ -499,7 +507,7 @@ static void tune_res(le_collision* d, le_collision_voice* v, int32_t r, float pi
   const float bright = k_lin(d, LE_COLLISION_RES(r, LE_COLLISION_R_BRIGHTNESS), -1.0f, 1.0f);
   const float xl = 0.01f + 0.98f * floorf(64.0f + 31.5f * clampf(rf(d, r, LE_COLLISION_R_LISTEN_L), 0.0f, 1.0f)) / 127.0f;
   const float xr = 0.01f + 0.98f * floorf(64.0f + 31.5f * clampf(rf(d, r, LE_COLLISION_R_LISTEN_R), 0.0f, 1.0f)) / 127.0f;
-  const float hit = rs->hit;
+  const float hit = hit_at(d, v, r);
   int32_t used = 0;
   float top_w = 0.0f, top_b = 0.0f, top_g = 0.0f;
   for (int32_t k = 0; k < n; ++k) {
@@ -508,7 +516,7 @@ static void tune_res(le_collision* d, le_collision_voice* v, int32_t r, float pi
     if (w >= (5.0f * CV_PI / 6.0f) * rate) break;
     const float lr = log2f(fmaxf(ratio[k], 1e-6f));
     const float e = mat >= 0.0f ? (5.0f - lr) * mat - dd : -mat * lr - dd;
-    const float alpha = 8.0f / T * exp2f(e);
+    const float alpha = fmaxf(8.0f / T * exp2f(e), 8.0f / 35.0f);
     const float th = w / rate;
     const float g = alpha * sinf(th) * (CV_PI / (CV_PI - th)) / w;
     rs->a1[k] = -2.0f * cosf(th) / (1.0f + g);
@@ -538,6 +546,8 @@ static void tune_res(le_collision* d, le_collision_voice* v, int32_t r, float pi
   rs->pitch = pitch;
 }
 
+static void tick_lfos(le_collision* d, le_collision_voice* v, int advance);
+
 static void env_go(le_collision_voice* v, int32_t seg, float to, float seconds, float rate) {
   v->env_seg = seg;
   const float n = fmaxf(seconds * rate, 1.0f);
@@ -564,6 +574,20 @@ static void start_voice(le_collision* d, le_collision_voice* v, uint32_t origin,
     memset(&v->nf1, 0, sizeof(v->nf1));
     memset(&v->nf2, 0, sizeof(v->nf2));
     v->env = 0.0f;
+    for (int32_t l = 0; l < 2; ++l) v->lfo[l].out = v->lfo[l].rnd = v->lfo[l].rnd_prev = 0.0f;
+  }
+  /* the LFOs at their start: their phases, then their values from the
+   * knob routes (the matrix without them), then the matrix */
+  for (int32_t l = 0; l < 2; ++l) {
+    if (li(d, l, LE_COLLISION_L_RETRIGGER) || fresh) {
+      v->lfo[l].ph = (double)(lf(d, l, LE_COLLISION_L_PHASE) / 360.0f);
+      v->lfo[l].rnd_prev = v->lfo[l].rnd; /* 0 on a fresh strike */
+      v->lfo[l].rnd = 2.0f * (float)((v->rng = v->rng * 1664525u + 1013904223u) >> 8) / 16777216.0f - 1.0f;
+    }
+  }
+  if (fresh) {
+    matrix(d, v);
+    tick_lfos(d, v, 0);
   }
   matrix(d, v);
   /* the mallet's pulse: a critically damped low-pass struck once */
@@ -576,6 +600,9 @@ static void start_voice(le_collision* d, le_collision_voice* v, uint32_t origin,
     v->pulse_in = k_exp(d, LE_COLLISION_MALLET_VOLUME, 0.001f, 1.0f) *
                   exp2f(0.9685f * v->dest[LE_COLLISION_D_MALLET_VOLUME]);
     bq_filter(&v->mnoise, 1, k_exp(d, LE_COLLISION_MALLET_NOISE_COLOR, 250.0f, 25000.0f), 0.7f, rate);
+    v->pulse_len = (int32_t)(4.0f * rate / fs);
+  } else {
+    v->pulse_len = 0;
   }
   /* the noise source's envelope (idle while the source is off) */
   if (vi(d, LE_COLLISION_NOISE_ON)) {
@@ -585,13 +612,7 @@ static void start_voice(le_collision* d, le_collision_voice* v, uint32_t origin,
     v->env = v->env_step = 0.0f;
   }
   for (int32_t r = 0; r < 2; ++r) strike_res(d, v, r, fresh || !same);
-  for (int32_t l = 0; l < 2; ++l) {
-    if (li(d, l, LE_COLLISION_L_RETRIGGER) || fresh) {
-      v->lfo[l].ph = (double)(lf(d, l, LE_COLLISION_L_PHASE) / 360.0f);
-      v->lfo[l].rnd_prev = v->lfo[l].rnd;
-      v->lfo[l].rnd = 2.0f * (float)((v->rng = v->rng * 1664525u + 1013904223u) >> 8) / 16777216.0f - 1.0f;
-    }
-  }
+  v->age = 0;
 }
 
 static void release_voice(le_collision* d, le_collision_voice* v) {
@@ -765,7 +786,8 @@ static float lfo_length(int32_t s) {
   return kLen[s < 0 ? 0 : s > 21 ? 21 : s];
 }
 
-static void tick_lfos(le_collision* d, le_collision_voice* v) {
+/* Each LFO's output: moved on a tick when `advance`, else at its phase. */
+static void tick_lfos(le_collision* d, le_collision_voice* v, int advance) {
   const float dt = (float)LE_COLLISION_TICK / (float)d->sample_rate;
   for (int32_t l = 0; l < 2; ++l) {
     le_collision_lfo* o = &v->lfo[l];
@@ -779,7 +801,7 @@ static void tick_lfos(le_collision* d, le_collision_voice* v) {
                    : k_exp(d, LE_COLLISION_LFO(l, LE_COLLISION_L_RATE), 0.01f, 10.0f);
     hz = fminf(hz * exp2f(v->dest[LE_COLLISION_D_LFO1_RATE + 2 * l]), 10.0f);
     if (shape == 5) hz *= 2.0f; /* sample and hold runs at twice the rate */
-    o->ph += (double)fminf(hz * dt, 0.5f);
+    if (advance) o->ph += (double)fminf(hz * dt, 0.5f);
     if (o->ph >= 1.0) {
       o->ph -= floor(o->ph);
       o->rnd_prev = o->rnd;
@@ -803,7 +825,12 @@ static void tick_lfos(le_collision* d, le_collision_voice* v) {
 
 static void tick_voice(le_collision* d, le_collision_voice* v) {
   const float rate = (float)d->sample_rate;
-  tick_lfos(d, v);
+  /* the noise source off: its envelope idle, so the voice can end */
+  if (!vi(d, LE_COLLISION_NOISE_ON)) {
+    v->env_seg = ENV_IDLE;
+    v->env = v->env_step = 0.0f;
+  }
+  tick_lfos(d, v, 1);
   matrix(d, v);
   const int released = v->state == LE_COLLISION_VOICE_RELEASED || v->state == LE_COLLISION_VOICE_FADING;
   for (int32_t r = 0; r < 2; ++r) {
@@ -821,12 +848,13 @@ static void tick_voice(le_collision* d, le_collision_voice* v) {
      * the knobs and the matrix's resonator routes */
     const int32_t ko = r * (LE_COLLISION_D_R2_DECAY - LE_COLLISION_D_R1_DECAY);
     const int32_t po = r * (LE_COLLISION_D_R2_PITCH - LE_COLLISION_D_R1_PITCH);
-    const float key[6] = {v->dest[LE_COLLISION_D_R1_DECAY + ko], v->dest[LE_COLLISION_D_R1_MATERIAL + ko],
+    const float key[7] = {v->dest[LE_COLLISION_D_R1_DECAY + ko], v->dest[LE_COLLISION_D_R1_MATERIAL + ko],
                           v->dest[LE_COLLISION_D_R1_RADIUS + ko], v->dest[LE_COLLISION_D_R1_INHARMONICS + ko],
-                          v->dest[LE_COLLISION_D_R1_PAN + po], v->dest[LE_COLLISION_D_R1_OPENING + po]};
+                          v->dest[LE_COLLISION_D_R1_PAN + po], v->dest[LE_COLLISION_D_R1_OPENING + po],
+                          v->dest[LE_COLLISION_D_R1_HIT + po]};
     int moved = fabsf(pitch - rs->pitch) > 0.00083f || rs->kind == 0 || released != rs->released ||
                 rs->serial != d->serial_values;
-    for (int32_t k = 0; k < 6 && !moved; ++k) moved = fabsf(key[k] - rs->key[k]) > 1e-4f;
+    for (int32_t k = 0; k < 7 && !moved; ++k) moved = fabsf(key[k] - rs->key[k]) > 1e-4f;
     if (moved) {
       tune_res(d, v, r, pitch, released);
       rs->released = released;
@@ -925,6 +953,10 @@ static void render_voice(le_collision* d, le_collision_voice* v, float* left, fl
   const float sus = k_sq(d, LE_COLLISION_NOISE_SUSTAIN, 0.0f, 1.0f);
   const int32_t quiet_end = (int32_t)(0.05f * rate);
   const float fade_step = 1.0f / (float)(v->fade_len > 0 ? v->fade_len : 1);
+  int32_t settle = v->pulse_len;
+  for (int32_t r = 0; r < 2; ++r) {
+    if (v->r[r].kind >= 2) settle += 2 * (int32_t)v->r[r].delay + 8;
+  }
   int32_t i = 0;
   while (i < frames && v->state != LE_COLLISION_VOICE_FREE) {
     if (v->tick_left <= 0) {
@@ -979,13 +1011,14 @@ static void render_voice(le_collision* d, le_collision_voice* v, float* left, fl
       float g = vg;
       if (v->state == LE_COLLISION_VOICE_FADING) g *= fade_step * (float)(v->fade_left > s ? v->fade_left - s : 0);
       float yl = g * (v->r[0].gain_l * l1 + v->r[1].gain_l * l2), yr = g * (v->r[0].gain_r * r1 + v->r[1].gain_r * r2);
-      if (!(yl == yl) || fabsf(yl) > 1e6f) yl = 0.0f;
-      if (!(yr == yr) || fabsf(yr) > 1e6f) yr = 0.0f;
+      yl = yl == yl ? clampf(yl, -1e6f, 1e6f) : 0.0f;
+      yr = yr == yr ? clampf(yr, -1e6f, 1e6f) : 0.0f;
+      if (v->age < settle) v->age++;
       left[i + s] += yl;
       right[i + s] += yr;
       /* fit: a released voice ends after 50 ms below -100 dBFS */
       if (v->state == LE_COLLISION_VOICE_RELEASED) {
-        v->quiet = fmaxf(fabsf(yl), fabsf(yr)) < 1e-5f && v->env_seg == ENV_IDLE ? v->quiet + 1 : 0;
+        v->quiet = fmaxf(fabsf(yl), fabsf(yr)) < 1e-5f && v->env_seg == ENV_IDLE && v->age >= settle ? v->quiet + 1 : 0;
         if (v->quiet >= quiet_end) {
           v->state = LE_COLLISION_VOICE_FREE;
           return;

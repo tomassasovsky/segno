@@ -30,7 +30,7 @@ extern "C" {
 
 #define LE_COLLISION_VOICE_SLOTS 24
 #define LE_COLLISION_MODES 70
-#define LE_COLLISION_PIPE 2048 /* samples per waveguide line: a power of two */
+#define LE_COLLISION_PIPE 4096 /* samples per waveguide line: a power of two (note 0 at 48 kHz) */
 #define LE_COLLISION_TICK 32
 #define LE_COLLISION_SUSTAIN_MAX 16
 
@@ -85,7 +85,7 @@ typedef struct le_collision_res {
   float v1[LE_COLLISION_MODES], v2[LE_COLLISION_MODES]; /* states */
   le_collision_bq bleed;
   float bleed_g;
-  float hit;      /* the strike's hit position, with its random offset */
+  float hit_rand; /* the strike's random offset to the hit position */
   /* the waveguide */
   float fw[LE_COLLISION_PIPE], bw[LE_COLLISION_PIPE];
   int32_t w;
@@ -98,7 +98,7 @@ typedef struct le_collision_res {
   /* what the coefficients were set from */
   int32_t released;
   uint32_t serial;
-  float key[6];
+  float key[7];
 } le_collision_res;
 
 typedef struct le_collision_lfo {
@@ -116,6 +116,8 @@ typedef struct le_collision_voice {
   int32_t tick_left;
   int32_t fade_left, fade_len;
   int32_t quiet;
+  int32_t age;       /* samples since the strike, up to its settling time */
+  int32_t pulse_len; /* the mallet pulse's length in samples */
   float dest[LE_COLLISION_D_COUNT]; /* this tick's matrix sums */
   /* the mallet: its pulse filter and its noise's high-pass */
   le_collision_bq pulse, mnoise;

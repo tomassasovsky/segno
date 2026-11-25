@@ -1141,36 +1141,47 @@ Meld. Segno's implementation is `collision_voice.c`.
   through the shapes at the two listening points, its level tilted by
   Brightness about the mode at ratio 4. A heavily damped high-pass
   resonance at the top mode stands in for the modes left out (Bleed).
-  **[code]**
+  **[code]** No mode rings longer than the knob's 35 s, and the decay
+  routes keep T 2^d within 10 ms and 35 s. **[Segno]** (a bound the
+  reading does not show; the metal presets with long highs fit it)
 - Pipe and tube: two waveguide lines with Lagrange reads, the far end a
   first-order reflection set by radius and opening; the pipe keeps every
   harmonic, the tube (its reflection negated) the odd ones. Decay is e^-4
   a round trip per T. **[code]** **[measured]** (Live's tube is odd-only)
+  The lines hold 4096 samples and a delay of at least 3: note 0 at 48 kHz,
+  about note 6 at 96 kHz, and the highest pipe and tube notes share the
+  top pitch. **[Segno]**
 - Decay Exp(0.05, 35) s, Off Decay shortening it after the release; pitch
   from Tune, Fine and the key, with a pitch envelope; pan by a balance
   law, volume Sq(0, 2). In series resonator 2 hears resonator 1's sum,
-  in parallel the exciter. **[code]**
+  in parallel the exciter. The hit position is the knob plus the Hit
+  destination, held to the knob's window, plus the strike's random
+  offset. **[code]**
 
 ### Voices and level
 
 - 2p voices (p = 0: mono); Retrigger strikes a sounding key's own voice
   again, the modes ringing on at the same pitch. Two LFOs per voice, seven
-  shapes, free or synced. A released voice ends after 50 ms below
-  -100 dBFS. **[code]** **[Segno]** (the voice end, the synced lengths'
-  order)
+  shapes, free or synced; a strike reads each LFO at its start phase. A
+  released voice ends after 50 ms below -100 dBFS, counted once the
+  mallet's pulse and both waveguides' round trips have passed. **[code]**
+  **[Segno]** (the voice end, the synced lengths' order)
 - The output is the voices' sum times Volume (Sq(0, 2)), then times 4,
   held within +-1. **[code]** **[measured]** (the x4 reaches Live's
   output here, and the loudest renders peak at exactly 1)
 
 ### The fits so far
 
-92 renders (third-octave bands from the strike): total 4.6 dB rms; 28 of
+92 renders (third-octave bands from the strike): total 4.5 dB rms; 28 of
 59 single changes within 1 dB (the reference 0.7; types beam, marimba,
 string; material, brightness, inharmonics, hit, listening, bleed, pan,
 tune, quality, the volumes, parallel structure). Factory presets (octave
 bands): Vibes Basic 0.4, Digital String 0.9, E-Piano Dreamy and Marimba
 Classic 1.5, Music Box Beam 2.4, Air Of Dread and Xylophone Basic 2.7, ten
-more within 5.7, the rest 6.5 to 13.9 (Bells Attack).
+more within 5.7, the rest 6.5 to 13.9 (Bells Attack). Presets with a
+random hit, sample-and-hold LFOs or loud mallet noise move by several dB
+between noise seeds (Xylophone Dark 6 to 17 dB in third-octave bands),
+so their scores are rough.
 
 Still open: the series structure (resonator 2 rings far too bright on
 resonator 1's output, 30 dB), membrane and plate at mid ratios (9.9),
