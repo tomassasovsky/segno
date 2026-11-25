@@ -891,31 +891,31 @@ Tags as for Meld. Segno's implementation is `analog_voice.c`.
 - Glide: a one-pole on the pitch with time constant T / 2 pi, T =
   Exp(3 ms, 9 s), times sqrt of the interval in Prop mode; Legato limits
   it to overlapping notes. **[code]** **[measured]** (T's curve)
-- Unison: the copies sit 0, +1, -1, +2 steps from the note, a step 0.374
-  semitone at Detune 0.5, taken as Sq(0, 1.47) semitones; they start up to
-  20 ms apart. Vibrato: Lin(0.25, 10) Hz, its depth and the mod wheel's up
-  to 2 semitones, with delay and fade-in. **[code]** **[measured]** (the
-  unison offsets at 0.5)
+- Unison: the copies sit 0, +1, -1, +2 steps from the note, a step of
+  ExpZ(0.001, 1) octaves on 127 times the stored value (0.379 semitone at
+  0.5, an octave at 1); they start ExpZ(0.002, 0.1) s apart. Vibrato:
+  Lin(0.25, 10) Hz, its depth and the mod wheel's up to 2 semitones, with
+  delay and fade-in. **[code]** (Tension's reading of the shared unison)
+  **[measured]** (the offsets' pattern; 0.374 semitone at 0.5)
 
 ### The fits so far
 
 Three rounds (third-octave bands within 60 dB of each render's loudest):
 the levels, routing, pan, envelopes and loops, LFO waves, glide, filters
 (the formants included) and drive within 0.1 to 2.5 dB rms, the totals 1.9,
-1.4 and 1.9 dB. 23 factory presets (octave bands): 12 within 2.2 dB
-(Square Pure Bass 0.2, Saw Sub Complex Bass 0.3, Fifth Pad 0.8, Saw Detune
-Sync Lead 1.0, Noise Hit Perc 1.1, Metalic Lead 1.2, Strings Detuned Pad
-1.7, Dual OSC Rubber Bass and Tremolo Tines 1.9, Bright Thin Sweep Pad and
-Square Sync Lead 2.0, Nasal Mod Lead 2.2); Saw Pure Brass 3.2, Soft
-Morning Keys 3.3, Saw Filter Bass 3.9, Thick Chord Pad 4.3, 80s VCO Brass
-4.5, Muted Wow Bass 7.4, E-Piano Muted Pure 7.8, Dual OSC Sample & Hold
-Bass 12.6, Kick Complex Perc 26.5, Organ Vibrato 36.8; Zap is silent on
-its one note in both.
+1.4 and 1.9 dB. 23 factory presets (octave bands): 13 within 2.2 dB
+(Square Pure Bass 0.2, Saw Sub Complex Bass 0.3, Fifth Pad 0.8, Organ
+Vibrato 0.9, Dual OSC Rubber Bass and Saw Detune Sync Lead 1.0, Noise Hit
+Perc 1.1, Metalic Lead 1.2, Strings Detuned Pad 1.3, Tremolo Tines 1.9,
+Bright Thin Sweep Pad and Square Sync Lead 2.0, Nasal Mod Lead 2.2); Thick
+Chord Pad 2.9, Saw Pure Brass 3.2, Soft Morning Keys 3.3, Saw Filter Bass
+4.3, 80s VCO Brass 4.8, Muted Wow Bass 7.4, E-Piano Muted Pure 7.8, Dual
+OSC Sample & Hold Bass 12.9, Kick Complex Perc 26.5; Zap is silent on its
+one note in both.
 
-Still open: the unison detune's law past 0.5 (Organ Vibrato, at Detune 1,
-shows no spread in Live), the pitch envelope's shape (Kick Complex Perc),
-Organ Vibrato's even harmonics, the unison delay's law, Keyboard Stretch
-and Error, and the MPE destinations (stored, not played).
+Still open: Kick Complex Perc (its pitch envelope, or filter 1 into
+filter 2), Keyboard Stretch and Error, and the MPE destinations (stored,
+not played).
 
 ## Decisions
 
