@@ -474,6 +474,7 @@ static void strike_res(le_collision* d, le_collision_voice* v, int32_t r, int fr
   if (fresh) {
     memset(rs->v1, 0, sizeof(rs->v1));
     memset(rs->v2, 0, sizeof(rs->v2));
+    memset(rs->om, 0, sizeof(rs->om));
     memset(rs->fw, 0, sizeof(rs->fw));
     memset(rs->bw, 0, sizeof(rs->bw));
     rs->bleed.x1 = rs->bleed.x2 = rs->bleed.y1 = rs->bleed.y2 = 0.0f;
@@ -483,9 +484,15 @@ static void strike_res(le_collision* d, le_collision_voice* v, int32_t r, int fr
   /* the pitch envelope: |A| 2^(V v), falling to 0 over its time */
   const float a = k_lin(d, LE_COLLISION_RES(r, LE_COLLISION_R_PITCH_ENV), -1.0f, 1.0f);
   const float vv = k_lin(d, LE_COLLISION_RES(r, LE_COLLISION_R_PITCH_ENV_VEL), -1.0f, 1.0f);
-  rs->pe = a * exp2f(vv * v->vel);
+  rs->pe_amp = a * exp2f(vv * v->vel);
   const float tm = k_exp(d, LE_COLLISION_RES(r, LE_COLLISION_R_PITCH_ENV_TIME), 0.001f, 10.0f);
-  rs->pe_step = rs->pe / fmaxf(tm * (float)d->sample_rate, 1.0f);
+  /* fit: an exponential segment, overshooting 0 by 3.14 % of its depth so
+   * that it lands there at its time (penv-1) */
+  const float len = fmaxf(tm * (float)d->sample_rate, 1.0f);
+  rs->pe_left = (int32_t)len;
+  rs->pe_x = 1.0313935f;
+  rs->pe_mul = expf(-3.4906588f * (float)LE_COLLISION_TICK / len);
+  rs->pe = rs->pe_left > 0 ? rs->pe_amp * (rs->pe_x - 0.0313935f) : 0.0f;
   /* the hit's random offset, drawn at each strike */
   rs->hit_rand = 0.0f;
   const float ru = u_mid(LE_COLLISION_RES(r, LE_COLLISION_R_HIT_RANDOM), rf(d, r, LE_COLLISION_R_HIT_RANDOM));
@@ -586,6 +593,14 @@ static void tune_res(le_collision* d, le_collision_voice* v, int32_t r, float pi
     const float alpha = fmaxf(8.0f / T * exp2f(e), 8.0f / 35.0f);
     const float th = w / rate;
     const float g = alpha * sinf(th) * (CV_PI / (CV_PI - th)) / w;
+    /* a pitch move keeps the mode's amplitude: its newer state scales by the
+     * old frequency over the new, its step from the older state stays */
+    if (rs->pitch < 90.0f && k < rs->n && rs->om[k] > 0.0f) {
+      const float r = rs->om[k] / w;
+      rs->v2[k] += (r - 1.0f) * rs->v1[k];
+      rs->v1[k] *= r;
+    }
+    rs->om[k] = w;
     rs->a1[k] = -2.0f * cosf(th) / (1.0f + g);
     rs->a2[k] = (1.0f - g) / (1.0f + g);
     const float B = powf(ratio[k] / 4.0f, bright) * exp2f(pitch);
@@ -598,7 +613,7 @@ static void tune_res(le_collision* d, le_collision_voice* v, int32_t r, float pi
     top_b = B;
     top_g = g;
   }
-  for (int32_t k = used; k < rs->n; ++k) rs->v1[k] = rs->v2[k] = 0.0f;
+  for (int32_t k = used; k < rs->n; ++k) rs->v1[k] = rs->v2[k] = rs->om[k] = 0.0f;
   rs->n = used;
   /* the bleed: a heavily damped resonator at the highest mode, when every
    * mode fitted */
@@ -845,13 +860,13 @@ void le_collision_set_voice_limit(le_collision* d, int32_t limit) {
 
 /* ---- the control tick ---- */
 
-/* The synced LFO lengths in whole notes, Segno's order: 8 down to 1/64,
- * then the dotted and the triplet ones. */
+/* The synced LFO lengths in whole notes, in the order of Live's menu: its
+ * note values from the longest down. */
 static float lfo_length(int32_t s) {
-  static const float kLen[22] = {8.0f,        4.0f,         2.0f,          1.0f,         0.5f,   0.25f,
-                                 0.125f,      0.0625f,      0.03125f,      0.015625f,    6.0f,   3.0f,
-                                 1.5f,        0.75f,        0.375f,        0.1875f,      8.0f / 3.0f,
-                                 4.0f / 3.0f, 2.0f / 3.0f,  1.0f / 3.0f,   1.0f / 6.0f,  1.0f / 12.0f};
+  static const float kLen[22] = {8.0f,         6.0f,         4.0f,        3.0f,         2.0f,          1.5f,
+                                 1.0f,         0.75f,        0.5f,        0.375f,       1.0f / 3.0f,   0.3125f,
+                                 0.25f,        0.1875f,      1.0f / 6.0f, 0.125f,       1.0f / 12.0f,  0.0625f,
+                                 1.0f / 24.0f, 0.03125f,     1.0f / 48.0f, 0.015625f};
   return kLen[s < 0 ? 0 : s > 21 ? 21 : s];
 }
 
@@ -938,19 +953,24 @@ static void tick_voice(le_collision* d, le_collision_voice* v) {
                           v->dest[LE_COLLISION_D_R1_RADIUS + ko], v->dest[LE_COLLISION_D_R1_INHARMONICS + ko],
                           v->dest[LE_COLLISION_D_R1_PAN + po], v->dest[LE_COLLISION_D_R1_OPENING + po],
                           v->dest[LE_COLLISION_D_R1_HIT + po]};
-    int moved = fabsf(pitch - rs->pitch) > 0.00083f || rs->kind == 0 || released != rs->released ||
-                rs->serial != d->serial_values;
+    /* a pitch move retunes the modes at most every 6 ticks (the engine's 200
+     * samples) */
+    rs->since += LE_COLLISION_TICK;
+    int moved = (fabsf(pitch - rs->pitch) > 0.00083f && rs->since >= 6 * LE_COLLISION_TICK) || rs->kind == 0 ||
+                released != rs->released || rs->serial != d->serial_values || rs->pitch > 90.0f;
     for (int32_t k = 0; k < 7 && !moved; ++k) moved = fabsf(key[k] - rs->key[k]) > 1e-4f;
     if (moved) {
       tune_res(d, v, r, pitch, released);
+      rs->since = 0;
       rs->released = released;
       rs->serial = d->serial_values;
       memcpy(rs->key, key, sizeof(key));
     }
     /* the pitch envelope falls across this tick */
     if (rs->pe != 0.0f) {
-      const float next = rs->pe - rs->pe_step * (float)LE_COLLISION_TICK;
-      rs->pe = (rs->pe > 0.0f) == (next > 0.0f) ? next : 0.0f;
+      rs->pe_left -= LE_COLLISION_TICK;
+      rs->pe_x *= rs->pe_mul;
+      rs->pe = rs->pe_left > 0 ? rs->pe_amp * (rs->pe_x - 0.0313935f) : 0.0f;
     }
   }
 }

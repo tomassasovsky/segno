@@ -83,6 +83,7 @@ typedef struct le_collision_res {
   float e[LE_COLLISION_MODES];             /* excitation weights */
   float gl[LE_COLLISION_MODES], gr[LE_COLLISION_MODES]; /* gain x pickup weights */
   float v1[LE_COLLISION_MODES], v2[LE_COLLISION_MODES]; /* states */
+  float om[LE_COLLISION_MODES];            /* the frequencies the states ring at, rad/s */
   le_collision_bq bleed;
   float bleed_g;
   float hit_rand; /* the strike's random offset to the hit position */
@@ -93,10 +94,12 @@ typedef struct le_collision_res {
   float rf_b0, rf_b1, rf_a1, rf_x1, rf_y1; /* the far end's reflection */
   float hp_x, hp_y;                         /* the input's 30 Hz high-pass */
   float pe;       /* the pitch envelope, falling to 0 */
-  float pe_step;
+  float pe_amp, pe_x, pe_mul; /* its depth, its exponential's value and step a tick */
+  int32_t pe_left;             /* samples to its end */
   float gain_l, gain_r; /* volume and pan */
   /* what the coefficients were set from */
   int32_t released;
+  int32_t since; /* samples since the coefficients were set */
   uint32_t serial;
   float key[7];
 } le_collision_res;
