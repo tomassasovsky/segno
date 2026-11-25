@@ -167,6 +167,9 @@ static float ksq(float lo, float hi, float v) {
   return lo + (hi - lo) * (m == 64 ? 0.25f : u * u);
 }
 static float expz(float lo, float hi, float v) { return knob_m(v) <= 0 ? 0.0f : kexp(lo, hi, v); }
+/* The shared modules (vibrato, glide, the LFO) take the knob's position
+ * itself, not its whole step (fit: the vibrato renders' rate and depth). */
+static float mod_expz(float lo, float hi, float v) { return le_aas_knob(v) <= 0.0f ? 0.0f : le_aas_exp(lo, hi, v); }
 
 /* A key or velocity amount: Exp(0.1, 16) of its magnitude, with its sign.
  * At its bottom step (m = 0) most amounts keep their resting 0.1, which a
@@ -763,7 +766,7 @@ static void start_voice(le_tension* d, le_tension_voice* v, uint32_t origin, int
   le_aas_env_start(&v->fenv, &es, vel, rate, 0);
   v->lfo_ph = 0.0;
   v->lfo_sh = v->lfo_sh_prev = le_aas_bipolar(&v->rng);
-  v->lfo_wait = vf(d, LE_TENSION_LFO_DELAY) > 0.0f ? kexp(0.2f, 5.0f, vf(d, LE_TENSION_LFO_DELAY)) : 0.0f;
+  v->lfo_wait = vf(d, LE_TENSION_LFO_DELAY) > 0.0f ? le_aas_exp(0.2f, 5.0f, vf(d, LE_TENSION_LFO_DELAY)) : 0.0f;
   v->lfo_amp = vf(d, LE_TENSION_LFO_FADE) > 0.0f ? 0.0f : 1.0f;
   d->last_pitch = v->pitch_to - v->detune;
   d->played = 1;
@@ -1023,7 +1026,7 @@ static void tick_voice(le_tension* d, le_tension_voice* v) {
   const float dt = (float)LE_TENSION_TICK / rate;
   /* glide and vibrato: the played pitch */
   if (vi(d, LE_TENSION_GLIDE_ON) && v->pitch != v->pitch_to) {
-    float T = kexp(0.003f, 9.0f, vf(d, LE_TENSION_GLIDE_TIME));
+    float T = le_aas_exp(0.003f, 9.0f, vf(d, LE_TENSION_GLIDE_TIME));
     if (vi(d, LE_TENSION_GLIDE_PROP)) T *= sqrtf(fabsf(v->pitch_to - v->pitch));
     const float a = fminf(2.0f * LE_AAS_PI / (fmaxf(T, 1e-4f) * rate), 1.0f);
     v->pitch = v->pitch_to + (v->pitch - v->pitch_to) * powf(1.0f - a, (float)LE_TENSION_TICK);
@@ -1034,11 +1037,11 @@ static void tick_voice(le_tension* d, le_tension_voice* v) {
   float vib = 0.0f;
   v->vib_t += dt;
   if (vi(d, LE_TENSION_VIBRATO_ON)) {
-    const float hz = lin_int(0.25f, 10.0f, vf(d, LE_TENSION_VIBRATO_SPEED));
-    float depth = expz(0.0002f, 1.0f / 6.0f, vf(d, LE_TENSION_VIBRATO_AMOUNT)) +
-                  d->mod * expz(0.0002f, 1.0f / 6.0f, vf(d, LE_TENSION_VIBRATO_WHEEL));
-    const float delay = expz(0.05f, 5.0f, vf(d, LE_TENSION_VIBRATO_DELAY));
-    const float fade = expz(0.05f, 5.0f, vf(d, LE_TENSION_VIBRATO_FADE));
+    const float hz = le_aas_lin(0.25f, 10.0f, vf(d, LE_TENSION_VIBRATO_SPEED));
+    float depth = mod_expz(0.0002f, 1.0f / 6.0f, vf(d, LE_TENSION_VIBRATO_AMOUNT)) +
+                  d->mod * mod_expz(0.0002f, 1.0f / 6.0f, vf(d, LE_TENSION_VIBRATO_WHEEL));
+    const float delay = mod_expz(0.05f, 5.0f, vf(d, LE_TENSION_VIBRATO_DELAY));
+    const float fade = mod_expz(0.05f, 5.0f, vf(d, LE_TENSION_VIBRATO_FADE));
     if (v->vib_t < delay) depth = 0.0f;
     else if (fade > 0.0f) depth *= fminf((v->vib_t - delay) / fade, 1.0f);
     v->vib_ph += (double)(hz * dt);
@@ -1069,7 +1072,7 @@ static void tick_voice(le_tension* d, le_tension_voice* v) {
     if (vi(d, LE_TENSION_LFO_SYNC_ON)) {
       hz = d->bpm / 60.0f / le_aas_sync_beats(vi(d, LE_TENSION_LFO_SYNC));
     } else {
-      hz = kexp(3.0f, 1000.0f, vf(d, LE_TENSION_LFO_SPEED)) / 60.0f;
+      hz = le_aas_exp(3.0f, 1000.0f, vf(d, LE_TENSION_LFO_SPEED)) / 60.0f;
     }
     const double before = v->lfo_ph;
     v->lfo_ph += (double)(hz * dt);
@@ -1083,7 +1086,7 @@ static void tick_voice(le_tension* d, le_tension_voice* v) {
       v->lfo_wait -= dt;
       y = 0.0f;
     } else if (v->lfo_amp < 1.0f) {
-      v->lfo_amp = fminf(v->lfo_amp + dt / kexp(0.2f, 5.0f, vf(d, LE_TENSION_LFO_FADE)), 1.0f);
+      v->lfo_amp = fminf(v->lfo_amp + dt / le_aas_exp(0.2f, 5.0f, vf(d, LE_TENSION_LFO_FADE)), 1.0f);
     }
     lfo = y * v->lfo_amp;
   }
@@ -1110,16 +1113,15 @@ static void tick_voice(le_tension* d, le_tension_voice* v) {
 
 /* ---- the body ---- */
 
-/* The soundboard's lines in ms at size 1, one set per body type, and the
- * all-pass taps inside them, the same in every type. fit: each type's
- * wet-only render deconvolved against the dry string (Live's own renders,
- * the lengths found as whole samples at 48 kHz; type 0 also at sizes 0.3
- * and 2), each value the middle of the range every render allows. */
-static const float kBodyLong[4][4] = {{5.391f, 6.547f, 7.604f, 9.297f},
-                                      {2.5f, 2.875f, 5.417f, 10.062f},
-                                      {1.25f, 1.792f, 2.5f, 3.438f},
-                                      {6.5f, 7.833f, 8.75f, 11.5f}};
-static const float kBodyTap[4] = {0.995f, 1.089f, 1.38f, 1.616f};
+/* The soundboard's lines in samples at 44.1 kHz and size 1, one set per
+ * body type, and the all-pass taps inside them, the same in every type.
+ * fit: every type's wet-only render at all five sizes fitted sample by
+ * sample against the dry string (Live's own renders, the lengths found as
+ * whole samples at 48 kHz); each value the one, or the lowest of the few,
+ * that gives all twenty renders' lengths. */
+static const float kBodyLong[4][4] = {
+    {239.0f, 288.0f, 334.0f, 411.0f}, {105.0f, 126.0f, 238.0f, 441.0f}, {55.0f, 81.0f, 107.0f, 150.0f}, {286.0f, 345.0f, 386.0f, 507.0f}};
+static const float kBodyTap[4] = {44.0f, 48.0f, 61.0f, 71.0f};
 static const float kBodySize[5] = {0.3f, 0.7f, 1.0f, 1.3f, 2.0f};
 
 static int is_prime(int32_t n) {
@@ -1153,7 +1155,8 @@ static void body_build(le_tension* d) {
   if (type == b->type && size == b->size) return;
   b->type = type;
   b->size = size;
-  const float scale = (float)d->sample_rate / 1000.0f * kBodySize[size];
+  /* size x rate / 44.1 kHz, in single precision as the lengths were found */
+  const float scale = kBodySize[size] * (1.0f / 44100.0f) * (float)d->sample_rate;
   for (int32_t k = 0; k < 4; ++k) {
     b->len[k] = clampi(prime_below((int32_t)(kBodyLong[type][k] * scale)), 8, LE_TENSION_BODY_LINE - 2);
     b->tap[k] = clampi(prime_below((int32_t)(kBodyTap[k] * scale)), 1, b->len[k] < LE_TENSION_BODY_AP - 1 ? b->len[k] : LE_TENSION_BODY_AP - 1);
