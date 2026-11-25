@@ -1,6 +1,6 @@
 # Ableton Live device presets on the pedal — brainstorm
 
-<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned -->
+<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob -->
 
 **Date:** 2026-11-24
 **Issue:** SEG-109 (related: SEG-57, Segno's own instrument voices)
@@ -252,22 +252,40 @@ written from it.
 - Glide (0..2 s), Legato, Pitch Bend Range, Note Pitch Bend and Transpose:
   stored and passed on; their exact use in the voice is **[open]**.
 
-### Open items
+### Open items and the fits (P4)
 
-Settle by rendering Live (Live 12 Suite is on the owner's Mac) with one
-parameter changed at a time against a reference patch, and fitting:
+Settled by rendering Live 12.2.7 (a Live Set built by script, exported
+per track, unnormalised, 48 kHz) against Segno's render of the same
+patch and notes, one setting changed per render from a plain saw or white
+noise. Fitted 2026-11-25, three rounds:
 
-1. Envelope time → coefficient (decay, release; attack in samples).
-2. Filter key tracking; type II's slope, limiter and shaper.
-3. Stereo Spread and the Unison pan law; Volume and Glide curves; glide and
-   legato behavior.
-4. The voice count table; LFO shapes 2 and 3; the SyncedRate division table
-   (from Live's UI).
-5. The output clip limit; DriftDepth's role; the phase-offset source.
+- Envelopes: the stage-time mapping matches (attack 50 / 90 % points,
+  sustain, release to -20 / -40 / -60 dB within 5 ms).
+- Volume: linear, +6 dB per doubling; with the noise level and both
+  filters' path gains, every level test is within 0.2 dB.
+- Voice modes: Mono and Unison as described; Unison's pan is equal-power
+  (1 on the side it is panned to, 0.707 in the middle). Stereo pans its
+  two lanes 0.5 (1 -+ pan) and does not detune: at Drift 0 the pair is
+  mono, whatever Spread.
+- Filter I: one 12 dB/oct section, damping ratio 1.33 at resonance 0 (a
+  soft knee, -8 dB at the cutoff) falling linearly to a +29 dB peak at 1.
+  Filter II: two sections, 24 dB/oct, damping per section interpolated
+  through the points measured at 0 / 0.5 / 0.75 / 0.9 / 1.
+- Filter modulation: 10 octaves per unit (Live and Segno both move 0.99 /
+  2.5 octaves at 0.1 / 0.3). Key tracking about A4: within 0.08 octave at
+  C2, C4 and C6. High-pass at 300 Hz: within 1.5 dB.
+- Drift Depth: a fixed offset per key and lane (it neither moves over time
+  nor changes between strikes), linear in depth; a Stereo note's two lanes
+  sit at different offsets, which is what makes a Drift preset wide.
+  Segno's table is its own, so individual offsets differ from Live's.
 
-Rendering through Live uses Live's own UI (computer use or the owner) to
-set a parameter and export audio; no further decompiling is needed for
-these.
+Still open, with what showed it (five factory presets, Segno minus Live):
+the Saturated oscillator under shape modulation and the LFO's Time mode
+and per-voice phase (Clob Bass: 6 to 10 dB dark from 250 Hz to 4 kHz,
+narrower); filter II between 0.9 and 1 with a bright source (Bloom Pad:
++8 dB at 2 to 4 kHz); 80s Tape +9 dB near 1 kHz; Chirp Pluck +10 dB at
+63 Hz; Glide, the voice-count and Sync tables, LFO shapes 2 and 3, the
+voice clip and the phase-offset source.
 
 ## Decisions
 

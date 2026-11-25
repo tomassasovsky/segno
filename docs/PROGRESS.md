@@ -1,4 +1,4 @@
-<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP -->
+<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob -->
 # Segno — Progress & Roadmap
 
 <!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs multicore smarttune -->
@@ -64,6 +64,31 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
 | SEG-109 | Ableton Live device presets on the pedal, Drift first: presets read from the user's own copy; Drift's behavior learned with rea + Ghidra from Live 12.2.7 and reimplemented, no Ableton code or presets in the repo. Plan approved 2026-11-25 (P1-P6); P1 stereo buses, P2 preset reader and P3 the Drift device in review | in-review | needs-merge | `claude/ableton-devices-SEG-109` |
 
 ---
+
+## November 2026 Drift fitted against Live renders (SEG-109 P4, round 1)
+
+- Live 12.2.7 renders of controlled patches (one setting changed per render
+  from a plain saw or white noise, exported unnormalised) against Segno's
+  renders of the same patches settled most of P3's provisional values. The
+  brainstorm's "Open items and the fits" lists each with its measurement.
+  Fitted: the Volume curve (linear), the noise level and both filters'
+  path gains (every level test within 0.2 dB), Stereo's pan law (no
+  detune), Unison's equal-power pan, filter I (one section; damping from a
+  soft knee at resonance 0 to a +29 dB peak at 1), filter II's resonance
+  curve (interpolated through five measured points), and Drift Depth (a
+  fixed offset per key and per lane, so a Stereo pair is decorrelated).
+  Confirmed as P3 had them: the envelope mapping, filter modulation depth,
+  key tracking about A4, the high-pass, the voices' starting phase.
+- Five factory presets, Segno minus Live: levels -1.9 to +0.3 dB (were
+  -8.7 to -0.8), Euphoria Lead's spectrum within about 1 dB per octave, 80s
+  Tape's stereo width within 0.7 dB.
+- Still open: the Saturated oscillator under shape modulation and the
+  LFO's Time mode and per-voice phase (Clob Bass dark and narrow), filter
+  II close to resonance 1 with bright sources (Bloom Pad), Glide, the
+  voice-count and Sync tables.
+- Resonance at 1 rings without oscillating, as Live's does; modulated past
+  1 both filters self-oscillate (filter II now injects the same tiny noise
+  as filter I to start).
 
 ## November 2026 The Drift device plays on an instrument slot (SEG-109 P3)
 
