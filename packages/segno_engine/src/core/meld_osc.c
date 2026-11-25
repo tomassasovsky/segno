@@ -405,10 +405,13 @@ static void chord_retune(le_meld_osc* o) {
   if (io > 7) io = 7;
   const float top = 0.45f * o->rate;
   const int n = chord_tones(type);
+  /* fit: a three-tone chord's fourth voice doubles its lowest tone two
+   * octaves up, at 0.8 (the triad renders at all eight inversions) */
   for (int t = 0; t < 4; ++t) {
-    o->s.chord.inc[t] = t < n ? fminf(o->hz * exp2f(chord_tone(type, ie, t) / 12.0f), top) / o->rate : 0.0f;
-    o->s.chord.inc[4 + t] =
-        t < n ? fminf(o->hz * exp2f(chord_tone(type, io, t) / 12.0f), top) / o->rate : 0.0f;
+    const float sa = t < n ? chord_tone(type, ie, t) : chord_tone(type, ie, 0) + 24.0f;
+    const float sb = t < n ? chord_tone(type, io, t) : chord_tone(type, io, 0) + 24.0f;
+    o->s.chord.inc[t] = fminf(o->hz * exp2f(sa / 12.0f), top) / o->rate;
+    o->s.chord.inc[4 + t] = fminf(o->hz * exp2f(sb / 12.0f), top) / o->rate;
   }
 }
 
@@ -422,11 +425,14 @@ static float chord_tick(le_meld_osc* o) {
   const float tw = fminf(fabsf(p - 2.0f * floorf(p / 2.0f + 0.5f)), 1.0f);
   const float wa = cosf(tw * (float)(MO_PI / 2.0));
   const float wb = sinf(tw * (float)(MO_PI / 2.0));
+  int type = (int)(12.0f * o->m1);
+  if (type > MO_CHORDS - 1) type = MO_CHORDS - 1;
+  const float fourth = chord_tones(type) == 3 ? 0.8f : 1.0f;
   float y = 0.0f;
   for (int t = 0; t < LE_MELD_CHORD_TONES; ++t) {
     const float dt = o->s.chord.inc[t];
     if (dt <= 0.0f) continue;
-    y += (t < 4 ? wa : wb) * mo_saw(o->s.chord.ph[t], dt);
+    y += (t < 4 ? wa : wb) * ((t & 3) == 3 ? fourth : 1.0f) * mo_saw(o->s.chord.ph[t], dt);
     o->s.chord.ph[t] = mo_wrap(o->s.chord.ph[t] + dt);
   }
   return 0.3f * y;
@@ -699,14 +705,16 @@ static void sync_edges(double p0, double dp, double t0, double t1, float* now, f
   }
 }
 
-/* Two 50 % squares hard-synced to a master at the note's frequency, each
- * raised by up to 2 kHz; every step is corrected across two samples, so the
- * output runs one sample late. */
+/* Two 50 % squares hard-synced to a master at the note's frequency, the
+ * first raised by 2 kHz M1^2, the second by 2 kHz (M1^2 + M2^2); every
+ * step is corrected across two samples, so the output runs one sample
+ * late. */
 static float sync_tick(le_meld_osc* o) {
   const float rate = o->rate;
   const double dm = fmin(o->hz, 12543.85) / rate;
   const double ds[2] = {fmin(o->hz + 2000.0f * o->m1 * o->m1, 0.45f * rate) / rate,
-                        fmin(o->hz + 2000.0f * o->m2 * o->m2, 0.45f * rate) / rate};
+                        /* fit: the second slave rides on the first (the sync renders) */
+                        fmin(o->hz + 2000.0f * (o->m1 * o->m1 + o->m2 * o->m2), 0.45f * rate) / rate};
   double master = o->s.sync.master + dm;
   const int wrap = master >= 1.0;
   /* the reset's time within this sample interval */

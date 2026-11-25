@@ -1076,14 +1076,20 @@ typedef struct mv_mods {
   float prod[LE_MELD_MOD_TARGETS];
 } mv_mods;
 
-static void eval_matrix(const le_meld* d, int32_t e, const float* sb, const float* su, mv_mods* m) {
+/* `note_ff`: the Note source as Filter Freq reads it, the engine's own
+ * pitch scaled so an amount of 1 tracks the key a semitone per semitone
+ * (fit: the Note into Filter Freq renders at notes 36, 60, 84 and an
+ * octave transpose). */
+static void eval_matrix(const le_meld* d, int32_t e, const float* sb, const float* su, float note_ff,
+                        mv_mods* m) {
   for (int32_t t = 0; t < LE_MELD_MOD_TARGETS; ++t) {
     m->sum[t] = 0.0f;
     m->prod[t] = 1.0f;
   }
   for (int32_t i = 0; i < d->route_n[e]; ++i) {
     const le_meld_route* r = &d->routes[e][i];
-    m->sum[r->target] += r->amount * sb[r->source];
+    const float b = r->source == S_NOTE && r->target == T_FILTER_FREQ ? note_ff : sb[r->source];
+    m->sum[r->target] += r->amount * b;
     m->prod[r->target] *= fmaxf(0.0f, 1.0f + r->amount * su[r->source] - fmaxf(r->amount, 0.0f));
   }
 }
@@ -1135,8 +1141,6 @@ static void tick_copy(le_meld* d, le_meld_voice* v, le_meld_copy* cp) {
   for (int32_t e = 0; e < 2; ++e) {
     le_meld_engine* en = &cp->e[e];
     if (!en->live) continue;
-    mv_mods m;
-    eval_matrix(d, e, sb, su, &m);
     /* pitch */
     if (en->glide_left > 0) {
       en->pitch += en->glide_step;
@@ -1144,8 +1148,10 @@ static void tick_copy(le_meld* d, le_meld_voice* v, le_meld_copy* cp) {
     }
     float semis = ei(d, e, LE_MELD_E_GLIDE_MODE) ? truncf(en->pitch) : en->pitch;
     semis += (float)ei(d, e, LE_MELD_E_TRANSPOSE) + 12.0f * (float)ei(d, e, LE_MELD_E_OCTAVES) +
-             (float)ei(d, e, LE_MELD_E_SCALE_DEGREES) + ef(d, e, LE_MELD_E_DETUNE) +
-             m.sum[T_DETUNE] + 48.0f * m.sum[T_PITCH] + floorf(48.0f * m.sum[T_PITCH_QUANT] + 0.5f);
+             (float)ei(d, e, LE_MELD_E_SCALE_DEGREES) + ef(d, e, LE_MELD_E_DETUNE);
+    mv_mods m;
+    eval_matrix(d, e, sb, su, (semis - 60.0f) / 120.0f, &m);
+    semis += m.sum[T_DETUNE] + 48.0f * m.sum[T_PITCH] + floorf(48.0f * m.sum[T_PITCH_QUANT] + 0.5f);
     const float hz = 440.0f * exp2f((semis - 69.0f) / 12.0f);
     if (en->osc.type != ei(d, e, LE_MELD_E_OSC_TYPE)) {
       le_meld_osc_set_type(&en->osc, ei(d, e, LE_MELD_E_OSC_TYPE));

@@ -635,9 +635,9 @@ Chip at min(rate, 10.05 kHz), all read back through a 4-point Hermite.
 - Noisy Shapes: two triangle-saw-square oscillators beating up to +-2 Hz,
   each with a high-passed noise burst in its first tenth, locked together
   below Macro 2 = 0.5, then driven into an anti-aliased sine.
-- Square Sync: two squares hard-synced to the note, each up to 2 kHz above.
-  **[code]** (the slave frequency law fits Live's renders only at the
-  macros' zero: **[open]**)
+- Square Sync: two squares hard-synced to the note, the first 2 kHz M1^2
+  above, the second 2 kHz (M1^2 + M2^2). **[code]** **[measured]** (the
+  second slave's law)
 - Square 5th: a pulse with two notches that morph a square at f into one at
   3f, then 3f into 9f; Macro 2 skews the width and notches. **[code]**
 - Sub: a sine an octave down through a biased parabolic clip that holds at
@@ -686,8 +686,9 @@ Chip at min(rate, 10.05 kHz), all read back through a 4-point Hermite.
 - Chord: 8 saws, two chords of up to 4 tones built by scale degree on the
   note's major scale (13 types: triad, seventh, add9, the sixth, sus4 and
   sus2 families, add10, by Macro 1), at two inversions crossfaded equal
-  power by Macro 2, x 0.3. **[code]** Which octave an inversion's top tone
-  takes still differs from Live's renders. **[open]**
+  power by Macro 2, x 0.3; a three-tone chord's fourth voice doubles its
+  lowest tone two octaves up at 0.8. **[code]** **[measured]** (the fourth
+  voice; four-tone chords match Live's renders exactly)
 - Use Scale has nothing to quantize to: Segno sends no scale, as Live with
   no clip or Set scale. **[code]**
 
@@ -755,8 +756,9 @@ third-octave band. **[measured]**
   10 octaves, Tone and Pan 2 (their knobs' ranges), the times and free LFO
   rates through their knobs' cubic position (a time is 40 s x pos^3, a rate
   78.7 Hz x pos^3), Tempo rates 22 divisions.
-- The note source's scale for Filter Freq disagrees with Sugar Bass's
-  render. **[open]**
+- Into Filter Freq the note source is the engine's own pitch, octave
+  transpose included, an amount of 1 tracking the key a semitone per
+  semitone. **[measured]** Into Tone it scales otherwise. **[open]**
 
 ### Voices
 
@@ -787,7 +789,10 @@ Vertical Bass 0.1, Acid Kick, Key Ups and Drivetime Sine 0.2, Fatal Bass,
 Bully Bass, Woozy Bass and Old School Raver 0.3, Plastic Lead and FM Organ
 0.4, Detuned String Machine 0.7, Flab 0.9); Starchestra 2.0, Plate Kick
 2.3, Happy Chords 2.7, Megatripolis 3.7, Sawstyle 6.3, Granny State 7.5,
-Lively Ringer 10.0, Sugar Bass 34 (the note into Filter Freq).
+Lively Ringer 10.0 (its Bandpass at 20 kHz and Highpass at 940 Hz keep
+more of the fundamentals in Live), Sugar Bass 0.0 once the note's tracking
+of Filter Freq was measured, Happy Chords 1.9 once the chords' fourth voice
+was.
 
 ## Decisions
 

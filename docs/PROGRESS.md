@@ -88,9 +88,10 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   filters within 0.5. Measured where the reading was silent: the matrix
   targets' scales, the times' and rates' cubic knob positions, where the
   limiter listens, Sub's clip, the comb's loop length.
-- 21 factory presets, octave bands rms: 13 within 1 dB; Sugar Bass is off
-  (34) where the note source moves its filter, and the Chord inversions,
-  Square Sync's slave frequency and the Highpass circuit are still open.
+- 21 factory presets, octave bands rms: 14 within 1 dB, Sugar Bass among
+  them once a third round measured the note's key tracking of Filter Freq;
+  that round also settled Chord's fourth voice and Square Sync's second
+  slave. The Highpass circuit is still open (Lively Ringer 10 dB).
 - A voice with both engines on a Basic Shapes saw and SVF 12 costs 1.8 us
   per millisecond on the dev machine; MS2 6.8, a Swarm 3.7, three unison
   copies 5.6.
