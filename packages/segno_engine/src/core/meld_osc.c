@@ -802,8 +802,6 @@ static float rain_tick(le_meld_osc* o) {
  * rotating 100 ms buffers, which start full of unfiltered noise (so a tap
  * plays that until its first refresh); regenerating it needs none. */
 #define MO_LOOP_TAPS 16
-static float g_loop_fir[MO_LOOP_TAPS];
-static float g_loop_fir_rate;
 
 static float loop_white(uint32_t seed, uint32_t i) {
   uint32_t x = seed ^ (i * 0x9e3779b1u);
@@ -815,34 +813,32 @@ static float loop_white(uint32_t seed, uint32_t i) {
   return (float)(x >> 8) * (2.0f / 16777216.0f) - 1.0f;
 }
 
-static void loop_fir(float rate) {
-  if (g_loop_fir_rate == rate) return;
+static void loop_fir(float* fir, float rate) {
   const float K = 2.0f * tanf(fminf((float)MO_PI * 2500.0f / rate, 1.5f));
   const float h0 = K / (K + 2.0f), p = (2.0f - K) / (2.0f + K);
   float pk = 1.0f;
   for (int t = 0; t < MO_LOOP_TAPS; ++t) {
-    g_loop_fir[t] = t == 0 ? h0 : h0 * (pk + pk / p);
+    fir[t] = t == 0 ? h0 : h0 * (pk + pk / p);
     pk *= p;
   }
-  g_loop_fir_rate = rate;
 }
 
-static float loop_sample(uint32_t seed, int32_t j, int32_t len, int filtered) {
+static float loop_sample(const float* fir, uint32_t seed, int32_t j, int32_t len, int filtered) {
   if (!filtered) return loop_white(seed, (uint32_t)j);
   float y = 0.0f;
   for (int t = 0; t < MO_LOOP_TAPS; ++t) {
     int32_t k = j - t;
     if (k < 0) k += len;
-    y += g_loop_fir[t] * loop_white(seed, (uint32_t)k);
+    y += fir[t] * loop_white(seed, (uint32_t)k);
   }
   return y;
 }
 
-static float loop_read(uint32_t seed, double pos, int32_t len, int filtered) {
+static float loop_read(const float* fir, uint32_t seed, double pos, int32_t len, int filtered) {
   const int32_t i = (int32_t)pos;
   const float f = (float)(pos - (double)i);
-  return (1.0f - f) * loop_sample(seed, i % len, len, filtered) +
-         f * loop_sample(seed, (i + 1) % len, len, filtered);
+  return (1.0f - f) * loop_sample(fir, seed, i % len, len, filtered) +
+         f * loop_sample(fir, seed, (i + 1) % len, len, filtered);
 }
 
 /* The refresh window: up over w/2, held to the half, down over w/2. */
@@ -866,8 +862,9 @@ static float noise_loop_tick(le_meld_osc* o) {
   for (int k = 0; k < 2; ++k) {
     const uint32_t seed = o->s.loop.seed[k];
     const int fl = o->s.loop.filtered[k];
-    const float l = (1.0f - fabsf(2.0f * (float)th - 1.0f)) * loop_read(seed, th * li, li, fl) +
-                    (1.0f - fabsf(2.0f * (float)th2 - 1.0f)) * loop_read(seed, th2 * li, li, fl);
+    const float* fir = o->loop_fir;
+    const float l = (1.0f - fabsf(2.0f * (float)th - 1.0f)) * loop_read(fir, seed, th * li, li, fl) +
+                    (1.0f - fabsf(2.0f * (float)th2 - 1.0f)) * loop_read(fir, seed, th2 * li, li, fl);
     y += loop_window(mo_wrap(o->s.loop.psi + 0.5 * k), w) * o->s.loop.level[k] * l;
   }
   o->s.loop.theta = mo_wrap(th + half / rate);
@@ -1051,7 +1048,7 @@ void le_meld_osc_init(le_meld_osc* o, float rate, uint32_t seed) {
   if (o->ramp_n < 1) o->ramp_n = 1;
   o->hz = 261.6256f;
   o->note = 60.0f;
-  loop_fir(rate); /* Noise Loop's filter, on this slow path */
+  loop_fir(o->loop_fir, rate); /* Noise Loop's filter, on this slow path */
   le_meld_osc_set_type(o, LE_MELD_OSC_BASIC);
 }
 

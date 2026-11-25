@@ -99,6 +99,7 @@ typedef struct le_meld_osc {
   int32_t ramp_n, ramp_left;
   uint32_t rng;
   le_meld_resampler rs; /* the 44.1 kHz types' resampler */
+  float loop_fir[16];   /* Noise Loop's low-pass at this rate */
   union {
     struct {
       double ph[2];

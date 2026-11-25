@@ -44,7 +44,8 @@ enum {
   LE_MELD_FILTER_TYPES
 };
 
-/* The combs' delay line: down to 23.4 Hz at 48 kHz */
+/* The combs' delay line, 2044 samples at most: the combs tune down to
+ * rate / 2044 Hz (23.5 Hz at 48 kHz, 47 at 96) and hold there below */
 #define LE_MELD_COMB_LEN 2048
 #define LE_MELD_MODES 32
 #define LE_MELD_FORMANTS 5

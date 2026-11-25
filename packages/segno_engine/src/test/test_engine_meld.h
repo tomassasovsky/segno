@@ -210,6 +210,31 @@ static void test_meld_voices(void) {
   le_meld_render(&g_meld, l, r, N);
   le_meld_render(&g_meld, l, r, N);
   CHECK(le_meld_active(&g_meld) == 0);
+  /* a note released before engine B's delay still ends */
+  meld_reference(&g_meld);
+  meld_eng(&g_meld, 1, LE_MELD_E_ON, 1.0f);
+  meld_set(&g_meld, LE_MELD_ENGINE_B_DELAY, 0.05f);
+  for (int32_t e = 0; e < 2; ++e) meld_eng(&g_meld, e, LE_MELD_E_AMP_RELEASE, 0.01f);
+  CHECK(le_meld_note_on(&g_meld, 1, 60, 100, 0) == 0);
+  le_meld_render(&g_meld, l, r, 480);
+  le_meld_note_off(&g_meld, 1);
+  for (int k = 0; k < 4; ++k) le_meld_render(&g_meld, l, r, N);
+  CHECK(le_meld_active(&g_meld) == 0);
+  /* a Poly patch the voice budget squeezes to one note steals, not legato */
+  meld_reference(&g_meld);
+  meld_set(&g_meld, LE_MELD_UNISON, 2.0f);
+  le_meld_set_voice_limit(&g_meld, 3);
+  CHECK(le_meld_note_on(&g_meld, 1, 48, 100, 0) == 0);
+  CHECK(le_meld_note_on(&g_meld, 2, 60, 100, 0) == 0);
+  CHECK(g_meld.stolen == 1 && le_meld_active(&g_meld) == 3);
+  /* a chord's notes start at their own pitch, without glide */
+  meld_reference(&g_meld);
+  meld_eng(&g_meld, 0, LE_MELD_E_GLIDE_TIME, 0.2f);
+  CHECK(le_meld_note_on(&g_meld, 7, 60, 100, 0) == 0);
+  CHECK(le_meld_note_on(&g_meld, 7, 64, 100, 1) == 0);
+  for (int32_t i = 0; i < LE_MELD_VOICE_SLOTS; ++i) {
+    if (g_meld.voices[i].state == 1) CHECK(g_meld.voices[i].c[0].e[0].glide_left == 0);
+  }
   /* sustain holds a released note; Cut fades everything */
   meld_reference(&g_meld);
   CHECK(le_meld_sustain(&g_meld, 9, 1) == 0);

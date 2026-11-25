@@ -839,16 +839,17 @@ static void held_drop(le_meld* d, uint32_t origin) {
   d->held_n = keep;
 }
 
+static void release_engine(le_meld* d, le_meld_engine* en, int32_t e) {
+  const env_def a = amp_def(d, e, en->amp_dx, en->amp_sustain);
+  const env_def m = mod_def(d, e, en->mod_dx, en->mod_sustain);
+  env_release(&en->amp, &a);
+  env_release(&en->mod, &m);
+}
+
 static void release_voice(le_meld* d, le_meld_voice* v) {
   v->state = LE_MELD_VOICE_RELEASED;
   for (int32_t c = 0; c < v->copies; ++c) {
-    for (int32_t e = 0; e < 2; ++e) {
-      le_meld_engine* en = &v->c[c].e[e];
-      const env_def a = amp_def(d, e, en->amp_dx, en->amp_sustain);
-      const env_def m = mod_def(d, e, en->mod_dx, en->mod_sustain);
-      env_release(&en->amp, &a);
-      env_release(&en->mod, &m);
-    }
+    for (int32_t e = 0; e < 2; ++e) release_engine(d, &v->c[c].e[e], e);
   }
 }
 
@@ -908,9 +909,11 @@ int32_t le_meld_note_on(le_meld* d, uint32_t origin, int32_t note, int32_t veloc
   }
   const int32_t count = voice_count(d);
   /* the glide source: the newest key still held */
-  const float glide_from = d->held_n > 0 ? (float)d->held_note[d->held_n - 1] : -1.0f;
-  /* mono legato: a held voice moves to the new key */
-  if (count == 1 && vi(d, LE_MELD_MONO_LEGATO) && d->held_n > 0) {
+  const float glide_from = !chord && d->held_n > 0 ? (float)d->held_note[d->held_n - 1] : -1.0f;
+  /* mono legato: a held voice moves to the new key (Mono only: a Poly patch
+   * the voice budget squeezes to one note still plays each note) */
+  const int mono = vi(d, LE_MELD_MONO_POLY) == 0;
+  if (mono && vi(d, LE_MELD_MONO_LEGATO) && d->held_n > 0) {
     for (int32_t i = 0; i < LE_MELD_VOICE_SLOTS; ++i) {
       le_meld_voice* v = &d->voices[i];
       if (v->state != LE_MELD_VOICE_HELD) continue;
@@ -945,7 +948,7 @@ void le_meld_note_off(le_meld* d, uint32_t origin) {
     le_meld_voice* v = &d->voices[i];
     if (v->state != LE_MELD_VOICE_HELD || v->origin != origin) continue;
     /* mono: back to the newest key still held, legato */
-    if (voice_count(d) == 1 && d->held_n > 0) {
+    if (vi(d, LE_MELD_MONO_POLY) == 0 && d->held_n > 0) {
       retune(d, v, d->held_note[d->held_n - 1]);
       v->origin = d->held_origin[d->held_n - 1];
       continue;
@@ -1250,7 +1253,11 @@ static void render_voice(le_meld* d, le_meld_voice* v, float* left, float* right
     if (v->tick_left == 0) {
       for (int32_t c = 0; c < v->copies; ++c) {
         le_meld_copy* cp = &v->c[c];
-        if (!cp->e[1].live && v->since >= v->b_delay) engine_start(d, v, cp, 1, -1.0f);
+        if (!cp->e[1].live && v->since >= v->b_delay) {
+          engine_start(d, v, cp, 1, -1.0f);
+          /* a note released before engine B's delay releases B at once */
+          if (v->state == LE_MELD_VOICE_RELEASED) release_engine(d, &cp->e[1], 1);
+        }
         tick_copy(d, v, cp);
       }
       v->tick_left = LE_MELD_TICK;
