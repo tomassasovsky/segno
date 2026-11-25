@@ -6,6 +6,11 @@
 
 #include "operator_voice.h"
 
+/* Slot k's Operator instance in engine e. */
+static le_operator* eng_op(le_engine* e, int32_t k) {
+  return (le_operator*)le_instruments_device(e, LE_INST_DEVICE_OPERATOR, k);
+}
+
 #define OPR_SR 48000
 
 static le_operator g_opr;
@@ -501,10 +506,10 @@ static void test_engine_operator_params_and_switching(void) {
   CHECK(le_engine_set_instrument_device(e, 1, LE_INST_DEVICE_OPERATOR, NULL) == LE_OK);
   CHECK(le_engine_instrument_note_on(e, 1, 1, 60, 100) == LE_OK);
   drift_run(e, 256, 64, 1, NULL, NULL);
-  CHECK(le_operator_active(&e->op[1]) == 1);
+  CHECK(le_operator_active(eng_op(e, 1)) == 1);
   CHECK(le_engine_set_instrument_device_param(e, 1, LE_OPERATOR_ALGORITHM, 99.0f) == LE_OK);
   drift_run(e, 64, 64, 1, NULL, NULL);
-  CHECK(e->op[1].values[LE_OPERATOR_ALGORITHM] == 10.0f);
+  CHECK(eng_op(e, 1)->values[LE_OPERATOR_ALGORITHM] == 10.0f);
   CHECK(le_engine_set_instrument_device_param(e, 1, LE_OPERATOR_PARAMS, 0.0f) == LE_ERR_INVALID);
   CHECK(le_engine_set_instrument_device_param(e, 1, LE_OPERATOR_VOLUME, NAN) == LE_ERR_INVALID);
   /* Drift ends Operator */
@@ -513,12 +518,12 @@ static void test_engine_operator_params_and_switching(void) {
   le_snapshot snap;
   le_engine_get_snapshot(e, &snap);
   CHECK(snap.instrument_device[1] == LE_INST_DEVICE_DRIFT);
-  CHECK(le_operator_active(&e->op[1]) == 0 && le_operator_fading(&e->op[1]) == 0);
+  CHECK(le_operator_active(eng_op(e, 1)) == 0 && le_operator_fading(eng_op(e, 1)) == 0);
   /* a Drift parameter past Drift's count is refused, Operator's taken */
   CHECK(le_engine_set_instrument_device_param(e, 1, LE_DRIFT_PARAMS, 0.0f) == LE_ERR_INVALID);
   CHECK(le_engine_set_instrument_device(e, 1, LE_INST_DEVICE_OPERATOR, NULL) == LE_OK);
   CHECK(le_engine_set_instrument_device_param(e, 1, LE_DRIFT_PARAMS, 0.0f) == LE_OK);
-  CHECK(le_engine_set_instrument_device(e, 1, LE_INST_DEVICE_MELD + 1, NULL) == LE_ERR_INVALID);
+  CHECK(le_engine_set_instrument_device(e, 1, LE_INST_DEVICE_ANALOG + 1, NULL) == LE_ERR_INVALID);
   le_engine_destroy(e);
 }
 
@@ -537,17 +542,17 @@ static void test_engine_operator_midi(void) {
   drift_run(e, 64, 64, 2, NULL, NULL);
   ins_send(&cap, 0x90, 60, 100);
   drift_run(e, 64, 64, 2, NULL, NULL);
-  CHECK(le_operator_active(&e->op[2]) == 1);
+  CHECK(le_operator_active(eng_op(e, 2)) == 1);
   ins_send(&cap, 0xB0, 64, 127);
   ins_send(&cap, 0x80, 60, 0);
   drift_run(e, 64, 64, 2, NULL, NULL);
-  CHECK(e->op[2].voices[0].state == 3); /* sustained */
+  CHECK(eng_op(e, 2)->voices[0].state == 3); /* sustained */
   ins_send(&cap, 0xB0, 64, 0);
   drift_run(e, 64, 64, 2, NULL, NULL);
-  CHECK(e->op[2].voices[0].state == 2 || e->op[2].voices[0].state == 0);
+  CHECK(eng_op(e, 2)->voices[0].state == 2 || eng_op(e, 2)->voices[0].state == 0);
   CHECK(le_engine_cut_sound(e) == LE_OK);
   drift_run(e, 4800, 64, 2, NULL, NULL);
-  CHECK(le_operator_active(&e->op[2]) == 0 && le_operator_fading(&e->op[2]) == 0);
+  CHECK(le_operator_active(eng_op(e, 2)) == 0 && le_operator_fading(eng_op(e, 2)) == 0);
   le_engine_destroy(e);
 }
 

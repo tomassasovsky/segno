@@ -6,6 +6,11 @@
 
 #include "meld_voice.h"
 
+/* Slot k's Meld instance in engine e. */
+static le_meld* eng_meld(le_engine* e, int32_t k) {
+  return (le_meld*)le_instruments_device(e, LE_INST_DEVICE_MELD, k);
+}
+
 static le_meld g_meld;
 
 static void meld_init_ref(le_meld* d) {
@@ -328,28 +333,28 @@ static void test_engine_meld_params_and_switching(void) {
   CHECK(le_engine_set_instrument_device(e, 1, LE_INST_DEVICE_MELD, NULL) == LE_OK);
   CHECK(le_engine_instrument_note_on(e, 1, 1, 60, 100) == LE_OK);
   drift_run(e, 256, 64, 1, NULL, NULL);
-  CHECK(le_meld_active(&e->meld[1]) == 1);
+  CHECK(le_meld_active(eng_meld(e, 1)) == 1);
   CHECK(le_engine_set_instrument_device_param(e, 1, LE_MELD_ENGINE(0, LE_MELD_E_OSC_TYPE), 99.0f) ==
         LE_OK);
   drift_run(e, 64, 64, 1, NULL, NULL);
-  CHECK(e->meld[1].values[LE_MELD_ENGINE(0, LE_MELD_E_OSC_TYPE)] == 24.0f);
+  CHECK(eng_meld(e, 1)->values[LE_MELD_ENGINE(0, LE_MELD_E_OSC_TYPE)] == 24.0f);
   CHECK(le_engine_set_instrument_device_param(e, 1, LE_MELD_PARAMS, 0.0f) == LE_ERR_INVALID);
   CHECK(le_engine_set_instrument_device_param(e, 1, LE_MELD_VOLUME, NAN) == LE_ERR_INVALID);
   /* a matrix amount reaches the device's routes */
   CHECK(le_engine_set_instrument_device_param(e, 1, LE_MELD_MOD_AMOUNT(1, 24, 10), 0.5f) == LE_OK);
   drift_run(e, 64, 64, 1, NULL, NULL);
-  CHECK(e->meld[1].route_n[1] == 1);
+  CHECK(eng_meld(e, 1)->route_n[1] == 1);
   /* Operator ends Meld */
   CHECK(le_engine_set_instrument_device(e, 1, LE_INST_DEVICE_OPERATOR, NULL) == LE_OK);
   drift_run(e, 960, 64, 1, NULL, NULL);
   le_snapshot snap;
   le_engine_get_snapshot(e, &snap);
   CHECK(snap.instrument_device[1] == LE_INST_DEVICE_OPERATOR);
-  CHECK(le_meld_active(&e->meld[1]) == 0 && le_meld_fading(&e->meld[1]) == 0);
+  CHECK(le_meld_active(eng_meld(e, 1)) == 0 && le_meld_fading(eng_meld(e, 1)) == 0);
   CHECK(le_engine_set_instrument_device_param(e, 1, LE_OPERATOR_PARAMS, 0.0f) == LE_ERR_INVALID);
   CHECK(le_engine_set_instrument_device(e, 1, LE_INST_DEVICE_MELD, NULL) == LE_OK);
   CHECK(le_engine_set_instrument_device_param(e, 1, LE_OPERATOR_PARAMS, 0.0f) == LE_OK);
-  CHECK(le_engine_set_instrument_device(e, 1, LE_INST_DEVICE_MELD + 1, NULL) == LE_ERR_INVALID);
+  CHECK(le_engine_set_instrument_device(e, 1, LE_INST_DEVICE_ANALOG + 1, NULL) == LE_ERR_INVALID);
   le_engine_destroy(e);
 }
 
@@ -366,17 +371,17 @@ static void test_engine_meld_midi(void) {
   drift_run(e, 64, 64, 2, NULL, NULL);
   ins_send(&cap, 0x90, 60, 100);
   drift_run(e, 64, 64, 2, NULL, NULL);
-  CHECK(le_meld_active(&e->meld[2]) == 1);
+  CHECK(le_meld_active(eng_meld(e, 2)) == 1);
   ins_send(&cap, 0xB0, 64, 127);
   ins_send(&cap, 0x80, 60, 0);
   drift_run(e, 64, 64, 2, NULL, NULL);
-  CHECK(e->meld[2].voices[0].state == 3); /* sustained */
+  CHECK(eng_meld(e, 2)->voices[0].state == 3); /* sustained */
   ins_send(&cap, 0xB0, 64, 0);
   drift_run(e, 64, 64, 2, NULL, NULL);
-  CHECK(e->meld[2].voices[0].state == 2 || e->meld[2].voices[0].state == 0);
+  CHECK(eng_meld(e, 2)->voices[0].state == 2 || eng_meld(e, 2)->voices[0].state == 0);
   CHECK(le_engine_cut_sound(e) == LE_OK);
   drift_run(e, 4800, 64, 2, NULL, NULL);
-  CHECK(le_meld_active(&e->meld[2]) == 0 && le_meld_fading(&e->meld[2]) == 0);
+  CHECK(le_meld_active(eng_meld(e, 2)) == 0 && le_meld_fading(eng_meld(e, 2)) == 0);
   le_engine_destroy(e);
 }
 

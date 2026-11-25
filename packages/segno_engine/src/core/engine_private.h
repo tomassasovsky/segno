@@ -49,6 +49,7 @@ typedef enum le_midi_dispatch_kind {
                                 * LE_MAX_CHANNELS / LE_MAX_TRACKS / LE_MAX_LANES
                                 * / LE_MAX_MONITORED_INPUTS / LE_FX_MAX /
                                 * LE_FX_PARAMS / LE_VIZ_POINTS */
+#include "instrument_devices.h" /* LE_INST_DEVICE_COUNT */
 #include "miniaudio.h"         /* ma_device, ma_context, ma_device_id */
 #include "perf_log_ring.h"     /* le_perf_log_ring (performance event log) */
 
@@ -2771,13 +2772,11 @@ struct le_engine {
    * Allocated with the engine. */
   struct le_synth* synth;
   float* inst_bus;
-  /* SEG-109: one Drift device per slot, LE_MAX_INSTRUMENTS of them in one
-   * allocation, like `synth` (a slot renders its own only while it plays
-   * the device) */
-  struct le_drift* drift;
-  /* and one Operator device per slot */
-  struct le_operator* op;
-  struct le_meld* meld;
+  /* SEG-109: each device of le_inst_devices (instrument_devices.h) keeps
+   * one instance per slot, LE_MAX_INSTRUMENTS of them in one allocation,
+   * like `synth`; dev[i] is entry i's. A slot renders a device while it
+   * plays it, and while the voices it leaves at a change fade. */
+  void* dev[LE_INST_DEVICE_COUNT];
   /* audio thread: the device each slot plays (LE_INST_DEVICE_*) */
   int32_t inst_device[LE_MAX_INSTRUMENTS];
   /* audio thread: whether this block's buses hold this block's audio (0 for

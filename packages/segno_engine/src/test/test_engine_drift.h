@@ -6,6 +6,11 @@
 
 #include "drift_voice.h"
 
+/* Slot k's Drift instance in engine e. */
+static le_drift* eng_drift(le_engine* e, int32_t k) {
+  return (le_drift*)le_instruments_device(e, LE_INST_DEVICE_DRIFT, k);
+}
+
 #define DRIFT_SR 48000
 
 static le_drift g_drift;
@@ -613,15 +618,15 @@ static void test_engine_drift_params_and_switching(void) {
   CHECK(le_engine_instrument_note_on(e, 2, 2, 64, 100) == LE_OK);
   drift_run(e, N, 64, 2, l, r);
   CHECK(memcmp(l, r, sizeof(l)) != 0); /* Stereo */
-  CHECK(e->drift[2].values[LE_DRIFT_VOICE_MODE] == 2.0f);
+  CHECK(eng_drift(e, 2)->values[LE_DRIFT_VOICE_MODE] == 2.0f);
   /* clamped to its range */
   CHECK(le_engine_set_instrument_device_param(e, 2, LE_DRIFT_FILTER_FREQ, 1e6f) == LE_OK);
   drift_run(e, 64, 64, 2, NULL, NULL);
-  CHECK(e->drift[2].values[LE_DRIFT_FILTER_FREQ] == 20000.0f);
+  CHECK(eng_drift(e, 2)->values[LE_DRIFT_FILTER_FREQ] == 20000.0f);
   CHECK(le_engine_instrument_note_off(e, 1) == LE_OK);
   CHECK(le_engine_instrument_note_off(e, 2) == LE_OK);
   drift_run(e, 64, 64, 2, NULL, NULL);
-  CHECK(!le_drift_held(&e->drift[2], ins_origin(1)));
+  CHECK(!le_drift_held(eng_drift(e, 2), ins_origin(1)));
   /* a patch ends the device */
   CHECK(le_engine_instrument_note_on(e, 2, 3, 60, 100) == LE_OK);
   CHECK(le_engine_set_instrument(e, 2, syn_patch("pad"), NULL) == LE_OK);
@@ -630,7 +635,7 @@ static void test_engine_drift_params_and_switching(void) {
   le_engine_get_snapshot(e, &snap);
   CHECK(snap.instrument_device[2] == LE_INST_DEVICE_NONE);
   CHECK(snap.instrument_patch[2] == syn_patch("pad"));
-  CHECK(le_drift_active(&e->drift[2]) == 0 && le_drift_fading(&e->drift[2]) == 0);
+  CHECK(le_drift_active(eng_drift(e, 2)) == 0 && le_drift_fading(eng_drift(e, 2)) == 0);
   CHECK(le_engine_set_instrument_device_param(e, 2, LE_DRIFT_VOLUME, 0.5f) ==
         LE_ERR_NO_INSTRUMENT);
   /* and a device ends the patch */
@@ -663,10 +668,10 @@ static void test_engine_drift_voice_budget(void) {
   CHECK(le_engine_instrument_note_on(e, 2, 31, 76, 100) == LE_OK);
   drift_run(e, 64, 64, 0, NULL, NULL);
   const int32_t total = le_synth_active((le_synth*)e->synth, -1) +
-                        le_drift_active(&e->drift[0]) + le_drift_active(&e->drift[1]);
+                        le_drift_active(eng_drift(e, 0)) + le_drift_active(eng_drift(e, 1));
   CHECK(total == 8);
   CHECK(le_synth_active((le_synth*)e->synth, 2) == 2);
-  CHECK(le_drift_active(&e->drift[0]) == 3 && le_drift_active(&e->drift[1]) == 3);
+  CHECK(le_drift_active(eng_drift(e, 0)) == 3 && le_drift_active(eng_drift(e, 1)) == 3);
   le_snapshot snap;
   le_engine_get_snapshot(e, &snap);
   CHECK(snap.voices_stolen >= 6);
@@ -677,7 +682,7 @@ static void test_engine_drift_voice_budget(void) {
   drift_run(e, 960, 64, 0, NULL, NULL);
   CHECK(le_engine_instrument_note_on(e, 0, 40, 60, 100) == LE_OK);
   drift_run(e, 64, 64, 0, NULL, NULL);
-  CHECK(le_drift_active(&e->drift[0]) == 2);
+  CHECK(le_drift_active(eng_drift(e, 0)) == 2);
   le_engine_destroy(e);
 }
 
@@ -692,7 +697,7 @@ static void test_engine_drift_refusals(void) {
   CHECK(le_engine_set_instrument_device(e, LE_MAX_INSTRUMENTS, LE_INST_DEVICE_DRIFT, NULL) ==
         LE_ERR_INVALID);
   CHECK(le_engine_set_instrument_device(e, 0, LE_INST_DEVICE_NONE, NULL) == LE_ERR_INVALID);
-  CHECK(le_engine_set_instrument_device(e, 0, LE_INST_DEVICE_MELD + 1, NULL) == LE_ERR_INVALID);
+  CHECK(le_engine_set_instrument_device(e, 0, LE_INST_DEVICE_ANALOG + 1, NULL) == LE_ERR_INVALID);
   float values[LE_DRIFT_PARAMS];
   for (int p = 0; p < LE_DRIFT_PARAMS; ++p) values[p] = le_drift_default(p);
   values[LE_DRIFT_GLIDE] = NAN;
@@ -724,21 +729,21 @@ static void test_engine_drift_midi(void) {
   drift_run(e, 64, 64, 1, NULL, NULL);
   ins_send(&cap, 0x90, 60, 100);
   drift_run(e, 64, 64, 1, NULL, NULL);
-  CHECK(le_drift_active(&e->drift[1]) == 1);
+  CHECK(le_drift_active(eng_drift(e, 1)) == 1);
   ins_send(&cap, 0xB0, 64, 127); /* sustain */
   ins_send(&cap, 0x80, 60, 0);
   drift_run(e, 64, 64, 1, NULL, NULL);
-  CHECK(e->drift[1].voices[0].state == 3); /* sustained */
+  CHECK(eng_drift(e, 1)->voices[0].state == 3); /* sustained */
   ins_send(&cap, 0xB0, 64, 0);
   drift_run(e, 64, 64, 1, NULL, NULL);
-  CHECK(e->drift[1].voices[0].state == 2); /* released */
+  CHECK(eng_drift(e, 1)->voices[0].state == 2); /* released */
   ins_send(&cap, 0x90, 62, 100);
   ins_send(&cap, 0xE0, 0, 127); /* bend up: (16256 - 8192) / 8192 */
   drift_run(e, 64, 64, 1, NULL, NULL);
-  CHECK(fabsf(e->drift[1].bend - 0.984375f) < 1e-6f);
+  CHECK(fabsf(eng_drift(e, 1)->bend - 0.984375f) < 1e-6f);
   CHECK(le_engine_cut_sound(e) == LE_OK);
   drift_run(e, 960, 64, 1, NULL, NULL);
-  CHECK(le_drift_active(&e->drift[1]) == 0 && le_drift_fading(&e->drift[1]) == 0);
+  CHECK(le_drift_active(eng_drift(e, 1)) == 0 && le_drift_fading(eng_drift(e, 1)) == 0);
   le_engine_destroy(e);
 }
 

@@ -1,0 +1,390 @@
+/* SEG-109: the Analog device. Its own module first (analog_voice.c, driven
+ * directly), then a slot of the engine playing it. Included from
+ * test_engine_core.c after test_engine_meld.h (opr_* helpers, drift_run,
+ * the ins_* helpers); SEGNO_INSTRUMENT_TESTS_ONLY=1 runs these with the
+ * instrument tests. */
+
+#include "analog_voice.h"
+
+/* Slot k's Analog instance in engine e. */
+static le_analog* eng_analog(le_engine* e, int32_t k) {
+  return (le_analog*)le_instruments_device(e, LE_INST_DEVICE_ANALOG, k);
+}
+
+static le_analog g_analog;
+
+/* Sets one parameter, the others as they are. */
+static void analog_set(le_analog* d, int32_t p, float v) {
+  static float vals[LE_ANALOG_PARAMS];
+  memcpy(vals, d->values, sizeof(vals));
+  vals[p] = v;
+  le_analog_set_values(d, vals);
+}
+
+static void analog_chain(le_analog* d, int32_t c, int32_t field, float v) {
+  analog_set(d, LE_ANALOG_CHAIN(c, field), v);
+}
+
+/* A reference patch: chain 1's sine at full oscillator level, no filter,
+ * the amp envelope at once and held at full. Its peak per channel is
+ * 0.7 (the sine) x 3 (the oscillator level) x 0.144 (the amp level at its
+ * centre) x 0.707 (the centre pan) x 1 (the volume at its default). */
+static const float kAnalogSinePeak = 0.2145f;
+
+static void analog_reference(le_analog* d) {
+  CHECK(le_analog_init(d, OPR_SR) == 0);
+  le_analog_set_voice_limit(d, LE_ANALOG_VOICE_SLOTS);
+  analog_chain(d, 0, LE_ANALOG_OSC_SHAPE, 0.0f);
+  analog_chain(d, 0, LE_ANALOG_FILTER_ON, 0.0f);
+  analog_chain(d, 0, LE_ANALOG_OSC_LEVEL, 1.0f);
+  analog_chain(d, 0, LE_ANALOG_AMP_ENV + LE_ANALOG_ENV_ATTACK, 0.0f);
+  analog_chain(d, 0, LE_ANALOG_AMP_ENV + LE_ANALOG_ENV_SUSTAIN, 1.0f);
+}
+
+/* The sine's level and pitch, the pan law and the two oscillators' routes
+ * into their own chains. */
+static void test_analog_levels(void) {
+  printf("test_analog_levels\n");
+  enum { N = 9600 };
+  static float l[N], r[N];
+  analog_reference(&g_analog);
+  CHECK(le_analog_note_on(&g_analog, 1, 60, 127, 0) == 0);
+  le_analog_render(&g_analog, l, r, N);
+  CHECK(fabsf(opr_peak(l + N / 2, N / 2) - kAnalogSinePeak) < 0.002f);
+  CHECK(fabsf(opr_peak(r + N / 2, N / 2) - kAnalogSinePeak) < 0.002f);
+  CHECK(fabs(opr_component(l + N / 2, N / 2, opr_note_hz(60)) - kAnalogSinePeak) < 0.005);
+  /* pan at 0: all of it on the left, at the full gain */
+  analog_reference(&g_analog);
+  analog_chain(&g_analog, 0, LE_ANALOG_AMP_PAN, 0.0f);
+  CHECK(le_analog_note_on(&g_analog, 1, 60, 127, 0) == 0);
+  le_analog_render(&g_analog, l, r, N);
+  CHECK(fabsf(opr_peak(l + N / 2, N / 2) - kAnalogSinePeak * 1.41421356f) < 0.003f);
+  CHECK(opr_peak(r + N / 2, N / 2) < 1e-6f);
+  /* oscillator 1 sent all the way to filter 2 reaches chain 2's amp, which
+   * is off by default: silence */
+  analog_reference(&g_analog);
+  analog_chain(&g_analog, 0, LE_ANALOG_OSC_BALANCE, 0.0f);
+  CHECK(le_analog_note_on(&g_analog, 1, 60, 127, 0) == 0);
+  le_analog_render(&g_analog, l, r, N);
+  CHECK(opr_peak(l, N) < 1e-6f);
+  /* oscillator 2 on its own chain, an octave up */
+  analog_reference(&g_analog);
+  analog_chain(&g_analog, 0, LE_ANALOG_OSC_ON, 0.0f);
+  analog_chain(&g_analog, 1, LE_ANALOG_OSC_ON, 1.0f);
+  analog_chain(&g_analog, 1, LE_ANALOG_OSC_SHAPE, 0.0f);
+  analog_chain(&g_analog, 1, LE_ANALOG_OSC_OCT, 1.0f);
+  analog_chain(&g_analog, 1, LE_ANALOG_OSC_LEVEL, 1.0f);
+  analog_chain(&g_analog, 1, LE_ANALOG_FILTER_ON, 0.0f);
+  analog_chain(&g_analog, 1, LE_ANALOG_AMP_ON, 1.0f);
+  analog_chain(&g_analog, 1, LE_ANALOG_AMP_ENV + LE_ANALOG_ENV_ATTACK, 0.0f);
+  analog_chain(&g_analog, 1, LE_ANALOG_AMP_ENV + LE_ANALOG_ENV_SUSTAIN, 1.0f);
+  CHECK(le_analog_note_on(&g_analog, 1, 60, 127, 0) == 0);
+  le_analog_render(&g_analog, l, r, N);
+  CHECK(fabs(opr_component(l + N / 2, N / 2, opr_note_hz(72)) - kAnalogSinePeak) < 0.005);
+}
+
+/* Every shape through every filter type and drive, at the cutoff and
+ * resonance extremes, stays finite and bounded, on both chains. */
+static void test_analog_every_shape_and_filter(void) {
+  printf("test_analog_every_shape_and_filter\n");
+  enum { N = 4800 };
+  static float l[N], r[N];
+  for (int32_t shape = 0; shape < 4; ++shape) {
+    for (int32_t type = 0; type < 10; ++type) {
+      for (int m = 0; m < 3; ++m) {
+        analog_reference(&g_analog);
+        analog_set(&g_analog, LE_ANALOG_NOISE_ON, 1.0f);
+        for (int32_t c = 0; c < 2; ++c) {
+          analog_chain(&g_analog, c, LE_ANALOG_OSC_ON, 1.0f);
+          analog_chain(&g_analog, c, LE_ANALOG_OSC_SHAPE, (float)shape);
+          analog_chain(&g_analog, c, LE_ANALOG_OSC_MODE, (float)(m == 2));
+          analog_chain(&g_analog, c, LE_ANALOG_OSC_SUB, 1.0f);
+          analog_chain(&g_analog, c, LE_ANALOG_AMP_ON, 1.0f);
+          analog_chain(&g_analog, c, LE_ANALOG_AMP_LEVEL, 1.0f);
+          analog_chain(&g_analog, c, LE_ANALOG_FILTER_ON, 1.0f);
+          analog_chain(&g_analog, c, LE_ANALOG_FILTER_TYPE, (float)type);
+          analog_chain(&g_analog, c, LE_ANALOG_FILTER_DRIVE, (float)(m * 3));
+          analog_chain(&g_analog, c, LE_ANALOG_FILTER_CUTOFF, m * 0.5f);
+          analog_chain(&g_analog, c, LE_ANALOG_FILTER_Q, 1.0f - m * 0.5f);
+        }
+        analog_chain(&g_analog, 0, LE_ANALOG_CHAIN_LINK, 1.0f);
+        CHECK(le_analog_note_on(&g_analog, 1, m == 1 ? 96 : 36, 127, 0) == 0);
+        le_analog_render(&g_analog, l, r, N);
+        CHECK(opr_finite(l, N) && opr_finite(r, N));
+        /* the filters are linear: at Q 100 a 30 Hz cutoff under a 65 Hz
+         * note, both chains at full level and filter 1 fed into filter 2,
+         * rings into the hundreds */
+        CHECK(opr_peak(l, N) < 4096.0f && opr_peak(r, N) < 4096.0f);
+      }
+    }
+  }
+}
+
+/* The formant types ring at a vowel's formants: at both knobs' centre the
+ * first two formants sit near 612 and 960 Hz and the response dips by far
+ * more between the second and third (near 1.85 kHz). */
+static void test_analog_formant(void) {
+  printf("test_analog_formant\n");
+  enum { N = 48000 };
+  static float l[N], r[N];
+  analog_reference(&g_analog);
+  analog_chain(&g_analog, 0, LE_ANALOG_OSC_SHAPE, 1.0f);
+  analog_chain(&g_analog, 0, LE_ANALOG_FILTER_ON, 1.0f);
+  analog_chain(&g_analog, 0, LE_ANALOG_FILTER_TYPE, 8.0f);
+  analog_chain(&g_analog, 0, LE_ANALOG_FILTER_CUTOFF, 0.5f);
+  analog_chain(&g_analog, 0, LE_ANALOG_FILTER_Q, 0.5f);
+  CHECK(le_analog_note_on(&g_analog, 1, 36, 127, 0) == 0); /* 65.4 Hz */
+  le_analog_render(&g_analog, l, r, N);
+  const double f0 = opr_note_hz(36);
+  /* the saw's harmonics fall as 1 / k: undo that to read the filter */
+  const double h9 = 9.0 * opr_component(l + N / 2, N / 2, 9.0 * f0);    /* 589 Hz */
+  const double h28 = 28.0 * opr_component(l + N / 2, N / 2, 28.0 * f0); /* 1831 Hz */
+  const double h2 = 2.0 * opr_component(l + N / 2, N / 2, 2.0 * f0);    /* 131 Hz */
+  CHECK(h9 > 40.0 * h28);
+  CHECK(h9 > 8.0 * h2);
+}
+
+/* A linear attack is halfway at half its time; a released note ends. */
+static void test_analog_envelopes(void) {
+  printf("test_analog_envelopes\n");
+  enum { N = 48000 };
+  static float l[N], r[N];
+  analog_reference(&g_analog);
+  analog_chain(&g_analog, 0, LE_ANALOG_AMP_ENV + LE_ANALOG_ENV_EXP, 0.0f);
+  analog_chain(&g_analog, 0, LE_ANALOG_AMP_ENV + LE_ANALOG_ENV_ATTACK, 0.5f);
+  CHECK(le_analog_note_on(&g_analog, 1, 60, 127, 0) == 0);
+  le_analog_render(&g_analog, l, r, N);
+  /* 5 ms x 3000^0.504 = 0.28 s: halfway at 0.14 s */
+  const float half = opr_peak(l + 6600, 400) / kAnalogSinePeak;
+  CHECK(half > 0.44f && half < 0.56f);
+  CHECK(opr_peak(l + 24000, 2000) > 0.99f * kAnalogSinePeak);
+  /* a short release: the voice ends with the key up */
+  analog_reference(&g_analog);
+  analog_chain(&g_analog, 0, LE_ANALOG_AMP_ENV + LE_ANALOG_ENV_RELEASE, 0.0f);
+  CHECK(le_analog_note_on(&g_analog, 1, 60, 127, 0) == 0);
+  le_analog_render(&g_analog, l, r, 4800);
+  le_analog_note_off(&g_analog, 1);
+  le_analog_render(&g_analog, l, r, 9600);
+  CHECK(le_analog_active(&g_analog) == 0);
+  /* a sustain that falls to 0 over its Sustain Time: silent while held */
+  analog_reference(&g_analog);
+  analog_chain(&g_analog, 0, LE_ANALOG_AMP_ENV + LE_ANALOG_ENV_SUSTAIN_TIME, 0.0f);
+  CHECK(le_analog_note_on(&g_analog, 1, 60, 127, 0) == 0);
+  le_analog_render(&g_analog, l, r, N);
+  CHECK(opr_peak(l + N - 4800, 4800) < 0.01f * kAnalogSinePeak);
+}
+
+/* Unison: a note of 2 or 4 copies, each one voice of the budget. */
+static void test_analog_unison(void) {
+  printf("test_analog_unison\n");
+  enum { N = 9600 };
+  static float l[N], r[N];
+  analog_reference(&g_analog);
+  analog_set(&g_analog, LE_ANALOG_UNISON_ON, 1.0f);
+  analog_set(&g_analog, LE_ANALOG_UNISON, 1.0f);
+  analog_set(&g_analog, LE_ANALOG_UNISON_DETUNE, 0.0f);
+  CHECK(le_analog_note_on(&g_analog, 1, 60, 127, 0) == 0);
+  CHECK(le_analog_active(&g_analog) == 4);
+  le_analog_render(&g_analog, l, r, N);
+  CHECK(opr_finite(l, N));
+  CHECK(le_analog_fade_oldest(&g_analog) == 4);
+  /* detuned copies: no longer one coherent sine at the note */
+  analog_reference(&g_analog);
+  analog_set(&g_analog, LE_ANALOG_UNISON_ON, 1.0f);
+  analog_set(&g_analog, LE_ANALOG_UNISON, 0.0f);
+  analog_set(&g_analog, LE_ANALOG_UNISON_DETUNE, 0.5f);
+  CHECK(le_analog_note_on(&g_analog, 1, 60, 127, 0) == 0);
+  CHECK(le_analog_active(&g_analog) == 2);
+  le_analog_render(&g_analog, l, r, N);
+  /* the second copy is 0.374 semitone up */
+  CHECK(opr_component(l, N, opr_note_hz(60) * pow(2.0, 0.374 / 12.0)) > 0.3 * kAnalogSinePeak);
+}
+
+/* Voice counts, stealing, mono priority, glide, sustain and Cut. */
+static void test_analog_voices(void) {
+  printf("test_analog_voices\n");
+  enum { N = 4800 };
+  static float l[N], r[N];
+  /* two voices: a third note steals the oldest */
+  analog_reference(&g_analog);
+  analog_set(&g_analog, LE_ANALOG_POLYPHONY, 1.0f);
+  for (uint32_t o = 1; o <= 3; ++o) CHECK(le_analog_note_on(&g_analog, o, 60 + (int)o, 100, 0) == 0);
+  CHECK(le_analog_active(&g_analog) == 2);
+  CHECK(le_analog_fading(&g_analog) == 1);
+  CHECK(g_analog.stolen == 1);
+  /* mono, low priority: a higher key waits for the lower one's release */
+  analog_reference(&g_analog);
+  analog_set(&g_analog, LE_ANALOG_POLYPHONY, 0.0f);
+  analog_set(&g_analog, LE_ANALOG_PRIORITY, 1.0f);
+  CHECK(le_analog_note_on(&g_analog, 1, 48, 100, 0) == 0);
+  CHECK(le_analog_note_on(&g_analog, 2, 60, 100, 0) == 0);
+  CHECK(le_analog_active(&g_analog) == 1 && le_analog_fading(&g_analog) == 0);
+  le_analog_render(&g_analog, l, r, N);
+  CHECK(opr_component(l + N / 2, N / 2, opr_note_hz(48)) > 0.8 * kAnalogSinePeak);
+  le_analog_note_off(&g_analog, 1);
+  le_analog_render(&g_analog, l, r, N);
+  CHECK(opr_component(l + N / 2, N / 2, opr_note_hz(60)) > 0.8 * kAnalogSinePeak);
+  /* last priority: the newest key at once */
+  analog_reference(&g_analog);
+  analog_set(&g_analog, LE_ANALOG_POLYPHONY, 0.0f);
+  analog_set(&g_analog, LE_ANALOG_PRIORITY, 2.0f);
+  CHECK(le_analog_note_on(&g_analog, 1, 48, 100, 0) == 0);
+  CHECK(le_analog_note_on(&g_analog, 2, 60, 100, 0) == 0);
+  le_analog_render(&g_analog, l, r, N);
+  CHECK(opr_component(l + N / 2, N / 2, opr_note_hz(60)) > 0.8 * kAnalogSinePeak);
+  /* and back to the held key when it is let go */
+  le_analog_note_off(&g_analog, 2);
+  le_analog_render(&g_analog, l, r, N);
+  CHECK(opr_component(l + N / 2, N / 2, opr_note_hz(48)) > 0.8 * kAnalogSinePeak);
+  /* glide: between the two keys 20 ms in */
+  analog_reference(&g_analog);
+  analog_set(&g_analog, LE_ANALOG_POLYPHONY, 0.0f);
+  analog_set(&g_analog, LE_ANALOG_PRIORITY, 2.0f);
+  analog_set(&g_analog, LE_ANALOG_GLIDE_ON, 1.0f);
+  analog_set(&g_analog, LE_ANALOG_GLIDE_TIME, 0.5f);
+  CHECK(le_analog_note_on(&g_analog, 1, 48, 100, 0) == 0);
+  le_analog_render(&g_analog, l, r, N);
+  CHECK(le_analog_note_on(&g_analog, 2, 60, 100, 0) == 0);
+  le_analog_render(&g_analog, l, r, 960);
+  CHECK(g_analog.voices[0].pitch > 48.5f / 12.0f - 5.0f && g_analog.voices[0].pitch < 59.5f / 12.0f - 5.0f);
+  /* sustain holds a released note; Cut fades everything */
+  analog_reference(&g_analog);
+  CHECK(le_analog_sustain(&g_analog, 9, 1) == 0);
+  CHECK(le_analog_note_on(&g_analog, 1, 60, 100, 0) == 0);
+  le_analog_note_off(&g_analog, 1);
+  CHECK(le_analog_held(&g_analog, 1) == 0);
+  CHECK(le_analog_active(&g_analog) == 1);
+  le_analog_cut(&g_analog);
+  le_analog_render(&g_analog, l, r, N);
+  CHECK(le_analog_active(&g_analog) == 0 && le_analog_fading(&g_analog) == 0);
+}
+
+/* Rendering in any block size gives the same samples. */
+static void test_analog_block_size(void) {
+  printf("test_analog_block_size\n");
+  enum { N = 9600 };
+  static float ref_l[N], ref_r[N], l[N], r[N];
+  static const int32_t blocks[] = {1, 7, 64, 333};
+  for (int b = -1; b < 4; ++b) {
+    analog_reference(&g_analog);
+    analog_chain(&g_analog, 0, LE_ANALOG_OSC_SHAPE, 1.0f);
+    analog_chain(&g_analog, 0, LE_ANALOG_FILTER_ON, 1.0f);
+    analog_chain(&g_analog, 0, LE_ANALOG_FILTER_TYPE, 1.0f);
+    analog_chain(&g_analog, 0, LE_ANALOG_LFO_ON, 1.0f);
+    analog_chain(&g_analog, 0, LE_ANALOG_FILTER_LFO_CUTOFF, 0.5f);
+    analog_set(&g_analog, LE_ANALOG_UNISON_ON, 1.0f);
+    analog_set(&g_analog, LE_ANALOG_UNISON_DELAY, 0.3f);
+    CHECK(le_analog_note_on(&g_analog, 1, 57, 100, 0) == 0);
+    if (b < 0) {
+      le_analog_render(&g_analog, ref_l, ref_r, N);
+      continue;
+    }
+    for (int32_t i = 0; i < N; i += blocks[b]) {
+      const int32_t n = N - i < blocks[b] ? N - i : blocks[b];
+      le_analog_render(&g_analog, l + i, r + i, n);
+    }
+    CHECK(memcmp(ref_l, l, sizeof(l)) == 0);
+    CHECK(memcmp(ref_r, r, sizeof(r)) == 0);
+  }
+}
+
+/* ---- the engine: a slot playing Analog ---- */
+
+static void test_engine_analog_slot_matches_offline(void) {
+  printf("test_engine_analog_slot_matches_offline\n");
+  enum { N = 9600 };
+  static float ref_l[N], ref_r[N], l[N], r[N];
+  static float values[LE_ANALOG_PARAMS];
+  for (int p = 0; p < LE_ANALOG_PARAMS; ++p) values[p] = le_analog_default(p);
+  values[LE_ANALOG_UNISON_ON] = 1.0f;
+  values[LE_ANALOG_CHAIN(0, LE_ANALOG_LFO_ON)] = 1.0f;
+  values[LE_ANALOG_CHAIN(0, LE_ANALOG_FILTER_LFO_CUTOFF)] = 0.4f;
+  CHECK(le_analog_init(&g_analog, OPR_SR) == 0);
+  le_analog_set_values(&g_analog, values);
+  le_analog_set_voice_limit(&g_analog, 32); /* the engine's default limit */
+  CHECK(le_analog_note_on(&g_analog, ins_origin(1), 57, 100, 0) == 0);
+  le_analog_render(&g_analog, ref_l, ref_r, N);
+  static const int32_t blocks[] = {64, 1, 127, 512};
+  for (int b = 0; b < 4; ++b) {
+    le_engine* e = ins_engine(INS_SR);
+    drift_run(e, 640, 64, 0, NULL, NULL);
+    CHECK(le_engine_set_instrument_device(e, 0, LE_INST_DEVICE_ANALOG, values) == LE_OK);
+    CHECK(le_engine_instrument_note_on(e, 0, 1, 57, 100) == LE_OK);
+    drift_run(e, N, blocks[b], 0, l, r);
+    CHECK(memcmp(ref_l, l, sizeof(l)) == 0);
+    CHECK(memcmp(ref_r, r, sizeof(r)) == 0);
+    le_snapshot snap;
+    le_engine_get_snapshot(e, &snap);
+    CHECK(snap.instrument_device[0] == LE_INST_DEVICE_ANALOG);
+    CHECK(snap.instrument_voices[0] == 2);
+    CHECK(snap.instrument_peaks[0] > 0.0f);
+    le_engine_destroy(e);
+  }
+}
+
+static void test_engine_analog_params_and_switching(void) {
+  printf("test_engine_analog_params_and_switching\n");
+  le_engine* e = ins_engine(INS_SR);
+  CHECK(le_engine_set_instrument_device(e, 1, LE_INST_DEVICE_ANALOG, NULL) == LE_OK);
+  CHECK(le_engine_instrument_note_on(e, 1, 1, 60, 100) == LE_OK);
+  drift_run(e, 256, 64, 1, NULL, NULL);
+  CHECK(le_analog_active(eng_analog(e, 1)) == 1);
+  CHECK(le_engine_set_instrument_device_param(e, 1, LE_ANALOG_CHAIN(0, LE_ANALOG_FILTER_TYPE), 99.0f) ==
+        LE_OK);
+  drift_run(e, 64, 64, 1, NULL, NULL);
+  CHECK(eng_analog(e, 1)->values[LE_ANALOG_CHAIN(0, LE_ANALOG_FILTER_TYPE)] == 9.0f);
+  CHECK(le_engine_set_instrument_device_param(e, 1, LE_ANALOG_PARAMS, 0.0f) == LE_ERR_INVALID);
+  CHECK(le_engine_set_instrument_device_param(e, 1, LE_ANALOG_VOLUME, NAN) == LE_ERR_INVALID);
+  /* Meld ends Analog */
+  CHECK(le_engine_set_instrument_device(e, 1, LE_INST_DEVICE_MELD, NULL) == LE_OK);
+  drift_run(e, 960, 64, 1, NULL, NULL);
+  le_snapshot snap;
+  le_engine_get_snapshot(e, &snap);
+  CHECK(snap.instrument_device[1] == LE_INST_DEVICE_MELD);
+  CHECK(le_analog_active(eng_analog(e, 1)) == 0 && le_analog_fading(eng_analog(e, 1)) == 0);
+  CHECK(le_engine_set_instrument_device(e, 1, LE_INST_DEVICE_ANALOG, NULL) == LE_OK);
+  CHECK(le_engine_set_instrument_device_param(e, 1, LE_ANALOG_PARAMS - 1, 0.0f) == LE_OK);
+  CHECK(le_engine_set_instrument_device(e, 1, LE_INST_DEVICE_ANALOG + 1, NULL) == LE_ERR_INVALID);
+  le_engine_destroy(e);
+}
+
+static void test_engine_analog_midi(void) {
+  printf("test_engine_analog_midi\n");
+  le_engine* e = ins_engine(INS_SR);
+  ins_capture cap;
+  ins_attach(e, &cap, 0);
+  CHECK(le_engine_set_instrument_device(e, 2, LE_INST_DEVICE_ANALOG, NULL) == LE_OK);
+  le_inst_routes routes;
+  memset(&routes, 0, sizeof(routes));
+  ins_route(&routes, 2, 0, 0);
+  CHECK(le_engine_set_instrument_routes(e, &routes) == LE_OK);
+  drift_run(e, 64, 64, 2, NULL, NULL);
+  ins_send(&cap, 0x90, 60, 100);
+  drift_run(e, 64, 64, 2, NULL, NULL);
+  CHECK(le_analog_active(eng_analog(e, 2)) == 1);
+  ins_send(&cap, 0xB0, 64, 127);
+  ins_send(&cap, 0x80, 60, 0);
+  drift_run(e, 64, 64, 2, NULL, NULL);
+  CHECK(le_analog_active(eng_analog(e, 2)) == 1);
+  CHECK(eng_analog(e, 2)->voices[0].state == 3); /* sustained */
+  ins_send(&cap, 0xB0, 64, 0);
+  drift_run(e, 64, 64, 2, NULL, NULL);
+  CHECK(eng_analog(e, 2)->voices[0].state == 2 || eng_analog(e, 2)->voices[0].state == 0);
+  CHECK(le_engine_cut_sound(e) == LE_OK);
+  drift_run(e, 4800, 64, 2, NULL, NULL);
+  CHECK(le_analog_active(eng_analog(e, 2)) == 0 && le_analog_fading(eng_analog(e, 2)) == 0);
+  le_engine_destroy(e);
+}
+
+static void run_analog_tests(void) {
+  test_analog_levels();
+  test_analog_every_shape_and_filter();
+  test_analog_formant();
+  test_analog_envelopes();
+  test_analog_unison();
+  test_analog_voices();
+  test_analog_block_size();
+  test_engine_analog_slot_matches_offline();
+  test_engine_analog_params_and_switching();
+  test_engine_analog_midi();
+}
