@@ -39,9 +39,6 @@ extern "C" {
 #define LE_DRIFT_CHUNK 32
 #define LE_DRIFT_SUSTAIN_MAX 16
 #define LE_DRIFT_MONO_STACK 16
-/* HiQuality's 2x stream is decimated by a 31-tap half-band FIR (every other
- * tap zero but the centre). */
-#define LE_DRIFT_HB_TAPS 31
 
 /* Modulation sources, in the stored order. */
 enum {
@@ -142,8 +139,10 @@ typedef struct le_drift_derived {
 
 typedef struct le_drift {
   int32_t sample_rate;
-  int32_t oversample; /* 1, or 2 with HiQuality below 88.2 kHz */
-  float rate;         /* sample_rate * oversample */
+  /* the voices run at the host's rate: Live's HiQuality changes nothing in
+   * its renders (bit-identical with it on and off), so the stored value has
+   * no effect here either */
+  float rate;
   uint64_t serial;
   int32_t chunk_left;
   float bpm;
@@ -174,10 +173,6 @@ typedef struct le_drift {
    * this sample's value per voice */
   uint32_t noise_rng[LE_DRIFT_VOICES];
   float lane_noise[LE_DRIFT_VOICES];
-  /* HiQuality's decimator: the last LE_DRIFT_HB_TAPS 2x samples per side */
-  float hb_taps[LE_DRIFT_HB_TAPS];
-  float hb_l[LE_DRIFT_HB_TAPS], hb_r[LE_DRIFT_HB_TAPS];
-  int32_t hb_pos;
 } le_drift;
 
 /* The default value of each parameter (an initialised device), and its

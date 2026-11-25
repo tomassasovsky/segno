@@ -104,9 +104,10 @@ static float key_tracking(float tracking, float key) {
 /* The output clip of a voice. Provisional. */
 #define LE_DRIFT_VOICE_CLIP 2.0f
 
-/* The noise generator's level: unit-variance Gaussian x this. Fitted on the
- * filter bypass path. */
-#define LE_DRIFT_NOISE_LEVEL 0.463f
+/* The noise generator's level: unit-variance Gaussian x this, per sample
+ * at the host's rate (so its level per hertz falls 3 dB when the rate
+ * doubles). Fitted on the filter bypass path at 48 kHz. */
+#define LE_DRIFT_NOISE_LEVEL 0.3274f
 
 /* The paths around the filters: oscillators and noise. Fitted: a sine and
  * noise routed around, each within 0.2 dB. */
@@ -610,37 +611,6 @@ static void derive(le_drift* d) {
   }
 }
 
-/* ---- HiQuality's decimator ---- */
-
-static void halfband_taps(float* h) {
-  const int c = LE_DRIFT_HB_TAPS / 2;
-  float sum = 0.0f;
-  for (int i = 0; i < LE_DRIFT_HB_TAPS; ++i) {
-    const int n = i - c;
-    float v;
-    if (n == 0) {
-      v = 0.5f;
-    } else if (n % 2 == 0) {
-      v = 0.0f;
-    } else {
-      const float x = PI_F * 0.5f * (float)n;
-      v = 0.5f * sinf(x) / x;
-    }
-    const float w = 0.42f - 0.5f * cosf(TWO_PI * (float)i / (LE_DRIFT_HB_TAPS - 1)) +
-                    0.08f * cosf(2.0f * TWO_PI * (float)i / (LE_DRIFT_HB_TAPS - 1));
-    h[i] = v * w;
-    sum += h[i];
-  }
-  for (int i = 0; i < LE_DRIFT_HB_TAPS; ++i) h[i] /= sum;
-}
-
-static void set_rate(le_drift* d) {
-  d->oversample = vi(d, LE_DRIFT_HIQUALITY) && d->sample_rate < 88200 ? 2 : 1;
-  d->rate = (float)d->sample_rate * (float)d->oversample;
-  memset(d->hb_l, 0, sizeof(d->hb_l));
-  memset(d->hb_r, 0, sizeof(d->hb_r));
-  d->hb_pos = 0;
-}
 
 /* ---- lifecycle and parameters ---- */
 
@@ -651,8 +621,7 @@ int32_t le_drift_init(le_drift* d, int32_t sample_rate) {
   d->bpm = 120.0f;
   d->voice_limit = LE_DRIFT_VOICES;
   for (int32_t p = 0; p < LE_DRIFT_PARAMS; ++p) d->values[p] = kParams[p].def;
-  halfband_taps(d->hb_taps);
-  set_rate(d);
+  d->rate = (float)sample_rate;
   derive(d);
   for (int32_t n = 0; n < 128; ++n) {
     d->note_gain[n] = note_gain(note_hz(n));
@@ -669,13 +638,8 @@ int32_t le_drift_init(le_drift* d, int32_t sample_rate) {
 
 void le_drift_set_values(le_drift* d, const float* values) {
   if (d == NULL || values == NULL) return;
-  const float hq = d->values[LE_DRIFT_HIQUALITY];
   for (int32_t p = 0; p < LE_DRIFT_PARAMS; ++p) {
     d->values[p] = le_drift_clamp(p, values[p]);
-  }
-  if (d->values[LE_DRIFT_HIQUALITY] != hq) {
-    set_rate(d);
-    derive(d);
   }
 }
 
@@ -1582,25 +1546,6 @@ static void tick(le_drift* d, float* l, float* r) {
   }
 }
 
-/* HiQuality: two internal samples in, one out. */
-static void decimate(le_drift* d, const float* l2, const float* r2, float* l,
-                     float* r) {
-  for (int k = 0; k < 2; ++k) {
-    d->hb_l[d->hb_pos] = l2[k];
-    d->hb_r[d->hb_pos] = r2[k];
-    d->hb_pos = (d->hb_pos + 1) % LE_DRIFT_HB_TAPS;
-  }
-  float sl = 0.0f, sr = 0.0f;
-  int32_t at = d->hb_pos; /* the oldest sample */
-  for (int i = 0; i < LE_DRIFT_HB_TAPS; ++i) {
-    const float h = d->hb_taps[i];
-    sl += h * d->hb_l[at];
-    sr += h * d->hb_r[at];
-    at = at + 1 == LE_DRIFT_HB_TAPS ? 0 : at + 1;
-  }
-  *l = sl;
-  *r = sr;
-}
 
 void le_drift_render(le_drift* d, float* left, float* right, int32_t frames) {
   if (d == NULL || left == NULL || right == NULL || frames <= 0) return;
@@ -1610,13 +1555,6 @@ void le_drift_render(le_drift* d, float* left, float* right, int32_t frames) {
       d->chunk_left = LE_DRIFT_CHUNK;
     }
     d->chunk_left--;
-    if (d->oversample == 2) {
-      float l2[2], r2[2];
-      tick(d, &l2[0], &r2[0]);
-      tick(d, &l2[1], &r2[1]);
-      decimate(d, l2, r2, &left[f], &right[f]);
-    } else {
-      tick(d, &left[f], &right[f]);
-    }
+    tick(d, &left[f], &right[f]);
   }
 }

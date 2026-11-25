@@ -84,15 +84,13 @@ static void test_drift_filter_self_oscillates(void) {
 }
 
 /* The band-limited oscillators alias far less than their naive forms would:
- * a 2.4 kHz tone on an FFT bin at 48 kHz, HiQuality off, the filters open,
- * and HiQuality (2x) lower still. */
-static double drift_alias_db(int32_t type, int hq) {
+ * a 2.4 kHz tone on an FFT bin at 48 kHz, around the filters. */
+static double drift_alias_db(int32_t type) {
   enum { WIN = 8192, SETTLE = 4096 };
   static float l[WIN + SETTLE], r[WIN + SETTLE];
   const int bin = 409; /* odd: 2398.7 Hz */
   const double hz = (double)bin * DRIFT_SR / WIN;
   drift_init(&g_drift, DRIFT_SR);
-  drift_set(&g_drift, LE_DRIFT_HIQUALITY, (float)hq);
   drift_set(&g_drift, LE_DRIFT_OSC2_ON, 0.0f);
   drift_set(&g_drift, LE_DRIFT_OSC1_TYPE, (float)type);
   drift_set(&g_drift, LE_DRIFT_OSC1_GAIN, 1.0f);
@@ -113,16 +111,14 @@ static double drift_alias_db(int32_t type, int hq) {
 static void test_drift_oscillators_band_limited(void) {
   printf("test_drift_oscillators_band_limited\n");
   /* Measured on macOS arm64 at 2026-11-25: Saw -32.3, Rectangle -36.3,
-   * Shark Tooth -34.8, Pulse -30.1, Triangle -58.3 dB, and HiQuality 17 to
-   * 28 dB lower; the limits keep 4 dB of that */
+   * Shark Tooth -34.8, Pulse -30.1, Triangle -58.3 dB; the limits keep 4 dB
+   * of that */
   static const struct { int32_t type; double most; } kinds[] = {
       {4, -28.0}, {6, -32.0}, {2, -30.0}, {5, -26.0}, {1, -54.0}};
   for (size_t k = 0; k < sizeof(kinds) / sizeof(kinds[0]); ++k) {
-    const double off = drift_alias_db(kinds[k].type, 0);
-    const double on = drift_alias_db(kinds[k].type, 1);
-    printf("  type %d: alias %.1f dB, HiQuality %.1f dB\n", kinds[k].type, off, on);
-    CHECK(off < kinds[k].most);
-    CHECK(on < off - 12.0);
+    const double alias = drift_alias_db(kinds[k].type);
+    printf("  type %d: alias %.1f dB\n", kinds[k].type, alias);
+    CHECK(alias < kinds[k].most);
   }
 }
 
@@ -133,7 +129,6 @@ static void test_drift_envelope_shapes(void) {
   printf("test_drift_envelope_shapes\n");
   static float l[DRIFT_SR], r[DRIFT_SR];
   drift_init(&g_drift, DRIFT_SR);
-  drift_set(&g_drift, LE_DRIFT_HIQUALITY, 0.0f);
   drift_set(&g_drift, LE_DRIFT_ENV1_ATTACK, 0.1f);
   drift_set(&g_drift, LE_DRIFT_ENV1_DECAY, 0.2f);
   drift_set(&g_drift, LE_DRIFT_ENV1_SUSTAIN, 0.3f);
@@ -315,7 +310,6 @@ static void test_drift_retriggered_attack_keeps_its_time(void) {
   printf("test_drift_retriggered_attack_keeps_its_time\n");
   static float l[DRIFT_SR], r[DRIFT_SR];
   drift_init(&g_drift, DRIFT_SR);
-  drift_set(&g_drift, LE_DRIFT_HIQUALITY, 0.0f);
   drift_set(&g_drift, LE_DRIFT_ENV1_ATTACK, 1.0f);
   CHECK(le_drift_note_on(&g_drift, 1, 60, 100, 0) == 0);
   le_drift_render(&g_drift, l, r, DRIFT_SR / 2);
@@ -369,7 +363,6 @@ static void test_drift_lfo_rate_modes(void) {
   };
   for (size_t i = 0; i < sizeof(k) / sizeof(k[0]); ++i) {
     drift_init(&g_drift, DRIFT_SR);
-    drift_set(&g_drift, LE_DRIFT_HIQUALITY, 0.0f);
     drift_set(&g_drift, LE_DRIFT_LFO_RETRIGGER, 1.0f);
     drift_set(&g_drift, LE_DRIFT_LFO_MODE, (float)k[i].mode);
     drift_set(&g_drift, LE_DRIFT_LFO_TIME, k[i].time);
@@ -393,7 +386,6 @@ static void test_drift_shark_has_no_dc(void) {
   static const float shapes[] = {-0.5f, 0.0f, 0.3f, 0.6f, 1.0f, 1.5f};
   for (size_t i = 0; i < sizeof(shapes) / sizeof(shapes[0]); ++i) {
     drift_init(&g_drift, DRIFT_SR);
-    drift_set(&g_drift, LE_DRIFT_HIQUALITY, 0.0f);
     drift_set(&g_drift, LE_DRIFT_OSC1_TYPE, 2.0f);
     drift_set(&g_drift, LE_DRIFT_OSC1_SHAPE, shapes[i] < 0.0f ? 0.0f : shapes[i] > 1.0f ? 1.0f : shapes[i]);
     /* past the ends: a fixed offset from the matrix's Osc 1 Shape target,
@@ -455,7 +447,6 @@ static void test_drift_ratio_lfo_is_phase_modulation(void) {
   float ph[3];
   for (int run = 0; run < 3; ++run) {
     drift_init(&g_drift, DRIFT_SR);
-    drift_set(&g_drift, LE_DRIFT_HIQUALITY, 0.0f);
     drift_set(&g_drift, LE_DRIFT_LFO_MODE, run == 2 ? 0.0f : 2.0f);
     drift_set(&g_drift, LE_DRIFT_LFO_RATE, 7.0f);
     drift_set(&g_drift, LE_DRIFT_LFO_RATIO, 2.375f);
@@ -479,7 +470,6 @@ static void test_drift_filter_input_clips_asymmetrically(void) {
   float ratio[2];
   for (int k = 0; k < 2; ++k) {
     drift_init(&g_drift, DRIFT_SR);
-    drift_set(&g_drift, LE_DRIFT_HIQUALITY, 0.0f);
     drift_set(&g_drift, LE_DRIFT_OSC1_TYPE, 0.0f);
     drift_set(&g_drift, LE_DRIFT_OSC1_GAIN, k ? 1.0f : 0.5f);
     drift_set(&g_drift, LE_DRIFT_OSC2_ON, 0.0f);
