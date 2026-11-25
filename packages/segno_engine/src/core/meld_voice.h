@@ -117,6 +117,7 @@ typedef struct le_meld_voice {
   int32_t b_delay; /* samples */
   int32_t tick_left;
   int32_t quiet;   /* samples at or below the silence threshold */
+  int32_t wait;    /* samples until a note that stole a voice starts */
   int32_t position_no; /* the lowest number no other held note had */
   float fade;      /* stolen or cut: 1 -> 0 */
   le_meld_copy c[LE_MELD_COPIES];

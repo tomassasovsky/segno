@@ -432,6 +432,22 @@ static void test_meld_fits(void) {
     rmin = fminf(rmin, opr_peak(r + i, 480));
   }
   CHECK(lmin < 0.01f && rmin < 0.01f);
+  /* Mono without legato, three keys at once: the second steals the first
+   * and starts after its 1 ms fade, the third finds nothing to steal and
+   * is dropped */
+  meld_reference(&g_meld);
+  meld_set(&g_meld, LE_MELD_MONO_POLY, 0.0f);
+  meld_set(&g_meld, LE_MELD_MONO_LEGATO, 0.0f);
+  CHECK(le_meld_note_on(&g_meld, 1, 60, 127, 0) == 0);
+  CHECK(le_meld_note_on(&g_meld, 2, 64, 127, 0) == 0);
+  CHECK(le_meld_note_on(&g_meld, 3, 67, 127, 0) == 0);
+  le_meld_render(&g_meld, l, r, 4800);
+  int sounding = 0, note = -1;
+  for (int32_t i = 0; i < LE_MELD_VOICE_SLOTS; ++i) {
+    if (g_meld.voices[i].state != 0) sounding++, note = g_meld.voices[i].note;
+  }
+  CHECK(sounding == 1 && note == 64);
+  CHECK(fabs(opr_component(l + 2400, 2400, opr_note_hz(64)) - 0.3536) < 0.01);
 }
 
 static void run_meld_tests(void) {

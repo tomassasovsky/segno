@@ -930,20 +930,70 @@ int32_t le_meld_note_on(le_meld* d, uint32_t origin, int32_t note, int32_t veloc
       return 0;
     }
   }
-  held_push(d, origin, note);
-  while (note_count(d) >= count) {
-    le_meld_voice* v = oldest(d, LE_MELD_VOICE_RELEASED);
-    if (v == NULL) v = oldest(d, LE_MELD_VOICE_SUSTAINED);
-    if (v == NULL) v = oldest(d, LE_MELD_VOICE_HELD);
-    if (v == NULL) break;
-    fade_voice(v);
-    d->stolen++;
+  if (mono && vi(d, LE_MELD_MONO_LEGATO) && d->held_n == 0) {
+    /* the key before was let go: the voice still sounding restarts in
+     * place, without a steal fade */
+    le_meld_voice* last = NULL;
+    for (int32_t i = 0; i < LE_MELD_VOICE_SLOTS; ++i) {
+      le_meld_voice* v = &d->voices[i];
+      if ((v->state == LE_MELD_VOICE_RELEASED || v->state == LE_MELD_VOICE_SUSTAINED) &&
+          (last == NULL || v->serial > last->serial)) {
+        last = v;
+      }
+    }
+    if (last != NULL) {
+      held_push(d, origin, note);
+      start_voice(d, last, origin, note, vel, ++d->serial, glide_from, last->position_no, count);
+      return 0;
+    }
   }
+  /* Stealing: every voice not free counts, fading ones too; the victims
+   * are released voices, then sustained, then held, oldest first, never
+   * one already fading. Without enough victims the note is dropped (three
+   * keys at once in Mono without legato: the third is lost); with them the
+   * note starts once the victims' 1 ms fade is over. */
+  int32_t active = 0;
+  for (int32_t i = 0; i < LE_MELD_VOICE_SLOTS; ++i) {
+    const le_meld_voice* w = &d->voices[i];
+    if (w->state != LE_MELD_VOICE_FREE && w->wait == 0) active++;
+  }
+  int32_t need = active - count + 1;
+  int32_t wait = 0;
+  if (need > 0) {
+    le_meld_voice* victims[LE_MELD_VOICE_SLOTS];
+    int32_t found = 0;
+    static const int32_t order[3] = {LE_MELD_VOICE_RELEASED, LE_MELD_VOICE_SUSTAINED,
+                                     LE_MELD_VOICE_HELD};
+    for (int32_t o = 0; o < 3 && found < need; ++o) {
+      for (;;) {
+        le_meld_voice* old = NULL;
+        for (int32_t i = 0; i < LE_MELD_VOICE_SLOTS; ++i) {
+          le_meld_voice* w = &d->voices[i];
+          int taken = 0;
+          for (int32_t k = 0; k < found; ++k) taken |= victims[k] == w;
+          if (w->state == order[o] && w->wait == 0 && !taken &&
+              (old == NULL || w->serial < old->serial)) {
+            old = w;
+          }
+        }
+        if (old == NULL || found == need) break;
+        victims[found++] = old;
+      }
+    }
+    if (found < need) return 0;
+    for (int32_t k = 0; k < found; ++k) {
+      fade_voice(victims[k]);
+      d->stolen++;
+    }
+    wait = (int32_t)(0.001f * (float)d->sample_rate) + 1;
+  }
+  held_push(d, origin, note);
   le_meld_voice* v = free_slot(d);
   if (v == NULL) return 0;
   const int32_t pos = free_position(d, v);
   v->position_no = pos;
   start_voice(d, v, origin, note, vel, ++d->serial, glide_from, pos, count);
+  v->wait = wait;
   return 0;
 }
 
@@ -953,6 +1003,12 @@ void le_meld_note_off(le_meld* d, uint32_t origin) {
   for (int32_t i = 0; i < LE_MELD_VOICE_SLOTS; ++i) {
     le_meld_voice* v = &d->voices[i];
     if (v->state != LE_MELD_VOICE_HELD || v->origin != origin) continue;
+    if (v->wait > 0) {
+      /* still waiting for its victim's fade: it never starts */
+      v->state = LE_MELD_VOICE_FREE;
+      v->wait = 0;
+      continue;
+    }
     /* mono: back to the newest key still held, legato */
     if (vi(d, LE_MELD_MONO_POLY) == 0 && d->held_n > 0) {
       retune(d, v, d->held_note[d->held_n - 1]);
@@ -1276,6 +1332,11 @@ static void render_voice(le_meld* d, le_meld_voice* v, float* left, float* right
   const int32_t quiet_need = (int32_t)(0.01f * rate);
   float bl[LE_MELD_TICK], br[LE_MELD_TICK];
   int32_t i = 0;
+  if (v->wait > 0) {
+    /* a note that stole a voice starts after the victim's fade */
+    i = v->wait < frames ? v->wait : frames;
+    v->wait -= i;
+  }
   while (i < frames && v->state != LE_MELD_VOICE_FREE) {
     if (v->tick_left == 0) {
       for (int32_t c = 0; c < v->copies; ++c) {

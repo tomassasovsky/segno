@@ -798,8 +798,10 @@ Chip at min(rate, 10.05 kHz), all read back through a 4-point Hermite.
   1 + 2 M2. **[code]** **[measured]** (the parabolic sine) The ratio list
   is not Harmonic FM's: Live's renders at Macro 1 0.25, 0.5 and 0.75 hold
   modulators at 2^(2/12) and 2^(3/12), 2^(5/12), and 2^(11/12) of the
-  note, semitone intervals, which Segno's list does not have. **[measured]**
-  **[open]** (the list and its position law)
+  note, semitone intervals, which Segno's list does not have; a sweep of
+  Macro 1 in tenths moves through 2, 3, 5, 7, 11, 12 and 15 semitones,
+  crossfading neighbours. **[measured]** **[open]** (the list and its
+  position law)
 - Squelch: an FM bass two octaves down with a self-modulated triangle and a
   triangle 32 times higher as modulators. Simple FM: one sine pair, index
   0.01..4 cycles, ratio 8 M2^2. **[code]**
@@ -861,7 +863,11 @@ third-octave band, the MS2 pair within 2.6 short of full drive. **[measured]**
   diode curve; the same drive. **[code]** **[measured]** (0.2..2.6 dB rms;
   full drive 7)
 - Bandpass: the OSR circuit Operator uses (`osr_section.h`, now shared) at
-  its band tap, leaving at 0.55. **[code]** **[measured]**
+  its band tap, leaving at 0.55. **[code]** **[measured]** Its drive runs
+  from 5.3 to 19.3 dB in: at Drive 0 Live's renders sit 5.3 dB above a
+  0..24 dB law in every band, at full drive a 24 dB range is 5 dB loud.
+  **[measured]** Short of the ends its band shape is still 2..4 dB off.
+  **[open]**
 - DFM: a two-pole Sallen-Key with unequal capacitors and a cubic soft clip
   in its feedback, solved in closed form. Filther: a diode clipper, the SVF
   low-pass, a fixed 6.76 kHz low-pass and a sine saturator. **[code]**
@@ -936,6 +942,15 @@ third-octave band, the MS2 pair within 2.6 short of full drive. **[measured]**
 - Poly 2, 3, 4, 5, 6, 8 or 12 voices, or Mono; the oldest released voice is
   stolen first, fading over 1 ms. Mono legato moves the voice without
   restarting it, and a note-off returns to the newest key still held.
+  **[code]**
+- Stealing counts every voice not free, fading ones too, and never steals
+  one already fading: the new note starts when its victim's fade is over,
+  and without a victim it is dropped. So in Mono without legato a three-key
+  chord plays its second key, or its first when the key before still
+  rings in its release; Mono legato restarts a voice still ringing after
+  its key was let go in place, without a fade. **[code]** **[measured]**
+  (the held-out round: Fatal Bass plays C4, Acid Kick, Bassic and Happy
+  Chords E4)
   Glide: portamento in semitones over Glide Time, Glissando by whole steps,
   from the newest key held. **[code]**
 - Spread positions: copies at symmetric positions in [-1, 1]; a single
@@ -983,6 +998,16 @@ a Live render requested: Fold FM's ratios, the Chord crossfade's signs,
 Spread's pan in Mono (Woozy Bass's side 1.7 dB high), the membrane's
 damping, Pulsate's heights.
 
+A fourth round settled the Bandpass's drive ends, showed that Spread's pan
+and Square 5th's Macro 2 match on their own (Woozy Bass's extra side comes
+from elsewhere), and that a retriggered LFO 1 draws the same values on
+every note: Live's Pulsate plays +0.97, -0.49, -0.12, -0.24 at the starts
+of each note's cycles, every note alike. Segno keeps drawing fresh values:
+a Segno seed would repeat its own numbers, not Live's, and Live's
+generator is not to be copied, so this is the owner's call. **[measured]**
+The held-out round (84 presets, three phrases each) found the voice
+stealing above. With the random sources now read through LE_SEED (a
+scratch seed patch), the strict score passes 16 of 21 factory presets.
 
 ## Decisions
 

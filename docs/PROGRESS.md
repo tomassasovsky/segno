@@ -98,9 +98,13 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   and 8): linked envelopes carry the matrix, Chord's tones start in phase,
   the Mod envelope's tick timing, Note into Tone, the free rate curve, the
   Quantizer, Tarp's sweep and the membrane's modes. Most of the rest is
-  random (Pulsate, Swarm, Rand, S&H); a fourth round of renders is
-  requested for Fold FM, Chord's crossfade, Spread in Mono and the
-  membrane's damping.
+  random (Pulsate, Swarm, Rand, S&H). With the scoring's three seeds and
+  the random sources reaching LE_SEED: 309 of 385 renders and 16 of 21
+  presets after a fourth round (the Bandpass's drive ends) and the
+  held-out round's lesson (stealing counts fading voices and drops a note
+  with no victim): 13 of 84 held-out presets, from 8. A fifth round is
+  requested for the stealing and for Live's own spread on the random
+  presets.
 - A voice with both engines on a Basic Shapes saw and SVF 12 costs 1.8 us
   per millisecond on the dev machine; MS2 6.8, a Swarm 3.7, three unison
   copies 5.6.
