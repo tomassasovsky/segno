@@ -423,7 +423,7 @@ where the reading was silent or disagreed. Segno's implementation is
   table repeating at f/64); 21 Noise White (the table stepped one sample per
   output sample, from a random place each note); 22 User. **[code]**
   **[measured: every waveform's harmonics]**
-- An additive table is normalised to a peak of 1 and played with its old
+- An additive table is scaled to a peak of 1 and played with its old
   peak as its gain, so its level is the plain sum (Saw 3 peaks at 0.92,
   Square 3 at 1.19, exactly as Live's renders). **[code]** **[measured]**
 - User: 16, 32 or 64 drawn harmonics, a slider v giving 10^((48v − 48)/20)
