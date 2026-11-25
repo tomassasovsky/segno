@@ -32,7 +32,7 @@ extern "C" {
 #endif
 
 #define LE_TENSION_VOICE_SLOTS 32
-#define LE_TENSION_RAIL 2048 /* samples per rail: a power of two */
+#define LE_TENSION_RAIL 4096 /* samples per rail: a power of two (16 Hz at 96 kHz) */
 #define LE_TENSION_SHIFT 4096 /* the pitch shifter's history */
 #define LE_TENSION_TICK 32
 #define LE_TENSION_SUSTAIN_MAX 16
@@ -112,6 +112,9 @@ typedef struct le_tension_body {
   float fb[4];             /* each line's last output */
   int32_t type, size;      /* what the lengths were built for */
   float level, mix_dry, mix_wet; /* ramped */
+  float level_to, dry_to, wet_to;
+  float level_step, dry_step, wet_step;
+  int32_t tail_left; /* samples of tail left after the last string */
 } le_tension_body;
 
 typedef struct le_tension {
