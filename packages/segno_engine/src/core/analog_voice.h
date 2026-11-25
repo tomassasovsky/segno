@@ -96,6 +96,8 @@ typedef struct le_analog_voice {
   float vib_dev;         /* this vibrato cycle's rate deviation, a fraction */
   int32_t tick_left;
   int32_t since;      /* samples since the note, saturating */
+  int32_t lfo_used;   /* the slot's LFOs have run */
+  int32_t quiet_at;   /* the device's age when the slot went quiet */
   int32_t fade_left;  /* stolen or cut: samples of fade left */
   int32_t fade_len;   /* samples a millisecond */
   le_analog_copy c[LE_ANALOG_COPIES];

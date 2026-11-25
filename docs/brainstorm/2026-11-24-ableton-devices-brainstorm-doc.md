@@ -1214,17 +1214,22 @@ Round 5 (segno-analog-fit5, 49 renders, Live copies of the random ones):
   ticks of 8 to 108, floor, ceiling or nearest, any offset) reproduces it,
   and a snap within the current block can only move an event later or
   less than one tick earlier. Live moves them earlier than that, which a
-  device can only do with lookahead; it reads as Live's own compensation of
-  a latency the device reports, with the first note at the song's start
-  unable to move. **[measured]** Segno applies events when they arrive.
+  device can only do with lookahead. It is a host effect, not Analog's:
+  Live plays a sequence back with delay compensation, so its later events
+  land early, and the first note at the song's start cannot move.
+  **[measured]** A pedal plays MIDI as it arrives and never starts a note
+  early, so Segno applies events when they arrive **[Segno]**; emulating
+  the effect in the scratch harness moved the held-out scores by less than
+  0.1 dB.
 - The amps' start ramp belongs to the device's start, not to each note: a
   note at the very start rises with it, a later note does not (the event
   renders and the held-out round's mono basses). **[measured]**
 - A free-running LFO (Retrigger off) is not random: two Live instances
-  render it alike. It runs from the device's start, a sine at Phase 1
-  starting at its bottom (three quarters of Phase into the cycle).
-  **[measured]** Its rate across eight strikes runs about 9 % below the
-  free rate's, unexplained.
+  render it alike. A slot's LFO starts three quarters of Phase into its
+  cycle (a sine at Phase 1 starts at its bottom) and then runs while the
+  slot plays and for 52 ms after it goes quiet: within each strike it runs
+  at the free rate, and across eight strikes 0.4 s apart it loses the
+  rest of each gap. **[measured]**
 - Keyboard Error over 24 strikes in three Live instances: uniform from 0
   to 22 cents at Error 1, never flat; 7.8 cents at most at 0.5 (Error^1.5).
   **[measured]**
@@ -1232,6 +1237,19 @@ Round 5 (segno-analog-fit5, 49 renders, Live copies of the random ones):
   poly chord and the mono chords (priority high and last), the saw from C1
   to C7, key tracking at C2 and C6, key volume at C2, and drive pushed to
   full level all match Live. **[measured]**
+
+Open after round 5, with what the renders show:
+
+- Kick Complex Perc: starting chain 2's sine half a cycle on takes its
+  over-time error from 26 to 1.0 dB, but breaks Dual OSC Rubber Bass, so
+  the two pitch-swept sines' phase relation goes wrong elsewhere, most
+  likely in the pitch envelope's fall (Live's at full depth and 0.15 takes
+  about 1500 samples where Exp(0.01, 10) gives 1330, while 0.3 and 0.5
+  fit; a longer time at all settings breaks those).
+- The vibrato error: Live's mean rate across a note moves by up to 11 %
+  between instances, but a per-note deviation fits worse than the
+  per-cycle one; neither width helps.
+- The unison delay, as after round 4.
 
 ## Decisions
 

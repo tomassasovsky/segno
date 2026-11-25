@@ -360,14 +360,22 @@ static void start_copy(le_analog* d, le_analog_voice* v, le_analog_copy* cp) {
     ch->ph2 = 0.0;
     ch->sub_sign = -1;
     ch->dc = shape == 2 ? 0.0365f + 0.4635f * le_aas_knob(cf(d, c, LE_ANALOG_OSC_PW)) : 0.0f;
-    /* with Retrigger the LFO restarts at its Phase at each note; fit:
-     * without, it runs from the device's start, three quarters of Phase
-     * into its cycle (two Live instances render the same free LFO to the
-     * sample, a sine at Phase 1 starting at its bottom) */
+    /* with Retrigger the LFO restarts at its Phase at each note. fit:
+     * without, a slot's LFO starts three quarters of Phase into its cycle
+     * and then runs while the slot plays and for 52 ms after it goes quiet
+     * (two Live instances render the same free LFO; eight strikes 0.4 s
+     * apart keep its phase from note to note, losing the rest of each
+     * gap) */
     if (ci(d, c, LE_ANALOG_LFO_GATE_RESET)) {
       ch->lfo_ph = cf(d, c, LE_ANALOG_LFO_PHASE);
     } else {
-      const double ph = 0.75 * cf(d, c, LE_ANALOG_LFO_PHASE) + (double)lfo_hz(d, c) * (double)d->age / (double)d->sample_rate;
+      double ph;
+      if (!v->lfo_used) {
+        ph = 0.75 * cf(d, c, LE_ANALOG_LFO_PHASE);
+      } else {
+        const double gap = (double)(d->age - v->quiet_at) / (double)d->sample_rate;
+        ph = ch->lfo_ph + (double)lfo_hz(d, c) * (gap < 0.052 ? gap : 0.052);
+      }
       ch->lfo_ph = ph - floor(ph);
     }
     /* fit: the random waves start from a random value, noise held there
@@ -418,6 +426,7 @@ static void start_voice(le_analog* d, le_analog_voice* v, uint32_t origin, int32
   }
   d->last_pitch = v->pitch_to;
   d->played = 1;
+  v->lfo_used = 1;
 }
 
 static void held_push(le_analog* d, uint32_t origin, int32_t note) {
@@ -1064,6 +1073,7 @@ static void render_voice(le_analog* d, le_analog_voice* v, float* left, float* r
     } else if (idle && v->tick_left == 0 && v->state != LE_ANALOG_VOICE_HELD) {
       /* on a tick's edge, so in any block size */
       v->state = LE_ANALOG_VOICE_FREE;
+      v->quiet_at = d->age + i + n;
     }
     if (v->since < (1 << 30)) v->since += n; /* only the copies' delays read it */
     i += n;
