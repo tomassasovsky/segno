@@ -28188,7 +28188,8 @@ static void test_free_mode_dub_layer_retires_not_stuck(void) {
 static void test_free_mode_commit_session_rejected_leaves_master_dormant(void) {
   printf("test_free_mode_commit_session_rejected_leaves_master_dormant\n");
   /* Regression pin for BUG 2 (adversarial review): le_engine_commit_session
-   * used to post LE_CMD_COMMIT_SESSION unconditionally, which would set
+   * with a base (Free's own commit takes none, SEG-108) used to post
+   * LE_CMD_COMMIT_SESSION unconditionally, which would set
    * e->clock/a_master_len to a nonzero value even while a_looper_mode ==
    * FREE -- violating the invariant every other Free-mode code path in this
    * file depends on staying dormant. Covers BOTH layers of the fix: the
@@ -29406,12 +29407,11 @@ static void test_song_mode_one_capturer_handoff_finalizes_to_own_length(
 static void test_song_mode_commit_session_rejected_leaves_master_dormant(
     void) {
   printf("test_song_mode_commit_session_rejected_leaves_master_dormant\n");
-  /* NEW guard (B4): session import's single-shared-base COMMIT_SESSION is
-   * just as incompatible with Song's independent per-track lengths as it is
-   * with Free's -- le_engine_commit_session (engine_session.c) and the
-   * audio-thread handler's own defensive copy (engine_process.c) both now
-   * reject SONG, mirroring the exact two-layer guard B2b already had for
-   * FREE (adversarial-review BUG 2). */
+  /* A commit with a shared base is just as incompatible with Song's
+   * independent per-track lengths as it is with Free's: the wrapper
+   * (engine_session.c) and the audio-thread handler (engine_process.c) both
+   * refuse one in SONG, as in FREE. Song's own commit takes no base
+   * (SEG-108, test_own_clock_modes_commit_session_parks_each_take). */
   le_engine* e = sm_make_song_engine(1000);
 
   /* Layer 1: the normal wrapper rejects synchronously, before posting. */

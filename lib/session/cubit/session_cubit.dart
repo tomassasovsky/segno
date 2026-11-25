@@ -863,7 +863,7 @@ class SessionCubit extends Cubit<SessionState> {
       } on Object catch (error, stack) {
         if (!identical(error, applyFailure)) {
           AppLog.error(
-            applied ? 'session: boot failed' : 'session: apply failed',
+            applied ? 'session: boot failed' : 'session: load failed',
             error: error,
             stack: stack,
           );
