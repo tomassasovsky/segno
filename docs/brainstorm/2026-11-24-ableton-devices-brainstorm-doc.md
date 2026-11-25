@@ -1,6 +1,6 @@
 # Ableton Live device presets on the pedal — brainstorm
 
-<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance kModBy kCarriers Celesta transconductances Bandpass Bitgrunge Csound Drivetime Extratone Filther Lofi Lowpass Megatripolis Minnaert Sawstyle Starchestra -->
+<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance kModBy kCarriers Celesta transconductances Bandpass Bitgrunge Csound Drivetime Extratone Filther Lofi Lowpass Megatripolis Minnaert Sawstyle Starchestra Quantizer -->
 
 **Date:** 2026-11-24
 **Issue:** SEG-109 (related: SEG-57, Segno's own instrument voices)
@@ -655,7 +655,11 @@ Chip at min(rate, 10.05 kHz), all read back through a 4-point Hermite.
   matches Live's renders exactly. **[Segno]** **[measured]**
 - Fold FM: the Harmonic FM core at position M1^2 and amount 4 M1, through
   tanh at 1 + 7.7 M2, phase-modulating a parabolic sine that is folded at
-  1 + 2 M2. **[code]** **[measured]** (the parabolic sine)
+  1 + 2 M2. **[code]** **[measured]** (the parabolic sine) The ratio list
+  is not Harmonic FM's: Live's renders at Macro 1 0.25, 0.5 and 0.75 hold
+  modulators at 2^(2/12) and 2^(3/12), 2^(5/12), and 2^(11/12) of the
+  note, semitone intervals, which Segno's list does not have. **[measured]**
+  **[open]** (the list and its position law)
 - Squelch: an FM bass two octaves down with a self-modulated triangle and a
   triangle 32 times higher as modulators. Simple FM: one sine pair, index
   0.01..4 cycles, ratio 8 M2^2. **[code]**
@@ -666,7 +670,9 @@ Chip at min(rate, 10.05 kHz), all read back through a 4-point Hermite.
   octaves. **[code]**
 - Tarp and Extratone: a sine whose pitch and a noise low-pass sweep down
   over a time set by Macro 1 (Tarp, per note) or 100..20 ms restarted at
-  f/8 (Extratone), then a biased tanh. **[code]**
+  f/8 (Extratone), then a biased tanh. **[code]** Tarp's sweep takes its
+  time and curve from the note's own macros, not the last note's.
+  **[measured]** (every Tarp render within the strict score)
 - Noise Loop: two refreshing taps, each looping two periods of noise
   low-passed at 2.5 kHz with a click-free pair of read heads, refreshed
   0.12..60 times a second, windowed by Macro 2 from full crossfades to hard
@@ -688,7 +694,12 @@ Chip at min(rate, 10.05 kHz), all read back through a 4-point Hermite.
   sus2 families, add10, by Macro 1), at two inversions crossfaded equal
   power by Macro 2, x 0.3; a three-tone chord's fourth voice doubles its
   lowest tone two octaves up at 0.8. **[code]** **[measured]** (the fourth
-  voice; four-tone chords match Live's renders exactly)
+  voice; four-tone chords match Live's renders exactly) A note's tones
+  start in phase at the note's own frequencies and macros, so a tone both
+  chords share sums at full level. **[measured]** Between two inversions
+  Live's octave-related tones of the two chords combine with signs Segno's
+  saws do not reproduce (a shared tone's second harmonic cancels where
+  Segno's adds); M2 0.25 and 0.75 stay 2 and 6 dB rms off. **[open]**
 - Use Scale has nothing to quantize to: Segno sends no scale, as Live with
   no clip or Set scale. **[code]**
 
@@ -730,7 +741,9 @@ third-octave band, the MS2 pair within 2.6 short of full drive. **[measured]**
   **[code]** **[measured]** (the loop length)
 - Plate and Membrane: 32 band-pass modes x 0.0125, at the plate's grid
   ratios or the membrane's Bessel-zero ratios (computed), decaying in
-  0.45 (0.1 + 19.9 M1^3) s. **[code]**
+  0.45 (0.1 + 19.9 M1^3) s. **[code]** The membrane's are the lowest 32
+  zeros of J_0 to J_8: Live's render rings at J_4's fourth zero (7.325 x)
+  and not at J_9's or J_10's first. **[measured]**
 
 ### Envelopes and LFOs
 
@@ -740,10 +753,20 @@ third-octave band, the MS2 pair within 2.6 short of full drive. **[measured]**
   again), AD Loop. The Mod envelope holds its loop through note-off unless
   LegacyEnvLoopBehaviour. Link Envelopes gives engine B engine A's.
   **[code]** **[measured]**
+- Linked, engine B's envelopes take engine A's times and sustains as the
+  matrix moves them (Vertical Bass: B's release follows A's
+  velocity-stretched one). **[measured]**
+- The Mod envelope runs once per tick and the matrix reads its value from
+  the tick before, 0 at a note's first tick; each segment ends a step
+  early. Plate Kick's 48-semitone pitch drop crosses zero where Live's
+  does to 0.1 ms, and an AD Loop of 0.1 + 0.2 s repeats every 0.29933 s,
+  as Live's does. **[measured]**
 - LFO 1: six generators (Basic Shapes, Ramp, Wander, Alternate, Euclid,
   Pulsate) and two of 19 transformers in series; LFO 2: six plain waves.
   Free rates in Hz, Tempo divisions as Drift's; Retrigger restarts the
-  phase. **[code]** **[measured]** (rates, phase offset, shapes)
+  phase. **[code]** **[measured]** (rates, phase offset, shapes) The
+  Quantizer rounds to steps of 1/(n - 1), symmetric about 0 (at 0.8 it
+  plays 0, +-0.5 and +-1). **[measured]**
 
 ### Modulation matrix **[measured]**
 
@@ -751,17 +774,22 @@ third-octave band, the MS2 pair within 2.6 short of full drive. **[measured]**
   x the bipolar source, and the gain targets (Volume, Amp Sustain, Mod
   Sustain) the product of max(0, 1 + a u - a+). **[code]** **[measured]**
 - Sources: the two engines' Amp and Mod envelopes, LFO 1 before and after
-  its transformers, LFO 2; velocity (2v - 1 | v), the note ((n - 60)/48 |
+  its transformers, LFO 2; velocity (2v - 1 | v), the note ((n - 60)/12 |
   n/120), pitch bend, per-note bend, pressure, slide, the mod wheel, a
   random value per copy, and Spread (the copy's position x Spread).
+  **[code]** (the note's octaves from C3)
 - Scales, each measured on a render: Detune 1 semitone per unit, Pitch Mod
   48, Pitch Quant 48 rounded to whole semitones, the macros 1, Filter Freq
   10 octaves, Tone and Pan 2 (their knobs' ranges), the times and free LFO
-  rates through their knobs' cubic position (a time is 40 s x pos^3, a rate
-  78.7 Hz x pos^3), Tempo rates 22 divisions.
-- Into Filter Freq the note source is the engine's own pitch, octave
-  transpose included, an amount of 1 tracking the key a semitone per
-  semitone. **[measured]** Into Tone it scales otherwise. **[open]**
+  rates through their knobs' position (a time is 40 s x pos^3, a rate
+  79.5 Hz x pos^3.036: +0.1 at 2 Hz is 2.4122 times, -0.1 0.2879 times),
+  Tempo rates 22 divisions.
+- The semitone targets track the key a semitone per semitone at an amount
+  of 1: Detune reads the note source as it is, Pitch Mod and Pitch Quant a
+  quarter of it (the C6 render). Into Filter Freq the note source is the
+  engine's own pitch, octave transpose included, tracking the same way.
+  Into Tone it is the plain source: 0.5 of it at C1 is Tone -1, Live's
+  render to the sample. **[measured]**
 
 ### Voices
 
@@ -796,6 +824,24 @@ Lively Ringer 10.0 (its Bandpass at 20 kHz and Highpass at 940 Hz keep
 more of the fundamentals in Live), Sugar Bass 0.0 once the note's tracking
 of Filter Freq was measured, Happy Chords 1.9 once the chords' fourth voice
 was.
+
+The strict score (third-octave x 50 ms cells, the first 150 ms in 5 ms
+frames, side/mid per band, pitch, level, onset; scored against Segno's own
+second seed where a render is random) passes 261 of 339 renders and 10 of
+21 presets, from 245 and 8. What moved them: linked envelopes carrying the
+matrix (Vertical Bass, Drivetime Sine), Chord's tones starting in phase
+(Happy Chords, M2 0.5), the Mod envelope's timing (Acid Kick's attack 1.9
+to 0.3 dB, the AD Loop), the Note source into Tone, the free rate curve,
+the symmetric Quantizer, Tarp's sweep and the membrane's modes (Plate
+Kick's attack 5.7 to 2.1 dB). What is left is mostly random: Live's
+Pulsate, Swarm, Rand and S&H draws cannot be matched sample by sample, and
+six presets (Detuned String Machine, Flab, Lively Ringer, Megatripolis,
+Sawstyle, Starchestra) fail the over-time check against Segno's own second
+seed as well. Granny State turns on LFO 1's first Pulsate draw: Live's
+burst is far brighter than any of eight Segno seeds give. Open, each with
+a Live render requested: Fold FM's ratios, the Chord crossfade's signs,
+Spread's pan in Mono (Woozy Bass's side 1.7 dB high), the membrane's
+damping, Pulsate's heights.
 
 ## Decisions
 

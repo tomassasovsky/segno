@@ -1,4 +1,4 @@
-<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass -->
+<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Quantizer -->
 # Segno — Progress & Roadmap
 
 <!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs multicore smarttune -->
@@ -93,6 +93,14 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   that round also settled Chord's fourth voice and Square Sync's second
   slave. The Highpass is Segno's model of the MS-20 high-pass circuit
   (within 2.6 dB short of full drive); Lively Ringer is 9 dB off.
+- The strict score (50 ms third-octave cells, the attack in 5 ms frames,
+  stereo, pitch) passes 261 of 339 renders and 10 of 21 presets (from 245
+  and 8): linked envelopes carry the matrix, Chord's tones start in phase,
+  the Mod envelope's tick timing, Note into Tone, the free rate curve, the
+  Quantizer, Tarp's sweep and the membrane's modes. Most of the rest is
+  random (Pulsate, Swarm, Rand, S&H); a fourth round of renders is
+  requested for Fold FM, Chord's crossfade, Spread in Mono and the
+  membrane's damping.
 - A voice with both engines on a Basic Shapes saw and SVF 12 costs 1.8 us
   per millisecond on the dev machine; MS2 6.8, a Swarm 3.7, three unison
   copies 5.6.
