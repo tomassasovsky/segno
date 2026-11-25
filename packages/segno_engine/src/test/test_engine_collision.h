@@ -249,9 +249,11 @@ static void test_collision_voices(void) {
   collision_set(&g_collision, LE_COLLISION_POLYPHONY, 1.0f); /* 2 voices */
   collision_set(&g_collision, LE_COLLISION_RETRIGGER, 0.0f);
   for (uint32_t o = 1; o <= 3; ++o) CHECK(le_collision_note_on(&g_collision, o, 60 + (int)o, 100, 0) == 0);
+  /* the third note restarts the oldest note's own voice */
   CHECK(le_collision_active(&g_collision) == 2);
-  CHECK(le_collision_fading(&g_collision) == 1);
+  CHECK(le_collision_fading(&g_collision) == 0);
   CHECK(g_collision.stolen == 1);
+  CHECK(le_collision_held(&g_collision, 1) == 0 && le_collision_held(&g_collision, 3) == 1);
   /* Retrigger: the same key strikes its own voice again */
   collision_reference(&g_collision);
   CHECK(le_collision_note_on(&g_collision, 1, 60, 100, 0) == 0);
