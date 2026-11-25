@@ -2032,6 +2032,41 @@ external int le_engine_set_instrument(
   ffi.Pointer<ffi.Float> params,
 );
 
+/// Gives `slot` device `device` (LE_INST_DEVICE_DRIFT) with `values`
+/// (LE_DRIFT_PARAMS of them, in le_drift_param order; NULL: the device's
+/// defaults; each clamped to its range). Ends a patch or device the slot
+/// played (its voices fade). Returns LE_OK, LE_ERR_INVALID (a bad slot,
+/// device or NaN value), LE_ERR_CAPACITY (the note-on ring is full: nothing
+/// changed, retry) or LE_ERR_NOT_RUNNING before configure.
+@ffi.Native<
+  ffi.Int32 Function(
+    ffi.Pointer<le_engine>,
+    ffi.Int32,
+    ffi.Int32,
+    ffi.Pointer<ffi.Float>,
+  )
+>()
+external int le_engine_set_instrument_device(
+  ffi.Pointer<le_engine> engine,
+  int slot,
+  int device,
+  ffi.Pointer<ffi.Float> values,
+);
+
+/// Sets parameter `param` (an le_drift_param) of the device `slot` plays to
+/// `value` (clamped to its range), applied from the next block. Returns LE_OK,
+/// LE_ERR_INVALID, LE_ERR_NO_INSTRUMENT (the slot plays no device) or
+/// LE_ERR_NOT_RUNNING.
+@ffi.Native<
+  ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32, ffi.Float)
+>()
+external int le_engine_set_instrument_device_param(
+  ffi.Pointer<le_engine> engine,
+  int slot,
+  int param,
+  double value,
+);
+
 /// Sets family parameter `param` (0..2) of `slot` to `value` (0..100, clamped),
 /// applied from the next block. Returns LE_OK, LE_ERR_INVALID,
 /// LE_ERR_NO_INSTRUMENT (the slot has no patch) or LE_ERR_NOT_RUNNING.
@@ -4106,6 +4141,10 @@ const int LE_INSTRUMENT_SOURCE_BASE = 32;
 
 const int LE_INST_CHORD_NOTES = 8;
 
+const int LE_INST_DEVICE_DRIFT = 1;
+
+const int LE_INST_DEVICE_NONE = 0;
+
 const int LE_INST_EVENT_CAPACITY = 256;
 
 const int LE_INST_MAX_REMAPS = 32;
@@ -5255,6 +5294,315 @@ final class le_device_info extends ffi.Struct {
 
   @ffi.Int32()
   external int output_channels;
+}
+
+enum le_drift_param {
+  /// 0..6: Sine, Triangle, Shark Tooth, Saturated,
+  /// Saw, Pulse, Rectangle
+  LE_DRIFT_OSC1_TYPE(0),
+
+  /// 0..1
+  LE_DRIFT_OSC1_SHAPE(1),
+
+  /// -1..1
+  LE_DRIFT_OSC1_SHAPE_MOD(2),
+
+  /// 0..7, le_drift mod sources
+  LE_DRIFT_OSC1_SHAPE_MOD_SOURCE(3),
+
+  /// octaves, -2..3
+  LE_DRIFT_OSC1_TRANSPOSE(4),
+
+  /// 0..4: Sine, Triangle, Saturated, Saw,
+  /// Rectangle
+  LE_DRIFT_OSC2_TYPE(5),
+
+  /// semitones, -7..7
+  LE_DRIFT_OSC2_DETUNE(6),
+
+  /// octaves, -3..2
+  LE_DRIFT_OSC2_TRANSPOSE(7),
+
+  /// linear, 0..1.995
+  LE_DRIFT_OSC1_GAIN(8),
+
+  /// 0/1
+  LE_DRIFT_OSC1_ON(9),
+
+  /// linear, 0..1.995
+  LE_DRIFT_OSC2_GAIN(10),
+
+  /// 0/1
+  LE_DRIFT_OSC2_ON(11),
+
+  /// linear, 0..1.995
+  LE_DRIFT_NOISE_GAIN(12),
+
+  /// 0/1
+  LE_DRIFT_NOISE_ON(13),
+
+  /// 0: I (12 dB), 1: II
+  LE_DRIFT_FILTER_TYPE(14),
+
+  /// Hz, 20..20000
+  LE_DRIFT_FILTER_FREQ(15),
+
+  /// 0..1.01
+  LE_DRIFT_FILTER_RES(16),
+
+  /// 0..1
+  LE_DRIFT_FILTER_TRACKING(17),
+
+  /// Hz, 10..20480
+  LE_DRIFT_FILTER_HP_FREQ(18),
+
+  /// 0..7
+  LE_DRIFT_FILTER_MOD_SOURCE1(19),
+
+  /// -1..1
+  LE_DRIFT_FILTER_MOD_AMOUNT1(20),
+
+  /// 0..7
+  LE_DRIFT_FILTER_MOD_SOURCE2(21),
+
+  /// -1..1
+  LE_DRIFT_FILTER_MOD_AMOUNT2(22),
+
+  /// 0/1: oscillator 1 passes the filters
+  LE_DRIFT_FILTER_OSC1_THROUGH(23),
+
+  /// 0/1
+  LE_DRIFT_FILTER_OSC2_THROUGH(24),
+
+  /// 0/1
+  LE_DRIFT_FILTER_NOISE_THROUGH(25),
+
+  /// seconds, 0..60
+  LE_DRIFT_ENV1_ATTACK(26),
+
+  /// seconds, 0.005..60
+  LE_DRIFT_ENV1_DECAY(27),
+
+  /// 0..1
+  LE_DRIFT_ENV1_SUSTAIN(28),
+
+  /// seconds, 0.01..60
+  LE_DRIFT_ENV1_RELEASE(29),
+  LE_DRIFT_ENV2_ATTACK(30),
+  LE_DRIFT_ENV2_DECAY(31),
+  LE_DRIFT_ENV2_SUSTAIN(32),
+  LE_DRIFT_ENV2_RELEASE(33),
+
+  /// 0/1: Envelope 2 is the cycling envelope
+  LE_DRIFT_ENV2_CYCLING(34),
+
+  /// 0..3: rate in Hz, ratio, time, sync
+  LE_DRIFT_CYC_MODE(35),
+
+  /// Hz, 0.17..1700
+  LE_DRIFT_CYC_RATE(36),
+
+  /// x note frequency, 0.25..16
+  LE_DRIFT_CYC_RATIO(37),
+
+  /// seconds per cycle, 0.1..60
+  LE_DRIFT_CYC_TIME(38),
+
+  /// 0..21: tempo division
+  LE_DRIFT_CYC_SYNCED_RATE(39),
+
+  /// 0..1 (Tilt)
+  LE_DRIFT_CYC_MIDPOINT(40),
+
+  /// 0..1
+  LE_DRIFT_CYC_HOLD(41),
+
+  /// 0..3: rate in Hz, ratio, time, sync
+  LE_DRIFT_LFO_MODE(42),
+
+  /// 0..8
+  LE_DRIFT_LFO_SHAPE(43),
+
+  /// Hz, 0.17..1700
+  LE_DRIFT_LFO_RATE(44),
+
+  /// x note frequency, 0.25..16
+  LE_DRIFT_LFO_RATIO(45),
+
+  /// seconds per cycle, 0.1..60
+  LE_DRIFT_LFO_TIME(46),
+
+  /// 0..21
+  LE_DRIFT_LFO_SYNCED_RATE(47),
+
+  /// 0..1
+  LE_DRIFT_LFO_AMOUNT(48),
+
+  /// 0..7
+  LE_DRIFT_LFO_MOD_SOURCE(49),
+
+  /// -1..1
+  LE_DRIFT_LFO_MOD_AMOUNT(50),
+
+  /// 0/1
+  LE_DRIFT_LFO_RETRIGGER(51),
+
+  /// 0..7
+  LE_DRIFT_PITCH_MOD_SOURCE1(52),
+
+  /// -1..1
+  LE_DRIFT_PITCH_MOD_AMOUNT1(53),
+
+  /// 0..7
+  LE_DRIFT_PITCH_MOD_SOURCE2(54),
+
+  /// -1..1
+  LE_DRIFT_PITCH_MOD_AMOUNT2(55),
+
+  /// 0..7
+  LE_DRIFT_MATRIX_SOURCE1(56),
+
+  /// 0..11, 0 = none
+  LE_DRIFT_MATRIX_TARGET1(57),
+
+  /// -1..1
+  LE_DRIFT_MATRIX_AMOUNT1(58),
+  LE_DRIFT_MATRIX_SOURCE2(59),
+  LE_DRIFT_MATRIX_TARGET2(60),
+  LE_DRIFT_MATRIX_AMOUNT2(61),
+  LE_DRIFT_MATRIX_SOURCE3(62),
+  LE_DRIFT_MATRIX_TARGET3(63),
+  LE_DRIFT_MATRIX_AMOUNT3(64),
+
+  /// 0..3: Poly, Mono, Stereo, Unison
+  LE_DRIFT_VOICE_MODE(65),
+
+  /// 0..4
+  LE_DRIFT_VOICE_COUNT(66),
+
+  /// 0..1 (Thickness)
+  LE_DRIFT_MONO_DEPTH(67),
+
+  /// 0..1 (Spread)
+  LE_DRIFT_STEREO_DEPTH(68),
+
+  /// 0..1 (Strength)
+  LE_DRIFT_UNISON_DEPTH(69),
+
+  /// 0..1
+  LE_DRIFT_DRIFT_DEPTH(70),
+
+  /// seconds, 0..2
+  LE_DRIFT_GLIDE(71),
+
+  /// 0/1
+  LE_DRIFT_LEGATO(72),
+
+  /// semitones, 0..12
+  LE_DRIFT_PITCH_BEND_RANGE(73),
+
+  /// 0..1
+  LE_DRIFT_VOL_VEL(74),
+
+  /// 0..1
+  LE_DRIFT_VOLUME(75),
+
+  /// semitones, -48..48
+  LE_DRIFT_TRANSPOSE(76),
+
+  /// 0/1
+  LE_DRIFT_RESET_OSC_PHASE(77),
+
+  /// 0/1
+  LE_DRIFT_HIQUALITY(78),
+  LE_DRIFT_PARAMS(79);
+
+  final int value;
+  const le_drift_param(this.value);
+
+  static le_drift_param fromValue(int value) => switch (value) {
+    0 => LE_DRIFT_OSC1_TYPE,
+    1 => LE_DRIFT_OSC1_SHAPE,
+    2 => LE_DRIFT_OSC1_SHAPE_MOD,
+    3 => LE_DRIFT_OSC1_SHAPE_MOD_SOURCE,
+    4 => LE_DRIFT_OSC1_TRANSPOSE,
+    5 => LE_DRIFT_OSC2_TYPE,
+    6 => LE_DRIFT_OSC2_DETUNE,
+    7 => LE_DRIFT_OSC2_TRANSPOSE,
+    8 => LE_DRIFT_OSC1_GAIN,
+    9 => LE_DRIFT_OSC1_ON,
+    10 => LE_DRIFT_OSC2_GAIN,
+    11 => LE_DRIFT_OSC2_ON,
+    12 => LE_DRIFT_NOISE_GAIN,
+    13 => LE_DRIFT_NOISE_ON,
+    14 => LE_DRIFT_FILTER_TYPE,
+    15 => LE_DRIFT_FILTER_FREQ,
+    16 => LE_DRIFT_FILTER_RES,
+    17 => LE_DRIFT_FILTER_TRACKING,
+    18 => LE_DRIFT_FILTER_HP_FREQ,
+    19 => LE_DRIFT_FILTER_MOD_SOURCE1,
+    20 => LE_DRIFT_FILTER_MOD_AMOUNT1,
+    21 => LE_DRIFT_FILTER_MOD_SOURCE2,
+    22 => LE_DRIFT_FILTER_MOD_AMOUNT2,
+    23 => LE_DRIFT_FILTER_OSC1_THROUGH,
+    24 => LE_DRIFT_FILTER_OSC2_THROUGH,
+    25 => LE_DRIFT_FILTER_NOISE_THROUGH,
+    26 => LE_DRIFT_ENV1_ATTACK,
+    27 => LE_DRIFT_ENV1_DECAY,
+    28 => LE_DRIFT_ENV1_SUSTAIN,
+    29 => LE_DRIFT_ENV1_RELEASE,
+    30 => LE_DRIFT_ENV2_ATTACK,
+    31 => LE_DRIFT_ENV2_DECAY,
+    32 => LE_DRIFT_ENV2_SUSTAIN,
+    33 => LE_DRIFT_ENV2_RELEASE,
+    34 => LE_DRIFT_ENV2_CYCLING,
+    35 => LE_DRIFT_CYC_MODE,
+    36 => LE_DRIFT_CYC_RATE,
+    37 => LE_DRIFT_CYC_RATIO,
+    38 => LE_DRIFT_CYC_TIME,
+    39 => LE_DRIFT_CYC_SYNCED_RATE,
+    40 => LE_DRIFT_CYC_MIDPOINT,
+    41 => LE_DRIFT_CYC_HOLD,
+    42 => LE_DRIFT_LFO_MODE,
+    43 => LE_DRIFT_LFO_SHAPE,
+    44 => LE_DRIFT_LFO_RATE,
+    45 => LE_DRIFT_LFO_RATIO,
+    46 => LE_DRIFT_LFO_TIME,
+    47 => LE_DRIFT_LFO_SYNCED_RATE,
+    48 => LE_DRIFT_LFO_AMOUNT,
+    49 => LE_DRIFT_LFO_MOD_SOURCE,
+    50 => LE_DRIFT_LFO_MOD_AMOUNT,
+    51 => LE_DRIFT_LFO_RETRIGGER,
+    52 => LE_DRIFT_PITCH_MOD_SOURCE1,
+    53 => LE_DRIFT_PITCH_MOD_AMOUNT1,
+    54 => LE_DRIFT_PITCH_MOD_SOURCE2,
+    55 => LE_DRIFT_PITCH_MOD_AMOUNT2,
+    56 => LE_DRIFT_MATRIX_SOURCE1,
+    57 => LE_DRIFT_MATRIX_TARGET1,
+    58 => LE_DRIFT_MATRIX_AMOUNT1,
+    59 => LE_DRIFT_MATRIX_SOURCE2,
+    60 => LE_DRIFT_MATRIX_TARGET2,
+    61 => LE_DRIFT_MATRIX_AMOUNT2,
+    62 => LE_DRIFT_MATRIX_SOURCE3,
+    63 => LE_DRIFT_MATRIX_TARGET3,
+    64 => LE_DRIFT_MATRIX_AMOUNT3,
+    65 => LE_DRIFT_VOICE_MODE,
+    66 => LE_DRIFT_VOICE_COUNT,
+    67 => LE_DRIFT_MONO_DEPTH,
+    68 => LE_DRIFT_STEREO_DEPTH,
+    69 => LE_DRIFT_UNISON_DEPTH,
+    70 => LE_DRIFT_DRIFT_DEPTH,
+    71 => LE_DRIFT_GLIDE,
+    72 => LE_DRIFT_LEGATO,
+    73 => LE_DRIFT_PITCH_BEND_RANGE,
+    74 => LE_DRIFT_VOL_VEL,
+    75 => LE_DRIFT_VOLUME,
+    76 => LE_DRIFT_TRANSPOSE,
+    77 => LE_DRIFT_RESET_OSC_PHASE,
+    78 => LE_DRIFT_HIQUALITY,
+    79 => LE_DRIFT_PARAMS,
+    _ => throw ArgumentError('Unknown value for le_drift_param: $value'),
+  };
 }
 
 final class le_engine extends ffi.Opaque {}
@@ -6984,6 +7332,12 @@ final class le_snapshot extends ffi.Struct {
   /// LE_SYNTH_SUSTAIN_MAX (16) (#1197 Part 2c)
   @ffi.Uint32()
   external int instrument_sustain_refused;
+
+  /// instrument_device[k]: the device slot k plays (LE_INST_DEVICE_*; 0:
+  /// none, then instrument_patch[k] says what it plays), as applied by the
+  /// callback (SEG-109).
+  @ffi.Array.multi([8])
+  external ffi.Array<ffi.Int32> instrument_device;
 
   /// ---- native MIDI input (#1228 Part 1; trailing). Totals across all
   /// LE_MAX_MIDI_PORTS ports since the engine was created: events delivered

@@ -74,6 +74,13 @@ static inline const float* le_instrument_bus(const le_engine* e, int32_t slot,
          ((int64_t)slot * LE_INST_BUS_CHANNELS + ch) * LE_INST_BUS_FRAMES;
 }
 
+/* Control thread: whether `slot` has a patch or a device requested, so its
+ * source can record (SEG-109). */
+static inline int le_instrument_requested(const le_engine* e, int32_t slot) {
+  return e->inst_patch_requested[slot] >= 0 ||
+         e->inst_device_requested[slot] != LE_INST_DEVICE_NONE;
+}
+
 /* Whether `source` names an instrument slot (#1197 Part 2b). */
 static inline int le_source_is_instrument(int32_t source) {
   return source >= LE_INSTRUMENT_SOURCE_BASE && source < LE_MAX_SOURCES;

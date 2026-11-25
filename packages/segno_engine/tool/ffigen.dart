@@ -50,6 +50,7 @@ const _enums = {
   'le_synth_param_unit',
   'le_interface_state',
   'le_interface_control',
+  'le_drift_param',
 };
 
 Future<void> main() async {

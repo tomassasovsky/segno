@@ -1,4 +1,4 @@
-<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra -->
+<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP -->
 # Segno — Progress & Roadmap
 
 <!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs multicore smarttune -->
@@ -61,9 +61,40 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
 | SEG-22 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track and lane chains) is #1729 | build | needs-plan-approval | `claude/fx-multicore-1515-p1b` |
 | SEG-107 | Save As failed with Out of Memory: the mixdown asked for the LCM of two Song-mode tracks (24.7 GB); it now spans the longest lane past 600 s, and the save refuses a length no loop can hold | in-review | needs-hardware | `claude/save-oom-SEG-107` |
 | SEG-63 | Console WiFi against an ASUS RT-AX89X with 802.11ax on: firmware already matches Pi OS; brcmfmac options aligned with Pi OS and a troubleshooting note; failure not reproduced, issue stays open until it recurs | in-review | agent-merges | `claude/wifi-firmware-1816` |
-| SEG-109 | Ableton Live device presets on the pedal, Drift first: presets read from the user's own copy; Drift's behavior learned with rea + Ghidra from Live 12.2.7 and reimplemented, no Ableton code or presets in the repo. Plan approved 2026-11-25 (P1-P6); P1 stereo instrument buses in build | build | needs-merge | `claude/ableton-devices-SEG-109` |
+| SEG-109 | Ableton Live device presets on the pedal, Drift first: presets read from the user's own copy; Drift's behavior learned with rea + Ghidra from Live 12.2.7 and reimplemented, no Ableton code or presets in the repo. Plan approved 2026-11-25 (P1-P6); P1 stereo buses, P2 preset reader and P3 the Drift device in review | in-review | needs-merge | `claude/ableton-devices-SEG-109` |
 
 ---
+
+## November 2026 The Drift device plays on an instrument slot (SEG-109 P3)
+
+- `drift_voice.c` implements the brainstorm's "Drift: behavior" section:
+  seven oscillator types with polyBLEP / polyBLAMP band-limiting (Sine and
+  Triangle folders, Shark Tooth, Saturated, hard-synced Saw, Pulse,
+  Rectangle), Gaussian noise, the mixer and filter routing, low-pass I (a
+  two-integrator zero-delay loop with unequal integrators and a soft clip)
+  and II (two nonlinear sections), the high-pass, two envelopes, the
+  cycling envelope, the LFO's nine shapes, the three-slot matrix and the
+  fixed pitch, filter and shape modulation, Poly / Mono / Stereo / Unison
+  with Live's lane gains, pans and detunes, round-robin allocation that
+  steals the oldest, glide and legato, Segno's own per-key tuning table and
+  the ISO 226 note gain. Parameters land on a 32-frame grid, so a render is
+  the same at any block size; everything else runs every sample.
+- HiQuality runs the voices at 2x with a 31-tap half-band FIR below
+  88.2 kHz and at the host rate above it (the appliance), as approved.
+- A slot plays a patch or a device: `le_engine_set_instrument_device` and
+  `le_engine_set_instrument_device_param` take the values in the units a
+  Live preset stores (`le_drift_param`). Notes, chords, sustain, the MIDI
+  routes, expression, Cut, Reset and the voice limit reach a device slot as
+  they reach a patch slot; the snapshot's `instrument_device` names it. The
+  Dart bindings carry the calls and `le_drift_param`.
+- Provisional until P4 fits them against Live renders, each in one marked
+  block of `drift_voice.c`: the envelope time mapping, the Volume and
+  Glide curves, filter key tracking, filter II's damping, the Stereo
+  mode's spread, the voice-count and Sync tables, and the voice clip.
+- `bench_instruments` gains an informational Drift section. On an M4 Pro
+  a Drift voice costs about 2.4 us per 64-frame period at 96 kHz (32
+  voices: 11 % of the period), about six times a Segno patch voice. The
+  console's run sets the device's default voice limit (a hardware gate).
 
 ## November 2026 Instrument buses are stereo (SEG-109 P1)
 
