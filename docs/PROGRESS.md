@@ -1,4 +1,4 @@
-<!-- cspell:words heatsinks Omron lofi powf aubio -->
+<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra -->
 # Segno — Progress & Roadmap
 
 <!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs multicore smarttune -->
