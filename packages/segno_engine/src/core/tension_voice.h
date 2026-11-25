@@ -49,7 +49,6 @@ typedef struct le_tension_contact {
   float m, k, r; /* mass, stiffness, felt damping */
   float grav;    /* gravity along y */
   float reach;   /* the plectrum's protrusion (0 otherwise) */
-  int32_t slipped;
 } le_tension_contact;
 
 typedef struct le_tension_voice {

@@ -79,11 +79,13 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
 - Analog's envelope, LFO waves, filter (with the formants) and drive move
   into `aas_parts.h`, which both devices use; Analog's 201 fit renders are
   bit-identical across the move.
-- Fitted against 75 Live renders: total 4.1 dB rms, the reference 0.3.
-  Measured: where the plectrum slips, the positions' scale, the output
-  gain, the body's High Cut direction. The body's lines are Segno's own
-  and the largest gap left; the factory presets sit 2.6 to 11.3 dB
-  (octave bands).
+- Fitted against 75 Live renders. Strict score: 52 of 75 pass, 3 of the
+  20 factory presets (from 25 and 0). Measured: the keyboard's Stretch and
+  Fine Tune, the key amounts' resting 0.1, the bridge read's 1.5 samples,
+  the termination's loss, the output stage, the body's line lengths (each
+  wet-only render fitted sample by sample against the dry reference) and
+  its diffusion's growth with size. Open: the bouncing hammer, the
+  resting damper, the bow, the plucked presets' onsets and level.
 - A voice costs 1.8 us per millisecond with the hammer, 0.6 with the bow,
   the body 0.4 more. A device holds 32 strings (1.7 MB).
 

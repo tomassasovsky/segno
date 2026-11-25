@@ -1019,10 +1019,19 @@ are built from the same modules.
 - A two-rail waveguide: the bridge end reflects rail B, read at L plus a
   fractional extra delay e through a 5-tap Lagrange read, a dispersion
   all-pass and a damping low-pass, times -g; the nut end reflects rail A
-  at L, times -g. L is fixed at the strike from the half period less the
-  loop filters' phase delay; e follows the pitch every tick, so glide and
+  at L, times -g. Rail B's read sits 1.5 samples past L + e. L is fixed
+  at the strike from the half period less the loop filters' phase delay
+  and those 1.5 samples; e follows the pitch every tick, so glide and
   vibrato change the string's length. **[code]** (Segno takes the exact
-  phase delay of its own filters)
+  phase delay of its own filters) **[measured]** (the reference at C6)
+- The keyboard: Stretch scales the key about A4 (0.992 to 1.008 times,
+  so C2 sits 15 cents flat at a preset's usual 0.8), Fine Tune spans half
+  a semitone either way, and Error adds a random rise of up to 0.02 octave
+  at each strike. **[code]** **[measured]** (the bass and guitar presets'
+  pitch at C2, C4 and C6)
+- The knobs reach the curves as whole steps of the engine's 0..127 scale,
+  cut to the step below in single precision. **[code]** **[measured]**
+  (term-soft and the plucked presets, which a rounded step loses)
 - Damping: a one-pole low-pass at Exp(200, 200000) Hz moved by its key
   amount; Inharmonicity: a first-order all-pass from Lin(0.02, 20),
   weaker on high notes. **[code]** **[measured]** (the damping knob is not
@@ -1037,10 +1046,13 @@ are built from the same modules.
 - The output: the pickup's point on the string, or the wave arriving at
   the bridge; then a 10 Hz high-pass. **[code]** (fit: a gain of 1.5,
   2.4 dB under the reading's 2)
-- Positions along the string: Exp(0.05, 0.5) of its length, the exciter
-  from the bridge, the damper and pickup from the nut. **[code]** (fit:
-  1.15 times further along, where the renders put the comb notches; the
-  centre stays the centre)
+- Positions along the string: Exp(0.05, 0.5) of the half period (its
+  fraction, not its whole samples), the exciter from the bridge, the
+  damper and pickup from the nut, each within the string's first half;
+  the pickup steps off the damper's sample. **[code]**
+- The device's output bends softly toward its full scale of 4: linear to
+  0.7 of it, then 1 - 0.3 / u^3 with u = (10 x + 2) / 9. **[code]**
+  **[measured]** (Hammer Velocity at full)
 
 ### Exciters, damper, finger
 
@@ -1050,15 +1062,24 @@ are built from the same modules.
   the body's, the felt's and the string's give, so the quadratic has a
   closed root). The hammer flies off under gravity; the bouncing hammer
   falls back and re-strikes until it rests on the string; the plectrum
-  slips off once it has travelled its protrusion past the string's rest
-  line. **[code]** **[measured]** (where the plectrum slips)
+  pushes only while it overlaps the string by less than its protrusion,
+  and past that it has slipped by. **[code]**
 - The bow: a stick-slip junction, sticking within a zone around the bow's
   speed, released over a short ramp, lifted at the release. **[code]**
-- The key and velocity amounts scale each exciter's three knobs by
-  2^(amount x pitch or velocity), ExpZ(0.1, 16) each. **[code]**
+- The key and velocity amounts scale each exciter's three knobs, the
+  positions, the damping, the decay and the damper by 2^(amount x pitch
+  or velocity), Exp(0.1, 16) each. An amount at zero keeps its resting
+  0.1 (the engine moves a value only when its step changes, and 0.1 sits
+  on step 0), so a reference string still scales with pitch: decay and
+  damping 2^(0.1 p), the hammer's speed and stiffness too. Four amounts
+  rest higher and do go to 0: Force < Key, Stiffness < Vel, Velocity <
+  Vel and Finger Force < Vel. **[code]** **[measured]** (the reference's
+  decay and level at C2 and C6)
 - The damper rests on the string (always, or only after the release when
   gated) through the same contact. The finger presses the string onto a
-  fret at the nut, the two contacts solved together by Newton. **[code]**
+  fret at the nut, the two contacts solved together by Newton; the wave
+  leaving the nut is the arriving wave plus the contacts' push, times the
+  loss. **[code]**
 
 ### Filter, body, voices
 
@@ -1068,10 +1089,19 @@ are built from the same modules.
 - The body: four recirculating lines, each a delay and a Schroeder
   all-pass, through a low cut and an absorption low-pass whose highs decay
   High Cut times as fast; Body Level is the device's volume (Sq(0, 2)),
-  the mix a constant-power sweep with the wet at 0.35. The lines' lengths
-  are Segno's own (5 to 11 ms, the all-passes 0.8 to 1.7 ms, a set per
-  type, scaled by size). **[code]** **[Segno]** (the lengths)
-  **[measured]** (High Cut's direction: up shortens the highs)
+  the mix a constant-power sweep with the wet at 0.35. Each line's length
+  is the prime at or below size x rate x its length at size 1, a set per
+  type (type 0: 5.391, 6.547, 7.604, 9.297 ms; 1: 2.5, 2.875, 5.417,
+  10.062; 2: 1.25, 1.792, 2.5, 3.438; 3: 6.5, 7.833, 8.75, 11.5), the
+  all-pass taps the same in every type (0.995, 1.089, 1.38, 1.616 ms).
+  The diffusion is -0.29 x the square root of the size; the absorption's
+  coefficient is set for 44.1 kHz and taken as it stands at the host
+  rate. **[code]** (the structure, the diffusion's -0.29)
+  **[measured]** (the lengths: each wet-only render fitted sample by
+  sample against Live's dry reference, which leaves an error under 0.2 %
+  of the wet signal; type 0 at sizes 0.3, 1 and 2, the others at 1; each
+  length the middle of the range every render allows. The diffusion's
+  growth with size; High Cut's direction: up shortens the highs)
 - Mono or 2 to 32 voices, unison of 2 or 4 strings (the shared unison
   law), glide, vibrato. A key struck again strikes its ringing string
   without resetting it. A released string ends after 50 ms below
@@ -1079,20 +1109,25 @@ are built from the same modules.
 
 ### The fits so far
 
-75 renders (third-octave bands from the strike): total 4.1 dB rms. The
-reference 0.3; damping, decay, ratio, inharmonicity, positions, pickup,
-hammer stiffness, unison and the bow within 0.2 to 1.6 dB; the plectrum
-2.2 to 3.2; the body 2.9 to 8.0 (its lengths). Factory presets (octave
-bands): Slap Bass 2.6, Chord Bouncing, Saw Bass and Tuned Noise 2.8, Tiny
-Tonal Drums 3.4, Attack Pad 3.5, Harp Soft 3.7, Electric Basic Bass 4.0,
-Wire Noise 4.4, Nylon Basic Guitar 5.1, Fretless Bass 5.8, Clean Basic
-Guitar 6.8 to 7.5 across three octaves, Wood Bass 7.2, Upright Basic Bass
-6.9 and 8.4, Hard Picked Guitar 8.6, Banjo 11.2, Slow String Pad 11.3.
+Strict score (third-octave x 50 ms cells within 1.5 dB rms, the attack,
+level within 0.5 dB, pitch within 3 cents): 52 of 75 renders pass, 3 of
+the 20 factory presets (Saw Bass, Slap Bass, Harp Soft), up from 25 and
+0. Every single change around the reference passes but the bouncing
+hammer, the resting damper, the bow an octave down and with full force,
+the plectrum's speed and the filter envelope; all eleven body renders
+pass.
 
-Still open: the body's line lengths (the largest gap, in most presets);
-a level slope of about 1 dB an octave in the hammer reference; the bow two
-octaves down (10 dB); Hammer Velocity at full (25 dB); the MPE
-destinations (stored, not played).
+Still open, by preset (third-octave rms): Chord Bouncing 23 (the bouncing
+hammer's re-strikes and the resting damper), Wire Noise 15, Slow String
+Pad 17, Attack Pad 6 (the bow, which is sensitive to its knobs' steps),
+Tiny Tonal Drums 15, Clean Basic Guitar 4 to 8 across three octaves and
+Hard Picked Guitar 4 (the pluck about 2 dB loud, the exciter's tap at
+C6), Wood Bass 4.2, Upright Basic Bass 4.1 and 4.4, Banjo 5.2, Tuned
+Noise 4, Fretless Bass 3.8. Electric Basic Bass (1.0) and Nylon Basic
+Guitar (1.4) pass over time but start late: the plucked presets' onsets
+sit 0.5 to 3.7 ms behind Live's. Error draws Segno's own random rise, so
+Hard Picked Guitar and Tiny Tonal Drums cannot match Live's pitch sample
+for sample. The MPE destinations are stored, not played.
 
 ## Decisions
 

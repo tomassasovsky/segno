@@ -8608,10 +8608,10 @@ enum le_tension_param {
   /// 0..1
   LE_TENSION_UNISON_DELAY(9),
 
-  /// 0..1 (stored)
+  /// 0..1: the key 0.992..1.008 times about A4
   LE_TENSION_STRETCH(10),
 
-  /// 0..1 (stored)
+  /// 0..1: a random rise up to 0.02 octave
   LE_TENSION_ERROR(11),
 
   /// 0/1
