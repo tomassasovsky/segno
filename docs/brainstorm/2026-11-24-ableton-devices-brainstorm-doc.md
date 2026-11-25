@@ -1,6 +1,6 @@
 # Ableton Live device presets on the pedal — brainstorm
 
-<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance kModBy kCarriers Celesta transconductances Bandpass Bitgrunge Csound Drivetime Extratone Filther Lofi Lowpass Megatripolis Minnaert Sawstyle Starchestra polyBLEP Metalic Formant formants Barney Asym quintic Wurli MKII Perc halvings retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured -->
+<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance kModBy kCarriers Celesta transconductances Bandpass Bitgrunge Csound Drivetime Extratone Filther Lofi Lowpass Megatripolis Minnaert Sawstyle Starchestra polyBLEP Metalic Formant formants Barney Asym quintic Wurli MKII Perc halvings retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations -->
 
 **Date:** 2026-11-24
 **Issue:** SEG-109 (related: SEG-57, Segno's own instrument voices)
@@ -152,12 +152,16 @@ written from it.
   - Triangle: gain 1 + 7·shape, then an asymmetric fold (different
     thresholds above and below zero, so even harmonics appear).
   - Shark Tooth: a ramp with a triangular dip. Fitted: the dip spans about
-    90 % of the cycle at shape 0 (close to a triangle) and narrows to 16 %
+    90 % of the cycle at shape 0 (close to a triangle) and narrows to 6 %
     at shape 1 (close to a saw); no DC at any shape; shape modulation past
-    0..1 keeps changing it. Its polarity shows only through the filters'
-    asymmetric input clip: Live's is a rising ramp with the dip on top
-    (the inverse of the falling form above), which brought Live's Shark
-    renders at six shapes within 1.5 dB per sixth-octave band.
+    0..1 keeps changing it. **[measured]** Live plays it backwards in time:
+    at shape 1 a falling ramp that rises back fast. Static renders cannot
+    tell the direction (the spectrum is the same); Live's waveform under an
+    LFO sweeping the shape from -1 to 1 can: each period matches Segno's
+    with correlation 0.99 up to shape 0.5, and -1 the other way round. The
+    widths at 0.75 and 1 (0.24, 0.06) are fitted on that sweep and on the
+    static renders, which both improved (sixth-octave levels within 0.4
+    dB rms).
   - Saturated: a scaled, clipped triangle through a parabola; asymmetric, so
     it carries a DC offset (about −0.33 at shape 0). Not band-limited.
   - Saw: hard sync, slave ratio 1 + 10·shape; the master-reset edge is not
@@ -214,7 +218,17 @@ written from it.
   volts; the two nonlinear elements are linearised at the last estimate
   and the loop solved in closed form, twice per sample. **[code]** Segno
   builds this model itself (its own diode curve, a fitted closed form) and
-  fits only its path gain and the noise level.
+  fits only its path gain and the noise level. **[measured]** The diode's
+  slope at 0 sets the small-signal resonance: at 2.21 (the reading's
+  value; Segno had 2.19) the resonant peaks on noise sit within 0.3 dB of
+  Live's from resonance 0.5 to 1. A voice's filter II starts from the
+  state its offsets settle to with no input, not from zero: from zero the
+  offsets step through the output coupling, a -43 dB transient that Live's
+  notes do not have (it moved the onset of every filter II render).
+- Path gains **[measured]**: a sine and a saw at every gain through filter
+  I within 0.1 dB and through filter II within 0.05 dB of Live's after
+  the output gains 2.90 and 3.69 (they were 0.15 and 0.37 dB high); noise
+  reaches filter I 2.2 dB and filter II 2.0 dB quieter than the bypass.
 - Filter input: both types clip their input: linear to about +0.70 and
   -0.98, a soft knee, and a hard edge at +0.79 on the positive side. A sine
   at Gain 1 gets Live's harmonics 2 to 41 within 3 dB (the hard edge gives
@@ -257,7 +271,15 @@ written from it.
 - LFO: a phase per voice, increment clamped below Nyquist, rate modes as
   the cycling envelope. Retrigger restarts it at the shape's peak (0.25
   for Sine and Triangle, 0.5 for the saws, 0 otherwise); without it a note
-  continues the phase the voice's LFO stopped at. **[code]**, fitted.
+  continues the phase the voice's LFO stopped at. **[code]**, fitted. The
+  voice blocks reset at the first chunk and at a voice-mode change, every
+  voice's LFO to its shape's start phase **[code]**, and idle blocks run
+  only their LFOs; a voice never played runs a Ratio-mode LFO at Ratio x
+  A4 **[measured]**. Live's renders start about 5126 samples (0.107 s)
+  after that reset: a free LFO's phase at the first note fits that at 2
+  and 0.63 Hz and in Ratio mode at 2.375 **[measured]**. The scratch
+  harness renders that time before the notes; it is a property of how
+  Live's renders were made, not of the device.
 - An LFO in Ratio mode routed to a pitch slot becomes phase modulation of
   both oscillators (LFO × amount cycles, below one cycle) instead of
   vibrato. **[code]**, fitted (sidebands within 0.1 dB of Live's).
@@ -265,7 +287,11 @@ written from it.
   Triangle, two saws (rising and falling; which one is "Saw Up" is
   **[open]**), Square, Sample & Hold (two steps per cycle), Wander (smoothed
   random), Linear Env and Exponential Env (one-shot, 0..1). Output × Amount
-  × the gain from its own mod source. **[code]**
+  × the gain from its own mod source. **[code]** Sample & Hold and Wander
+  share one draw per half cycle (Wander glides from the last draw to it
+  along a quadratic S-curve, 2q² then 1 - 2(1 - q)²), and a restart or a
+  block reset draws a value at once, so a retriggered Sample & Hold starts
+  on a random step, not on 0. **[code]**
 - Note gain: a pitch-dependent gain from 1 % of the ISO 226 40-phon
   equal-loudness contour, at most about −0.64 dB. Segno computes it from
   the standard. **[code]**
@@ -284,7 +310,12 @@ written from it.
   **[code]**, fitted on Live's 16-note Stereo sequence.
 - With ResetOscillatorPhase on, a note on a sounding voice waits for a fast
   fade-out, then starts with reset phases; with it off, the note starts at
-  once and the envelope continues from its level. With it off, a voice
+  once and the envelope continues from its level. **[code]** Measured: the
+  fade-out is exponential, from full level to -60 dB in 1 ms (0.866 per
+  sample at 48 kHz), the waiting note then starts from silence (a new
+  attack, phases at 0), and a legato note in Mono waits the same way, its
+  glide running on; Live's legato and Reset renders match within 0.1 dB
+  per sample after this. With it off, a voice
   keeps the oscillator phase its last note left (it does not run while
   silent), so a Stereo note on reused voices starts its lanes apart.
   **[code]**, fitted.
@@ -310,8 +341,12 @@ written from it.
   these statistics; Live's table is not copied.
 - SerialNumber: a random number per instance, saved in the preset,
   probably the seed for per-instance randomness. **[inferred]**
-- Glide (0..2 s), Legato, Pitch Bend Range, Note Pitch Bend and Transpose:
-  stored and passed on; their exact use in the voice is **[open]**.
+- Glide: a one-pole in hertz (not in pitch) with time constant 0.144 x
+  Glide **[measured]**: on Live's octave glides at 0.5, 1 and 2 s the
+  distance to the new note in hertz falls by the same ratio every 50 ms,
+  while in cents it slows down. Legato, Pitch Bend Range, Note Pitch Bend
+  and Transpose: stored and passed on; their exact use in the voice is
+  **[open]**.
 
 ### Open items and the fits (P4)
 
@@ -388,6 +423,37 @@ layer above 10 kHz in Bloom Pad's full phrase, 12 dB above Segno's yet
 about 55 dB under its loudness, that no single source shows; Clob Bass's
 phrase is about 2 dB narrower; Sample & Hold and Wander draw different
 random values, by design.
+
+Round 5 (2026-11-25), against the strict score (third-octave x 50 ms
+cells, a 150 ms attack window, side/mid per band, median pitch; see
+SEG-109): the free LFO's start phase, the Reset Oscillator Phase restart,
+glide in hertz, filter II at rest and its diode slope, the filter path
+gains, Sample & Hold's first draw, and Shark Tooth's direction and top
+widths, each above. 164 of 224 fit renders passed before, factory presets
+0 of 5; after, with the scorer's round 2 (three seeds, Live's own spread,
+the renders named `-r<n>` set aside as repeats), 171 of 200, presets 1 of
+5 (Euphoria Lead). Glide, Mono legato, the free-LFO, Ratio-LFO, Clob
+isolations and filter II noise renders now pass.
+
+What the strict score still fails, and why **[measured]**:
+- Drift Depth. Live's tuning is a fixed 60-key table blended by depth plus
+  an offset per voice (voice 0 +2.5 cents per unit of w = depth / 0.58);
+  Segno's values are its own by rule, so pitch differs by a few cents per
+  note, and pairs or unison lanes beat at other rates. Swapping Live's
+  table and voice 0's offset in for a scratch check (not kept) made the
+  drift renders pass with pitch errors of 0.02 to 0.04 cents. This covers
+  every remaining failure with Drift Depth above 0: 80s Tape (pitch,
+  stereo), Clob Bass (stereo), Bloom Pad and its isolations (unison
+  beating and the level of lanes that land on one pitch in Live), the
+  drift, alloc, idle-stereo and unison-drift renders.
+- Random sources. Live's noise, Sample & Hold and Wander differ on every
+  render (two Live noise renders of one patch correlate 0.007). The
+  Sample & Hold and Wander renders and Chirp Pluck's pitch (its Sample &
+  Hold moves pitch by up to 8 cents) cannot match draw for draw; Live
+  copies (`-r2`, `-r3`) settle how far Live is from itself.
+- Bloom Pad's filter II peak sits 37 cents below Live's with its key
+  tracking and Env 2 modulation; the same filter without them is within 5
+  cents. Which of the two differs needs the renders requested for round 16.
 
 ## Operator: behavior
 
@@ -666,6 +732,7 @@ modulator, the free LFO phase, whether random pan repeats, the four
 random presets taken apart, the circuits' high-passes, controller routes
 at rest and glide into a releasing voice.
 
+
 ## Meld: behavior
 
 Learned 2026-11-25 from Live 12.2.7 (seven reads: the oscillators in three
@@ -915,6 +982,7 @@ burst is far brighter than any of eight Segno seeds give. Open, each with
 a Live render requested: Fold FM's ratios, the Chord crossfade's signs,
 Spread's pan in Mono (Woozy Bass's side 1.7 dB high), the membrane's
 damping, Pulsate's heights.
+
 
 ## Analog: behavior
 
