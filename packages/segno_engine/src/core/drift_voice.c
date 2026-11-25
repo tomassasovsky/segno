@@ -51,8 +51,9 @@ enum { MODE_POLY = 0, MODE_MONO = 1, MODE_STEREO = 2, MODE_UNISON = 3 };
  * SEG-109 comments for the measurements), or still provisional where
  * marked. */
 
-/* Voice counts 0..4 (open item 4). */
-static const int32_t kVoiceCounts[5] = {8, 12, 16, 24, 32};
+/* Voice counts 0..4: the voices (lanes) a note may take, so Stereo plays
+ * half as many notes and Unison a quarter. */
+static const int32_t kVoiceCounts[5] = {4, 8, 16, 24, 32};
 
 /* The Sync divisions 0..21 in beats per cycle, slowest first: 8 bars down
  * to a 64th. Fitted: each division's vibrato rate at 120 BPM (indexes 7 to
@@ -107,43 +108,6 @@ static float key_tracking(float tracking, float key) {
  * filter bypass path. */
 #define LE_DRIFT_NOISE_LEVEL 0.463f
 
-/* Filter I's damping ratio for resonance r: 1.33 (two real poles, Live's
- * soft knee: -8.5 dB at the cutoff) at 0, falling linearly to 0.0195 at 1
- * (a +29 dB peak), and below zero above it (self-oscillation, bounded by
- * the soft clip). Fitted at 0, 0.5 and 1: -8.1 / -2.8 dB at the cutoff
- * and a +29 dB peak, against Live's -8.5 / -3.5 / +29. */
-static float filter1_zeta(float r) { return 1.3152f * (1.0f - r) + 0.0148f; }
-
-/* Filter II: two equal sections; each section's damping ratio for
- * resonance r, interpolated between the measured points (Live's gain at
- * the cutoff: -12.3 / +8.2 / +19.5 / +27.4 / +32 dB peak at 0 / 0.5 /
- * 0.75 / 0.9 / 1, 24 dB/oct), falling below zero past 1 toward
- * self-oscillation. */
-static float filter2_zeta(float r) {
-  static const float kR[6] = {0.0f, 0.5f, 0.75f, 0.9f, 1.0f, 1.3f};
-  static const float kZ[6] = {1.015f, 0.312f, 0.163f, 0.103f, 0.077f, -0.06f};
-  if (r <= 0.0f) return kZ[0];
-  for (int i = 1; i < 6; ++i) {
-    if (r <= kR[i]) {
-      const float t = (r - kR[i - 1]) / (kR[i] - kR[i - 1]);
-      return kZ[i - 1] + t * (kZ[i] - kZ[i - 1]);
-    }
-  }
-  return kZ[5];
-}
-/* Each filter's level into its sections and the gain after them; the
- * product is the path's linear gain (filter I 1.667 x 1.72, filter II
- * 0.828 x 3 x 0.556 x 1.49 / 0.828), the split sets how hard the soft clip
- * works, and so the height of the resonant peak. */
-#ifndef LE_DRIFT_F1_IN
-#define LE_DRIFT_F1_IN 0.2f
-#endif
-#define LE_DRIFT_F1_OUT (1.6666667f * 1.72f / LE_DRIFT_F1_IN)
-#ifndef LE_DRIFT_F2_DRIVE
-#define LE_DRIFT_F2_DRIVE 0.4f
-#endif
-#define LE_DRIFT_F2_GAIN (3.0f * 0.5555556f * 1.49f / LE_DRIFT_F2_DRIVE)
-#define LE_DRIFT_F2_OFFSET 0.012f
 /* The paths around the filters: oscillators and noise. Fitted: a sine and
  * noise routed around, each within 0.2 dB. */
 #ifndef LE_DRIFT_BYPASS_OSC
@@ -642,6 +606,16 @@ static void derive(le_drift* d) {
                         vf(d, LE_DRIFT_TRANSPOSE) / 12.0f);
   x->glide = glide_coefficient(vf(d, LE_DRIFT_GLIDE), d->rate);
   x->fade_step = 1000.0f / (LE_DRIFT_FADE_MS * d->rate);
+  /* a voice never played turns at A4 with its own drift (tick) */
+  const float w = vf(d, LE_DRIFT_DRIFT_DEPTH) / 0.58f;
+  for (int32_t i = 0; i < LE_DRIFT_VOICES; ++i) {
+    le_drift_voice* v = &d->voices[i];
+    if (v->played) continue;
+    const float f =
+        440.0f * exp2f(w * (d->key_cents[69] + d->voice_cents[i]) / 1200.0f);
+    v->dt1 = fminf(f * x->osc1_ratio / d->rate, 0.4999999f);
+    v->dt2 = fminf(f * x->osc2_ratio / d->rate, 0.4999999f);
+  }
 }
 
 /* ---- HiQuality's decimator ---- */
@@ -695,6 +669,8 @@ int32_t le_drift_init(le_drift* d, int32_t sample_rate) {
   for (int32_t i = 0; i < LE_DRIFT_VOICES; ++i) {
     d->voice_cents[i] = voice_cents(i);
     d->voices[i].rng = 0x9e3779b9u ^ (uint32_t)(i * 2654435761u);
+    /* each block's noise generators start alike: lane k of every block */
+    d->noise_rng[i] = 0x2545f491u ^ (uint32_t)((i % 4) * 2654435761u);
   }
   return 0;
 }
@@ -799,6 +775,7 @@ static void start_voice(le_drift* d, le_drift_voice* v, int32_t lane,
   v->origin = origin;
   v->note = note;
   v->lane = lane;
+  v->played = 1;
   v->velocity = velocity;
   v->key = ((float)note - 69.0f) / 120.0f;
   v->serial = ++d->serial;
@@ -1195,12 +1172,13 @@ static float envelope(float* y, int32_t* stage, float step, float dec,
 
 /* ---- Filters ---- */
 
-/* The filters' input stage: linear up to +0.62 / -0.89, then a parabolic
- * knee 0.325 wide into a flat top (+0.7825 / -1.0525). Fitted: a sine at
- * Gain 1 through either filter gets Live's harmonics 2 to 6 within 2 dB
- * and its 0.9 peak ratio, one at Gain 0.5 stays clean. */
+/* The filters' input stage: linear up to +0.70 / -0.98, then a parabolic
+ * knee 0.45 wide; the positive side is cut hard at +0.79, before the knee
+ * levels off. Fitted: a sine at Gain 1 through filter I (linear at
+ * resonance 0) gets Live's harmonics 2 to 41 within 3.2 dB rms, the hard
+ * edge giving Live's slowly falling tail; one at Gain 0.5 stays clean. */
 static float knee(float a, float t) {
-  const float k = 0.325f;
+  const float k = 0.45f;
   const float d = a - t;
   if (d <= 0.0f) return a;
   if (d >= k) return t + 0.5f * k;
@@ -1208,79 +1186,101 @@ static float knee(float a, float t) {
 }
 
 static float filter_input(float x) {
-  return x >= 0.0f ? knee(x, 0.62f) : -knee(-x, 0.89f);
+  return x >= 0.0f ? fminf(knee(x, 0.70f), 0.79f) : -knee(-x, 0.98f);
 }
 
-/* A zero-delay state-variable section (equal integrators, damping k = 2
- * zeta) with a soft clip on its band state, which bounds self-oscillation.
- * Returns the low-pass output. */
-static float svf_lowpass(float* s, float x, float g, float k, float offset) {
-  const float hp = (x - (k + g) * s[0] - s[1]) / (1.0f + k * g + g * g);
-  const float bp = g * hp + s[0];
-  const float lp = g * bp + s[1];
-  s[0] = soft(bp + g * hp + offset) - soft(offset);
-  s[1] = lp + g * bp;
-  return lp;
+/* Filter I's feedback shaper: the cubic v - 2 (0.55032 v)^3, held flat past
+ * its turning point. */
+static float cubic_clip(float v) {
+  const float n = 0.55032f, top = 0.7419f;
+  const float c = v > top ? top : v < -top ? -top : v;
+  const float m = n * c;
+  return c - 2.0f * m * m * m;
 }
 
-/* Low-pass type I: one 12 dB/oct section, input gain 1.67, and a tiny
- * injected noise that starts self-oscillation from silence. */
+/* Low-pass type I: one 12 dB/oct section whose two unequal poles (a
+ * capacitor ratio of 3.3) give a base damping ratio near 1.18, and whose
+ * resonance feedback cancels that damping at resonance 1, through the
+ * cubic shaper (applied from the previous sample's band state), which
+ * bounds the ringing and self-oscillation past 1. Above resonance 1 the
+ * resonance is pulled back as the cutoff rises past 0.075 of the rate.
+ * Fitted on Live's filter I renders: base damping 1.12, the shaper's
+ * input x1.4, output gain 2.95; sixth-octave levels within 2.6 dB rms on
+ * average (the fitted state-variable filter it replaces: 3.0). */
 static float filter1(float* s, float x, float fc, float r, float rate,
                      uint32_t* rng) {
   const float g = prewarp(PI_F * fc / rate);
-  x = x * LE_DRIFT_F1_IN + 2e-5f * rnd_bipolar(rng);
-  return svf_lowpass(s, x, g, 2.0f * filter1_zeta(r), 0.0f) * LE_DRIFT_F1_OUT;
-}
-
-/* One section of low-pass type II: the base damping k0 is linear, and the
- * resonance, the damping it takes away (k0 - k), comes back as feedback
- * through a soft clip of threshold LE_DRIFT_F2_CLIP (a diode-style clip in
- * the resonance path, slightly asymmetric): a quiet signal gets the whole
- * resonant peak, a loud one clips the feedback and the peak collapses.
- * Fitted as a compromise: Live's quiet noise keeps its +8 to +32 dB peaks
- * while a full saw barely rings; one threshold leaves the noise peaks a
- * few dB under Live's and the loud saw a few dB over (17 dB over with no
- * clip). The clip's excess over its linear part is applied from the
- * previous sample's band state. */
-#ifndef LE_DRIFT_F2_CLIP
-#define LE_DRIFT_F2_CLIP 0.08f
-#endif
-static float filter2_section(float* s, float x, float g, float k0, float k) {
-  const float kr = k0 - k; /* the resonance's share of the damping */
-  const float b = s[2];    /* the previous band output */
-  const float t = LE_DRIFT_F2_CLIP;
-  const float clipped =
-      t * (soft(b / t + LE_DRIFT_F2_OFFSET) - soft(LE_DRIFT_F2_OFFSET));
-  x += kr * (clipped - b);
+  const float f = fc / rate;
+  const float rp = fmaxf(
+      0.001f, r / (1.0f + 3.0f * fmaxf(f - 0.075f, 0.0f) * fmaxf(r - 1.0f, 0.0f)));
+  const float k0 = 2.0f * 1.12f;
+  const float kr = k0 * rp; /* the resonance's share of the damping */
+  const float d = 1.4f;     /* into the shaper */
+  const float b = s[2];
+  x += 2e-5f * rnd_bipolar(rng);
+  x += kr * (cubic_clip(b * d) / d - b);
+  const float k = k0 - kr;
   const float hp = (x - (k + g) * s[0] - s[1]) / (1.0f + k * g + g * g);
   const float bp = g * hp + s[0];
   const float lp = g * bp + s[1];
-  s[0] = soft(bp + g * hp);
+  s[0] = bp + g * hp;
   s[1] = lp + g * bp;
   s[2] = bp;
-  return lp;
+  return lp * 2.95f;
 }
 
-/* Low-pass type II: two such sections in series, 24 dB/oct, and the same
- * tiny injected noise as type I to start self-oscillation. */
+/* Low-pass type II: two MS-20 style sections in series (24 dB/oct). Each
+ * is a one-pole low-pass, then a one-pole low-pass inside a loop closed
+ * through a one-pole high-pass; the loop gain K sets the resonance (it
+ * self-oscillates past 2) and a soft clip on the loop's sum bounds it, so
+ * a loud source rings less and its skirt brightens, as Live's does.
+ * Fitted on every filter II render (noise and saws, cutoffs 150 Hz to
+ * 4 kHz, resonance 0 to 1, the factory presets' isolations): K per
+ * resonance through seven points, the clip at 0.325, the output gain 2.9; sixth-octave
+ * levels within 2.5 dB rms on average (the state-variable filter it
+ * replaces: 4.5). */
+static float filter2_k(float r) {
+  static const float kR[7] = {0.0f, 0.2f, 0.5f, 0.75f, 0.9f, 1.0f, 1.3f};
+  static const float kK[7] = {0.01f, 0.75f, 1.375f, 1.625f, 1.78f, 1.9f, 2.05f};
+  if (r <= 0.0f) return kK[0];
+  for (int i = 1; i < 7; ++i) {
+    if (r <= kR[i]) {
+      const float t = (r - kR[i - 1]) / (kR[i] - kR[i - 1]);
+      return kK[i - 1] + t * (kK[i] - kK[i - 1]);
+    }
+  }
+  return kK[6];
+}
+
+/* One section; s holds its three one-poles' states. */
+static float filter2_section(float* s, float x, float G, float g, float K) {
+  const float t = 0.325f; /* the loop's clip */
+  float v = (x - s[0]) * G; /* low-pass 1 */
+  const float y1 = v + s[0];
+  s[0] = y1 + v;
+  /* the loop, solved for its linear part; the clip on its sum */
+  const float b2 = (K - K * G) / (1.0f + g);
+  const float b3 = -1.0f / (1.0f + g);
+  const float a0 = 1.0f / (1.0f - K * G + K * G * G);
+  const float u = t * soft(a0 * (y1 + s[1] * b2 + s[2] * b3) / t);
+  v = (u - s[1]) * G; /* low-pass 2 */
+  const float lp2 = v + s[1];
+  s[1] = lp2 + v;
+  const float y = K * lp2;
+  v = (y - s[2]) * G; /* the loop's high-pass */
+  s[2] = v + s[2] + v;
+  return lp2;
+}
+
+/* With the same tiny injected noise as type I to start self-oscillation. */
 static float filter2(float* s, float x, float fc, float r, float rate,
                      uint32_t* rng) {
   const float g = prewarp(PI_F * fc / rate);
-  /* fitted: a strong resonance thins as the cutoff rises (at 0.9 on noise,
-   * +28 / +27 / +22 / +15 dB at 0.5 / 1 / 2 / 4 kHz): extra damping
-   * growing with the cutoff squared, zero at the 1 kHz the table holds,
-   * and fading with the resonance's fourth power below 0.9, so an open
-   * filter with little resonance keeps Live's top octave (within 0.6 dB
-   * on noise at 20 kHz, 0.28) */
-  const float khz = fc * 0.001f;
-  const float rr = fminf(r / 0.9f, 1.0f);
-  const float more = 0.0069f * (khz * khz - 1.0f) * (rr * rr) * (rr * rr);
-  /* it only takes resonance away: never more damping than the base */
-  const float k0 = 2.0f * filter2_zeta(0.0f);
-  const float k = fminf(k0, 2.0f * (filter2_zeta(fminf(r, 1.3f)) + more));
-  x = x * LE_DRIFT_F2_DRIVE + 2e-5f * rnd_bipolar(rng);
-  const float a = filter2_section(s, x, g, k0, k);
-  return filter2_section(s + 3, a, g, k0, k) * LE_DRIFT_F2_GAIN;
+  const float G = g / (1.0f + g);
+  const float K = filter2_k(fminf(r, 1.3f));
+  x += 2e-5f * rnd_bipolar(rng);
+  const float a = filter2_section(s, x, G, g, K);
+  return filter2_section(s + 3, a, G, g, K) * 2.9f;
 }
 
 /* The high-pass: a linear two-integrator loop, damping 0.68. */
@@ -1409,6 +1409,8 @@ static void voice_sample(le_drift* d, le_drift_voice* v, float* out_l,
   const float f2 = base * x->osc2_ratio * exp2f(add_detune);
   const float dt1 = fminf(f1 / rate, 0.4999999f);
   const float dt2 = fminf(f2 / rate, 0.4999999f);
+  v->dt1 = dt1; /* kept for while the voice is silent (tick) */
+  v->dt2 = dt2;
   v->ph1 += dt1;
   if (v->ph1 >= 1.0f) v->ph1 -= 1.0f;
   v->ph2 += dt2;
@@ -1416,7 +1418,8 @@ static void voice_sample(le_drift* d, le_drift_voice* v, float* out_l,
   /* the LFO's and the cycling envelope's rates */
   const float lfo_hz = (lfo_ratio ? b->lfo_ratio * note_f : x->lfo_hz) *
                        exp2f(4.0f * add_lfo);
-  lfo_advance(v, fminf(lfo_hz / rate, 0.49999988f));
+  v->lfo_inc = fminf(lfo_hz / rate, 0.49999988f);
+  lfo_advance(v, v->lfo_inc);
   const float cyc_hz = (b->cyc_mode == RATE_RATIO ? b->cyc_ratio * note_f : x->cyc_hz) *
                        exp2f(4.0f * add_cyc);
   v->cyc_ph += fminf(cyc_hz / rate, 0.49999988f);
@@ -1431,19 +1434,15 @@ static void voice_sample(le_drift* d, le_drift_voice* v, float* out_l,
   const float th2 = phase == 0.0f ? v->ph2 : frac(v->ph2 + phase + 1.0f);
   const float o1 = oscillator(x->osc1, th1, s1, dt1) * x->gain1 * g_osc1;
   const float o2 = oscillator(x->osc2, th2, 0.0f, dt2) * x->gain2 * g_osc2;
-  float noise = 0.0f;
-  if (x->gain_noise > 0.0f) {
-    const float r1 = rnd_bipolar(&v->rng);
-    const float u2 = rnd_unit(&v->rng);
-    noise = clampf(half_sine(fabsf(r1)) * (r1 < 0.0f ? -1.0f : 1.0f) *
-                       sqrtf(-2.0f * logf(u2)),
-                   -10.0f, 10.0f) *
-            LE_DRIFT_NOISE_LEVEL * x->gain_noise * g_noise;
-  }
+  float noise =
+      d->lane_noise[v - d->voices] * LE_DRIFT_NOISE_LEVEL * x->gain_noise * g_noise;
   /* mixer and routing */
   float thru = 0.0f, around = 0.0f, around_noise = 0.0f;
   if (x->thru1) thru += o1; else around += o1;
   if (x->thru2) thru += o2; else around += o2;
+  /* fitted: noise reaches the filters quieter than the bypass, filter I by
+   * 2.4 dB and filter II by 3.4 dB (Live's noise renders, levels 0.12 to 1) */
+  if (x->thru_noise) noise *= x->filter_type ? 0.675f : 0.76f;
   if (x->thru_noise) thru += noise; else around_noise = noise;
   /* filters */
   float fc = b->freq * key_tracking(b->tracking, v->key) *
@@ -1478,13 +1477,52 @@ static void voice_sample(le_drift* d, le_drift_voice* v, float* out_l,
 }
 
 /* One output sample at the device's internal rate: every live voice. */
+/* The voices run in blocks of four. A silent voice in a block where any
+ * voice sounds keeps turning its oscillators at the rate it last had (a
+ * voice never played: A4 with its own drift), and every silent voice's
+ * LFO keeps running. Fitted: in Live a Stereo note on a fresh pair starts
+ * its lanes together only when that pair's block was idle; once a block
+ * runs, its idle lanes drift apart. */
 static void tick(le_drift* d, float* l, float* r) {
   *l = 0.0f;
   *r = 0.0f;
-  for (int32_t i = 0; i < LE_DRIFT_VOICES; ++i) {
-    le_drift_voice* v = &d->voices[i];
-    if (v->state == LE_DRIFT_VOICE_FREE) continue;
-    voice_sample(d, v, l, r);
+  const float idle_lfo = fminf(d->d.lfo_hz / d->rate, 0.49999988f);
+  const int noise_on = d->d.gain_noise > 0.0f;
+  for (int32_t b = 0; b < LE_DRIFT_VOICES; b += 4) {
+    int32_t busy = 0;
+    for (int32_t i = b; i < b + 4; ++i) busy |= d->voices[i].state != LE_DRIFT_VOICE_FREE;
+    /* A running block draws one noise value per voice, sounding or not, so
+     * blocks that start together play the same noise voice for voice.
+     * Fitted: Live's noise from simultaneous notes in different blocks adds
+     * coherently (Stereo, 3 / 4 / 6 notes: +2.1 / +2.9 / +4.7 dB over
+     * independent voices; Poly 5 / 6: +1.5 / +2.2), and within a block
+     * stays independent. */
+    if (busy) {
+      for (int32_t i = b; i < b + 4; ++i) {
+        const float r1 = rnd_bipolar(&d->noise_rng[i]);
+        const float u2 = rnd_unit(&d->noise_rng[i]);
+        d->lane_noise[i] =
+            noise_on ? clampf(half_sine(fabsf(r1)) * (r1 < 0.0f ? -1.0f : 1.0f) *
+                                  sqrtf(-2.0f * logf(u2)),
+                              -10.0f, 10.0f)
+                     : 0.0f;
+      }
+    }
+    for (int32_t i = b; i < b + 4; ++i) {
+      le_drift_voice* v = &d->voices[i];
+      if (v->state != LE_DRIFT_VOICE_FREE) {
+        voice_sample(d, v, l, r);
+        continue;
+      }
+      if (busy) {
+        v->ph1 += v->dt1;
+        if (v->ph1 >= 1.0f) v->ph1 -= 1.0f;
+        v->ph2 += v->dt2;
+        if (v->ph2 >= 1.0f) v->ph2 -= 1.0f;
+      }
+      v->lfo_ph += d->d.lfo_mode == RATE_RATIO ? v->lfo_inc : idle_lfo;
+      if (v->lfo_ph >= 1.0f) v->lfo_ph -= 1.0f;
+    }
   }
 }
 

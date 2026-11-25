@@ -89,8 +89,11 @@ typedef struct le_drift_voice {
   float ratio;
   /* the voice mode's gains */
   float gain_l, gain_r;
-  /* oscillators and noise */
+  /* oscillators and noise; the phase increments last used, which a silent
+   * voice keeps turning at while its block runs, and whether it ever played */
   float ph1, ph2;
+  float dt1, dt2;
+  int32_t played;
   uint32_t rng;
   /* envelopes: level, stage, and the attack's per-sample step, set at the
    * note's start from the level it starts at */
@@ -100,6 +103,7 @@ typedef struct le_drift_voice {
   /* the cycling envelope and the LFO */
   float cyc_ph;
   float lfo_ph;
+  float lfo_inc;                    /* the LFO's last increment (Ratio) */
   float lfo_hold, lfo_from, lfo_to; /* S&H and Wander */
   int32_t lfo_done;                 /* a one-shot LFO shape ended */
   /* filters: the low-pass (type I uses two, type II six: two sections of
@@ -166,6 +170,10 @@ typedef struct le_drift {
   int32_t voice_limit; /* sounding voices allowed (the engine's overload) */
   uint32_t stolen;
   le_drift_voice voices[LE_DRIFT_VOICES];
+  /* the noise: one generator per voice, run per block of four (tick), and
+   * this sample's value per voice */
+  uint32_t noise_rng[LE_DRIFT_VOICES];
+  float lane_noise[LE_DRIFT_VOICES];
   /* HiQuality's decimator: the last LE_DRIFT_HB_TAPS 2x samples per side */
   float hb_taps[LE_DRIFT_HB_TAPS];
   float hb_l[LE_DRIFT_HB_TAPS], hb_r[LE_DRIFT_HB_TAPS];

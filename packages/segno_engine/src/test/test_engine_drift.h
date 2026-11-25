@@ -229,7 +229,7 @@ static void test_drift_allocation(void) {
   printf("test_drift_allocation\n");
   static float l[256], r[256];
   drift_init(&g_drift, DRIFT_SR);
-  drift_set(&g_drift, LE_DRIFT_VOICE_COUNT, 0.0f); /* 8 voices */
+  drift_set(&g_drift, LE_DRIFT_VOICE_COUNT, 1.0f); /* 8 voices */
   for (uint32_t k = 0; k < 9; ++k) {
     CHECK(le_drift_note_on(&g_drift, 10 + k, 40 + (int32_t)k, 100, 0) == 0);
   }
@@ -501,6 +501,33 @@ static void test_drift_filter_input_clips_asymmetrically(void) {
   CHECK(ratio[1] < 0.95f);
 }
 
+/* Voices run in blocks of four: a silent voice in a running block keeps
+ * turning its oscillators, one in an idle block does not; and blocks that
+ * start together play the same noise voice for voice, while the voices of
+ * one block differ. */
+static void test_drift_voice_blocks(void) {
+  printf("test_drift_voice_blocks\n");
+  static float l[4800], r[4800];
+  drift_init(&g_drift, DRIFT_SR);
+  drift_set(&g_drift, LE_DRIFT_NOISE_ON, 1.0f);
+  le_drift_render(&g_drift, l, r, 32);
+  CHECK(le_drift_note_on(&g_drift, 1, 60, 100, 0) == 0); /* voice 0, block 0 */
+  le_drift_render(&g_drift, l, r, 4800);
+  CHECK(g_drift.voices[1].state == 0 && g_drift.voices[1].ph1 != 0.0f);
+  CHECK(g_drift.voices[4].state == 0 && g_drift.voices[4].ph1 == 0.0f);
+  drift_init(&g_drift, DRIFT_SR);
+  drift_set(&g_drift, LE_DRIFT_NOISE_ON, 1.0f);
+  drift_set(&g_drift, LE_DRIFT_NOISE_GAIN, 1.0f);
+  le_drift_render(&g_drift, l, r, 32);
+  for (uint32_t k = 0; k < 5; ++k) {
+    CHECK(le_drift_note_on(&g_drift, 1 + k, 50 + 2 * (int32_t)k, 100, 0) == 0);
+  }
+  CHECK(g_drift.voices[4].state != 0); /* the fifth note opened block 1 */
+  le_drift_render(&g_drift, l, r, 480);
+  CHECK(g_drift.lane_noise[0] == g_drift.lane_noise[4]);
+  CHECK(g_drift.lane_noise[0] != g_drift.lane_noise[1]);
+}
+
 /* ---- the engine: a slot playing Drift ---- */
 
 /* Processes [frames] in blocks of [block]; when [l] and [r] are given,
@@ -715,6 +742,7 @@ static void run_drift_tests(void) {
   test_drift_reset_phase_and_reuse();
   test_drift_ratio_lfo_is_phase_modulation();
   test_drift_filter_input_clips_asymmetrically();
+  test_drift_voice_blocks();
   test_engine_drift_slot_matches_offline();
   test_engine_drift_voice_budget();
   test_engine_drift_params_and_switching();
