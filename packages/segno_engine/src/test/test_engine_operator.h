@@ -347,6 +347,65 @@ static void test_operator_filter_and_shaper(void) {
   CHECK(h1 > 0.78 && h1 < 0.9);
 }
 
+/* Every circuit, type and slope, at full resonance and drive, stays finite
+ * and bounded, and passes a saw; MS2 and PRD resonate at their cutoff. */
+static void test_operator_circuits_bounded(void) {
+  printf("test_operator_circuits_bounded\n");
+  enum { N = 24000 };
+  static float l[N], r[N];
+  for (int32_t circuit = 0; circuit < 5; ++circuit) {
+    for (int32_t type = 0; type < 5; ++type) {
+      for (int32_t slope = 0; slope < 2; ++slope) {
+        opr_reference(&g_opr);
+        opr_op(&g_opr, 0, LE_OPERATOR_OP_WAVE, 9.0f);
+        opr_set(&g_opr, LE_OPERATOR_FILTER_ON, 1.0f);
+        opr_set(&g_opr, LE_OPERATOR_FILTER_TYPE, (float)type);
+        opr_set(&g_opr, LE_OPERATOR_FILTER_CIRCUIT_LPHP, (float)circuit);
+        opr_set(&g_opr, LE_OPERATOR_FILTER_CIRCUIT_BPNOMO, (float)(circuit == 1));
+        opr_set(&g_opr, LE_OPERATOR_FILTER_SLOPE, (float)slope);
+        opr_set(&g_opr, LE_OPERATOR_FILTER_FREQ, 800.0f);
+        opr_set(&g_opr, LE_OPERATOR_FILTER_RES, 1.25f);
+        opr_set(&g_opr, LE_OPERATOR_FILTER_DRIVE, 24.0f);
+        CHECK(le_operator_note_on(&g_opr, 1, 48, 127, 0) == 0);
+        le_operator_render(&g_opr, l, r, N);
+        CHECK(opr_finite(l, N));
+        CHECK(opr_peak(l, N) > 0.01f && opr_peak(l, N) < 40.0f);
+      }
+    }
+  }
+}
+
+/* Controller routes at rest: aftertouch at 0 through +100 % to Volume
+ * silences, through -100 % leaves full level, and moves no filter. */
+static void test_operator_controllers_rest(void) {
+  printf("test_operator_controllers_rest\n");
+  enum { N = 4800 };
+  static float l[N], r[N], ref[N];
+  const float amounts[2] = {100.0f, -100.0f};
+  const float want[2] = {0.0f, 1.0f};
+  for (int k = 0; k < 2; ++k) {
+    opr_reference(&g_opr);
+    opr_set(&g_opr, LE_OPERATOR_ROUTE + 8, 20.0f); /* aftertouch, route 0: Volume */
+    opr_set(&g_opr, LE_OPERATOR_ROUTE + 9, amounts[k]);
+    CHECK(le_operator_note_on(&g_opr, 1, 60, 100, 0) == 0);
+    le_operator_render(&g_opr, l, r, N);
+    CHECK(fabsf(opr_peak(l + N / 2, N / 2) - want[k]) < 0.01f);
+  }
+  opr_reference(&g_opr);
+  opr_set(&g_opr, LE_OPERATOR_FILTER_ON, 1.0f);
+  opr_set(&g_opr, LE_OPERATOR_FILTER_FREQ, 500.0f);
+  CHECK(le_operator_note_on(&g_opr, 1, 60, 100, 0) == 0);
+  le_operator_render(&g_opr, ref, r, N);
+  opr_reference(&g_opr);
+  opr_set(&g_opr, LE_OPERATOR_FILTER_ON, 1.0f);
+  opr_set(&g_opr, LE_OPERATOR_FILTER_FREQ, 500.0f);
+  opr_set(&g_opr, LE_OPERATOR_ROUTE + 8, 10.0f); /* aftertouch: Filter Freq */
+  opr_set(&g_opr, LE_OPERATOR_ROUTE + 9, 100.0f);
+  CHECK(le_operator_note_on(&g_opr, 1, 60, 100, 0) == 0);
+  le_operator_render(&g_opr, l, r, N);
+  CHECK(memcmp(l, ref, sizeof(l)) == 0);
+}
+
 /* ---- the engine: a slot playing Operator ---- */
 
 /* The engine's slot renders what the module renders offline, sample for
@@ -453,6 +512,8 @@ static void run_operator_tests(void) {
   test_operator_velocity_route();
   test_operator_user_wave();
   test_operator_filter_and_shaper();
+  test_operator_circuits_bounded();
+  test_operator_controllers_rest();
   test_engine_operator_slot_matches_offline();
   test_engine_operator_params_and_switching();
   test_engine_operator_midi();

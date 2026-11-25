@@ -110,6 +110,7 @@ typedef struct le_operator_voice {
    * ramped coefficients */
   float f_s[2][2];
   float f_x1[2];
+  float f_an[16]; /* the analog circuits' states */
   float f_g, f_k, f_g_step, f_k_step;
   float f_w[3], f_w_step[3]; /* morph weights: low, band, high */
   /* shaper: 2x up and down half-band states */

@@ -1,6 +1,6 @@
 # Ableton Live device presets on the pedal — brainstorm
 
-<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance kModBy kCarriers Celesta -->
+<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance kModBy kCarriers Celesta transconductances -->
 
 **Date:** 2026-11-24
 **Issue:** SEG-109 (related: SEG-57, Segno's own instrument voices)
@@ -511,18 +511,27 @@ where the reading was silent or disagreed. Segno's implementation is
 
 ### Modulation routes **[measured]**
 
-- Sources: velocity runs −1 (0) to 1 (127), the LFO and the pitch
-  envelope's level −1..1, pitch bend −1..1; aftertouch and the mod wheel
-  0..1, resting at 0 (a bipolar reading would close the filters of the
-  presets that route them, which Live does not). The key source is
-  (neutral − note)/80. **[fit]**
-- Destinations that are gains (the operators' volumes, FM Drive, LFO
-  Amount, Volume) only attenuate: 1 − |a|/2 + a s/2 for amount a and source
-  s, so a full positive amount spans 0..1 over its source (velocity −50 %
-  gives 0.5 at 127 and 0.75 at 64, as Live's renders). Others add: Filter
-  Freq 48 semitones per unit, Pan one unit, Tone half its range, Time 3
-  octaves of envelope time, Fixed Frequency 63 semitones, LFO Rate 8
-  octaves. Each within 0.2 dB of Live where rendered.
+- Each source has a bipolar value s and a unipolar one u = (s + 1)/2:
+  velocity s = 2v − 1, the key s = (key − neutral)/63.5 (exact at neutral
+  48 and 60), pitch bend its value, the LFO its output, the pitch envelope
+  its level / 48 semitones. Aftertouch and the mod wheel have s = u = their
+  value, resting at 0.
+- An adding destination takes a × s: Filter Freq 48 semitones per unit, Pan
+  one unit, Time 3 octaves of envelope time, Fixed Frequency 63 semitones,
+  LFO Rate 8 octaves. Aftertouch at rest moves no filter; velocity 64 and
+  the neutral key move nothing.
+- A gain destination only attenuates, by 1 − a⁺ + a u (a⁺ the amount's
+  positive part): the operators' volumes, FM Drive, LFO Amount, Volume and
+  Tone (which scales the Tone value). +100 % from aftertouch at rest
+  silences, −100 % leaves full level; velocity −50 % gives 0.5 at 127 and
+  0.75 at 64; the pitch envelope at 0 semitones gives 0.5, at +24 0.75.
+- The LFO's route is scaled by LFO Amount (linear: 0.5 gives half the
+  depth) and the pitch envelope's by its Amount; both are silent while
+  their LFO or envelope is off. The LFO Amount route scales both of the
+  LFO's destinations. The pitch envelope's route output moves linearly in
+  semitones, while the pitch it gives moves linearly in frequency ratio.
+- Velocity into Coarse, quantized, adds round(16 × amount × v) steps.
+- Every route test within 0.2 dB rms of Live.
 
 ### Filter and shaper
 
@@ -533,8 +542,25 @@ where the reading was silent or disagreed. Segno's implementation is
   70, the filter envelope × 1.08 × Amount, the LFO and the routes; clamped
   to 30 Hz .. min(0.48 fs, 18.5 kHz). **[code]** **[measured: Live's own
   noise through Segno's Clean filter within 0.5 dB per third-octave]**
-- OSR, MS2 (the circuit Drift's filter II models), SMP and PRD: described
-  in the readings, not yet built: Segno runs them as Clean for now. **[open]**
+- MS2: the section of Drift's filter II (`ms2_section.h`, shared), one for
+  12 dB and two for 24, the second at (0.5 + 0.2 r) of the loop gain, the
+  signal entering at 0.6 of Drift's level, drive on the input. **[code]**
+  **[fit]**
+- PRD: Segno's model of a four-stage ladder, each stage's input and output
+  through z (1 − z²/4 + |z|³/16) with a small offset of its own, feedback
+  0.8 × 4.04 q (the reading says 4.04 q; Live's resonance renders want
+  less), the pass band made up by (1 + k), the input at 0.5 × drive; 12 dB
+  the second stage, 24 the fourth. **[code]** **[fit]**
+- OSR: Segno's model of a state-variable loop with both transconductances
+  saturating, damping 2 (1 − q) − 0.01 and a diode across the band node
+  (a 0.5 V knee, unit conductance), so it rings at a bounded level from
+  resonance 1; the input stage barely saturates. **[code]** **[fit]**
+- SMP: MS2's section with SMP's feedback and input constants (no factory
+  preset uses it). The MS2 and PRD high-passes are cores of their own, not
+  read: Clean's high-pass stands in (three factory presets). **[open]**
+- Each circuit's renders within the noise renders' own spread (about 2 dB
+  rms per third-octave band, Live's noise table being its own); the drive
+  renders within 3 to 5.
 - The shaper: (1 − w)x + w 10^(−D/40) T(10^(D/20) x) at twice the rate:
   Soft (linear to −3 dB, then a knee to 1), Hard (0.68 atan 10x), Sine (a
   fold), 4-Bit (a triangle fold quantized to eighths). **[code]**
@@ -555,14 +581,17 @@ where the reading was silent or disagreed. Segno's implementation is
 
 ### The fits so far
 
-Single-change renders (third-octave bands within 60 dB of each render's
-loudest): waveforms, tuning, FM, feedback, envelopes, LFO, glide, Spread,
-pan, Tone and the routes within 0.5 dB rms each, most within 0.2; the
-analog circuits, still Clean, 2 to 9 dB. Ten factory presets (octave
-bands): Bells & Thin Pad 0.2, Buzz Release Keys 0.5, Acid Bass 0.8, OP
-Bass 2.1 (MS2), Bells Brushed Hits 2.1, Sub Sine Bass 3.3, Celesta 4.2,
-Metallic FM 4.8, Three Op Bass 5.7 (PRD with drive), Analog Bouquet Brass
-7.8. A voice costs 2.6 µs per period at 48 kHz, 5.2 with Antialias.
+Six rounds, 298 single-change renders (third-octave bands within 60 dB of
+each render's loudest): waveforms, tuning, FM, feedback, envelopes, LFO,
+glide, Spread, pan, Tone and the routes within 0.5 dB rms each, most within
+0.2; the filter circuits at the noise renders' spread. Ten factory presets
+(octave bands): Sub Sine Bass 0.0, Bells & Thin Pad 0.2, Acid Bass 0.4,
+Buzz Release Keys 0.5, Three Op Bass 0.6, Analog Bouquet Brass 1.4, Bells
+Brushed Hits 1.6, Metallic FM 2.3, OP Bass 3.1 within 40 dB of its loudest
+(+7 dB at 1.3 kHz as its filter LFO opens MS2, 7.5 counting the octave
+50 dB down), Celesta 4.2 (its partials match to the hertz; two octaves
+around its morph filter differ by 7 to 8 dB). A voice costs 2.6 µs per
+period at 48 kHz, 5.2 with Antialias.
 
 ## Decisions
 

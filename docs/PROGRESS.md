@@ -84,11 +84,21 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   where the reading was silent: envelope slopes other than 0 and 1 hold and
   jump (as Live renders them), EnvTimeIncludeAttack changes nothing, the
   routes' sources and units (gain destinations only attenuate).
-- The Clean filter and Morph are built (Live's own noise through Segno's
-  filter within 0.5 dB); OSR, MS2, SMP and PRD (21 factory presets) run as
-  Clean until the next part builds them. Ten factory presets, octave bands
-  rms: three within 1 dB, five within 2 to 5, two at 6 and 8 (PRD with
-  drive, and a shaper preset).
+- The filters: Clean and Morph (Live's own noise through Segno's filter
+  within 0.5 dB), MS2 on the section Drift's filter II uses (now shared,
+  `ms2_section.h`; Drift renders bit-identical), and Segno's own models of
+  PRD (a four-stage ladder) and OSR (a state-variable loop with a diode
+  bounding its resonance), each fitted to Live's renders; SMP runs on
+  MS2's section with its own constants. The MS2 and PRD high-passes are
+  not read yet: Clean's high-pass stands in (three factory presets).
+- The routes, measured in a fifth and sixth round: sources bipolar or
+  resting at 0, gain destinations attenuating by 1 - a+ + a u, the LFO's
+  and pitch envelope's routes scaled by their own amounts, the pitch
+  envelope moving in ratio and its route in semitones.
+- Ten factory presets, octave bands rms: seven within 1.6 dB (Sub Sine Bass
+  0.0 to Bells Brushed Hits 1.6), Metallic FM 2.3, OP Bass 3.1 within
+  40 dB of its loudest, Celesta 4.2 (its partials match; two octaves
+  around its morph filter do not yet).
 - A voice costs 2.6 us per period at 48 kHz on the dev machine, 5.2 with
   Antialias (a Drift voice 7.1).
 
