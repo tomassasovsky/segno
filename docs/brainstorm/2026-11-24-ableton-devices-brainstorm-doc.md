@@ -1,6 +1,6 @@
 # Ableton Live device presets on the pedal — brainstorm
 
-<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob -->
+<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance -->
 
 **Date:** 2026-11-24
 **Issue:** SEG-109 (related: SEG-57, Segno's own instrument voices)
@@ -196,16 +196,22 @@ written from it.
   resonance curve q = 4r/(3r + 1) + 4·max(r − 1, 0)² with a limiter at high
   cutoffs. **[code]** The limiter constants, the per-section scales and the
   slope (Live's manual says 24 dB/oct) are **[open]**; the shaper is
-  designed fresh for Segno and fitted to Live's output. Fitted: each
-  section behaves as an MS-20 style loop (a one-pole low-pass, then a
-  one-pole low-pass inside a loop closed through a one-pole high-pass,
-  the loop gain setting the resonance, a soft clip on the loop's sum),
-  both at the same cutoff (spreading them apart makes every measured
-  response worse); a loud source rings less and its skirt brightens, as
-  Live's does. The first section takes 1.15 of the loop gain and the
-  second 0.75: Live's resonant peaks are as narrow as one strongly
-  resonant section makes them (about a twelfth of an octave), and an even
-  split leaves them three times as wide.
+  designed fresh for Segno and fitted to Live's output. A second reading
+  (round 4) found each section to be a component-level Sallen-Key model of
+  the later MS-20 low-pass: a DC-blocked input (1.6 Hz) drives a first
+  integrator through a saturating transconductance z (1 - z^2/4 +
+  |z|^3/16); that capacitor's lower plate is the feedback node; a unity
+  buffer follows each of the two integrators and hard-clips at about
+  -4.99 / +4.81 circuit volts; the second buffer's output, DC-blocked, is
+  the section's output and feeds back through a diode curve (slope 2.21 at
+  0, a sharp knee near 1, slope 0.62 beyond: a compressor, not a clipper).
+  Small-signal Q = 1 / (2 - k), unity DC gain at every resonance. Section
+  1's feedback is 0.91351 q, section 2's 0.91351 q (0.5 + 0.2 r); both run
+  at 1.02 x the cutoff; the voice signal enters at x 3 x 2.69 circuit
+  volts; the two nonlinear elements are linearised at the last estimate
+  and the loop solved in closed form, twice per sample. **[code]** Segno
+  builds this model itself (its own diode curve, a fitted closed form) and
+  fits only its path gain and the noise level.
 - Filter input: both types clip their input: linear to about +0.70 and
   -0.98, a soft knee, and a hard edge at +0.79 on the positive side. A sine
   at Gain 1 gets Live's harmonics 2 to 41 within 3 dB (the hard edge gives
@@ -359,11 +365,22 @@ Then the filter II section split, the Shark Tooth's polarity and widths
 through the chain: Chirp Pluck within 0.5 dB per octave band, Bloom Pad
 +2.4 dB at 2 to 4 kHz (from +3.3).
 
+Round 4 (2026-11-25): filter II rebuilt as the MS-20 Sallen-Key model of
+the second reading, which replaced the fitted MS-20 style loop (filter
+renders and presets 1.7 dB rms on average, from 2.0; the resonant peaks
+1.3 dB, from 1.5). The five presets: Euphoria Lead, Chirp Pluck and Clob
+Bass within about 1 dB per octave band, 80s Tape within 1.2 everywhere,
+Bloom Pad within 1.1 dB up to 2 kHz, -1.8 at 4 kHz and -4.7 above 8 kHz.
+Unison's lanes match Live's at Drift 0 exactly (detune and pan at every
+strength). A filter II voice costs 7 us per period at 96 kHz (filter I
+3.2).
+
 Still open: Bloom Pad's unison beats dip deeper in Segno (its per-voice
-drift values are its own, so beats cannot line up with Live's); both
-filters' open top octave is 1 to 2 dB dark (80s Tape -2 dB above 4 kHz);
-Clob Bass's phrase is about 2 dB narrower; Sample & Hold and Wander draw
-different random values, by design.
+drift values are its own, so beats cannot line up with Live's); a quiet
+layer above 10 kHz in Bloom Pad's full phrase, 12 dB above Segno's yet
+about 55 dB under its loudness, that no single source shows; Clob Bass's
+phrase is about 2 dB narrower; Sample & Hold and Wander draw different
+random values, by design.
 
 ## Decisions
 

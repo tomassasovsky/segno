@@ -1,4 +1,4 @@
-<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob -->
+<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance -->
 # Segno — Progress & Roadmap
 
 <!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs multicore smarttune -->
@@ -64,6 +64,22 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
 | SEG-109 | Ableton Live device presets on the pedal, Drift first: presets read from the user's own copy; Drift's behavior learned with rea + Ghidra from Live 12.2.7 and reimplemented, no Ableton code or presets in the repo. Plan approved 2026-11-25 (P1-P6); P1 stereo buses, P2 preset reader and P3 the Drift device in review | in-review | needs-merge | `claude/ableton-devices-SEG-109` |
 
 ---
+
+## November 2026 Drift's filter II as an MS-20 circuit model (SEG-109 P4, round 4)
+
+- A second reading of Live's filter II found each section to be a
+  component-level Sallen-Key model of the later MS-20 low-pass: two
+  integrators, a saturating transconductance, clipping buffers, DC-blocked
+  ends and a diode curve in the resonance path. Segno builds that model
+  itself (its own diode curve) in place of the fitted MS-20 style loop.
+  Filter renders and presets: 1.7 dB rms on average (from 2.0); the
+  resonant peaks 1.3 dB (from 1.5).
+- Five presets, octave bands Segno minus Live: Euphoria Lead, Chirp Pluck
+  and Clob Bass within about 1 dB, 80s Tape within 1.2 everywhere, Bloom
+  Pad within 1.1 up to 2 kHz (+2.4 before). Levels within 0.7 dB.
+- Costs more: a filter II voice takes 7 us per period at 96 kHz on the dev
+  machine (filter I 3.2); the engine's voice budget fades the excess. The
+  console benchmark (hardware) sets the device's voice limit.
 
 ## November 2026 Drift fitted against Live renders (SEG-109 P4, round 3)
 
