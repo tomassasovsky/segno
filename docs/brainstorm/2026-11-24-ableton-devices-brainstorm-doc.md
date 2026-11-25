@@ -1256,9 +1256,12 @@ are built from the same modules.
   Exp(0.1, 100), so T60 is about 0.38 T; at the release it ramps over 8 ms
   to Ratio (ExpZ(1, 1000)) times faster, or no loss at all at Ratio 0.
   **[code]**
-- Above the struck pitch (a bend up, vibrato's upper half) the string
-  stays at its strike's length and a pitch-synchronous two-tap shifter on
-  its output takes the rest, crossfaded over 100 ms. **[code]**
+- Above the struck pitch (a bend up) the string stays at its strike's
+  length and a pitch-synchronous two-tap shifter on its output takes the
+  rest, crossfaded over 100 ms. The pitch handler that decides it takes the
+  key with bend, before glide and vibrato, which then move the string's
+  length from the held pitch and never reach the shifter. **[code]**
+  **[measured]** (Wood Bass's and Upright Basic Bass's vibrato depth)
 - The output: the pickup's point on the string, or the wave arriving at
   the bridge; then a 10 Hz high-pass. **[code]** (fit: a gain of 1.5,
   2.4 dB under the reading's 2)
@@ -1292,16 +1295,27 @@ are built from the same modules.
   Vel and Finger Force < Vel. **[code]** **[measured]** (the reference's
   decay and level at C2 and C6)
 - The damper rests on the string (always, or only after the release when
-  gated) through the same contact. The finger presses the string onto a
+  gated) through the same contact, from the exciter's side. A string
+  started again with the damper on starts bent under its weight: rail A
+  holds a / (1 + g) from the damper to the nut and -a g / (1 + g) from the
+  bridge to it, rail B the same from the damper to the bridge and from the
+  nut, a = m g / 2; the bridge's filters and the output's high-pass start
+  settled on that, and the finger starts on the fret under its weight and
+  the bent string's push. Lifting a gated damper at the strike lets the
+  string spring back at once. **[code]** **[measured]** (the resting
+  damper; the plucked presets' onsets and level)
+- The finger presses the string onto a
   fret at the nut, the two contacts solved together by Newton; the wave
   leaving the nut is the arriving wave plus the contacts' push, times the
   loss. **[code]**
 
 ### Filter, body, voices
 
-- Analog's filter, all ten types, its key tracking from the key with bend
-  (no glide or vibrato); the filter envelope (attack, decay, sustain,
-  release, velocity) and the LFO as Analog's. **[code]**
+- Analog's filter, all ten types (each stage clamping its own Q), its key
+  tracking from the key with bend (no glide or vibrato); the filter
+  envelope (attack, decay, sustain, release, velocity) in straight
+  segments, its module's default; the LFO as Analog's. **[code]**
+  **[measured]** (filt-env, the pad presets)
 - The body: four recirculating lines, each a delay and a Schroeder
   all-pass, through a low cut and an absorption low-pass whose highs decay
   High Cut times as fast; Body Level is the device's volume (Sq(0, 2)),
@@ -1326,24 +1340,24 @@ are built from the same modules.
 ### The fits so far
 
 Strict score (third-octave x 50 ms cells within 1.5 dB rms, the attack,
-level within 0.5 dB, pitch within 3 cents): 52 of 75 renders pass, 3 of
-the 20 factory presets (Saw Bass, Slap Bass, Harp Soft), up from 25 and
-0. Every single change around the reference passes but the bouncing
-hammer, the resting damper, the bow an octave down and with full force,
-the plectrum's speed and the filter envelope; all eleven body renders
-pass.
+level within 0.5 dB, pitch within 3 cents; three noise seeds): 57 of 75
+renders pass, 6 of the 20 factory presets (Saw Bass, Slap Bass, Harp
+Soft, Electric Basic Bass, Wire Noise, Clean Basic Guitar at C2), up from
+25 and 0. The held-out round (every factory preset, three notes over 8 s,
+never fitted against) passes 21 of 107, up from 8. Every single change
+around the reference passes but the bouncing hammer, the bow an octave
+down and with full force; all eleven body renders pass.
 
-Still open, by preset (third-octave rms): Chord Bouncing 23 (the bouncing
-hammer's re-strikes and the resting damper), Wire Noise 15, Slow String
-Pad 17, Attack Pad 6 (the bow, which is sensitive to its knobs' steps),
-Tiny Tonal Drums 15, Clean Basic Guitar 4 to 8 across three octaves and
-Hard Picked Guitar 4 (the pluck about 2 dB loud, the exciter's tap at
-C6), Wood Bass 4.2, Upright Basic Bass 4.1 and 4.4, Banjo 5.2, Tuned
-Noise 4, Fretless Bass 3.8. Electric Basic Bass (1.0) and Nylon Basic
-Guitar (1.4) pass over time but start late: the plucked presets' onsets
-sit 0.5 to 3.7 ms behind Live's. Error draws Segno's own random rise, so
-Hard Picked Guitar and Tiny Tonal Drums cannot match Live's pitch sample
-for sample. The MPE destinations are stored, not played.
+Still open, by preset (third-octave rms): Chord Bouncing 12 to 17 and
+the bounce render 6 (the bouncing hammer's re-strikes, which move with
+any small change), Slow String Pad 7.5, Attack Pad 5.7 (the bow), Tiny
+Tonal Drums 16, Banjo 5.2, Upright Basic Bass 4.0 and 4.4 and Fretless
+Bass 3.8 (their partials' levels: the exciter's comb), Tuned Noise 3.6,
+Wood Bass 2.7, Clean Basic Guitar 1.0 and 2.0 at C4 and C6, Nylon Basic
+Guitar 1.9 and Hard Picked Guitar 1.8 (level and onset, within a dB and a
+ms). Error draws Segno's own random rise, so Hard Picked Guitar and Tiny
+Tonal Drums cannot match Live's pitch sample for sample. The MPE
+destinations are stored, not played.
 
 ## Decisions
 
