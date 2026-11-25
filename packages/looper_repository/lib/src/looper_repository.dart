@@ -5933,11 +5933,19 @@ class LooperRepository {
       // An empty session establishes no master: the engine stays free to define
       // a fresh loop length.
       // A retimed rig commits on its recorded master (#1179).
-      final base = rig.retimed
+      // Free and Song have no shared loop (SEG-108): their takes commit on
+      // their own clocks, with no base and no grid.
+      final ownClocks = rig.ownClocks;
+      final base = ownClocks
+          ? 0
+          : rig.retimed
           ? rig.recordedLengthFrames
           : rig.baseLengthFrames;
-      if (rig.tracks.isNotEmpty && base > 0) {
-        final committed = _engine.commitSession(base, loopBeats: rig.gridBeats);
+      if (ownClocks || base > 0) {
+        final committed = _engine.commitSession(
+          base,
+          loopBeats: ownClocks ? 0 : rig.gridBeats,
+        );
         if (!committed.isOk) {
           throw StateError('failed to commit the session: ${committed.name}');
         }

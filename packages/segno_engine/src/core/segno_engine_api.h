@@ -4688,7 +4688,11 @@ LE_EXPORT int32_t le_engine_import_anchor(le_engine* engine, int32_t channel,
  * change audio length. Requires base_frames > 0 and loop_beats in
  * 0..INT32_MAX/15, and every staged track a whole multiple of base_frames
  * or exactly base/2 or base/4 (LE_ERR_INVALID otherwise, before anything is
- * posted). Posts one command; returns LE_OK or an le_result error.
+ * posted). Free and Song have no shared loop (SEG-108): there the commit
+ * takes base_frames 0 and loop_beats 0 (LE_ERR_INVALID for any other pair),
+ * leaves the master dormant and parks every imported track STOPPED on its
+ * own clock at its own length, one lap, without span or anchor. Posts one
+ * command; returns LE_OK or an le_result error.
  */
 LE_EXPORT int32_t le_engine_commit_session(le_engine* engine,
                                            int32_t base_frames,

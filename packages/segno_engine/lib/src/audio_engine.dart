@@ -1532,8 +1532,10 @@ abstract interface class SessionIo {
   /// track stopped at its whole-loop multiple (or its length over its
   /// [importSpan]). Restores exactly [loopBeats] beats (denominator notes)
   /// over the loop, `0` for a grid-free loop; a whole-bar loop passes its
-  /// bars times the signature's numerator (#1168). Launch with
-  /// [AudioEngine.play].
+  /// bars times the signature's numerator (#1168). Free and Song have no
+  /// shared loop (SEG-108): there both are `0`, the master stays dormant and
+  /// every imported track is left stopped on its own clock at its own
+  /// length. Launch with [AudioEngine.play].
   EngineResult commitSession(int baseFrames, {required int loopBeats});
 }
 

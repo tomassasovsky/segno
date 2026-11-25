@@ -262,9 +262,19 @@ class SessionRig {
   final Map<int, PitchMode> trackPitchModeOverrides;
 
   /// Whether the takes sit on a retimed master: the recall commits them at
-  /// the recorded pair and retimes to [tempoBpm].
+  /// the recorded pair and retimes to [tempoBpm]. Never in Free or Song,
+  /// which have no shared master to retime ([ownClocks]); a pair a take
+  /// left there from before a mode switch is not applied (SEG-108).
   bool get retimed =>
-      tracks.isNotEmpty && recordedLengthFrames > 0 && recordedTempoBpm > 0;
+      !ownClocks &&
+      tracks.isNotEmpty &&
+      recordedLengthFrames > 0 &&
+      recordedTempoBpm > 0;
+
+  /// Whether every take runs on its own clock (Free and Song): no shared
+  /// loop, so the recall commits each take at its own length (SEG-108).
+  bool get ownClocks =>
+      looperMode == LooperMode.free || looperMode == LooperMode.song;
 
   /// Whole-track gain intent, including tracks without recorded audio.
   final Map<int, double> trackLevels;
