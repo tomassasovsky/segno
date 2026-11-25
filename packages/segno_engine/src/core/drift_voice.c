@@ -531,6 +531,14 @@ static float lfo_start_phase(int32_t shape) {
   return shape <= 1 ? 0.25f : shape <= 3 ? 0.5f : 0.0f;
 }
 
+/* A new random step for Sample & Hold (held) and Wander (the glide's new
+ * end, from the last one). */
+static void lfo_draw(le_drift_voice* v) {
+  v->lfo_from = v->lfo_to;
+  v->lfo_to = rnd_bipolar(&v->rng);
+  v->lfo_hold = v->lfo_to;
+}
+
 static void derive(le_drift* d) {
   le_drift_derived* x = &d->d;
   /* The first chunk and a voice mode change reset the voice blocks: every
@@ -541,6 +549,7 @@ static void derive(le_drift* d) {
     d->block_mode = vi(d, LE_DRIFT_VOICE_MODE);
     for (int32_t i = 0; i < LE_DRIFT_VOICES; ++i) {
       d->voices[i].lfo_ph = lfo_start_phase(vi(d, LE_DRIFT_LFO_SHAPE));
+      lfo_draw(&d->voices[i]);
     }
   }
   x->osc1 = osc1_wave(vi(d, LE_DRIFT_OSC1_TYPE));
@@ -640,12 +649,16 @@ static void derive(le_drift* d) {
 
 /* Clears the low-pass state for filter type `kind` (the two types keep
  * different states in lp: filter II's are in circuit volts). */
-static void clear_lowpass(le_drift_voice* v, int32_t kind) {
-  memset(v->lp, 0, sizeof(v->lp));
-  v->lp[4] = v->lp[10] = 1.0f; /* filter II's secants at small signal */
-  v->lp[5] = v->lp[11] = 2.193f;
+static void clear_lowpass(const le_drift* d, le_drift_voice* v, int32_t kind) {
+  if (kind) {
+    memcpy(v->lp, d->f2_rest, sizeof(v->lp));
+  } else {
+    memset(v->lp, 0, sizeof(v->lp));
+  }
   v->lp_kind = kind;
 }
+
+static void f2_rest_state(float* s);
 
 /* ---- lifecycle and parameters ---- */
 
@@ -663,11 +676,12 @@ int32_t le_drift_init(le_drift* d, int32_t sample_rate) {
     d->note_gain[n] = note_gain(note_hz(n));
     d->key_cents[n] = key_cents(n);
   }
+  f2_rest_state(d->f2_rest);
   for (int32_t i = 0; i < LE_DRIFT_VOICES; ++i) {
     d->voice_cents[i] = voice_cents(i);
     d->voices[i].rng = 0x9e3779b9u ^ (uint32_t)(i * 2654435761u);
     d->voices[i].lfo_mod = 1.0f;
-    clear_lowpass(&d->voices[i], 0);
+    clear_lowpass(d, &d->voices[i], 0);
     /* each block's noise generators start alike: lane k of every block */
     d->noise_rng[i] = 0x2545f491u ^ (uint32_t)((i % 4) * 2654435761u);
   }
@@ -804,7 +818,7 @@ static void begin_note(le_drift* d, le_drift_voice* v, int was_silent) {
      * voices start together (Live's Stereo pair at Drift 0 is mono), and
      * once voices are reused a Stereo note's lanes start apart. */
     if (vi(d, LE_DRIFT_RESET_OSC_PHASE)) v->ph1 = v->ph2 = 0.0f;
-    clear_lowpass(v, vi(d, LE_DRIFT_FILTER_TYPE));
+    clear_lowpass(d, v, vi(d, LE_DRIFT_FILTER_TYPE));
     memset(v->hp, 0, sizeof(v->hp));
   }
   const int32_t shape = vi(d, LE_DRIFT_LFO_SHAPE);
@@ -813,6 +827,7 @@ static void begin_note(le_drift* d, le_drift_voice* v, int was_silent) {
    * it the note continues the phase the voice's LFO stopped at */
   if (vi(d, LE_DRIFT_LFO_RETRIGGER) || shape >= 7) {
     v->lfo_ph = lfo_start_phase(shape);
+    lfo_draw(v); /* Sample & Hold and Wander start on a drawn value */
     v->lfo_done = 0;
   }
   v->cyc_ph = 0.0f;
@@ -1103,8 +1118,9 @@ static float lfo_shape(le_drift_voice* v, int32_t shape, float p) {
     case 5:
       return v->lfo_hold;
     case 6: {
+      /* a symmetric quadratic S-curve over each half cycle */
       const float t = frac(2.0f * p);
-      const float e = t * t * (3.0f - 2.0f * t);
+      const float e = t < 0.5f ? 2.0f * t * t : 1.0f - 2.0f * (1.0f - t) * (1.0f - t);
       return v->lfo_from + e * (v->lfo_to - v->lfo_from);
     }
     case 7:
@@ -1127,11 +1143,7 @@ static void lfo_advance(le_drift_voice* v, float inc) {
   const int wrapped = p >= 1.0f;
   if (wrapped) p -= floorf(p);
   if (wrapped) v->lfo_done = 1;
-  if (wrapped || (before < 0.5f && p >= 0.5f)) {
-    v->lfo_hold = rnd_bipolar(&v->rng);
-    v->lfo_from = v->lfo_to;
-    v->lfo_to = rnd_bipolar(&v->rng);
-  }
+  if (wrapped || (before < 0.5f && p >= 0.5f)) lfo_draw(v);
   v->lfo_ph = p;
 }
 
@@ -1213,8 +1225,9 @@ static float cubic_clip(float v) {
  * bounds the ringing and self-oscillation past 1. Above resonance 1 the
  * resonance is pulled back as the cutoff rises past 0.075 of the rate.
  * Fitted on Live's filter I renders: base damping 1.12, the shaper's
- * input x1.4, output gain 2.95; sixth-octave levels within 2.6 dB rms on
- * average (the fitted state-variable filter it replaces: 3.0). */
+ * input x1.4, output gain 2.90 (a sine within 0.1 dB); sixth-octave
+ * levels within 2.6 dB rms on average (the fitted state-variable filter it
+ * replaces: 3.0). */
 static float filter1(float* s, float x, float fc, float r, float rate,
                      uint32_t* rng) {
   const float g = prewarp(PI_F * fc / rate);
@@ -1234,7 +1247,7 @@ static float filter1(float* s, float x, float fc, float r, float rate,
   s[0] = bp + g * hp;
   s[1] = lp + g * bp;
   s[2] = bp;
-  return lp * 2.95f;
+  return lp * 2.90f;
 }
 
 /* Low-pass type II: two sections in series, each a Sallen-Key model of the
@@ -1349,8 +1362,29 @@ static float filter2(float* s, float x, float fc, float r, float rate,
   /* the cascade's 2 / 9, and Segno's path gain around it (fitted: every
    * filter II render, the factory presets' isolations and the presets,
    * sixth-octave levels within 1.7 dB rms on average, the resonant peaks'
-   * shape within 1.3 dB) */
-  return filter2_section(s + 6, a, &c, k2) * (2.0f / 9.0f) * 3.85f;
+   * shape within 1.3 dB; a sine and a saw at every gain within 0.05 dB) */
+  return filter2_section(s + 6, a, &c, k2) * (2.0f / 9.0f) * 3.69f;
+}
+
+/* Filter II at rest: the state its offsets settle to with no input (at DC
+ * no current flows into the integrators and the couplings, so neither the
+ * cutoff nor the resonance moves it). A voice's filter starts there, not
+ * from zero, which would step through the output coupling: measured, Live
+ * starts its filter II notes without that transient. */
+static void f2_rest_state(float* s) {
+  memset(s, 0, 12 * sizeof(float));
+  s[4] = s[10] = 1.0f; /* the secants at small signal */
+  s[5] = s[11] = 2.193f;
+  /* fast coefficients settle the same equilibrium in few samples */
+  f2_coef c;
+  c.g = 4.0f;
+  c.he = 0.5f;
+  c.inv1g = 1.0f / (1.0f + c.g);
+  c.c1 = c.g * c.inv1g;
+  for (int i = 0; i < 400; ++i) {
+    const float a = filter2_section(s, 0.0f, &c, 0.5f);
+    filter2_section(s + 6, a, &c, 0.25f);
+  }
 }
 
 /* The high-pass: a linear two-integrator loop, damping 0.68. */
@@ -1529,9 +1563,9 @@ static void voice_sample(le_drift* d, le_drift_voice* v, float* out_l,
   float thru = 0.0f, around = 0.0f, around_noise = 0.0f;
   if (x->thru1) thru += o1; else around += o1;
   if (x->thru2) thru += o2; else around += o2;
-  /* fitted: noise reaches either filter 2.4 dB quieter than the bypass
-   * (Live's noise renders, levels 0.1 to 1) */
-  if (x->thru_noise) noise *= 0.76f;
+  /* fitted: noise reaches filter I 2.2 dB and filter II 2.0 dB quieter
+   * than the bypass (Live's noise renders, levels 0.1 to 1) */
+  if (x->thru_noise) noise *= x->filter_type ? 0.793f : 0.773f;
   if (x->thru_noise) thru += noise; else around_noise = noise;
   /* filters */
   float fc = b->freq * key_tracking(b->tracking, v->key) *
@@ -1541,7 +1575,7 @@ static void voice_sample(le_drift* d, le_drift_voice* v, float* out_l,
   const float res = clampf(x->res + add_res, 0.0f, 1.3f);
   /* a Filter Type change while the voice sounds starts the new filter from
    * rest: the other type's state would jolt it */
-  if (v->lp_kind != x->filter_type) clear_lowpass(v, x->filter_type);
+  if (v->lp_kind != x->filter_type) clear_lowpass(d, v, x->filter_type);
   float y = filter_input(thru) * 0.25f;
   y = x->filter_type ? filter2(v->lp, y, fc, res, rate, &v->rng)
                                   : filter1(v->lp, y, fc, res, rate, &v->rng);

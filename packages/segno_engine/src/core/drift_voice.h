@@ -172,6 +172,8 @@ typedef struct le_drift {
   float note_gain[128];
   float key_cents[128];
   float voice_cents[LE_DRIFT_VOICES];
+  /* filter II's state at rest, where a voice's filter starts */
+  float f2_rest[12];
   /* the voice mode the blocks were last reset for (-1: not yet) */
   int32_t block_mode;
   /* Poly allocation: where the round robin starts */

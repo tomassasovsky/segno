@@ -506,6 +506,26 @@ static void test_drift_block_reset_lfo_phase(void) {
   }
 }
 
+/* Filter II starts a voice at rest: with every source off, a note through
+ * it stays silent (from zero state its offsets would step through the
+ * output coupling). A retriggered Sample & Hold starts on a drawn value. */
+static void test_drift_filter2_starts_at_rest(void) {
+  printf("test_drift_filter2_starts_at_rest\n");
+  static float l[4800], r[4800];
+  drift_init(&g_drift, DRIFT_SR);
+  drift_set(&g_drift, LE_DRIFT_FILTER_TYPE, 1.0f);
+  drift_set(&g_drift, LE_DRIFT_OSC1_ON, 0.0f);
+  drift_set(&g_drift, LE_DRIFT_OSC2_ON, 0.0f);
+  CHECK(le_drift_note_on(&g_drift, 1, 60, 127, 0) == 0);
+  le_drift_render(&g_drift, l, r, 4800);
+  CHECK(drift_peak(l, 4800) < 1e-4f);
+  drift_init(&g_drift, DRIFT_SR);
+  drift_set(&g_drift, LE_DRIFT_LFO_SHAPE, 5.0f);
+  drift_set(&g_drift, LE_DRIFT_LFO_RETRIGGER, 1.0f);
+  CHECK(le_drift_note_on(&g_drift, 1, 60, 127, 0) == 0);
+  CHECK(g_drift.voices[0].lfo_hold != 0.0f);
+}
+
 /* An LFO in Ratio mode routed to pitch moves the oscillators' phase, not
  * their frequency: the phase accumulators run as without it. In Freq mode
  * the same routing is vibrato and they do not. */
@@ -828,6 +848,7 @@ static void run_drift_tests(void) {
   test_drift_reset_phase_restart_waits();
   test_drift_glide_in_hertz();
   test_drift_block_reset_lfo_phase();
+  test_drift_filter2_starts_at_rest();
   test_drift_ratio_lfo_is_phase_modulation();
   test_drift_filter_input_clips_asymmetrically();
   test_drift_voice_blocks();
