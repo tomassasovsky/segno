@@ -91,7 +91,8 @@ typedef struct le_drift_voice {
   /* oscillators and noise */
   float ph1, ph2;
   uint32_t rng;
-  /* envelopes: level, stage, per-sample attack step, release start */
+  /* envelopes: level, stage, and the attack's per-sample step, set at the
+   * note's start from the level it starts at */
   float env1, env2;
   int32_t stage1, stage2;
   float att1, att2;
@@ -117,7 +118,6 @@ typedef struct le_drift_derived {
   float gain1, gain2, gain_noise;
   int32_t thru1, thru2, thru_noise;
   float env1_dec, env1_rel, env2_dec, env2_rel; /* one-pole coefficients */
-  float env1_att, env2_att;                     /* seconds */
   float sustain1, sustain2;
   float volume, vol_vel;
   float hp_hz, freq, tracking, res;
@@ -156,6 +156,10 @@ typedef struct le_drift {
   int32_t mono_note[LE_DRIFT_MONO_STACK];
   uint32_t mono_origin[LE_DRIFT_MONO_STACK];
   float mono_velocity[LE_DRIFT_MONO_STACK];
+  /* per note: the loudness compensation and the per-key tuning in cents,
+   * filled at init */
+  float note_gain[128];
+  float key_cents[128];
   /* Poly allocation: where the round robin starts */
   int32_t next_voice;
   int32_t voice_limit; /* sounding voices allowed (the engine's overload) */
@@ -209,6 +213,10 @@ void le_drift_cut(le_drift* d);
 
 /* At most `limit` sounding voices; the excess fades, oldest first. */
 void le_drift_set_voice_limit(le_drift* d, int32_t limit);
+
+/* Fades the oldest sounding voice (the engine's budget across every
+ * instrument). Returns 1, or 0 when none sounds. */
+int32_t le_drift_fade_oldest(le_drift* d);
 
 /* The tempo the Sync rate modes follow (beats per minute, > 0). */
 void le_drift_set_tempo(le_drift* d, float bpm);

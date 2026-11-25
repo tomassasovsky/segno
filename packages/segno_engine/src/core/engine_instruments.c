@@ -601,7 +601,8 @@ void le_instruments_apply_command(le_engine* e, const le_command* cmd) {
   switch (cmd->code) {
     case LE_CMD_SET_VOICE_LIMIT:
       if (le_synth_set_voice_limit(s, cmd->arg_i) == 0) {
-        /* the same limit holds on each device slot */
+        /* a device slot sizes its pool to it; the limit on every
+         * instrument together is enforce_voice_budget's */
         for (int k = 0; k < LE_MAX_INSTRUMENTS; ++k) {
           le_drift_set_voice_limit(&e->drift[k], cmd->arg_i);
         }
@@ -925,11 +926,36 @@ void le_instruments_block(le_engine* e, uint32_t frames) {
   le_instruments_render(e, frames);
 }
 
+/* The voice limit bounds every instrument together (le_engine_set_voice_
+ * limit): the patch voices hold their own share, and while the total is
+ * over, the device slot with the most voices fades its oldest. Once a
+ * block, after its notes, so the newest notes sound. */
+static void enforce_voice_budget(le_engine* e, le_synth* s) {
+  int32_t total = le_synth_active(s, -1);
+  int32_t active[LE_MAX_INSTRUMENTS];
+  for (int k = 0; k < LE_MAX_INSTRUMENTS; ++k) {
+    active[k] = le_drift_active(&e->drift[k]);
+    total += active[k];
+  }
+  while (total > s->voice_limit) {
+    int busiest = 0;
+    for (int k = 1; k < LE_MAX_INSTRUMENTS; ++k) {
+      if (active[k] > active[busiest]) busiest = k;
+    }
+    if (active[busiest] == 0 || !le_drift_fade_oldest(&e->drift[busiest])) {
+      return; /* only patch voices: the synth keeps its own limit */
+    }
+    active[busiest]--;
+    total--;
+  }
+}
+
 void le_instruments_apply(le_engine* e) {
   le_synth* s = (le_synth*)e->synth;
   if (s == NULL) return;
   apply_params(e, s);
   drain_events(e, s);
+  enforce_voice_budget(e, s);
 }
 
 void le_instruments_render(le_engine* e, uint32_t frames) {
@@ -1012,7 +1038,9 @@ void le_instruments_render(le_engine* e, uint32_t frames) {
     store_i32(&e->a_inst_voices[k],
               le_synth_active(s, k) + le_drift_active(&e->drift[k]));
   }
-  atomic_store_explicit(&e->a_voices_stolen, s->stolen, memory_order_relaxed);
+  uint32_t stolen = s->stolen;
+  for (int k = 0; k < LE_MAX_INSTRUMENTS; ++k) stolen += e->drift[k].stolen;
+  atomic_store_explicit(&e->a_voices_stolen, stolen, memory_order_relaxed);
   atomic_store_explicit(&e->a_voices_stolen_hard, s->stolen_hard,
                         memory_order_relaxed);
 }

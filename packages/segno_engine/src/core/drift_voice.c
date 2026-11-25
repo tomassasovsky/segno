@@ -488,8 +488,6 @@ static void derive(le_drift* d) {
   x->thru1 = vi(d, LE_DRIFT_FILTER_OSC1_THROUGH);
   x->thru2 = vi(d, LE_DRIFT_FILTER_OSC2_THROUGH);
   x->thru_noise = vi(d, LE_DRIFT_FILTER_NOISE_THROUGH);
-  x->env1_att = vf(d, LE_DRIFT_ENV1_ATTACK);
-  x->env2_att = vf(d, LE_DRIFT_ENV2_ATTACK);
   x->env1_dec = envelope_coefficient(vf(d, LE_DRIFT_ENV1_DECAY), d->rate);
   x->env1_rel = envelope_coefficient(vf(d, LE_DRIFT_ENV1_RELEASE), d->rate);
   x->env2_dec = envelope_coefficient(vf(d, LE_DRIFT_ENV2_DECAY), d->rate);
@@ -603,6 +601,10 @@ int32_t le_drift_init(le_drift* d, int32_t sample_rate) {
   halfband_taps(d->hb_taps);
   set_rate(d);
   derive(d);
+  for (int32_t n = 0; n < 128; ++n) {
+    d->note_gain[n] = note_gain(note_hz(n));
+    d->key_cents[n] = key_cents(n);
+  }
   for (int32_t i = 0; i < LE_DRIFT_VOICES; ++i) {
     d->voices[i].rng = 0x9e3779b9u ^ (uint32_t)(i * 2654435761u);
   }
@@ -688,8 +690,8 @@ static void lane_setup(const le_drift* d, le_drift_voice* v, int32_t lane,
     ratio = exp2f((lane == 0 ? -1.0f : 1.0f) * s * LE_DRIFT_STEREO_CENTS / 1200.0f);
   }
   const float w = vf(d, LE_DRIFT_DRIFT_DEPTH) / 0.58f;
-  v->ratio = ratio * exp2f(w * key_cents(note) / 1200.0f);
-  const float ng = note_gain(note_hz(note));
+  v->ratio = ratio * exp2f(w * d->key_cents[note] / 1200.0f);
+  const float ng = d->note_gain[note];
   v->gain_l = gl * ng;
   v->gain_r = gr * ng;
 }
@@ -730,6 +732,13 @@ static void start_voice(le_drift* d, le_drift_voice* v, int32_t lane,
     v->lfo_done = 0;
   }
   v->cyc_ph = 0.0f;
+  /* the attack rises from the level it starts at to 1 over Attack */
+  const float n1 = vf(d, LE_DRIFT_ENV1_ATTACK) * d->rate;
+  const float n2 = vf(d, LE_DRIFT_ENV2_ATTACK) * d->rate;
+  v->att1 = n1 <= 1.0f ? 1.0f : (1.0f - v->env1) / n1;
+  v->att2 = n2 <= 1.0f ? 1.0f : (1.0f - v->env2) / n2;
+  if (v->att1 <= 0.0f) v->att1 = 1.0f; /* already at the top */
+  if (v->att2 <= 0.0f) v->att2 = 1.0f;
   v->stage1 = v->stage2 = STAGE_ATTACK;
   v->fade = 0.0f;
   v->state = LE_DRIFT_VOICE_HELD;
@@ -755,8 +764,11 @@ static int32_t pick_group(le_drift* d, uint32_t origin, int32_t note,
   }
   for (int32_t k = 0; k < groups; ++k) {
     const int32_t g = (d->next_voice + k) % groups;
-    const le_drift_voice* v = &d->voices[g * lanes];
-    if (v->state == LE_DRIFT_VOICE_FREE) {
+    int free = 1;
+    for (int32_t l = 0; l < lanes; ++l) {
+      free &= d->voices[g * lanes + l].state == LE_DRIFT_VOICE_FREE;
+    }
+    if (free) {
       d->next_voice = (g + 1) % groups;
       return g;
     }
@@ -817,9 +829,8 @@ static void let_go(le_drift* d, le_drift_voice* v) {
   }
 }
 
-/* Mono: drops `origin`'s notes from the held stack; when the sounding note
- * was one, the newest left sounds (legato), or the voices let go. */
-static void mono_note_off(le_drift* d, uint32_t origin) {
+/* Drops `origin`'s notes from Mono's held stack; returns whether any was. */
+static int mono_drop(le_drift* d, uint32_t origin) {
   const int32_t was = d->mono_n;
   int32_t keep = 0;
   for (int32_t i = 0; i < d->mono_n; ++i) {
@@ -830,7 +841,14 @@ static void mono_note_off(le_drift* d, uint32_t origin) {
     keep++;
   }
   d->mono_n = keep;
-  if (keep == was) return;
+  return keep != was;
+}
+
+/* Mono: drops `origin`'s notes from the held stack; when the sounding note
+ * was one, the newest left sounds (legato), or the voices let go. */
+static void mono_note_off(le_drift* d, uint32_t origin) {
+  if (!mono_drop(d, origin)) return;
+  const int32_t keep = d->mono_n;
   le_drift_voice* v0 = &d->voices[0];
   if (v0->state != LE_DRIFT_VOICE_HELD || v0->origin != origin) return;
   if (keep > 0) {
@@ -845,8 +863,11 @@ void le_drift_note_off(le_drift* d, uint32_t origin) {
   if (d == NULL) return;
   if (voice_mode(d) == MODE_MONO) {
     mono_note_off(d, origin);
-    return;
+  } else {
+    mono_drop(d, origin); /* held under Mono before a mode change */
   }
+  /* Every held voice of the origin lets go, whatever mode started it: a
+   * mode change while keys are held never strands a note. */
   for (int32_t i = 0; i < LE_DRIFT_VOICES; ++i) {
     le_drift_voice* v = &d->voices[i];
     if (v->state == LE_DRIFT_VOICE_HELD && v->origin == origin) let_go(d, v);
@@ -927,6 +948,19 @@ void le_drift_cut(le_drift* d) {
   d->sustain_n = 0;
   d->mono_n = 0;
   d->bend = d->mod = d->pressure = 0.0f;
+}
+
+int32_t le_drift_fade_oldest(le_drift* d) {
+  if (d == NULL) return 0;
+  le_drift_voice* old = NULL;
+  for (int32_t i = 0; i < LE_DRIFT_VOICES; ++i) {
+    le_drift_voice* v = &d->voices[i];
+    if (sounding(v) && (old == NULL || v->serial < old->serial)) old = v;
+  }
+  if (old == NULL) return 0;
+  fade_voice(old);
+  d->stolen++;
+  return 1;
 }
 
 int32_t le_drift_active(const le_drift* d) {
@@ -1039,12 +1073,11 @@ static float cycling(float p, float mid, float hold) {
   return y > 1.0f ? 1.0f : y;
 }
 
-static float envelope(float* y, int32_t* stage, float attack, float dec,
-                      float sustain, float rel, float rate) {
+static float envelope(float* y, int32_t* stage, float step, float dec,
+                      float sustain, float rel) {
   switch (*stage) {
     case STAGE_ATTACK: {
-      const float n = attack * rate;
-      *y += n <= 1.0f ? 1.0f : 1.0f / n;
+      *y += step;
       if (*y >= 1.0f) {
         *y = 1.0f;
         *stage = STAGE_DECAY;
@@ -1134,14 +1167,14 @@ static void voice_sample(le_drift* d, le_drift_voice* v, float* out_l,
   const float rate = x->rate;
   /* sources */
   drift_sources src;
-  const float env1 = envelope(&v->env1, &v->stage1, x->env1_att, x->env1_dec,
-                              b->sustain1, x->env1_rel, rate);
+  const float env1 = envelope(&v->env1, &v->stage1, v->att1, x->env1_dec,
+                              b->sustain1, x->env1_rel);
   float env2;
   if (b->cycling) {
     env2 = cycling(v->cyc_ph, b->cyc_mid, b->cyc_hold);
   } else {
-    env2 = envelope(&v->env2, &v->stage2, x->env2_att, x->env2_dec, b->sustain2,
-                    x->env2_rel, rate);
+    env2 = envelope(&v->env2, &v->stage2, v->att2, x->env2_dec, b->sustain2,
+                    x->env2_rel);
   }
   const int one_shot = b->lfo_shape >= 7;
   src.raw[LE_DRIFT_SRC_ENV1] = env1;

@@ -281,6 +281,73 @@ static void test_drift_sustain_cut_and_release_matching(void) {
   CHECK(le_drift_held(&g_drift, 0x02000005u));
 }
 
+/* Notes held while Voice Mode changes still let go: Poly to Mono and back. */
+static void test_drift_mode_change_releases_held_notes(void) {
+  printf("test_drift_mode_change_releases_held_notes\n");
+  static float l[9600], r[9600];
+  drift_init(&g_drift, DRIFT_SR);
+  drift_set(&g_drift, LE_DRIFT_ENV1_RELEASE, 0.05f);
+  CHECK(le_drift_note_on(&g_drift, 1, 60, 100, 0) == 0);
+  CHECK(le_drift_note_on(&g_drift, 2, 64, 100, 0) == 0);
+  drift_set(&g_drift, LE_DRIFT_VOICE_MODE, 1.0f); /* Mono */
+  le_drift_note_off(&g_drift, 1);
+  le_drift_note_off(&g_drift, 2);
+  CHECK(!le_drift_held(&g_drift, 1) && !le_drift_held(&g_drift, 2));
+  le_drift_render(&g_drift, l, r, 9600);
+  CHECK(le_drift_active(&g_drift) == 0);
+  /* Mono to Poly: the note held under Mono lets go, and leaves no stale
+   * entry on Mono's stack */
+  CHECK(le_drift_note_on(&g_drift, 3, 60, 100, 0) == 0);
+  drift_set(&g_drift, LE_DRIFT_VOICE_MODE, 0.0f);
+  le_drift_note_off(&g_drift, 3);
+  CHECK(!le_drift_held(&g_drift, 3));
+  CHECK(g_drift.mono_n == 0);
+}
+
+/* A retriggered attack rises from the level it starts at over the whole
+ * Attack time. */
+static void test_drift_retriggered_attack_keeps_its_time(void) {
+  printf("test_drift_retriggered_attack_keeps_its_time\n");
+  static float l[DRIFT_SR], r[DRIFT_SR];
+  drift_init(&g_drift, DRIFT_SR);
+  drift_set(&g_drift, LE_DRIFT_HIQUALITY, 0.0f);
+  drift_set(&g_drift, LE_DRIFT_ENV1_ATTACK, 1.0f);
+  CHECK(le_drift_note_on(&g_drift, 1, 60, 100, 0) == 0);
+  le_drift_render(&g_drift, l, r, DRIFT_SR / 2);
+  CHECK(fabsf(g_drift.voices[0].env1 - 0.5f) < 0.01f);
+  CHECK(le_drift_note_on(&g_drift, 1, 60, 100, 0) == 0); /* restrike */
+  le_drift_render(&g_drift, l, r, DRIFT_SR / 4);
+  CHECK(fabsf(g_drift.voices[0].env1 - 0.625f) < 0.01f); /* 0.5 + 0.5 / 4 */
+  le_drift_render(&g_drift, l, r, DRIFT_SR * 3 / 4 - 100);
+  CHECK(g_drift.voices[0].stage1 == 1);
+  le_drift_render(&g_drift, l, r, 200);
+  CHECK(g_drift.voices[0].stage1 == 2); /* the top at 1 s, not 0.5 s */
+}
+
+/* After Poly, a Unison group is free only when all four of its voices are:
+ * a note never takes a voice another note still sounds on. */
+static void test_drift_group_needs_every_lane_free(void) {
+  printf("test_drift_group_needs_every_lane_free\n");
+  static float l[9600], r[9600];
+  drift_init(&g_drift, DRIFT_SR);
+  drift_set(&g_drift, LE_DRIFT_ENV1_RELEASE, 0.01f);
+  for (uint32_t k = 0; k < 4; ++k) {
+    CHECK(le_drift_note_on(&g_drift, 1 + k, 50 + (int32_t)k, 100, 0) == 0);
+  }
+  le_drift_note_off(&g_drift, 1); /* voice 0 ends; 1 to 3 hold */
+  le_drift_render(&g_drift, l, r, 9600);
+  CHECK(g_drift.voices[0].state == 0 && g_drift.voices[1].state == 1);
+  drift_set(&g_drift, LE_DRIFT_VOICE_MODE, 3.0f);
+  CHECK(le_drift_note_on(&g_drift, 9, 70, 100, 0) == 0);
+  for (int32_t i = 1; i < 4; ++i) {
+    CHECK(g_drift.voices[i].note == 50 + i && g_drift.voices[i].origin == 1u + (uint32_t)i);
+  }
+  int32_t on_new = 0;
+  for (int32_t i = 4; i < LE_DRIFT_VOICES; ++i) on_new += g_drift.voices[i].note == 70;
+  CHECK(on_new == 4); /* a whole group of its own */
+  CHECK(g_drift.stolen == 0);
+}
+
 /* ---- the engine: a slot playing Drift ---- */
 
 /* Processes [frames] in blocks of [block]; when [l] and [r] are given,
@@ -381,6 +448,42 @@ static void test_engine_drift_params_and_switching(void) {
   le_engine_destroy(e);
 }
 
+/* The voice limit bounds every instrument together: two device slots and a
+ * patch slot share it, and a limit below one Unison note's four voices
+ * still holds. */
+static void test_engine_drift_voice_budget(void) {
+  printf("test_engine_drift_voice_budget\n");
+  le_engine* e = ins_engine(INS_SR);
+  CHECK(le_engine_set_voice_limit(e, 8) == LE_OK);
+  CHECK(le_engine_set_instrument_device(e, 0, LE_INST_DEVICE_DRIFT, NULL) == LE_OK);
+  CHECK(le_engine_set_instrument_device(e, 1, LE_INST_DEVICE_DRIFT, NULL) == LE_OK);
+  CHECK(le_engine_set_instrument(e, 2, syn_patch("pad"), NULL) == LE_OK);
+  for (int32_t k = 0; k < 6; ++k) {
+    CHECK(le_engine_instrument_note_on(e, 0, 10 + (uint32_t)k, 48 + k, 100) == LE_OK);
+    CHECK(le_engine_instrument_note_on(e, 1, 20 + (uint32_t)k, 60 + k, 100) == LE_OK);
+  }
+  CHECK(le_engine_instrument_note_on(e, 2, 30, 72, 100) == LE_OK);
+  CHECK(le_engine_instrument_note_on(e, 2, 31, 76, 100) == LE_OK);
+  drift_run(e, 64, 64, 0, NULL, NULL);
+  const int32_t total = le_synth_active((le_synth*)e->synth, -1) +
+                        le_drift_active(&e->drift[0]) + le_drift_active(&e->drift[1]);
+  CHECK(total == 8);
+  CHECK(le_synth_active((le_synth*)e->synth, 2) == 2);
+  CHECK(le_drift_active(&e->drift[0]) == 3 && le_drift_active(&e->drift[1]) == 3);
+  le_snapshot snap;
+  le_engine_get_snapshot(e, &snap);
+  CHECK(snap.voices_stolen >= 6);
+  /* a limit of 2 with a Unison note */
+  CHECK(le_engine_cut_sound(e) == LE_OK);
+  CHECK(le_engine_set_voice_limit(e, 2) == LE_OK);
+  CHECK(le_engine_set_instrument_device_param(e, 0, LE_DRIFT_VOICE_MODE, 3.0f) == LE_OK);
+  drift_run(e, 960, 64, 0, NULL, NULL);
+  CHECK(le_engine_instrument_note_on(e, 0, 40, 60, 100) == LE_OK);
+  drift_run(e, 64, 64, 0, NULL, NULL);
+  CHECK(le_drift_active(&e->drift[0]) == 2);
+  le_engine_destroy(e);
+}
+
 static void test_engine_drift_refusals(void) {
   printf("test_engine_drift_refusals\n");
   le_engine* e = le_engine_create();
@@ -451,7 +554,11 @@ static void run_drift_tests(void) {
   test_drift_voice_modes();
   test_drift_allocation();
   test_drift_sustain_cut_and_release_matching();
+  test_drift_mode_change_releases_held_notes();
+  test_drift_retriggered_attack_keeps_its_time();
+  test_drift_group_needs_every_lane_free();
   test_engine_drift_slot_matches_offline();
+  test_engine_drift_voice_budget();
   test_engine_drift_params_and_switching();
   test_engine_drift_refusals();
   test_engine_drift_midi();
