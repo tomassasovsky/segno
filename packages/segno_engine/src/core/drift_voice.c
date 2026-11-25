@@ -1264,13 +1264,15 @@ static float filter1(float* s, float x, float fc, float r, float rate,
  * circuit's volts: the voice signal enters at x 3 x 2.69 and leaves at
  * 2 / 9 of the passband. */
 
-/* The diode curve in the feedback: a slope of 2.19 at 0, a sharp knee near
+/* The diode curve in the feedback: a slope of 2.21 at 0, a sharp knee near
  * 1, and a slope of 0.62 beyond, slightly larger above 0 than below.
- * Segno's own form, fitted to a description of Live's within 0.04. */
+ * Segno's own form, fitted to a description of Live's within 0.04; the
+ * slope at 0 sets the small-signal resonance: fitted, filter II's
+ * resonant peaks on noise within 0.3 dB of Live's at resonance 0.5 to 1. */
 static float f2_diode(float a) {
   const float gm = a >= 0.0f ? 1.0449f : 1.1195f;
   const float u = gm * a;
-  return 0.62f * a + 1.5725f * a / sqrtf(sqrtf(1.0f + u * u * u * u));
+  return 0.62f * a + 1.59f * a / sqrtf(sqrtf(1.0f + u * u * u * u));
 }
 
 /* The first integrator's transconductance z (1 - z^2/4 + |z|^3/16) on its
@@ -1282,7 +1284,7 @@ static float f2_ota_secant(float z) {
 }
 
 static float f2_diode_secant(float a) {
-  return fabsf(a) < 1e-4f ? 2.193f : f2_diode(a) / a;
+  return fabsf(a) < 1e-4f ? 2.21f : f2_diode(a) / a;
 }
 
 #define F2_GI 2.69154f     /* into a section, in circuit volts */
@@ -1374,7 +1376,7 @@ static float filter2(float* s, float x, float fc, float r, float rate,
 static void f2_rest_state(float* s) {
   memset(s, 0, 12 * sizeof(float));
   s[4] = s[10] = 1.0f; /* the secants at small signal */
-  s[5] = s[11] = 2.193f;
+  s[5] = s[11] = 2.21f;
   /* fast coefficients settle the same equilibrium in few samples */
   f2_coef c;
   c.g = 4.0f;
