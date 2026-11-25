@@ -36,6 +36,9 @@ extern "C" {
 #define LE_ANALOG_SUSTAIN_MAX 16
 #define LE_ANALOG_HELD_MAX 16
 #define LE_ANALOG_FADE_MS 1 /* a stolen or cut voice's fade */
+#define LE_ANALOG_BL_HALF 13   /* the band-limited step's half length, samples */
+#define LE_ANALOG_BL_PHASES 64 /* its table's fractional positions */
+#define LE_ANALOG_BL_RING 32   /* the oscillator's output ring (a power of 2) */
 
 typedef struct le_analog_env {
   int32_t seg;    /* ANALOG_SEG_* (analog_voice.c) */
@@ -48,7 +51,7 @@ typedef struct le_analog_env {
 typedef struct le_analog_tick {
   float fc, q, k;       /* the filter */
   float pw;             /* the pulse width, a fraction of the period */
-  float sub, ratio;     /* the sub level, the sync ratio */
+  float sub, ratio;     /* the sub level, the sync ratio (0: no sync) */
   float to_f1, to_f2;   /* the oscillator's levels into each filter */
   float n_f1, n_f2;     /* the noise's */
   float link;           /* filter 1 into filter 2 */
@@ -71,6 +74,8 @@ typedef struct le_analog_chain {
   float lfo, lfo_sh, lfo_sh_prev, lfo_amp, lfo_wait;
   float gl, gr, gl_step, gr_step; /* the amp's gains, ramped across a tick */
   float noise_lp;
+  float ring[LE_ANALOG_BL_RING]; /* the oscillator's output, LE_ANALOG_BL_HALF samples late */
+  int32_t ring_at;               /* the slot of the current sample */
   le_analog_tick t;    /* this tick's values */
 } le_analog_chain;
 
@@ -117,6 +122,8 @@ typedef struct le_analog {
   int32_t voice_limit;
   uint32_t stolen;
   uint32_t rng;
+  /* the band-limited step's residual (analog_voice.c) */
+  float bl[LE_ANALOG_BL_PHASES + 1][2 * LE_ANALOG_BL_HALF];
   le_analog_voice voices[LE_ANALOG_VOICE_SLOTS];
 } le_analog;
 
