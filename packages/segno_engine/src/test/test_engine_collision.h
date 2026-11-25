@@ -141,7 +141,7 @@ static void test_collision_voices_end(void) {
       collision_set(&g_collision, LE_COLLISION_RES(q, LE_COLLISION_R_ON), 1.0f);
       collision_set(&g_collision, LE_COLLISION_RES(q, LE_COLLISION_R_TYPE), c & 2 ? 5.0f : (float)q * 2.0f);
       collision_set(&g_collision, LE_COLLISION_RES(q, LE_COLLISION_R_DECAY), 1.0f);
-      collision_set(&g_collision, LE_COLLISION_RES(q, LE_COLLISION_R_OFF_DECAY), 1.0f);
+      collision_set(&g_collision, LE_COLLISION_RES(q, LE_COLLISION_R_OFF_DECAY), 0.0f);
       collision_set(&g_collision, LE_COLLISION_RES(q, LE_COLLISION_R_DECAY_VEL), 5.0f * s);
       collision_set(&g_collision, LE_COLLISION_RES(q, LE_COLLISION_R_DECAY_KEY), 2.0f * s);
       collision_set(&g_collision, LE_COLLISION_RES(q, LE_COLLISION_R_MATERIAL), c & 4 ? 1.0f : -1.0f);
@@ -155,7 +155,7 @@ static void test_collision_voices_end(void) {
   /* Noise turned off while the note sounds */
   collision_reference(&g_collision);
   collision_set(&g_collision, LE_COLLISION_NOISE_ON, 1.0f);
-  collision_set(&g_collision, LE_COLLISION_RES(0, LE_COLLISION_R_OFF_DECAY), 0.0f);
+  collision_set(&g_collision, LE_COLLISION_RES(0, LE_COLLISION_R_OFF_DECAY), 1.0f);
   CHECK(le_collision_note_on(&g_collision, 1, 60, 100, 0) == 0);
   le_collision_render(&g_collision, l, r, N);
   collision_set(&g_collision, LE_COLLISION_NOISE_ON, 0.0f);
@@ -407,10 +407,59 @@ static void test_engine_collision_midi(void) {
   le_engine_destroy(e);
 }
 
+/* What the fits against Live pinned: Off Decay 1 cuts a released note to
+ * 50 ms and 0 leaves it ringing; a note that would pass full scale is
+ * limited to peaks of exactly 1, not clipped; the synced LFO's fifth length
+ * is two whole notes (a quarter of a hertz at 120 bpm). */
+static void test_collision_fits(void) {
+  printf("test_collision_fits\n");
+  enum { N = 9600 };
+  static float l[N], r[N];
+  double tail[2];
+  for (int32_t k = 0; k < 2; ++k) {
+    collision_reference(&g_collision);
+    collision_set(&g_collision, LE_COLLISION_RES(0, LE_COLLISION_R_DECAY), 1.0f);
+    collision_set(&g_collision, LE_COLLISION_RES(0, LE_COLLISION_R_OFF_DECAY), (float)k);
+    CHECK(le_collision_note_on(&g_collision, 1, 60, 100, 0) == 0);
+    le_collision_render(&g_collision, l, r, N);
+    le_collision_note_off(&g_collision, 1);
+    le_collision_render(&g_collision, l, r, N); /* 200 ms after the release */
+    tail[k] = opr_peak(l + N - 480, 480);
+  }
+  CHECK(tail[0] > 0.05 && tail[1] < 1e-4);
+  /* the limiter: a loud strike into a series string peaks at exactly 1 */
+  collision_reference(&g_collision);
+  collision_set(&g_collision, LE_COLLISION_MALLET_VOLUME, 1.0f);
+  collision_set(&g_collision, LE_COLLISION_RES(1, LE_COLLISION_R_ON), 1.0f);
+  collision_set(&g_collision, LE_COLLISION_RES(1, LE_COLLISION_R_TYPE), 2.0f);
+  collision_set(&g_collision, LE_COLLISION_STRUCTURE, 0.0f);
+  CHECK(le_collision_note_on(&g_collision, 1, 60, 127, 0) == 0);
+  le_collision_render(&g_collision, l, r, N);
+  const float pk = opr_peak(l, N);
+  int32_t flat = 0;
+  for (int32_t i = 0; i < N; ++i) flat += fabsf(l[i]) > 0.999f;
+  CHECK(pk <= 1.0f && pk > 0.99f && flat < N / 20);
+  /* the synced LFO on Res 1 Pan: index 4 swings once in 4 s */
+  collision_reference(&g_collision);
+  collision_set(&g_collision, LE_COLLISION_RES(0, LE_COLLISION_R_DECAY), 1.0f);
+  collision_set(&g_collision, LE_COLLISION_LFO(0, LE_COLLISION_L_ON), 1.0f);
+  collision_set(&g_collision, LE_COLLISION_LFO(0, LE_COLLISION_L_SYNC), 1.0f);
+  collision_set(&g_collision, LE_COLLISION_LFO(0, LE_COLLISION_L_SYNC_RATE), 4.0f);
+  collision_set(&g_collision, LE_COLLISION_LFO(0, LE_COLLISION_L_DEPTH), 1.0f);
+  collision_set(&g_collision, LE_COLLISION_LFO(0, LE_COLLISION_L_TARGET1), (float)LE_COLLISION_D_R1_PAN);
+  collision_set(&g_collision, LE_COLLISION_LFO(0, LE_COLLISION_L_AMOUNT1), 1.0f);
+  le_collision_set_tempo(&g_collision, 120.0f);
+  CHECK(le_collision_note_on(&g_collision, 1, 60, 100, 0) == 0);
+  le_collision_render(&g_collision, l, r, N); /* 0.2 s: a fifth of the way up */
+  const double left = opr_peak(l + N - 480, 480), right = opr_peak(r + N - 480, 480);
+  CHECK(right > 1.2 * left && right < 4.0 * left);
+}
+
 static void run_collision_tests(void) {
   test_collision_types();
   test_collision_extremes();
   test_collision_voices_end();
+  test_collision_fits();
   test_collision_matrix();
   test_collision_budget();
   test_collision_voices();

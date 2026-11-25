@@ -372,6 +372,7 @@ int32_t le_collision_init(le_collision* d, int32_t sample_rate) {
   for (int32_t p = 0; p < LE_COLLISION_PARAMS; ++p) d->values[p] = le_collision_default(p);
   d->gain = -1.0f;
   d->limit = 1.0f;
+  for (int32_t k = 0; k < LE_COLLISION_LOOKAHEAD; ++k) d->lim_need[k] = d->lim_g[k] = 1.0f;
   return 0;
 }
 
@@ -1164,9 +1165,13 @@ void le_collision_render(le_collision* d, float* left, float* right, int32_t fra
     if (v->state != LE_COLLISION_VOICE_FREE) render_voice(d, v, left, right, frames);
   }
   /* the master volume, Sq(0, 2), smoothed over 1 ms, then the bundle's x4
-   * (fit: the renders sit 12 dB above the voices' sum), then a peak limiter
-   * at 1 (fit: renders that would pass 1 hold their peaks at exactly 1, the
-   * gain returning to unity with a 70 ms time constant: mvol-1, serial) */
+   * (fit: the renders sit 12 dB above the voices' sum), then a look-ahead
+   * peak limiter at 1 (fit: renders that would pass 1 hold their peaks at
+   * exactly 1 with little distortion, the gain returning to unity with a
+   * 70 ms time constant: mvol-1, serial; the output lags the strike by 16
+   * samples, as Live's renders do). The gain a sample needs is held as the
+   * least over the next 17, released, and averaged over 17, so it ramps
+   * down before a peak and never lets one pass 1. */
   const float target = k_sq(d, LE_COLLISION_VOLUME, 0.0f, 2.0f);
   if (d->gain < 0.0f) d->gain = target;
   const float a = 1.0f / (0.001f * (float)d->sample_rate);
@@ -1175,9 +1180,21 @@ void le_collision_render(le_collision* d, float* left, float* right, int32_t fra
     d->gain += a * (target - d->gain);
     const float l = 4.0f * d->gain * left[s], r = 4.0f * d->gain * right[s];
     const float pk = fmaxf(fabsf(l), fabsf(r));
-    d->limit += (1.0f - d->limit) * rel;
-    if (pk * d->limit > 1.0f) d->limit = 1.0f / pk;
-    left[s] = clampf(l * d->limit, -1.0f, 1.0f);
-    right[s] = clampf(r * d->limit, -1.0f, 1.0f);
+    const int32_t at = d->lim_pos;
+    d->lim_need[at] = pk > 1.0f ? 1.0f / pk : 1.0f;
+    float need = 1.0f;
+    for (int32_t k = 0; k < LE_COLLISION_LOOKAHEAD; ++k) need = fminf(need, d->lim_need[k]);
+    d->limit = fminf(need, d->limit + (1.0f - d->limit) * rel);
+    d->lim_g[at] = d->limit;
+    float g = 0.0f;
+    for (int32_t k = 0; k < LE_COLLISION_LOOKAHEAD; ++k) g += d->lim_g[k];
+    g *= 1.0f / (float)LE_COLLISION_LOOKAHEAD;
+    const int32_t old = (at + 1) % LE_COLLISION_LOOKAHEAD; /* the sample 16 behind */
+    const float ol = d->lim_l[old], orr = d->lim_r[old];
+    d->lim_l[at] = l;
+    d->lim_r[at] = r;
+    d->lim_pos = old;
+    left[s] = clampf(ol * g, -1.0f, 1.0f);
+    right[s] = clampf(orr * g, -1.0f, 1.0f);
   }
 }

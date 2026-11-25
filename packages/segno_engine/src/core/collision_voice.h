@@ -33,6 +33,7 @@ extern "C" {
 #define LE_COLLISION_PIPE 4096 /* samples per waveguide line: a power of two (note 0 at 48 kHz) */
 #define LE_COLLISION_TICK 32
 #define LE_COLLISION_SUSTAIN_MAX 16
+#define LE_COLLISION_LOOKAHEAD 17 /* the output limiter's window; the output lags 16 samples */
 
 /* The matrix's destinations, in Live's chooser order (1..17), then the
  * knob-only ones. */
@@ -148,7 +149,10 @@ typedef struct le_collision {
   int32_t voice_limit;
   uint32_t stolen;
   float gain; /* the master volume, smoothed */
-  float limit; /* the output limiter's gain */
+  float limit; /* the output limiter's gain, released */
+  float lim_l[LE_COLLISION_LOOKAHEAD], lim_r[LE_COLLISION_LOOKAHEAD]; /* the output, delayed */
+  float lim_need[LE_COLLISION_LOOKAHEAD], lim_g[LE_COLLISION_LOOKAHEAD];
+  int32_t lim_pos;
   uint32_t serial_values; /* bumped by every set_values */
   le_collision_voice voices[LE_COLLISION_VOICE_SLOTS];
 } le_collision;
