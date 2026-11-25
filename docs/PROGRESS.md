@@ -1,4 +1,4 @@
-<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Metalic Wurli MKII -->
+<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Metalic Wurli MKII Schroeder Fretless -->
 # Segno — Progress & Roadmap
 
 <!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs multicore smarttune -->
@@ -61,9 +61,31 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
 | SEG-22 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track and lane chains) is #1729 | build | needs-plan-approval | `claude/fx-multicore-1515-p1b` |
 | SEG-107 | Save As failed with Out of Memory: the mixdown asked for the LCM of two Song-mode tracks (24.7 GB); it now spans the longest lane past 600 s, and the save refuses a length no loop can hold | in-review | needs-hardware | `claude/save-oom-SEG-107` |
 | SEG-63 | Console WiFi against an ASUS RT-AX89X with 802.11ax on: firmware already matches Pi OS; brcmfmac options aligned with Pi OS and a troubleshooting note; failure not reproduced, issue stays open until it recurs | in-review | agent-merges | `claude/wifi-firmware-1816` |
-| SEG-109 | Ableton Live device presets on the pedal, Drift first: presets read from the user's own copy; Drift's behavior learned with rea + Ghidra from Live 12.2.7 and reimplemented, no Ableton code or presets in the repo. Plan approved 2026-11-25 (P1-P6); P1 stereo buses, P2 preset reader, P3 the Drift device and P4 its fit in review; the Operator (P7), Meld (P8), Analog (P9) and Electric (P10) devices in review | in-review | needs-merge | `claude/ableton-devices-SEG-109`, `claude/ableton-operator-SEG-109-p7`, `claude/ableton-meld-SEG-109-p8`, `claude/ableton-analog-SEG-109-p9`, `claude/ableton-electric-SEG-109-p10` |
+| SEG-109 | Ableton Live device presets on the pedal, Drift first: presets read from the user's own copy; Drift's behavior learned with rea + Ghidra from Live 12.2.7 and reimplemented, no Ableton code or presets in the repo. Plan approved 2026-11-25 (P1-P6); P1 stereo buses, P2 preset reader, P3 the Drift device and P4 its fit in review; the Operator (P7), Meld (P8), Analog (P9), Electric (P10) and Tension (P11) devices in review | in-review | needs-merge | `claude/ableton-devices-SEG-109`, `claude/ableton-operator-SEG-109-p7`, `claude/ableton-meld-SEG-109-p8`, `claude/ableton-analog-SEG-109-p9`, `claude/ableton-electric-SEG-109-p10`, `claude/ableton-tension-SEG-109-p11` |
 
 ---
+
+## November 2026 The Tension device plays on an instrument slot (SEG-109 P11)
+
+- Live 12.2.7's Tension read with rea + Ghidra from its AAS engine and
+  written as "Tension: behavior" in the Ableton devices brainstorm;
+  `tension_voice.c` is written from it. `LE_INST_DEVICE_TENSION` takes a
+  Tension preset's 107 values (`le_tension_param`), one more entry in the
+  device table.
+- A waveguide string per voice, struck by a hammer (or one that bounces),
+  plucked or bowed, with a damper, a finger on a fret, a pickup and a
+  pitch shifter for pitches above the strike; Analog's filter, envelope and
+  LFO; one body for every voice.
+- Analog's envelope, LFO waves, filter (with the formants) and drive move
+  into `aas_parts.h`, which both devices use; Analog's 201 fit renders are
+  bit-identical across the move.
+- Fitted against 75 Live renders: total 4.1 dB rms, the reference 0.3.
+  Measured: where the plectrum slips, the positions' scale, the output
+  gain, the body's High Cut direction. The body's lines are Segno's own
+  and the largest gap left; the factory presets sit 2.6 to 11.3 dB
+  (octave bands).
+- A voice costs 1.8 us per millisecond with the hammer, 0.6 with the bow,
+  the body 0.4 more. A device holds 32 strings (1.2 MB).
 
 ## November 2026 The Electric device plays on an instrument slot (SEG-109 P10)
 

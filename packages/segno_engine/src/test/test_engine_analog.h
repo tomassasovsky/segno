@@ -424,7 +424,7 @@ static void test_engine_analog_params_and_switching(void) {
   CHECK(le_analog_active(eng_analog(e, 1)) == 0 && le_analog_fading(eng_analog(e, 1)) == 0);
   CHECK(le_engine_set_instrument_device(e, 1, LE_INST_DEVICE_ANALOG, NULL) == LE_OK);
   CHECK(le_engine_set_instrument_device_param(e, 1, LE_ANALOG_PARAMS - 1, 0.0f) == LE_OK);
-  CHECK(le_engine_set_instrument_device(e, 1, LE_INST_DEVICE_ELECTRIC + 1, NULL) == LE_ERR_INVALID);
+  CHECK(le_engine_set_instrument_device(e, 1, LE_INST_DEVICE_TENSION + 1, NULL) == LE_ERR_INVALID);
   le_engine_destroy(e);
 }
 

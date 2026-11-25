@@ -8,6 +8,7 @@
 #include "electric_voice.h"
 #include "meld_voice.h"
 #include "operator_voice.h"
+#include "tension_voice.h"
 #include "segno_engine_api.h"
 
 /* The table's functions for device type T with prefix P: each casts the
@@ -57,6 +58,7 @@ LE_DEVICE_FUNCTIONS(le_operator, le_operator)
 LE_DEVICE_FUNCTIONS(le_meld, le_meld)
 LE_DEVICE_FUNCTIONS(le_analog, le_analog)
 LE_DEVICE_FUNCTIONS(le_electric, le_electric)
+LE_DEVICE_FUNCTIONS(le_tension, le_tension)
 
 const le_inst_device le_inst_devices[LE_INST_DEVICE_COUNT] = {
     LE_DEVICE_ENTRY(LE_INST_DEVICE_DRIFT, le_drift, le_drift, LE_DRIFT_PARAMS),
@@ -64,14 +66,16 @@ const le_inst_device le_inst_devices[LE_INST_DEVICE_COUNT] = {
     LE_DEVICE_ENTRY(LE_INST_DEVICE_MELD, le_meld, le_meld, LE_MELD_PARAMS),
     LE_DEVICE_ENTRY(LE_INST_DEVICE_ANALOG, le_analog, le_analog, LE_ANALOG_PARAMS),
     LE_DEVICE_ENTRY(LE_INST_DEVICE_ELECTRIC, le_electric, le_electric, LE_ELECTRIC_PARAMS),
+    LE_DEVICE_ENTRY(LE_INST_DEVICE_TENSION, le_tension, le_tension, LE_TENSION_PARAMS),
 };
 
 _Static_assert((int)LE_DRIFT_PARAMS <= (int)LE_INST_DEVICE_MAX_PARAMS &&
                    (int)LE_OPERATOR_PARAMS <= (int)LE_INST_DEVICE_MAX_PARAMS &&
                    (int)LE_ANALOG_PARAMS <= (int)LE_INST_DEVICE_MAX_PARAMS &&
-                   (int)LE_ELECTRIC_PARAMS <= (int)LE_INST_DEVICE_MAX_PARAMS,
+                   (int)LE_ELECTRIC_PARAMS <= (int)LE_INST_DEVICE_MAX_PARAMS &&
+                   (int)LE_TENSION_PARAMS <= (int)LE_INST_DEVICE_MAX_PARAMS,
                "LE_INST_DEVICE_MAX_PARAMS holds every device's parameters");
-_Static_assert(LE_INST_DEVICE_ELECTRIC - LE_INST_DEVICE_DRIFT + 1 == LE_INST_DEVICE_COUNT,
+_Static_assert(LE_INST_DEVICE_TENSION - LE_INST_DEVICE_DRIFT + 1 == LE_INST_DEVICE_COUNT,
                "one table entry per device");
 
 const le_inst_device* le_inst_device_find(int32_t id) {

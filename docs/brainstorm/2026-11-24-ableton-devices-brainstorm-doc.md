@@ -1,6 +1,6 @@
 # Ableton Live device presets on the pedal — brainstorm
 
-<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance kModBy kCarriers Celesta transconductances Bandpass Bitgrunge Csound Drivetime Extratone Filther Lofi Lowpass Megatripolis Minnaert Sawstyle Starchestra polyBLEP Metalic Formant formants Barney Asym quintic Wurli MKII -->
+<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance kModBy kCarriers Celesta transconductances Bandpass Bitgrunge Csound Drivetime Extratone Filther Lofi Lowpass Megatripolis Minnaert Sawstyle Starchestra polyBLEP Metalic Formant formants Barney Asym quintic Wurli MKII Schroeder Fretless -->
 
 **Date:** 2026-11-24
 **Issue:** SEG-109 (related: SEG-57, Segno's own instrument voices)
@@ -1003,6 +1003,96 @@ Still open: at full Force < Velocity (20.4 dB) and full Tone Bar Volume
 (8.3 dB) Live's output carries more above 10 kHz in the first 0.3 s;
 Stiffness at 0 (5.9 dB); Live strikes about 16 samples later in its
 block than Segno.
+
+## Tension: behavior
+
+Learned 2026-11-25 from Live 12.2.7's Tension engine (an AAS bundle, one
+reader), then measured against 75 Live renders: single changes around a
+plain hammer reference and 17 factory presets, three of them also at a
+second octave. Tags as for Meld. Segno's implementation is
+`tension_voice.c`; the filter, its envelope and LFO, the knob curves and
+the unison law are the ones Analog uses (`aas_parts.h`), as both engines
+are built from the same modules.
+
+### The string
+
+- A two-rail waveguide: the bridge end reflects rail B, read at L plus a
+  fractional extra delay e through a 5-tap Lagrange read, a dispersion
+  all-pass and a damping low-pass, times -g; the nut end reflects rail A
+  at L, times -g. L is fixed at the strike from the half period less the
+  loop filters' phase delay; e follows the pitch every tick, so glide and
+  vibrato change the string's length. **[code]** (Segno takes the exact
+  phase delay of its own filters)
+- Damping: a one-pole low-pass at Exp(200, 200000) Hz moved by its key
+  amount; Inharmonicity: a first-order all-pass from Lin(0.02, 20),
+  weaker on high notes. **[code]** **[measured]** (the damping knob is not
+  inverted)
+- Decay: the loss per reflection is 10^(-0.03 / (2 T F)), T =
+  Exp(0.1, 100), so T60 is about 0.38 T; at the release it ramps over 8 ms
+  to Ratio (ExpZ(1, 1000)) times faster, or no loss at all at Ratio 0.
+  **[code]**
+- Above the struck pitch (a bend up, vibrato's upper half) the string
+  stays at its strike's length and a pitch-synchronous two-tap shifter on
+  its output takes the rest, crossfaded over 100 ms. **[code]**
+- The output: the pickup's point on the string, or the wave arriving at
+  the bridge; then a 10 Hz high-pass. **[code]** (fit: a gain of 1.5,
+  2.4 dB under the reading's 2)
+- Positions along the string: Exp(0.05, 0.5) of its length, the exciter
+  from the bridge, the damper and pickup from the nut. **[code]** (fit:
+  1.15 times further along, where the renders put the comb notches; the
+  centre stays the centre)
+
+### Exciters, damper, finger
+
+- Hammer, bouncing hammer and plectrum: a mass, or a constant-speed
+  plectrum, on a felt contact with F = K delta^2. Segno solves each
+  sample's implicit contact exactly (delta falls linearly with F through
+  the body's, the felt's and the string's give, so the quadratic has a
+  closed root). The hammer flies off under gravity; the bouncing hammer
+  falls back and re-strikes until it rests on the string; the plectrum
+  slips off once it has travelled its protrusion past the string's rest
+  line. **[code]** **[measured]** (where the plectrum slips)
+- The bow: a stick-slip junction, sticking within a zone around the bow's
+  speed, released over a short ramp, lifted at the release. **[code]**
+- The key and velocity amounts scale each exciter's three knobs by
+  2^(amount x pitch or velocity), ExpZ(0.1, 16) each. **[code]**
+- The damper rests on the string (always, or only after the release when
+  gated) through the same contact. The finger presses the string onto a
+  fret at the nut, the two contacts solved together by Newton. **[code]**
+
+### Filter, body, voices
+
+- Analog's filter, all ten types, its key tracking from the key with bend
+  (no glide or vibrato); the filter envelope (attack, decay, sustain,
+  release, velocity) and the LFO as Analog's. **[code]**
+- The body: four recirculating lines, each a delay and a Schroeder
+  all-pass, through a low cut and an absorption low-pass whose highs decay
+  High Cut times as fast; Body Level is the device's volume (Sq(0, 2)),
+  the mix a constant-power sweep with the wet at 0.35. The lines' lengths
+  are Segno's own (5 to 11 ms, the all-passes 0.8 to 1.7 ms, a set per
+  type, scaled by size). **[code]** **[Segno]** (the lengths)
+  **[measured]** (High Cut's direction: up shortens the highs)
+- Mono or 2 to 32 voices, unison of 2 or 4 strings (the shared unison
+  law), glide, vibrato. A key struck again strikes its ringing string
+  without resetting it. A released string ends after 50 ms below
+  -100 dBFS. **[code]** **[Segno]** (the voice end)
+
+### The fits so far
+
+75 renders (third-octave bands from the strike): total 4.1 dB rms. The
+reference 0.3; damping, decay, ratio, inharmonicity, positions, pickup,
+hammer stiffness, unison and the bow within 0.2 to 1.6 dB; the plectrum
+2.2 to 3.2; the body 2.9 to 8.0 (its lengths). Factory presets (octave
+bands): Slap Bass 2.6, Chord Bouncing, Saw Bass and Tuned Noise 2.8, Tiny
+Tonal Drums 3.4, Attack Pad 3.5, Harp Soft 3.7, Electric Basic Bass 4.0,
+Wire Noise 4.4, Nylon Basic Guitar 5.1, Fretless Bass 5.8, Clean Basic
+Guitar 6.8 to 7.5 across three octaves, Wood Bass 7.2, Upright Basic Bass
+6.9 and 8.4, Hard Picked Guitar 8.6, Banjo 11.2, Slow String Pad 11.3.
+
+Still open: the body's line lengths (the largest gap, in most presets);
+a level slope of about 1 dB an octave in the hammer reference; the bow two
+octaves down (10 dB); Hammer Velocity at full (25 dB); the MPE
+destinations (stored, not played).
 
 ## Decisions
 

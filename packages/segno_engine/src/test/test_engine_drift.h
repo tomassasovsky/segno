@@ -697,7 +697,7 @@ static void test_engine_drift_refusals(void) {
   CHECK(le_engine_set_instrument_device(e, LE_MAX_INSTRUMENTS, LE_INST_DEVICE_DRIFT, NULL) ==
         LE_ERR_INVALID);
   CHECK(le_engine_set_instrument_device(e, 0, LE_INST_DEVICE_NONE, NULL) == LE_ERR_INVALID);
-  CHECK(le_engine_set_instrument_device(e, 0, LE_INST_DEVICE_ELECTRIC + 1, NULL) == LE_ERR_INVALID);
+  CHECK(le_engine_set_instrument_device(e, 0, LE_INST_DEVICE_TENSION + 1, NULL) == LE_ERR_INVALID);
   float values[LE_DRIFT_PARAMS];
   for (int p = 0; p < LE_DRIFT_PARAMS; ++p) values[p] = le_drift_default(p);
   values[LE_DRIFT_GLIDE] = NAN;
