@@ -518,6 +518,33 @@ static void test_drift_voice_blocks(void) {
   CHECK(g_drift.lane_noise[0] != g_drift.lane_noise[1]);
 }
 
+/* A Filter Type change while a note sounds starts the new filter from
+ * rest: no jolt from the other filter's state, either way round. */
+static void test_drift_filter_type_switch_is_smooth(void) {
+  printf("test_drift_filter_type_switch_is_smooth\n");
+  enum { N = 9600, AFTER = 960 };
+  static float l[N], r[N];
+  for (int from = 0; from < 2; ++from) {
+    drift_init(&g_drift, DRIFT_SR);
+    drift_set(&g_drift, LE_DRIFT_FILTER_TYPE, (float)from);
+    drift_set(&g_drift, LE_DRIFT_FILTER_FREQ, 800.0f);
+    drift_set(&g_drift, LE_DRIFT_FILTER_RES, 0.9f);
+    drift_set(&g_drift, LE_DRIFT_OSC1_GAIN, 1.0f);
+    drift_set(&g_drift, LE_DRIFT_ENV1_ATTACK, 0.0f);
+    drift_set(&g_drift, LE_DRIFT_ENV1_SUSTAIN, 1.0f);
+    le_drift_render(&g_drift, l, r, 32);
+    CHECK(le_drift_note_on(&g_drift, 1, 45, 127, 0) == 0);
+    le_drift_render(&g_drift, l, r, N);
+    const float before = drift_peak(l + N / 2, N / 2);
+    drift_set(&g_drift, LE_DRIFT_FILTER_TYPE, (float)(1 - from));
+    le_drift_render(&g_drift, l, r, N);
+    const float settled = drift_peak(l + N / 2, N / 2);
+    const float jolt = drift_peak(l, AFTER);
+    CHECK(before > 0.01f && settled > 0.01f);
+    CHECK(jolt < 1.5f * fmaxf(before, settled));
+  }
+}
+
 /* ---- the engine: a slot playing Drift ---- */
 
 /* Processes [frames] in blocks of [block]; when [l] and [r] are given,
@@ -733,6 +760,7 @@ static void run_drift_tests(void) {
   test_drift_ratio_lfo_is_phase_modulation();
   test_drift_filter_input_clips_asymmetrically();
   test_drift_voice_blocks();
+  test_drift_filter_type_switch_is_smooth();
   test_engine_drift_slot_matches_offline();
   test_engine_drift_voice_budget();
   test_engine_drift_params_and_switching();

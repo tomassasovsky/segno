@@ -612,6 +612,15 @@ static void derive(le_drift* d) {
 }
 
 
+/* Clears the low-pass state for filter type `kind` (the two types keep
+ * different states in lp: filter II's are in circuit volts). */
+static void clear_lowpass(le_drift_voice* v, int32_t kind) {
+  memset(v->lp, 0, sizeof(v->lp));
+  v->lp[4] = v->lp[10] = 1.0f; /* filter II's secants at small signal */
+  v->lp[5] = v->lp[11] = 2.193f;
+  v->lp_kind = kind;
+}
+
 /* ---- lifecycle and parameters ---- */
 
 int32_t le_drift_init(le_drift* d, int32_t sample_rate) {
@@ -630,6 +639,8 @@ int32_t le_drift_init(le_drift* d, int32_t sample_rate) {
   for (int32_t i = 0; i < LE_DRIFT_VOICES; ++i) {
     d->voice_cents[i] = voice_cents(i);
     d->voices[i].rng = 0x9e3779b9u ^ (uint32_t)(i * 2654435761u);
+    d->voices[i].lfo_mod = 1.0f;
+    clear_lowpass(&d->voices[i], 0);
     /* each block's noise generators start alike: lane k of every block */
     d->noise_rng[i] = 0x2545f491u ^ (uint32_t)((i % 4) * 2654435761u);
   }
@@ -751,9 +762,7 @@ static void start_voice(le_drift* d, le_drift_voice* v, int32_t lane,
      * voices start together (Live's Stereo pair at Drift 0 is mono), and
      * once voices are reused a Stereo note's lanes start apart. */
     if (vi(d, LE_DRIFT_RESET_OSC_PHASE)) v->ph1 = v->ph2 = 0.0f;
-    memset(v->lp, 0, sizeof(v->lp));
-    v->lp[4] = v->lp[10] = 1.0f; /* filter II's secants at small signal */
-    v->lp[5] = v->lp[11] = 2.193f;
+    clear_lowpass(v, vi(d, LE_DRIFT_FILTER_TYPE));
     memset(v->hp, 0, sizeof(v->hp));
   }
   const int32_t shape = vi(d, LE_DRIFT_LFO_SHAPE);
@@ -1439,6 +1448,7 @@ static void voice_sample(le_drift* d, le_drift_voice* v, float* out_l,
   const float lfo_hz = (lfo_ratio ? b->lfo_ratio * note_f : x->lfo_hz) *
                        exp2f(4.0f * add_lfo);
   v->lfo_inc = fminf(lfo_hz / rate, 0.49999988f);
+  v->lfo_mod = exp2f(4.0f * add_lfo);
   lfo_advance(v, v->lfo_inc);
   const float cyc_hz = (b->cyc_mode == RATE_RATIO ? b->cyc_ratio * note_f : x->cyc_hz) *
                        exp2f(4.0f * add_cyc);
@@ -1452,8 +1462,13 @@ static void voice_sample(le_drift* d, le_drift_voice* v, float* out_l,
                                                : clampf(shape, 0.0f, 1.0f);
   const float th1 = phase == 0.0f ? v->ph1 : frac(v->ph1 + phase + 1.0f);
   const float th2 = phase == 0.0f ? v->ph2 : frac(v->ph2 + phase + 1.0f);
-  const float o1 = oscillator(x->osc1, th1, s1, dt1) * x->gain1 * g_osc1;
-  const float o2 = oscillator(x->osc2, th2, 0.0f, dt2) * x->gain2 * g_osc2;
+  /* the band-limiting follows the phase each sample really moves by */
+  const float dph = phase - v->pm_prev;
+  v->pm_prev = phase;
+  const float be1 = fminf(fabsf(dt1 + dph), 0.4999999f);
+  const float be2 = fminf(fabsf(dt2 + dph), 0.4999999f);
+  const float o1 = oscillator(x->osc1, th1, s1, be1) * x->gain1 * g_osc1;
+  const float o2 = oscillator(x->osc2, th2, 0.0f, be2) * x->gain2 * g_osc2;
   float noise =
       d->lane_noise[v - d->voices] * LE_DRIFT_NOISE_LEVEL * x->gain_noise * g_noise;
   /* mixer and routing */
@@ -1470,6 +1485,9 @@ static void voice_sample(le_drift* d, le_drift_voice* v, float* out_l,
                             b->fm_amt[1] * src.bi[b->fm_src[1]] + add_lp));
   fc = clampf(fc, 10.0f, fminf(20000.0f, 0.45f * rate));
   const float res = clampf(x->res + add_res, 0.0f, 1.3f);
+  /* a Filter Type change while the voice sounds starts the new filter from
+   * rest: the other type's state would jolt it */
+  if (v->lp_kind != x->filter_type) clear_lowpass(v, x->filter_type);
   float y = filter_input(thru) * 0.25f;
   y = x->filter_type ? filter2(v->lp, y, fc, res, rate, &v->rng)
                                   : filter1(v->lp, y, fc, res, rate, &v->rng);
@@ -1506,7 +1524,7 @@ static void voice_sample(le_drift* d, le_drift_voice* v, float* out_l,
 static void tick(le_drift* d, float* l, float* r) {
   *l = 0.0f;
   *r = 0.0f;
-  const float idle_lfo = fminf(d->d.lfo_hz / d->rate, 0.49999988f);
+  const float idle_lfo = d->d.lfo_hz / d->rate;
   const int noise_on = d->d.gain_noise > 0.0f;
   for (int32_t b = 0; b < LE_DRIFT_VOICES; b += 4) {
     int32_t busy = 0;
@@ -1540,8 +1558,11 @@ static void tick(le_drift* d, float* l, float* r) {
         v->ph2 += v->dt2;
         if (v->ph2 >= 1.0f) v->ph2 -= 1.0f;
       }
-      v->lfo_ph += d->d.lfo_mode == RATE_RATIO ? v->lfo_inc : idle_lfo;
-      if (v->lfo_ph >= 1.0f) v->lfo_ph -= 1.0f;
+      /* at the rate it last had (its LFO Rate modulation included), drawing
+       * new Sample & Hold and Wander steps as it goes */
+      lfo_advance(v, d->d.lfo_mode == RATE_RATIO
+                         ? v->lfo_inc
+                         : fminf(idle_lfo * v->lfo_mod, 0.49999988f));
     }
   }
 }

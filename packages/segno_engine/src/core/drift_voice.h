@@ -91,6 +91,8 @@ typedef struct le_drift_voice {
   float ph1, ph2;
   float dt1, dt2;
   int32_t played;
+  float pm_prev; /* the last phase-modulation offset (its change widens the
+                  * band-limiting, as a faster phase would) */
   uint32_t rng;
   /* envelopes: level, stage, and the attack's per-sample step, set at the
    * note's start from the level it starts at */
@@ -101,11 +103,13 @@ typedef struct le_drift_voice {
   float cyc_ph;
   float lfo_ph;
   float lfo_inc;                    /* the LFO's last increment (Ratio) */
+  float lfo_mod;                    /* its last rate modulation factor */
   float lfo_hold, lfo_from, lfo_to; /* S&H and Wander */
   int32_t lfo_done;                 /* a one-shot LFO shape ended */
   /* filters: the low-pass (type I three states, type II twelve: two
    * sections of four capacitor states and two secant gains), the high-pass */
   float lp[12];
+  int32_t lp_kind; /* the filter type lp holds the state of */
   float hp[2];
   /* fade (stolen, struck again, cut, device change) */
   float fade;
@@ -184,8 +188,7 @@ float le_drift_clamp(int32_t param, float value);
 int32_t le_drift_init(le_drift* d, int32_t sample_rate);
 
 /* Sets every parameter (LE_DRIFT_PARAMS values, clamped), applied from the
- * next chunk; a HiQuality change takes effect at once and clears the
- * decimator. */
+ * next chunk. HiQuality is stored without effect. */
 void le_drift_set_values(le_drift* d, const float* values);
 
 /* Starts `note` at `velocity` (1..127) for `origin`. A held note of the same

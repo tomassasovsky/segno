@@ -173,8 +173,7 @@ written from it.
   the same state, so notes struck together in different blocks share
   their noise voice for voice (Stereo, 3 / 4 / 6 notes: +2.1 / +2.9 /
   +4.7 dB over independent voices; Poly from the 5th note). Noise reaches
-  the filters quieter than the bypass, filter I by 2.4 dB and filter II by
-  3.4 dB, at every level.
+  either filter 2.4 dB quieter than the bypass, at every level.
 
 ### Filters
 
