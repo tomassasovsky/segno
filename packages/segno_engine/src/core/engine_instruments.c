@@ -1003,12 +1003,12 @@ static void enforce_voice_budget(le_engine* e, le_synth* s) {
     for (int k = 1; k < LE_MAX_INSTRUMENTS; ++k) {
       if (active[k] > active[busiest]) busiest = k;
     }
-    if (active[busiest] == 0 || (!le_drift_fade_oldest(&e->drift[busiest]) &&
-                                 !le_operator_fade_oldest(&e->op[busiest]))) {
-      return; /* only patch voices: the synth keeps its own limit */
-    }
-    active[busiest]--;
-    total--;
+    int32_t faded = active[busiest] > 0 ? le_drift_fade_oldest(&e->drift[busiest]) : 0;
+    if (faded == 0 && active[busiest] > 0) faded = le_operator_fade_oldest(&e->op[busiest]);
+    if (faded == 0) return; /* only patch voices: the synth keeps its own limit */
+    /* an Operator Spread note is two voices */
+    active[busiest] -= faded;
+    total -= faded;
   }
 }
 

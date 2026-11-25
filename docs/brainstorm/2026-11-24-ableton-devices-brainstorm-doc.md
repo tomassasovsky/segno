@@ -590,8 +590,8 @@ Buzz Release Keys 0.5, Three Op Bass 0.6, Analog Bouquet Brass 1.4, Bells
 Brushed Hits 1.6, Metallic FM 2.3, OP Bass 3.1 within 40 dB of its loudest
 (+7 dB at 1.3 kHz as its filter LFO opens MS2, 7.5 counting the octave
 50 dB down), Celesta 4.2 (its partials match to the hertz; two octaves
-around its morph filter differ by 7 to 8 dB). A voice costs 2.6 µs per
-period at 48 kHz, 5.2 with Antialias.
+around its morph filter differ by 7 to 8 dB). A voice costs 2.7 µs per
+period at 48 kHz, 4.5 with Antialias.
 
 ## Decisions
 

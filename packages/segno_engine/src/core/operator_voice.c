@@ -669,9 +669,9 @@ static void route_add(op_mods* r, int32_t dst, float amount, float sb, float su)
 /* `lfo` the LFO's output (shape x envelope), `penv_st` the pitch envelope's
  * level in semitones. */
 static void route_mods(const le_operator* d, const le_operator_voice* v, float lfo, float penv_st,
-                       op_mods* r) {
+                       int with_lfo, op_mods* r) {
   memset(r, 0, sizeof(*r));
-  if (vi(d, LE_OPERATOR_LFO_ON)) {
+  if (with_lfo && vi(d, LE_OPERATOR_LFO_ON)) {
     const float s = clampf(lfo, -1.0f, 1.0f);
     route_add(r, vi(d, LE_OPERATOR_LFO_DEST),
               vf(d, LE_OPERATOR_LFO_DEST_AMOUNT) / 100.0f * vf(d, LE_OPERATOR_LFO_AMOUNT), s,
@@ -740,9 +740,13 @@ static int32_t note_count(const le_operator* d) {
   return n;
 }
 
+/* Notes allowed: Live's count, within the voice limit (a Spread note takes
+ * two voices). */
 static int32_t voice_count(const le_operator* d) {
   int32_t n = kVoiceCounts[vi(d, LE_OPERATOR_VOICES)];
-  return n > d->voice_limit ? d->voice_limit : n;
+  const int32_t lim = vf(d, LE_OPERATOR_SPREAD) > 0.0f ? d->voice_limit / 2 : d->voice_limit;
+  if (n > lim) n = lim;
+  return n < 1 ? 1 : n;
 }
 
 /* The oldest note in `state`, or NULL. */
@@ -795,7 +799,7 @@ static void start_envelopes(le_operator* d, le_operator_voice* v) {
 }
 
 static void start_voice(le_operator* d, le_operator_voice* v, uint32_t origin, int32_t note,
-                        float vel, uint64_t serial, int32_t side, float pan_rnd) {
+                        float vel, uint64_t serial, int32_t side, float pan_rnd, int glide) {
   const uint32_t rng = v->rng;
   memset(v, 0, sizeof(*v));
   v->rng = rng;
@@ -811,7 +815,7 @@ static void start_voice(le_operator* d, le_operator_voice* v, uint32_t origin, i
            (vf(d, LE_OPERATOR_PAN_RANDOM) / 100.0f) * 2.0f * pan_rnd;
   /* glide: from the last played note when portamento is on */
   v->pitch = (float)note;
-  if (vi(d, LE_OPERATOR_GLIDE_ON) && d->played) {
+  if (glide) {
     const int32_t chunks = (int32_t)(vf(d, LE_OPERATOR_GLIDE_TIME) * (float)d->sample_rate /
                                      1000.0f / (float)LE_OPERATOR_CHUNK);
     v->glide_chunks = chunks < 1 ? 1 : chunks;
@@ -830,7 +834,7 @@ static void start_voice(le_operator* d, le_operator_voice* v, uint32_t origin, i
   v->lfo_lp = v->lfo_lp_x = lfo_periodic(vi(d, LE_OPERATOR_LFO_TYPE) <= 4 ? vi(d, LE_OPERATOR_LFO_TYPE) : 0, v->lfo_phase);
   {
     op_mods rm;
-    route_mods(d, v, 0.0f, 0.0f, &rm);
+    route_mods(d, v, 0.0f, 0.0f, 1, &rm);
     v->time_mod = exp2f(OP_TIME_K * rm.m[DST_TIME]);
   }
   start_envelopes(d, v);
@@ -897,6 +901,7 @@ int32_t le_operator_note_on(le_operator* d, uint32_t origin, int32_t note, int32
   const int32_t count = voice_count(d);
   /* mono legato: with portamento on, a held voice glides to the new note */
   if (count == 1 && vi(d, LE_OPERATOR_GLIDE_ON) && d->held_n > 0) {
+    int retuned = 0;
     for (int32_t i = 0; i < LE_OPERATOR_VOICE_SLOTS; ++i) {
       le_operator_voice* v = &d->voices[i];
       if (v->state != LE_OPERATOR_VOICE_HELD) continue;
@@ -906,12 +911,18 @@ int32_t le_operator_note_on(le_operator* d, uint32_t origin, int32_t note, int32
       v->pitch_step = ((float)note - v->pitch) / (float)v->glide_chunks;
       v->note = note;
       v->origin = origin;
+      retuned = 1;
     }
-    held_push(d, origin, note);
-    d->last_pitch = (float)note;
-    return 0;
+    /* a held key whose voice was taken (the voice budget) starts afresh */
+    if (retuned) {
+      held_push(d, origin, note);
+      d->last_pitch = (float)note;
+      return 0;
+    }
   }
   held_push(d, origin, note);
+  /* a new voice glides from the last note only while some voice sounds */
+  const int glide = vi(d, LE_OPERATOR_GLIDE_ON) && d->played && le_operator_active(d) > 0;
   if (vi(d, LE_OPERATOR_RETRIGGER_MODE)) {
     for (int32_t i = 0; i < LE_OPERATOR_VOICE_SLOTS; ++i) {
       le_operator_voice* v = &d->voices[i];
@@ -930,12 +941,12 @@ int32_t le_operator_note_on(le_operator* d, uint32_t origin, int32_t note, int32
   const float pan_rnd = lcg_bipolar(&d->rng);
   if (vf(d, LE_OPERATOR_SPREAD) > 0.0f) {
     le_operator_voice* a = free_slot(d);
-    if (a != NULL) start_voice(d, a, origin, note, vel, serial, SIDE_LEFT, pan_rnd);
+    if (a != NULL) start_voice(d, a, origin, note, vel, serial, SIDE_LEFT, pan_rnd, glide);
     le_operator_voice* b = free_slot(d);
-    if (b != NULL) start_voice(d, b, origin, note, vel, serial, SIDE_RIGHT, pan_rnd);
+    if (b != NULL) start_voice(d, b, origin, note, vel, serial, SIDE_RIGHT, pan_rnd, glide);
   } else {
     le_operator_voice* a = free_slot(d);
-    if (a != NULL) start_voice(d, a, origin, note, vel, serial, SIDE_BOTH, pan_rnd);
+    if (a != NULL) start_voice(d, a, origin, note, vel, serial, SIDE_BOTH, pan_rnd, glide);
   }
   d->last_pitch = (float)note;
   d->played = 1;
@@ -1032,9 +1043,10 @@ int32_t le_operator_fade_oldest(le_operator* d) {
     if (sounding(v) && (old == NULL || v->serial < old->serial)) old = v;
   }
   if (old == NULL) return 0;
+  const int32_t before = le_operator_active(d);
   fade_note(d, old->serial);
   d->stolen++;
-  return 1;
+  return before - le_operator_active(d);
 }
 
 int32_t le_operator_active(const le_operator* d) {
@@ -1434,9 +1446,9 @@ static void voice_chunk(le_operator* d, le_operator_voice* v, const chunk_ctx* c
   op_mods rm;
   /* the LFO Amount route scales both of the LFO's destinations: a first
    * pass finds it, the second routes the scaled LFO */
-  route_mods(d, v, 0.0f, penv_st, &rm);
+  route_mods(d, v, 0.0f, penv_st, 0, &rm);
   const float lfo_gain = route_gain(&rm, DST_LFO_AMOUNT);
-  route_mods(d, v, v->lfo_out * lfo_gain, penv_st, &rm);
+  route_mods(d, v, v->lfo_out * lfo_gain, penv_st, 1, &rm);
   const float* mod = rm.m;
   /* LFO */
   float fl = lfo_hz(d, v->note, 1) * exp2f(8.0f * mod[DST_LFO_RATE]);
@@ -1618,6 +1630,18 @@ static int voice_done(const le_operator_voice* v, const chunk_ctx* c) {
   return any || v->state == LE_OPERATOR_VOICE_RELEASED;
 }
 
+/* Whether every sounding carrier's envelope ignores note-off (Trigger), so a
+ * voice whose carriers have ended is over even with its key held. */
+static int carriers_triggered(const chunk_ctx* c) {
+  int any = 0;
+  for (int32_t op = 0; op < LE_OPERATOR_OPS; ++op) {
+    if (!c->on[op] || !(kCarriers[c->alg] & (1u << op))) continue;
+    if (c->env[op].loop != LOOP_TRIGGER) return 0;
+    any = 1;
+  }
+  return any;
+}
+
 static void render_voice(le_operator* d, le_operator_voice* v, const chunk_ctx* c, float* left,
                          float* right, int32_t frames) {
   filter_target ft = {0};
@@ -1661,7 +1685,17 @@ static void render_voice(le_operator* d, le_operator_voice* v, const chunk_ctx* 
     ms2.g = tanf(fminf((float)OP_PI * fcs / rate, 1.54f));
     k1 = OP_PRD_K * 4.04f * prd_q(ft.r, ft.fc, rate);
     k2 = (1.0f + k1) / OP_PRD_IN;
-  } else if (circuit == CIRC_OSR) {
+  }
+  /* the analog state belongs to one circuit and slope: a change starts it
+   * afresh (no other circuit's voltages read as its own) */
+  {
+    const int32_t kind = 1 + 2 * circuit + c->slope;
+    if (v->f_kind != kind) {
+      memset(v->f_an, 0, sizeof(v->f_an));
+      v->f_kind = kind;
+    }
+  }
+  if (circuit == CIRC_OSR) {
     const float fcs = fminf(fmaxf(ft.fc, 1.0f), 0.48f * rate);
     ms2.g = OP_OSR_G * tanf(fminf((float)OP_PI * fcs / rate, 1.54f));
     k1 = 2.0f * (1.0f - le_ms2_q(ft.r, ft.fc, rate)) - 0.01f;
@@ -1765,8 +1799,9 @@ static void render_voice(le_operator* d, le_operator_voice* v, const chunk_ctx* 
     v->gl += v->gl_step;
     v->gr += v->gr_step;
   }
-  if (v->state != LE_OPERATOR_VOICE_FADING && v->state != LE_OPERATOR_VOICE_HELD &&
-      v->state != LE_OPERATOR_VOICE_SUSTAINED && voice_done(v, c)) {
+  if (v->state != LE_OPERATOR_VOICE_FADING && voice_done(v, c) &&
+      ((v->state != LE_OPERATOR_VOICE_HELD && v->state != LE_OPERATOR_VOICE_SUSTAINED) ||
+       carriers_triggered(c))) {
     v->state = LE_OPERATOR_VOICE_FREE;
   }
 }

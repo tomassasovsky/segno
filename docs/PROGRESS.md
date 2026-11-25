@@ -99,7 +99,7 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   0.0 to Bells Brushed Hits 1.6), Metallic FM 2.3, OP Bass 3.1 within
   40 dB of its loudest, Celesta 4.2 (its partials match; two octaves
   around its morph filter do not yet).
-- A voice costs 2.6 us per period at 48 kHz on the dev machine, 5.2 with
+- A voice costs 2.7 us per period at 48 kHz on the dev machine, 4.5 with
   Antialias (a Drift voice 7.1).
 
 ## November 2026 Drift's filter II as an MS-20 circuit model (SEG-109 P4, round 4)

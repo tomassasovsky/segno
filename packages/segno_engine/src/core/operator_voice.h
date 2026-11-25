@@ -111,6 +111,7 @@ typedef struct le_operator_voice {
   float f_s[2][2];
   float f_x1[2];
   float f_an[16]; /* the analog circuits' states */
+  int32_t f_kind; /* the circuit and slope f_an belongs to, 0: none */
   float f_g, f_k, f_g_step, f_k_step;
   float f_w[3], f_w_step[3]; /* morph weights: low, band, high */
   /* shaper: 2x up and down half-band states */
@@ -191,7 +192,8 @@ void le_operator_cut(le_operator* d);
 /* At most `limit` sounding voices; the excess fades, oldest first. */
 void le_operator_set_voice_limit(le_operator* d, int32_t limit);
 
-/* Fades the oldest sounding voice. Returns 1, or 0 when none sounds. */
+/* Fades the oldest sounding note (both voices of a Spread pair). Returns
+ * the voices it faded, 0 when none sounds. */
 int32_t le_operator_fade_oldest(le_operator* d);
 
 /* The tempo the Sync rates and Beat/Sync loops follow (beats per minute). */

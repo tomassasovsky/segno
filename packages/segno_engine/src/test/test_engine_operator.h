@@ -406,6 +406,57 @@ static void test_operator_controllers_rest(void) {
   CHECK(memcmp(l, ref, sizeof(l)) == 0);
 }
 
+/* Voice bookkeeping: a mono legato note whose held voice was taken still
+ * sounds; glide starts only while a voice sounds; fading a Spread note
+ * reports its two voices; a Trigger-mode voice frees once it is silent,
+ * key held; a circuit change mid-note starts that circuit clean. */
+static void test_operator_voice_bookkeeping(void) {
+  printf("test_operator_voice_bookkeeping\n");
+  enum { N = 48000 };
+  static float l[N], r[N];
+  opr_reference(&g_opr);
+  opr_set(&g_opr, LE_OPERATOR_VOICES, 0.0f);
+  opr_set(&g_opr, LE_OPERATOR_GLIDE_ON, 1.0f);
+  CHECK(le_operator_note_on(&g_opr, 1, 60, 127, 0) == 0);
+  CHECK(le_operator_fade_oldest(&g_opr) == 1); /* the voice budget takes it */
+  CHECK(le_operator_note_on(&g_opr, 2, 64, 127, 0) == 0);
+  CHECK(le_operator_held(&g_opr, 2));
+  /* glide only while a voice sounds: after silence the note starts on pitch */
+  le_operator_cut(&g_opr);
+  le_operator_render(&g_opr, l, r, 4800);
+  CHECK(le_operator_active(&g_opr) == 0 && le_operator_fading(&g_opr) == 0);
+  CHECK(le_operator_note_on(&g_opr, 3, 72, 127, 0) == 0);
+  for (int32_t i = 0; i < LE_OPERATOR_VOICE_SLOTS; ++i) {
+    if (g_opr.voices[i].state == 1) CHECK(g_opr.voices[i].glide_chunks == 0);
+  }
+  /* a Spread note fades as two voices */
+  opr_reference(&g_opr);
+  opr_set(&g_opr, LE_OPERATOR_SPREAD, 50.0f);
+  CHECK(le_operator_note_on(&g_opr, 1, 60, 127, 0) == 0);
+  CHECK(le_operator_fade_oldest(&g_opr) == 2);
+  /* Trigger mode: silent after its decay and release, the key still down */
+  opr_reference(&g_opr);
+  const int32_t env = LE_OPERATOR_OP(0, LE_OPERATOR_OP_ENV);
+  opr_set(&g_opr, env + LE_OPERATOR_ENV_LOOP_MODE, 4.0f);
+  opr_set(&g_opr, env + LE_OPERATOR_ENV_DECAY_TIME, 50.0f);
+  opr_set(&g_opr, env + LE_OPERATOR_ENV_RELEASE_TIME, 50.0f);
+  CHECK(le_operator_note_on(&g_opr, 1, 60, 127, 0) == 0);
+  le_operator_render(&g_opr, l, r, 24000);
+  CHECK(le_operator_active(&g_opr) == 0);
+  /* a circuit change mid-note: the new circuit's state starts at zero */
+  opr_reference(&g_opr);
+  opr_set(&g_opr, LE_OPERATOR_FILTER_ON, 1.0f);
+  opr_set(&g_opr, LE_OPERATOR_FILTER_CIRCUIT_LPHP, 2.0f);
+  opr_set(&g_opr, LE_OPERATOR_FILTER_RES, 1.2f);
+  CHECK(le_operator_note_on(&g_opr, 1, 48, 127, 0) == 0);
+  le_operator_render(&g_opr, l, r, 9600);
+  const float before = opr_peak(l + 4800, 4800);
+  opr_set(&g_opr, LE_OPERATOR_FILTER_CIRCUIT_LPHP, 4.0f);
+  le_operator_render(&g_opr, l, r, 9600);
+  CHECK(opr_finite(l, 9600));
+  CHECK(opr_peak(l, 960) < 3.0f * fmaxf(before, opr_peak(l + 4800, 4800)));
+}
+
 /* ---- the engine: a slot playing Operator ---- */
 
 /* The engine's slot renders what the module renders offline, sample for
@@ -514,6 +565,7 @@ static void run_operator_tests(void) {
   test_operator_filter_and_shaper();
   test_operator_circuits_bounded();
   test_operator_controllers_rest();
+  test_operator_voice_bookkeeping();
   test_engine_operator_slot_matches_offline();
   test_engine_operator_params_and_switching();
   test_engine_operator_midi();
