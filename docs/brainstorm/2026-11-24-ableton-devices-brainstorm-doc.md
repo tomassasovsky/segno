@@ -567,10 +567,14 @@ where the reading was silent or disagreed. Segno's implementation is
   with hold-and-jump and within 3 with the curve]**
 - Loop modes: Loop (back to the initial level over LoopTime, then attack
   again), Beat and Sync (the attack restarts from the current value every
-  RepeatTime, 1/48 to 4 bars; Segno counts both from the note), Trigger
-  (note-off ignored, decay runs into release). **[code]** Bells Brushed
-  Hits, whose modulator C loops in Sync at 1/16, shows no retrigger in
-  Live's render at all. **[open]** (round 7 isolates it)
+  RepeatTime, 1/48 to 4 bars), Trigger (note-off ignored, decay runs into
+  release). **[code]** Beat counts from the note; Sync's first retrigger
+  comes a period after the note, moved on to the next sixteenth of the
+  song, the rest a period apart (a note 0.1 s in retriggers at 0.25,
+  0.375 ..). Segno's grid is the device's own clock, samples rendered
+  since init (the fit harness starts it with the export). Sync and Beat
+  retrigger a modulator's envelope as a carrier's. **[measured: round 7's
+  sync and beat renders]**
 - Times scale by 2^(−8 TimeVel (vel − 70)/127) per envelope and by
   2^(3 EnvTime − 6 EnvTimeKey (key − 70)/127) for all, attack included
   whatever EnvTimeIncludeAttack says (Live scales the attack either way).
@@ -591,8 +595,11 @@ where the reading was silent or disagreed. Segno's implementation is
   High, key scaling about C4; Sync: 1/48 to 4 bars. Retrigger off starts
   each note from one free-running phase. **[code]** **[measured]** In
   Live's renders that phase counts from the export's start (the fit
-  harness sets it so); Bells Brushed Hits' first chord sits 0.39 of a
-  cycle away from it while its later notes do not. **[open]**
+  harness sets it so): a note 0.5 s in matches within 1°. Notes in the
+  very first block do not: 0.30 of a cycle off at 1.9 Hz, 0.17 at 6.5 Hz,
+  Bells Brushed Hits' first chord 0.39. Whether that offset repeats from
+  one Live instance to the next is open (round 8 renders copies).
+  **[open]**
 - Amount: 2 Amount² × A%, × 4(0.5 + VelScale (v − 0.5))², × the LFO
   envelope. Destination A multiplies an operator's phase increment by
   (1 + L) (linear pitch) and adds 24 semitones per unit to the cutoff
@@ -613,10 +620,12 @@ where the reading was silent or disagreed. Segno's implementation is
   Aftertouch at rest moves no filter and no envelope time (Buzz Release
   Keys, mod wheel +100 % on Time); velocity 64 and the neutral key move
   nothing.
-- LFO Rate, 8 octaves per unit, takes the gain sum a u − a⁺ of its MIDI
-  routes (aftertouch at rest with +20 % slows OP Bass's LFO 1.6 octaves,
-  from 1.3 to 0.43 Hz), and the LFO's own route adding (a × s).
-  **[measured]**
+- LFO Rate (8 octaves per unit) and the A/C and B/D crossfades take a ×
+  (2u − 1): aftertouch and the mod wheel at rest count as −1 there. +20 %
+  at rest slows the LFO 1.6 octaves (OP Bass, 1.3 to 0.43 Hz), −20 %
+  speeds it 1.6; the mod wheel's +58 % on the A/C crossfade gives C 0.42
+  and A 1.58 at rest (Analog Bouquet Brass, its C and D alone 7.5 dB too
+  loud without it). **[measured]**
 - A gain destination only attenuates, by 1 − a⁺ + a u (a⁺ the amount's
   positive part): the operators' volumes, FM Drive, LFO Amount, the
   filter envelope's amount (velocity +50 % leaves it whole at 127), Volume
@@ -646,8 +655,10 @@ where the reading was silent or disagreed. Segno's implementation is
   **[fit]** Its high-pass (and SMP's) falls 12 dB an octave just below the
   cutoff and 6 below c × cutoff: a linear state-variable section's high
   output plus c × its band output, c 0.43 (SMP 0.49), damped by
-  2 (1 − feedback × q). **[fit: the HP renders, third-octave bands within
-  1.6 to 1.9 dB of that shape]**
+  0.37 + 1.26 (1 − q)^1.32 with q at most 1 (it does not self-oscillate),
+  the 24 dB second section at the low-pass's share of q. **[fit: the HP
+  renders at resonance 0, 0.5 and 1, third-octave bands within 1.3 to
+  1.6 dB of that shape]**
 - PRD: Segno's model of a four-stage ladder, each stage's input and output
   through z (1 − z²/4 + |z|³/16) with a small offset of its own, feedback
   0.8 × 4.04 q (the reading says 4.04 q; Live's resonance renders want
@@ -684,7 +695,15 @@ where the reading was silent or disagreed. Segno's implementation is
   note while a voice sounds, but not for a note that takes a sounding
   voice's place (it waits for that voice in Live): OP Bass's mono notes
   start at their own pitch over the release of the last. **[code]**
-  **[measured]**
+  **[measured]** A legato glide keeps the first note's key for every key
+  scaling (operator level, filter, envelope times, LFO rate, the key
+  route). **[measured: diagnosed on a held-out preset, Electric FM Wow
+  Bass; round 8's legato renders confirm or refute it]**
+- Random pan and the random start phases do not repeat from one Live
+  instance to the next: two identical tracks draw different pans, and
+  every held-out preset's Live copies differ (Live against itself 0.8 to
+  13 dB over time). Segno draws its own. **[measured: rndpan-a, -b; the
+  held-out copies]**
 - Pan is equal-power, unity at the centre (√2 cos and √2 sin); key and
   random pan are latched at the note. **[code]** **[measured]**
 
@@ -719,18 +738,29 @@ Release Keys added). What is left:
 - Chaotic or table-bound sources: full feedback (fb-d-100) and Noise
   Looped (Live's table is its own) match in their statistics (tfz 1.0)
   but not cell by cell.
-- Analog Bouquet Brass plays 0.9 dB louder than Live throughout and 3 dB
-  in its first 40 ms; round 7 takes it apart.
 - The circuits' drive renders (MS2 and SMP drive the shared MS-20 section
   into its clipping: Live's spectra notch individual harmonics Segno does
   not), PRD's high-pass and 24 dB slope, and the first 150 ms of MS2 at
   resonance 0.5.
 
-Round 7 (52 renders, `segno-op-fit7`) isolates the curved slopes of the
-filter, pitch and LFO envelopes, the one-pole spans, Sync on a
-modulator, the free LFO phase, whether random pan repeats, the four
-random presets taken apart, the circuits' high-passes, controller routes
-at rest and glide into a releasing voice.
+Round 7 (52 renders, `segno-op-fit7`) confirmed the curved filter,
+pitch and LFO envelope slopes, the one-pole spans, glide into a releasing
+voice and the routes at rest into Time and the filter envelope, and
+showed Sync's grid, the bipolar LFO Rate and crossfade routes (Analog
+Bouquet Brass's 0.9 dB was its C at full level) and the MS2 high-pass's
+damping. With the scorer's round 2 (three seeds, Live's own spread where
+copies exist): 324 of 349 fit renders and 9 of 10 presets pass (from 314
+and 8), the held-out round 32 of 67 (from 29), before any held-out
+render was fitted. Still open: the free LFO's phase for notes in the
+first block, Metallic FM with its random sources off (3.8 dB: a fixed
+0 Hz carrier shaping a fixed 0.01 Hz modulator, Spread's side 6 dB too
+strong), PRD's high-pass, MS2's 24 dB high-pass.
+
+Round 8 (81 renders, `segno-op-fit8`) plays the 36 failing held-out
+preset kinds with another phrase (D2 at 64, an F4 triad at 90, A5 at
+120), with two Live copies of the 19 random ones, and isolates legato key
+scaling, a Beat retrigger at note-off, the pitch envelope on the LFO rate
+and copies of the first-block free LFO.
 
 
 ## Decisions

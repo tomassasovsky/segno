@@ -91,7 +91,8 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   PRD (a four-stage ladder) and OSR (a state-variable loop with a diode
   bounding its resonance), each fitted to Live's renders; SMP runs on
   MS2's section with its own constants. MS2's and SMP's high-passes are
-  fitted shapes; PRD's is not read yet: Clean's high-pass stands in.
+  fitted shapes (damping fitted at resonance 0 to 1); PRD's is not read
+  yet: Clean's high-pass stands in.
 - The routes, measured in a fifth and sixth round: sources bipolar or
   resting at 0, gain destinations attenuating by 1 - a+ + a u, the LFO's
   and pitch envelope's routes scaled by their own amounts, the pitch
@@ -108,6 +109,13 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   glide into a stolen voice, the MS2 and SMP high-passes, SMP's and PRD's
   resonance. Celesta, Bells Brushed Hits and Metallic FM are held by
   Live's random pan and phases; round 7 (52 renders) isolates the rest.
+- Round 7 and the held-out round (scorer round 2): Sync on the song's
+  sixteenths, LFO Rate and the crossfades taking controllers as bipolar
+  (Analog Bouquet Brass now passes), the MS2 high-pass's damping, legato
+  keeping the first note's key scaling. 324 of 349 fit renders, 9 of 10
+  presets; held out 32 of 67 (from 29). Live's random pan and phases
+  differ between instances, so Segno draws its own. Round 8 (81 renders)
+  plays the failing held-out kinds with another phrase.
 - A voice costs 2.7 us per period at 48 kHz on the dev machine, 4.5 with
   Antialias (a Drift voice 7.1).
 

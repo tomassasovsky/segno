@@ -79,6 +79,7 @@ typedef struct le_operator_env {
 typedef struct le_operator_voice {
   int32_t state; /* LE_OPERATOR_VOICE_* (operator_voice.c) */
   int32_t note;
+  int32_t key; /* the note key scaling follows: kept through legato */
   uint32_t origin;
   uint64_t serial;
   int32_t side;   /* 0: both channels, 1: left only, 2: right only (Spread) */
@@ -142,6 +143,7 @@ typedef struct le_operator {
   float last_pitch; /* the last played note, the glide start */
   int32_t played;   /* whether a note has played since init */
   double lfo_free;  /* the free-running LFO phase (Retrigger off) */
+  double clock;     /* samples rendered since init: Sync's grid */
   int32_t voice_limit;
   uint32_t stolen;
   uint32_t rng;
