@@ -79,6 +79,10 @@ static int sounding(const le_electric_voice* v) {
 
 static void fade_voice(le_electric* d, le_electric_voice* v) {
   if (v->state == LE_ELECTRIC_VOICE_FREE) return;
+  if (!v->struck) {
+    v->state = LE_ELECTRIC_VOICE_FREE; /* silent so far: nothing to fade */
+    return;
+  }
   v->state = LE_ELECTRIC_VOICE_FADING;
   if (v->fade <= 0.0f) v->fade = 1.0f;
   v->fade_step = 1.0f / (0.001f * (float)d->sample_rate);
@@ -189,11 +193,13 @@ int32_t le_electric_note_on(le_electric* d, uint32_t origin, int32_t note, int32
       memset(v->m, 0, sizeof(v->m));
       memset(v->r, 0, sizeof(v->r));
       v->fade = 0.0f;
+      v->struck = 0;
     }
   }
-  /* a voice still sounding fades out over the next block, then strikes */
-  if (v->state != LE_ELECTRIC_VOICE_FREE) {
-    v->fade = 1.0f;
+  /* a voice still sounding fades out over the next block, then strikes (one
+   * already fading goes on from where it is) */
+  if (v->state != LE_ELECTRIC_VOICE_FREE && v->struck) {
+    if (v->fade <= 0.0f || v->state != LE_ELECTRIC_VOICE_FADING) v->fade = 1.0f;
     v->fade_step = 1.0f / (float)d->block;
   } else {
     v->fade = 0.0f;
@@ -205,7 +211,6 @@ int32_t le_electric_note_on(le_electric* d, uint32_t origin, int32_t note, int32
   v->velocity = (float)(velocity - 1) / 126.0f;
   v->wait = 2;
   v->gate = 1;
-  v->damp = 0;
   v->quiet = 0;
   return 0;
 }
@@ -454,7 +459,7 @@ static void render_voice(le_electric* d, le_electric_voice* v, float* out, int32
   const float kk = 2.0f * rate, om = 4398.2f;
   const float vi_b = 0.95f / (kk + om), vi_a = (kk - om) / (kk + om);
   const float r_scale = rate / 4410.0f / 14000.0f, w_scale = rate / 7200.0f;
-  float peak = 0.0f;
+  const int32_t quiet_end = (int32_t)(0.01f * rate);
   for (int32_t s = 0; s < n; ++s) {
     float x = v->m[3];
     v->m[0] = v->mp1 * v->m[0] + 1e-22f;
@@ -493,19 +498,23 @@ static void render_voice(le_electric* d, le_electric_voice* v, float* out, int32
       y = v->pk_gain * w_scale * (u - v->pu1) * flux_w((u + v->pk_a) / v->pk_b);
       v->pu1 = u;
     }
-    if (v->fade > 0.0f) {
+    if (!v->struck) {
+      y = 0.0f; /* not struck yet */
+    } else if (v->fade > 0.0f) {
       y *= v->fade;
       v->fade = fmaxf(v->fade - v->fade_step, 0.0f);
     } else if (v->state == LE_ELECTRIC_VOICE_FADING || v->wait > 0) {
       y = 0.0f; /* faded out: silent until the strike or the end */
     }
     out[s] += y;
-    peak = fmaxf(peak, fabsf(y));
-  }
-  /* fit: a released voice ends after 10 ms below -100 dBFS */
-  if (v->state == LE_ELECTRIC_VOICE_RELEASED) {
-    v->quiet = peak < 1e-5f ? v->quiet + n : 0;
-    if (v->quiet >= (int32_t)(0.01f * rate)) v->state = LE_ELECTRIC_VOICE_FREE;
+    /* fit: a released voice ends after 10 ms below -100 dBFS */
+    if (v->state == LE_ELECTRIC_VOICE_RELEASED) {
+      v->quiet = fabsf(y) < 1e-5f ? v->quiet + 1 : 0;
+      if (v->quiet >= quiet_end) {
+        v->state = LE_ELECTRIC_VOICE_FREE;
+        return;
+      }
+    }
   }
 }
 
@@ -515,12 +524,15 @@ static void block_start(le_electric* d, le_electric_voice* v) {
   const float pitch = fork_pitch(d, key);
   if (v->wait > 0 && --v->wait == 0) {
     strike(d, v, key, pitch);
+    v->struck = 1;
     v->fade = 0.0f;
     damper(d, v, key, 0);
-  } else if (v->damp == 2) {
-    damper(d, v, key, 1);
   }
-  v->damp = 0;
+  /* a release's burst, after the strike when both fall in this block */
+  if (v->damp == 2 && v->wait == 0) {
+    damper(d, v, key, 1);
+    v->damp = 0;
+  }
   if (v->wait == 0) fork_tune(d, v, pitch);
   if (v->state == LE_ELECTRIC_VOICE_FADING && v->fade <= 0.0f) v->state = LE_ELECTRIC_VOICE_FREE;
 }

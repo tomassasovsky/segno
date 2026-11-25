@@ -13,6 +13,9 @@ static le_electric* eng_electric(le_engine* e, int32_t k) {
 
 static le_electric g_electric;
 
+/* The top of parameter p's range. */
+static float param_hi(int32_t p) { return le_electric_clamp(p, 1e9f); }
+
 static void electric_reference(le_electric* d) {
   CHECK(le_electric_init(d, OPR_SR) == 0);
   le_electric_set_voice_limit(d, LE_ELECTRIC_VOICE_SLOTS);
@@ -58,26 +61,63 @@ static void test_electric_strike(void) {
   CHECK(le_electric_active(&g_electric) == 0);
 }
 
-/* Every control at its ends, both pickups, any note: finite and bounded. */
+/* Every control at its ends, both pickups: finite on any note, and
+ * bounded across the piano's range but for the key and velocity scalings,
+ * which grow without bound as read. */
 static void test_electric_extremes(void) {
   printf("test_electric_extremes\n");
   enum { N = 4800 };
   static float l[N], r[N];
-  for (int32_t p = LE_ELECTRIC_MALLET_STIFFNESS; p < LE_ELECTRIC_PARAMS; ++p) {
+  static const int32_t notes[4] = {21, 108, 0, 127};
+  for (int32_t p = 0; p < LE_ELECTRIC_PARAMS; ++p) {
+    const int scaling = p == LE_ELECTRIC_STIFFNESS_KEY || p == LE_ELECTRIC_FORCE_KEY || p == LE_ELECTRIC_FORCE_VEL ||
+                        p == LE_ELECTRIC_NOISE_KEY || p == LE_ELECTRIC_TINE_COLOR || p == LE_ELECTRIC_PICKUP_KEY;
     for (int m = 0; m < 2; ++m) {
       for (int model = 0; model < 2; ++model) {
-        electric_reference(&g_electric);
-        electric_set(&g_electric, LE_ELECTRIC_PICKUP_MODEL, (float)model);
-        electric_set(&g_electric, p, p == LE_ELECTRIC_PICKUP_MODEL ? (float)model : (float)m);
-        CHECK(le_electric_note_on(&g_electric, 1, m ? 108 : 21, 127, 0) == 0);
-        le_electric_render(&g_electric, l, r, N);
-        le_electric_note_off(&g_electric, 1);
-        le_electric_render(&g_electric, l, r, N);
-        CHECK(opr_finite(l, N));
-        CHECK(opr_peak(l, N) < 64.0f);
+        for (int k = 0; k < 4; ++k) {
+          electric_reference(&g_electric);
+          electric_set(&g_electric, LE_ELECTRIC_PICKUP_MODEL, (float)model);
+          if (p != LE_ELECTRIC_PICKUP_MODEL) electric_set(&g_electric, p, m ? param_hi(p) : 0.0f);
+          CHECK(le_electric_note_on(&g_electric, 1, notes[k], 127, 0) == 0);
+          le_electric_render(&g_electric, l, r, N);
+          CHECK(opr_finite(l, N));
+          if (k < 2 && !scaling) CHECK(opr_peak(l, N) < 64.0f);
+          le_electric_note_off(&g_electric, 1);
+          le_electric_render(&g_electric, l, r, N);
+          CHECK(opr_finite(l, N));
+          if (k < 2 && !scaling) CHECK(opr_peak(l, N) < 64.0f);
+        }
       }
     }
   }
+}
+
+/* Notes ended, stolen or struck again before their strike stay silent and
+ * finite. */
+static void test_electric_before_the_strike(void) {
+  printf("test_electric_before_the_strike\n");
+  enum { N = 960 };
+  static float l[N], r[N];
+  /* the same key twice before any render */
+  electric_reference(&g_electric);
+  CHECK(le_electric_note_on(&g_electric, 1, 60, 100, 0) == 0);
+  CHECK(le_electric_note_on(&g_electric, 2, 60, 100, 0) == 0);
+  le_electric_render(&g_electric, l, r, N);
+  CHECK(opr_finite(l, N) && opr_peak(l, N) > 0.0f);
+  /* a three-note chord on two voices steals a voice that never struck */
+  electric_reference(&g_electric);
+  electric_set(&g_electric, LE_ELECTRIC_VOICES, 0.0f);
+  for (int32_t n = 0; n < 3; ++n) CHECK(le_electric_note_on(&g_electric, 7, 60 + 4 * n, 100, 1) == 0);
+  le_electric_render(&g_electric, l, r, N);
+  CHECK(opr_finite(l, N));
+  /* Cut within the first block */
+  electric_reference(&g_electric);
+  CHECK(le_electric_note_on(&g_electric, 1, 60, 100, 0) == 0);
+  le_electric_render(&g_electric, l, r, 16);
+  le_electric_cut(&g_electric);
+  le_electric_render(&g_electric, l, r, N);
+  CHECK(opr_finite(l, N) && opr_peak(l, N) == 0.0f);
+  CHECK(le_electric_active(&g_electric) == 0 && le_electric_fading(&g_electric) == 0);
 }
 
 /* Voice counts, the same key again, sustain and Cut. */
@@ -88,7 +128,9 @@ static void test_electric_voices(void) {
   /* two voices: a third note steals the oldest */
   electric_reference(&g_electric);
   electric_set(&g_electric, LE_ELECTRIC_VOICES, 0.0f);
-  for (uint32_t o = 1; o <= 3; ++o) CHECK(le_electric_note_on(&g_electric, o, 60 + (int)o, 100, 0) == 0);
+  for (uint32_t o = 1; o <= 2; ++o) CHECK(le_electric_note_on(&g_electric, o, 60 + (int)o, 100, 0) == 0);
+  le_electric_render(&g_electric, l, r, 960); /* both struck */
+  CHECK(le_electric_note_on(&g_electric, 3, 63, 100, 0) == 0);
   CHECK(le_electric_active(&g_electric) == 2);
   CHECK(le_electric_fading(&g_electric) == 1);
   CHECK(g_electric.stolen == 1);
@@ -121,11 +163,12 @@ static void test_electric_voices(void) {
 /* Rendering in any block size gives the same samples. */
 static void test_electric_block_size(void) {
   printf("test_electric_block_size\n");
-  enum { N = 9600 };
+  enum { N = 24000 };
   static float ref_l[N], ref_r[N], l[N], r[N];
   static const int32_t blocks[] = {1, 7, 64, 333};
   for (int b = -1; b < 4; ++b) {
     electric_reference(&g_electric);
+    electric_set(&g_electric, LE_ELECTRIC_RELEASE, 0.0f);
     electric_set(&g_electric, LE_ELECTRIC_DAMPER_AMOUNT, 1.0f);
     electric_set(&g_electric, LE_ELECTRIC_NOISE_AMOUNT, 0.8f);
     CHECK(le_electric_note_on(&g_electric, 1, 57, 100, 0) == 0);
@@ -133,6 +176,7 @@ static void test_electric_block_size(void) {
       le_electric_render(&g_electric, ref_l, ref_r, 4000);
       le_electric_note_off(&g_electric, 1);
       le_electric_render(&g_electric, ref_l + 4000, ref_r + 4000, N - 4000);
+      CHECK(le_electric_active(&g_electric) == 0); /* it ends inside the render */
       continue;
     }
     for (int32_t i = 0; i < N; i += blocks[b]) {
@@ -230,7 +274,7 @@ static void test_engine_electric_midi(void) {
   CHECK(eng_electric(e, 2)->voices[0].state == 3); /* sustained */
   ins_send(&cap, 0xB0, 64, 0);
   drift_run(e, 64, 64, 2, NULL, NULL);
-  CHECK(eng_electric(e, 2)->voices[0].state == 2 || eng_electric(e, 2)->voices[0].state == 0);
+  CHECK(eng_electric(e, 2)->voices[0].state == 2); /* released, ringing out */
   CHECK(le_engine_cut_sound(e) == LE_OK);
   drift_run(e, 4800, 64, 2, NULL, NULL);
   CHECK(le_electric_active(eng_electric(e, 2)) == 0 && le_electric_fading(eng_electric(e, 2)) == 0);
@@ -240,6 +284,7 @@ static void test_engine_electric_midi(void) {
 static void run_electric_tests(void) {
   test_electric_strike();
   test_electric_extremes();
+  test_electric_before_the_strike();
   test_electric_voices();
   test_electric_block_size();
   test_engine_electric_slot_matches_offline();

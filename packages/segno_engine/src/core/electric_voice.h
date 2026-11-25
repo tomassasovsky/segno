@@ -47,7 +47,8 @@ typedef struct le_electric_voice {
   int32_t wait;    /* blocks until the strike: 2 at note-on */
   int32_t gate;    /* 1 while held or sustained */
   int32_t damp;    /* a damper burst due at the next block (1 on, 2 off) */
-  int32_t quiet;   /* released blocks below the silence floor */
+  int32_t quiet;   /* released samples below the silence floor */
+  int32_t struck;  /* 1 once the mallet has struck */
   float fade;      /* stolen, cut or retriggered: 1 -> 0 */
   float fade_step;
   /* the mallet's four stages and their coefficients */
