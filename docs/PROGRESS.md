@@ -1,4 +1,4 @@
-<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Metalic Perc retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured -->
+<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Metalic Perc retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations -->
 # Segno — Progress & Roadmap
 
 <!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs multicore smarttune -->
@@ -189,6 +189,25 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   Live's random pan and phases; round 7 (52 renders) isolates the rest.
 - A voice costs 2.7 us per period at 48 kHz on the dev machine, 4.5 with
   Antialias (a Drift voice 7.1).
+
+## November 2026 Drift against Live's strict score (SEG-109 P4, round 5)
+
+- A stricter score (third-octave x 50 ms cells, the attack, stereo width,
+  pitch) showed what still differed. Fixed from Live's renders: a free
+  LFO starts at its shape's start phase when the voice blocks reset and
+  runs while idle; Reset Oscillator Phase makes a note on a sounding voice
+  wait 1 ms while it falls silent, then restart (Mono legato too); glide
+  moves in hertz (0.144 x Glide); filter II starts at rest (no -43 dB
+  transient at note start) with its diode slope at 2.21; the filter path
+  gains (0.15 and 0.37 dB high); Sample & Hold starts on a drawn step;
+  Shark Tooth runs backwards in time, with narrower top widths.
+- Strict score: 164 of 224 fit renders before, 171 of 200 after (the
+  scorer's round 2 sets aside renders named `-r<n>`); factory presets 0
+  to 1 of 5 (Euphoria Lead).
+- What still fails is Drift Depth (Segno's tuning values are its own by
+  rule; with Live's table in a scratch check the drift renders passed) and
+  random sources (noise, Sample & Hold) that no render can match draw for
+  draw. Bloom Pad's filter peak (37 cents low) waits on round 16.
 
 ## November 2026 Drift's filter II as an MS-20 circuit model (SEG-109 P4, round 4)
 

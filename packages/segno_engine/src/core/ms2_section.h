@@ -35,13 +35,16 @@ static inline float le_ms2_clamp(float x, float lo, float hi) {
   return x < lo ? lo : x > hi ? hi : x;
 }
 
-/* The diode curve in the feedback: a slope of 2.19 at 0, a sharp knee near
+/* The diode curve in the feedback: a slope of 2.21 at 0, a sharp knee near
  * 1, and a slope of 0.62 beyond, slightly larger above 0 than below.
- * Segno's own form, fitted to a description of Live's within 0.04. */
+ * Segno's own form, fitted to a description of Live's within 0.04; the
+ * slope at 0 sets the small-signal resonance: fitted, Drift's filter II
+ * resonant peaks on noise within 0.3 dB of Live's at resonance 0.5 to 1. */
+#define LE_MS2_DIODE_SLOPE 2.21f
 static inline float le_ms2_diode(float a) {
   const float gm = a >= 0.0f ? 1.0449f : 1.1195f;
   const float u = gm * a;
-  return 0.62f * a + 1.5725f * a / sqrtf(sqrtf(1.0f + u * u * u * u));
+  return 0.62f * a + 1.59f * a / sqrtf(sqrtf(1.0f + u * u * u * u));
 }
 
 /* The first integrator's transconductance z (1 - z^2/4 + |z|^3/16) on its
@@ -53,7 +56,7 @@ static inline float le_ms2_ota_secant(float z) {
 }
 
 static inline float le_ms2_diode_secant(float a) {
-  return fabsf(a) < 1e-4f ? 2.193f : le_ms2_diode(a) / a;
+  return fabsf(a) < 1e-4f ? LE_MS2_DIODE_SLOPE : le_ms2_diode(a) / a;
 }
 
 /* The per-sample coefficients sections share: g, 1/(1+gh), g/(1+g),
