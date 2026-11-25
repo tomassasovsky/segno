@@ -121,6 +121,22 @@ control block, per note), and its order in the voice.
 | Order after Drift | Operator, Wavetable, Analog, Meld, Tension, Collision, Electric; Simpler, Sampler and Impulse need the preset's sample files. | proposed |
 | CPU | Measured with `bench_instruments` at 96 kHz / 64 frames against the 667 µs period, as SEG-57 Part 1 did. A Drift voice costs more than a Segno patch voice; the voice limit follows the measurement. | proposed |
 
+## Stereo buses and recording
+
+Today an instrument slot is one mono source in the same index space as the
+interface's input channels (`LE_INSTRUMENT_SOURCE_BASE + k`,
+`le_instrument_source_sample`), and a take is a clean mono take plus the
+heard image: the input chain's output in stereo (`LE_HEARD_PLANES`,
+`engine_heard.c`). Effect chains are stereo in and stereo out.
+
+Proposed shape for the plan: an instrument bus is a stereo pair; it feeds
+its input chain in stereo, so the heard image records Drift's stereo as
+played; the clean take records the mono sum. Re-running effects from the
+clean take after an edit (SEG-50's replay) then loses the instrument's own
+stereo spread, which the plan states as a known limit unless the owner
+wants a stereo clean take for instrument lanes (a larger change to the
+layer pool, sessions and mixdown).
+
 ## Owner's answers (2026-11-24)
 
 1. Stereo instrument buses now.
