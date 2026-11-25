@@ -54,12 +54,18 @@ enum { MODE_POLY = 0, MODE_MONO = 1, MODE_STEREO = 2, MODE_UNISON = 3 };
 /* Voice counts 0..4 (open item 4). */
 static const int32_t kVoiceCounts[5] = {8, 12, 16, 24, 32};
 
-/* The Sync divisions 0..21 in beats per cycle (open item 4: read from
- * Live's UI). */
+/* The Sync divisions 0..21 in beats per cycle, slowest first: 8 bars down
+ * to a 64th. Fitted: each division's vibrato rate at 120 BPM (indexes 7 to
+ * 21 within 0.3 %; the slower ones take longer than the measurement). */
 static const float kSyncBeats[22] = {
-    0.0625f, 0.083333f, 0.125f, 0.166667f, 0.25f, 0.333333f, 0.375f, 0.5f,
-    0.666667f, 0.75f, 1.0f, 1.333333f, 1.5f, 2.0f, 2.666667f, 3.0f,
-    4.0f, 6.0f, 8.0f, 12.0f, 16.0f, 32.0f};
+    32.0f, 24.0f, 16.0f, 12.0f, 8.0f, 6.0f, 4.0f, 3.0f,
+    2.0f, 1.5f, 1.333333f, 1.25f, 1.0f, 0.75f, 0.666667f, 0.5f,
+    0.333333f, 0.25f, 0.166667f, 0.125f, 0.083333f, 0.0625f};
+
+/* The LFO's and the cycling envelope's rate modes, in the stored order.
+ * Fitted: Time 1 s gives 1 Hz in mode 1, Ratio runs at audio rate in
+ * mode 2. */
+enum { RATE_FREQ = 0, RATE_TIME = 1, RATE_RATIO = 2, RATE_SYNC = 3 };
 
 /* Decay and release reach LE_DRIFT_SILENT of their distance at the stage
  * time. Fitted: attack 50 % / 90 % points, sustain and the release's
@@ -75,12 +81,12 @@ static float envelope_coefficient(float seconds, float rate) {
  * filters' gains below (a saw and noise through each path). */
 static float volume_gain(float v) { return 2.58f * v; }
 
-/* Glide: the pitch reaches 1 % of the interval at the glide time.
- * Provisional. */
+/* Glide: a one-pole in pitch with time constant 0.117 x Glide. Fitted at
+ * 0.1, 0.5, 1 and 2 s (Mono, legato, an octave). */
 static float glide_coefficient(float seconds, float rate) {
-  const float n = seconds * rate;
+  const float n = 0.117f * seconds * rate;
   if (n <= 1.0f) return 1.0f;
-  return 1.0f - expf(-4.6051702f / n); /* ln(0.01) */
+  return 1.0f - expf(-1.0f / n);
 }
 
 /* Key tracking: 10 octaves per unit of the key value at Tracking 1, so 1:1
@@ -138,6 +144,12 @@ static float filter2_zeta(float r) {
 #endif
 #define LE_DRIFT_F2_GAIN (3.0f * 0.5555556f * 1.49f / LE_DRIFT_F2_DRIVE)
 #define LE_DRIFT_F2_OFFSET 0.012f
+/* The paths around the filters: oscillators and noise. Fitted: a sine and
+ * noise routed around, each within 0.2 dB. */
+#ifndef LE_DRIFT_BYPASS_OSC
+#define LE_DRIFT_BYPASS_OSC 0.1572f
+#endif
+#define LE_DRIFT_BYPASS_NOISE 0.12821534f
 
 /* ---- parameters ---- */
 
@@ -186,7 +198,7 @@ static const drift_param_def kParams[LE_DRIFT_PARAMS] = {
     [LE_DRIFT_CYC_RATE] = {1.0f, 0.17f, 1700.0f, 0},
     [LE_DRIFT_CYC_RATIO] = {1.0f, 0.25f, 16.0f, 0},
     [LE_DRIFT_CYC_TIME] = {1.0f, 0.1f, 60.0f, 0},
-    [LE_DRIFT_CYC_SYNCED_RATE] = {10.0f, 0.0f, 21.0f, 1},
+    [LE_DRIFT_CYC_SYNCED_RATE] = {15.0f, 0.0f, 21.0f, 1},
     [LE_DRIFT_CYC_MIDPOINT] = {0.5f, 0.0f, 1.0f, 0},
     [LE_DRIFT_CYC_HOLD] = {0.0f, 0.0f, 1.0f, 0},
     [LE_DRIFT_LFO_MODE] = {0.0f, 0.0f, 3.0f, 1},
@@ -194,7 +206,7 @@ static const drift_param_def kParams[LE_DRIFT_PARAMS] = {
     [LE_DRIFT_LFO_RATE] = {1.0f, 0.17f, 1700.0f, 0},
     [LE_DRIFT_LFO_RATIO] = {1.0f, 0.25f, 16.0f, 0},
     [LE_DRIFT_LFO_TIME] = {1.0f, 0.1f, 60.0f, 0},
-    [LE_DRIFT_LFO_SYNCED_RATE] = {10.0f, 0.0f, 21.0f, 1},
+    [LE_DRIFT_LFO_SYNCED_RATE] = {15.0f, 0.0f, 21.0f, 1},
     [LE_DRIFT_LFO_AMOUNT] = {1.0f, 0.0f, 1.0f, 0},
     [LE_DRIFT_LFO_MOD_SOURCE] = {0.0f, 0.0f, 7.0f, 1},
     [LE_DRIFT_LFO_MOD_AMOUNT] = {0.0f, -1.0f, 1.0f, 0},
@@ -361,12 +373,33 @@ static float osc_triangle(float th, float s, float dt) {
   return x;
 }
 
+/* Shark Tooth's window width w by Shape: a near-triangle at 0 narrowing
+ * toward a falling saw at 1. Fitted: the width whose harmonics 2..7 best
+ * match Live's at each shape (within 1 to 2 dB from 0.25 up, 3 to 4 dB
+ * below), joined linearly. */
+static float shark_width(float s) {
+  static const float kS[6] = {0.0f, 0.135f, 0.25f, 0.5f, 0.75f, 1.0f};
+  static const float kW[6] = {0.876f, 0.819f, 0.726f, 0.443f, 0.272f, 0.172f};
+  /* past the ends (modulation drives the shape outside 0..1) the width
+   * follows the nearest segment's slope, within 0.1..1 */
+  if (s <= 0.0f) return fminf(1.0f, kW[0] + s * (kW[1] - kW[0]) / kS[1]);
+  if (s >= 1.0f) return fmaxf(0.1f, kW[5] + (s - 1.0f) * (kW[5] - kW[4]) / 0.25f);
+  for (int i = 1; i < 6; ++i) {
+    if (s <= kS[i]) {
+      const float t = (s - kS[i - 1]) / (kS[i] - kS[i - 1]);
+      return kW[i - 1] + t * (kW[i] - kW[i - 1]);
+    }
+  }
+  return kW[5];
+}
+
 static float osc_shark(float th, float s, float dt) {
-  const float w = s + 0.1f * (1.0f - s);
+  const float w = shark_width(s);
   const float lo = 0.75f - 0.5f * w;
   const float hi = 0.75f + 0.5f * w;
   float y;
-  if (th >= lo && th < hi) {
+  /* the window wraps past the cycle's end once w > 0.5 */
+  if (frac(th - lo) < w) {
     y = tri(th);
   } else {
     y = 1.0f - 2.0f * frac(th + 0.25f - 0.5f * w);
@@ -451,17 +484,29 @@ static int32_t osc2_wave(int32_t stored) {
 
 /* ---- Pitch: per-key tuning and note gain ---- */
 
-/* Segno's own per-key deviations for C1..B5 (24..83), in cents, one column
- * per lane of a note: a fixed pseudo-random table with an rms near 4 cents,
- * clipped at +-14. Fitted behavior: the offset is fixed per key and lane
- * (it neither moves over time nor changes between strikes), linear in
- * Drift Depth, and a Stereo note's two lanes sit at different offsets. */
-static float key_cents(int32_t note, int32_t lane) {
+/* Drift Depth's tuning: a deviation per key plus one per voice, both fixed
+ * (neither moves over time nor changes between strikes on the same voice),
+ * linear in Drift Depth. Segno's own pseudo-random values, sized to Live's
+ * statistics: fitted, at Depth 1 the per-key part has an rms near 7 cents,
+ * a Stereo note's two lanes sit 11.6 cents apart at every key, and voices
+ * in other pairs up to about 11 cents away, so two lanes of a note, or one
+ * key on two voices, differ. Values are stored at 0.58 of Depth 1.
+ * The per-key part: C1..B5 (24..83), rms near 4, clipped at +-14. */
+static float key_cents(int32_t note) {
   if (note < 24 || note > 83) return 0.0f;
-  uint32_t h = (uint32_t)(note * 2654435761u) ^ (0x5e9a7u + 0x9e3779b9u * (uint32_t)lane);
+  uint32_t h = (uint32_t)(note * 2654435761u) ^ 0x5e9a7u;
   float sum = 0.0f;
   for (int i = 0; i < 4; ++i) sum += rnd_bipolar(&h);
   return clampf(sum * 3.5f, -14.0f, 14.0f);
+}
+
+/* The per-voice part: the two voices of each pair sit 6.73 apart (11.6
+ * cents at Depth 1, a Stereo note's lanes), around a centre of up to +-3
+ * that differs from pair to pair. */
+static float voice_cents(int32_t voice) {
+  uint32_t h = 0x7f4a7c15u ^ (uint32_t)((voice / 2) * 2246822519u);
+  const float centre = 3.0f * rnd_bipolar(&h);
+  return centre + (voice % 2 ? 3.365f : -3.365f);
 }
 
 /* The ISO 226:2003 40-phon equal-loudness level at 1/10-decade steps from
@@ -538,10 +583,10 @@ static void derive(le_drift* d) {
   x->hp_hz = vf(d, LE_DRIFT_FILTER_HP_FREQ);
   x->res = vf(d, LE_DRIFT_FILTER_RES);
   switch (vi(d, LE_DRIFT_LFO_MODE)) {
-    case 2:
+    case RATE_TIME:
       x->lfo_hz = 1.0f / vf(d, LE_DRIFT_LFO_TIME);
       break;
-    case 3:
+    case RATE_SYNC:
       x->lfo_hz = sync_hz(d, vi(d, LE_DRIFT_LFO_SYNCED_RATE));
       break;
     default:
@@ -549,10 +594,10 @@ static void derive(le_drift* d) {
       break;
   }
   switch (vi(d, LE_DRIFT_CYC_MODE)) {
-    case 2:
+    case RATE_TIME:
       x->cyc_hz = 1.0f / vf(d, LE_DRIFT_CYC_TIME);
       break;
-    case 3:
+    case RATE_SYNC:
       x->cyc_hz = sync_hz(d, vi(d, LE_DRIFT_CYC_SYNCED_RATE));
       break;
     default:
@@ -645,9 +690,10 @@ int32_t le_drift_init(le_drift* d, int32_t sample_rate) {
   derive(d);
   for (int32_t n = 0; n < 128; ++n) {
     d->note_gain[n] = note_gain(note_hz(n));
-    for (int32_t l = 0; l < 4; ++l) d->key_cents[l][n] = key_cents(n, l);
+    d->key_cents[n] = key_cents(n);
   }
   for (int32_t i = 0; i < LE_DRIFT_VOICES; ++i) {
+    d->voice_cents[i] = voice_cents(i);
     d->voices[i].rng = 0x9e3779b9u ^ (uint32_t)(i * 2654435761u);
   }
   return 0;
@@ -715,8 +761,11 @@ static void lane_setup(const le_drift* d, le_drift_voice* v, int32_t lane,
     ratio = sub[lane];
     gl = gr = lane_gain[lane];
   } else if (mode == MODE_UNISON) {
-    static const float pan[4] = {-1.0f, -0.5f, 0.5f, 1.0f};
-    static const float detune[4] = {1.0245496f, 1.0122024f, 0.9879406f, 0.9760254f};
+    /* lanes from flattest (right) to sharpest (left): fitted, the left side
+     * sharp, and with the per-voice drift (each pair's odd voice higher)
+     * widening the spread, never folding two lanes onto one pitch */
+    static const float pan[4] = {1.0f, 0.5f, -0.5f, -1.0f};
+    static const float detune[4] = {0.9760254f, 0.9879406f, 1.0122024f, 1.0245496f};
     const float s = vf(d, LE_DRIFT_UNISON_DEPTH);
     const float g = 0.4731513f; /* -6.5 dB */
     const float p = pan[lane];
@@ -733,7 +782,8 @@ static void lane_setup(const le_drift* d, le_drift_voice* v, int32_t lane,
     gr = LE_DRIFT_STEREO_GAIN * (1.0f + p);
   }
   const float w = vf(d, LE_DRIFT_DRIFT_DEPTH) / 0.58f;
-  v->ratio = ratio * exp2f(w * d->key_cents[lane][note] / 1200.0f);
+  const float cents = d->key_cents[note] + d->voice_cents[v - d->voices];
+  v->ratio = ratio * exp2f(w * cents / 1200.0f);
   const float ng = d->note_gain[note];
   v->gain_l = gl * ng;
   v->gain_r = gr * ng;
@@ -752,12 +802,10 @@ static void start_voice(le_drift* d, le_drift_voice* v, int32_t lane,
   v->velocity = velocity;
   v->key = ((float)note - 69.0f) / 120.0f;
   v->serial = ++d->serial;
-  v->hz_target = note_hz(note);
-  if (vf(d, LE_DRIFT_GLIDE) <= 0.0f || d->last_hz <= 0.0f) {
-    v->hz = v->hz_target;
-  } else if (was_silent) {
-    v->hz = d->last_hz;
-  }
+  /* A voice glides only from a pitch it is sounding (Mono, legato, a voice
+   * struck again): fitted, a new Poly voice starts on its note. */
+  v->pitch_target = log2f(note_hz(note));
+  if (vf(d, LE_DRIFT_GLIDE) <= 0.0f || was_silent) v->pitch = v->pitch_target;
   lane_setup(d, v, lane, note);
   if (!retrigger && sounding(v)) {
     v->state = LE_DRIFT_VOICE_HELD;
@@ -765,15 +813,20 @@ static void start_voice(le_drift* d, le_drift_voice* v, int32_t lane,
   }
   if (was_silent) {
     v->env1 = v->env2 = 0.0f;
-    /* a silent voice starts in phase, so a note's lanes start together:
-     * fitted, Live's Stereo pair at Spread 1 with Drift 0 is mono */
-    v->ph1 = v->ph2 = 0.0f;
+    /* Reset Oscillator Phase starts a silent voice at phase 0; otherwise it
+     * keeps the phase its last note left. Fitted: a note's lanes on fresh
+     * voices start together (Live's Stereo pair at Drift 0 is mono), and
+     * once voices are reused a Stereo note's lanes start apart. */
+    if (vi(d, LE_DRIFT_RESET_OSC_PHASE)) v->ph1 = v->ph2 = 0.0f;
     memset(v->lp, 0, sizeof(v->lp));
     memset(v->hp, 0, sizeof(v->hp));
   }
   const int32_t shape = vi(d, LE_DRIFT_LFO_SHAPE);
+  /* Retrigger (and a one-shot shape) restarts the voice's LFO: Sine and
+   * Triangle at their peak (0.25), the saws at 0.5, the rest at 0; without
+   * it the note continues the phase the voice's LFO stopped at */
   if (vi(d, LE_DRIFT_LFO_RETRIGGER) || shape >= 7) {
-    v->lfo_ph = 0.0f;
+    v->lfo_ph = shape <= 1 ? 0.25f : shape <= 3 ? 0.5f : 0.0f;
     v->lfo_done = 0;
   }
   v->cyc_ph = 0.0f;
@@ -814,7 +867,7 @@ static int32_t pick_group(le_drift* d, uint32_t origin, int32_t note,
       free &= d->voices[g * lanes + l].state == LE_DRIFT_VOICE_FREE;
     }
     if (free) {
-      d->next_voice = (g + 1) % groups;
+      d->next_voice = g; /* the search starts at the group allocated last */
       return g;
     }
   }
@@ -833,7 +886,6 @@ static void start_group(le_drift* d, int32_t g, uint32_t origin, int32_t note,
     start_voice(d, &d->voices[g * lanes + l], l, origin, note, velocity,
                 retrigger);
   }
-  d->last_hz = note_hz(note);
 }
 
 static void release_voice(le_drift_voice* v) {
@@ -1143,6 +1195,22 @@ static float envelope(float* y, int32_t* stage, float step, float dec,
 
 /* ---- Filters ---- */
 
+/* The filters' input stage: linear up to +0.62 / -0.89, then a parabolic
+ * knee 0.325 wide into a flat top (+0.7825 / -1.0525). Fitted: a sine at
+ * Gain 1 through either filter gets Live's harmonics 2 to 6 within 2 dB
+ * and its 0.9 peak ratio, one at Gain 0.5 stays clean. */
+static float knee(float a, float t) {
+  const float k = 0.325f;
+  const float d = a - t;
+  if (d <= 0.0f) return a;
+  if (d >= k) return t + 0.5f * k;
+  return t + d - d * d / (2.0f * k);
+}
+
+static float filter_input(float x) {
+  return x >= 0.0f ? knee(x, 0.62f) : -knee(-x, 0.89f);
+}
+
 /* A zero-delay state-variable section (equal integrators, damping k = 2
  * zeta) with a soft clip on its band state, which bounds self-oscillation.
  * Returns the low-pass output. */
@@ -1164,15 +1232,55 @@ static float filter1(float* s, float x, float fc, float r, float rate,
   return svf_lowpass(s, x, g, 2.0f * filter1_zeta(r), 0.0f) * LE_DRIFT_F1_OUT;
 }
 
-/* Low-pass type II: two sections in series, 24 dB/oct, with a slightly
- * asymmetric clip in each and the same tiny injected noise as type I. */
+/* One section of low-pass type II: the base damping k0 is linear, and the
+ * resonance, the damping it takes away (k0 - k), comes back as feedback
+ * through a soft clip of threshold LE_DRIFT_F2_CLIP (a diode-style clip in
+ * the resonance path, slightly asymmetric): a quiet signal gets the whole
+ * resonant peak, a loud one clips the feedback and the peak collapses.
+ * Fitted as a compromise: Live's quiet noise keeps its +8 to +32 dB peaks
+ * while a full saw barely rings; one threshold leaves the noise peaks a
+ * few dB under Live's and the loud saw a few dB over (17 dB over with no
+ * clip). The clip's excess over its linear part is applied from the
+ * previous sample's band state. */
+#ifndef LE_DRIFT_F2_CLIP
+#define LE_DRIFT_F2_CLIP 0.08f
+#endif
+static float filter2_section(float* s, float x, float g, float k0, float k) {
+  const float kr = k0 - k; /* the resonance's share of the damping */
+  const float b = s[2];    /* the previous band output */
+  const float t = LE_DRIFT_F2_CLIP;
+  const float clipped =
+      t * (soft(b / t + LE_DRIFT_F2_OFFSET) - soft(LE_DRIFT_F2_OFFSET));
+  x += kr * (clipped - b);
+  const float hp = (x - (k + g) * s[0] - s[1]) / (1.0f + k * g + g * g);
+  const float bp = g * hp + s[0];
+  const float lp = g * bp + s[1];
+  s[0] = soft(bp + g * hp);
+  s[1] = lp + g * bp;
+  s[2] = bp;
+  return lp;
+}
+
+/* Low-pass type II: two such sections in series, 24 dB/oct, and the same
+ * tiny injected noise as type I to start self-oscillation. */
 static float filter2(float* s, float x, float fc, float r, float rate,
                      uint32_t* rng) {
   const float g = prewarp(PI_F * fc / rate);
-  const float k = 2.0f * filter2_zeta(fminf(r, 1.3f));
+  /* fitted: a strong resonance thins as the cutoff rises (at 0.9 on noise,
+   * +28 / +27 / +22 / +15 dB at 0.5 / 1 / 2 / 4 kHz): extra damping
+   * growing with the cutoff squared, zero at the 1 kHz the table holds,
+   * and fading with the resonance's fourth power below 0.9, so an open
+   * filter with little resonance keeps Live's top octave (within 0.6 dB
+   * on noise at 20 kHz, 0.28) */
+  const float khz = fc * 0.001f;
+  const float rr = fminf(r / 0.9f, 1.0f);
+  const float more = 0.0069f * (khz * khz - 1.0f) * (rr * rr) * (rr * rr);
+  /* it only takes resonance away: never more damping than the base */
+  const float k0 = 2.0f * filter2_zeta(0.0f);
+  const float k = fminf(k0, 2.0f * (filter2_zeta(fminf(r, 1.3f)) + more));
   x = x * LE_DRIFT_F2_DRIVE + 2e-5f * rnd_bipolar(rng);
-  const float a = svf_lowpass(s, x, g, k, LE_DRIFT_F2_OFFSET);
-  return svf_lowpass(s + 2, a, g, k, LE_DRIFT_F2_OFFSET) * LE_DRIFT_F2_GAIN;
+  const float a = filter2_section(s, x, g, k0, k);
+  return filter2_section(s + 3, a, g, k0, k) * LE_DRIFT_F2_GAIN;
 }
 
 /* The high-pass: a linear two-integrator loop, damping 0.68. */
@@ -1277,10 +1385,26 @@ static void voice_sample(le_drift* d, le_drift_voice* v, float* out_l,
     }
   }
   /* pitch */
-  v->hz += b->glide * (v->hz_target - v->hz);
-  float pitch = b->pm_amt[0] * src.bi[b->pm_src[0]] * kPitchRange[b->pm_src[0]] +
-                b->pm_amt[1] * src.bi[b->pm_src[1]] * kPitchRange[b->pm_src[1]];
-  const float base = v->hz * v->ratio * b->bend_ratio * exp2f(pitch);
+  v->pitch += b->glide * (v->pitch_target - v->pitch);
+  /* the note's frequency alone, for the Ratio rate modes only */
+  const int lfo_ratio = b->lfo_mode == RATE_RATIO;
+  const float note_f =
+      (lfo_ratio || b->cyc_mode == RATE_RATIO) ? exp2f(v->pitch) * b->bend_ratio
+                                               : 0.0f;
+  /* A pitch slot fed by an LFO in Ratio mode (audio rate) moves both
+   * oscillators' phase by LFO x amount cycles instead of their pitch:
+   * phase modulation, limited below one cycle. */
+  float pitch = 0.0f, phase = 0.0f;
+  for (int k = 0; k < 2; ++k) {
+    const int32_t s = b->pm_src[k];
+    if (lfo_ratio && s == LE_DRIFT_SRC_LFO) {
+      phase += b->pm_amt[k] * src.bi[s];
+    } else {
+      pitch += b->pm_amt[k] * src.bi[s] * kPitchRange[s];
+    }
+  }
+  phase = clampf(phase, -0.9999999f, 0.9999999f);
+  const float base = exp2f(v->pitch + pitch) * v->ratio * b->bend_ratio;
   const float f1 = base * x->osc1_ratio;
   const float f2 = base * x->osc2_ratio * exp2f(add_detune);
   const float dt1 = fminf(f1 / rate, 0.4999999f);
@@ -1290,20 +1414,23 @@ static void voice_sample(le_drift* d, le_drift_voice* v, float* out_l,
   v->ph2 += dt2;
   if (v->ph2 >= 1.0f) v->ph2 -= 1.0f;
   /* the LFO's and the cycling envelope's rates */
-  const float lfo_hz = (b->lfo_mode == 1 ? b->lfo_ratio * v->hz : x->lfo_hz) *
+  const float lfo_hz = (lfo_ratio ? b->lfo_ratio * note_f : x->lfo_hz) *
                        exp2f(4.0f * add_lfo);
   lfo_advance(v, fminf(lfo_hz / rate, 0.49999988f));
-  const float cyc_hz = (b->cyc_mode == 1 ? b->cyc_ratio * v->hz : x->cyc_hz) *
+  const float cyc_hz = (b->cyc_mode == RATE_RATIO ? b->cyc_ratio * note_f : x->cyc_hz) *
                        exp2f(4.0f * add_cyc);
   v->cyc_ph += fminf(cyc_hz / rate, 0.49999988f);
   if (v->cyc_ph >= 1.0f) v->cyc_ph -= 1.0f;
   /* oscillators and noise */
   const float shape = b->shape + b->shape_mod * src.raw[b->shape_src] + add_shape;
   const float s1 = x->osc1 == WAVE_SATURATED ? fmaxf(shape, 0.0f)
+                   : x->osc1 == WAVE_SHARK     ? shape
                    : x->osc1 == WAVE_RECTANGLE ? clampf(shape, -1.0f, 1.0f)
                                                : clampf(shape, 0.0f, 1.0f);
-  const float o1 = oscillator(x->osc1, v->ph1, s1, dt1) * x->gain1 * g_osc1;
-  const float o2 = oscillator(x->osc2, v->ph2, 0.0f, dt2) * x->gain2 * g_osc2;
+  const float th1 = phase == 0.0f ? v->ph1 : frac(v->ph1 + phase + 1.0f);
+  const float th2 = phase == 0.0f ? v->ph2 : frac(v->ph2 + phase + 1.0f);
+  const float o1 = oscillator(x->osc1, th1, s1, dt1) * x->gain1 * g_osc1;
+  const float o2 = oscillator(x->osc2, th2, 0.0f, dt2) * x->gain2 * g_osc2;
   float noise = 0.0f;
   if (x->gain_noise > 0.0f) {
     const float r1 = rnd_bipolar(&v->rng);
@@ -1314,24 +1441,24 @@ static void voice_sample(le_drift* d, le_drift_voice* v, float* out_l,
             LE_DRIFT_NOISE_LEVEL * x->gain_noise * g_noise;
   }
   /* mixer and routing */
-  float thru = 0.0f, around = 0.0f;
+  float thru = 0.0f, around = 0.0f, around_noise = 0.0f;
   if (x->thru1) thru += o1; else around += o1;
   if (x->thru2) thru += o2; else around += o2;
-  if (x->thru_noise) thru += noise; else around += noise;
+  if (x->thru_noise) thru += noise; else around_noise = noise;
   /* filters */
   float fc = b->freq * key_tracking(b->tracking, v->key) *
              exp2f(10.0f * (b->fm_amt[0] * src.bi[b->fm_src[0]] +
                             b->fm_amt[1] * src.bi[b->fm_src[1]] + add_lp));
   fc = clampf(fc, 10.0f, fminf(20000.0f, 0.45f * rate));
   const float res = clampf(x->res + add_res, 0.0f, 1.3f);
-  float y = clampf(thru, -1.6f, 1.6f) * 0.25f;
+  float y = filter_input(thru) * 0.25f;
   y = x->filter_type ? filter2(v->lp, y, fc, res, rate, &v->rng)
                                   : filter1(v->lp, y, fc, res, rate, &v->rng);
-  y *= 0.3162278f; /* -10 dB */
+  y *= 0.333f; /* -9.55 dB: fitted with the input knee, a saw within 0.1 dB */
   const float hc = clampf(x->hp_hz * exp2f(10.0f * add_hp), 20.0f,
                           fminf(20000.0f, 0.45f * rate));
   y = highpass(v->hp, y, hc, rate);
-  y += around * 0.12821534f;
+  y += around * LE_DRIFT_BYPASS_OSC + around_noise * LE_DRIFT_BYPASS_NOISE;
   y = clampf(y, -LE_DRIFT_VOICE_CLIP, LE_DRIFT_VOICE_CLIP);
   /* amplitude */
   float amp = env1 * (1.0f - b->vol_vel + b->vol_vel * v->velocity) * g_main *

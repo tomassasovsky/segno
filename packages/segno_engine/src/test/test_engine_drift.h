@@ -353,6 +353,154 @@ static void test_drift_group_needs_every_lane_free(void) {
   CHECK(g_drift.stolen == 0);
 }
 
+/* The LFO's rate modes in their stored order (Freq, Time, Ratio, Sync),
+ * the Sync divisions slowest first, and Retrigger's start phase. */
+static void test_drift_lfo_rate_modes(void) {
+  printf("test_drift_lfo_rate_modes\n");
+  static float l[12000], r[12000];
+  static const struct {
+    int32_t mode, sync;
+    float time, ratio, cycles; /* cycles over 0.25 s at note 69 */
+  } k[] = {
+      {1, 0, 0.5f, 1.0f, 0.5f},   /* Time 0.5 s: 2 Hz */
+      {3, 12, 1.0f, 1.0f, 0.5f},  /* Sync 1 beat at 120 BPM: 2 Hz */
+      {3, 6, 1.0f, 1.0f, 0.125f}, /* 4 beats */
+      {2, 0, 1.0f, 0.25f, 27.5f}, /* Ratio 0.25 of 440 Hz */
+  };
+  for (size_t i = 0; i < sizeof(k) / sizeof(k[0]); ++i) {
+    drift_init(&g_drift, DRIFT_SR);
+    drift_set(&g_drift, LE_DRIFT_HIQUALITY, 0.0f);
+    drift_set(&g_drift, LE_DRIFT_LFO_RETRIGGER, 1.0f);
+    drift_set(&g_drift, LE_DRIFT_LFO_MODE, (float)k[i].mode);
+    drift_set(&g_drift, LE_DRIFT_LFO_TIME, k[i].time);
+    drift_set(&g_drift, LE_DRIFT_LFO_RATIO, k[i].ratio);
+    drift_set(&g_drift, LE_DRIFT_LFO_SYNCED_RATE, (float)k[i].sync);
+    le_drift_render(&g_drift, l, r, 32); /* the values apply from a chunk */
+    CHECK(le_drift_note_on(&g_drift, 1, 69, 100, 0) == 0);
+    CHECK(g_drift.voices[0].lfo_ph == 0.25f); /* a sine restarts at its peak */
+    le_drift_render(&g_drift, l, r, 12000);
+    const float want = fmodf(0.25f + k[i].cycles, 1.0f);
+    CHECK(fabsf(g_drift.voices[0].lfo_ph - want) < 0.01f);
+  }
+}
+
+/* Shark Tooth carries no DC at any shape, modulated past 0..1 included:
+ * through the bypass (no high-pass), one second of 440 cycles averages
+ * to nothing. */
+static void test_drift_shark_has_no_dc(void) {
+  printf("test_drift_shark_has_no_dc\n");
+  static float l[DRIFT_SR], r[DRIFT_SR];
+  static const float shapes[] = {-0.5f, 0.0f, 0.3f, 0.6f, 1.0f, 1.5f};
+  for (size_t i = 0; i < sizeof(shapes) / sizeof(shapes[0]); ++i) {
+    drift_init(&g_drift, DRIFT_SR);
+    drift_set(&g_drift, LE_DRIFT_HIQUALITY, 0.0f);
+    drift_set(&g_drift, LE_DRIFT_OSC1_TYPE, 2.0f);
+    drift_set(&g_drift, LE_DRIFT_OSC1_SHAPE, shapes[i] < 0.0f ? 0.0f : shapes[i] > 1.0f ? 1.0f : shapes[i]);
+    /* past the ends: a fixed offset from the matrix's Osc 1 Shape target,
+     * Velocity as its source */
+    drift_set(&g_drift, LE_DRIFT_MATRIX_SOURCE1, (float)LE_DRIFT_SRC_VELOCITY);
+    drift_set(&g_drift, LE_DRIFT_MATRIX_TARGET1, (float)LE_DRIFT_TGT_OSC1_SHAPE);
+    drift_set(&g_drift, LE_DRIFT_MATRIX_AMOUNT1,
+              shapes[i] < 0.0f ? -1.0f : shapes[i] > 1.0f ? 1.0f : 0.0f);
+    drift_set(&g_drift, LE_DRIFT_FILTER_OSC1_THROUGH, 0.0f);
+    drift_set(&g_drift, LE_DRIFT_OSC2_ON, 0.0f);
+    drift_set(&g_drift, LE_DRIFT_NOISE_ON, 0.0f);
+    drift_set(&g_drift, LE_DRIFT_ENV1_ATTACK, 0.0f);
+    drift_set(&g_drift, LE_DRIFT_ENV1_SUSTAIN, 1.0f);
+    le_drift_render(&g_drift, l, r, 32);
+    /* velocity 127: 0.5 above the bipolar centre, so +-0.5 past the ends */
+    CHECK(le_drift_note_on(&g_drift, 1, 69, 127, 0) == 0);
+    le_drift_render(&g_drift, l, r, 4800);
+    le_drift_render(&g_drift, l, r, DRIFT_SR);
+    double sum = 0.0, sq = 0.0;
+    for (int32_t f = 0; f < DRIFT_SR; ++f) {
+      sum += l[f];
+      sq += (double)l[f] * l[f];
+    }
+    const double rms = sqrt(sq / DRIFT_SR);
+    CHECK(rms > 0.01);
+    CHECK(fabs(sum / DRIFT_SR) < 0.01 * rms);
+  }
+}
+
+/* With Reset Oscillator Phase off a voice keeps the phase its last note
+ * left; on, a silent voice starts at 0. A note after the last one ended
+ * takes the same voice (the search starts at the voice allocated last). */
+static void test_drift_reset_phase_and_reuse(void) {
+  printf("test_drift_reset_phase_and_reuse\n");
+  static float l[9600], r[9600];
+  for (int reset = 0; reset < 2; ++reset) {
+    drift_init(&g_drift, DRIFT_SR);
+    drift_set(&g_drift, LE_DRIFT_RESET_OSC_PHASE, (float)reset);
+    drift_set(&g_drift, LE_DRIFT_ENV1_RELEASE, 0.01f);
+    CHECK(le_drift_note_on(&g_drift, 1, 61, 100, 0) == 0);
+    le_drift_render(&g_drift, l, r, 1000);
+    le_drift_note_off(&g_drift, 1);
+    le_drift_render(&g_drift, l, r, 9600);
+    CHECK(g_drift.voices[0].state == 0);
+    const float left_at = g_drift.voices[0].ph1;
+    CHECK(left_at != 0.0f);
+    CHECK(le_drift_note_on(&g_drift, 2, 66, 100, 0) == 0);
+    CHECK(g_drift.voices[0].note == 66);
+    CHECK(g_drift.voices[0].ph1 == (reset ? 0.0f : left_at));
+  }
+}
+
+/* An LFO in Ratio mode routed to pitch moves the oscillators' phase, not
+ * their frequency: the phase accumulators run as without it. In Freq mode
+ * the same routing is vibrato and they do not. */
+static void test_drift_ratio_lfo_is_phase_modulation(void) {
+  printf("test_drift_ratio_lfo_is_phase_modulation\n");
+  static float l[4800], r[4800];
+  float ph[3];
+  for (int run = 0; run < 3; ++run) {
+    drift_init(&g_drift, DRIFT_SR);
+    drift_set(&g_drift, LE_DRIFT_HIQUALITY, 0.0f);
+    drift_set(&g_drift, LE_DRIFT_LFO_MODE, run == 2 ? 0.0f : 2.0f);
+    drift_set(&g_drift, LE_DRIFT_LFO_RATE, 7.0f);
+    drift_set(&g_drift, LE_DRIFT_LFO_RATIO, 2.375f);
+    drift_set(&g_drift, LE_DRIFT_LFO_AMOUNT, 1.0f);
+    drift_set(&g_drift, LE_DRIFT_PITCH_MOD_SOURCE1, (float)LE_DRIFT_SRC_LFO);
+    drift_set(&g_drift, LE_DRIFT_PITCH_MOD_AMOUNT1, run == 0 ? 0.0f : 0.5f);
+    le_drift_render(&g_drift, l, r, 32);
+    CHECK(le_drift_note_on(&g_drift, 1, 48, 100, 0) == 0);
+    le_drift_render(&g_drift, l, r, 4800);
+    ph[run] = g_drift.voices[0].ph1;
+  }
+  CHECK(fabsf(ph[1] - ph[0]) < 1e-3f);
+  CHECK(fabsf(ph[2] - ph[0]) > 1e-2f);
+}
+
+/* The filters' input stage: a sine at Gain 0.5 passes clean, one at Gain
+ * 1 clips its positive side first. */
+static void test_drift_filter_input_clips_asymmetrically(void) {
+  printf("test_drift_filter_input_clips_asymmetrically\n");
+  static float l[9600], r[9600];
+  float ratio[2];
+  for (int k = 0; k < 2; ++k) {
+    drift_init(&g_drift, DRIFT_SR);
+    drift_set(&g_drift, LE_DRIFT_HIQUALITY, 0.0f);
+    drift_set(&g_drift, LE_DRIFT_OSC1_TYPE, 0.0f);
+    drift_set(&g_drift, LE_DRIFT_OSC1_GAIN, k ? 1.0f : 0.5f);
+    drift_set(&g_drift, LE_DRIFT_OSC2_ON, 0.0f);
+    drift_set(&g_drift, LE_DRIFT_FILTER_FREQ, 20000.0f);
+    drift_set(&g_drift, LE_DRIFT_ENV1_ATTACK, 0.0f);
+    drift_set(&g_drift, LE_DRIFT_ENV1_SUSTAIN, 1.0f);
+    le_drift_render(&g_drift, l, r, 32);
+    CHECK(le_drift_note_on(&g_drift, 1, 60, 127, 0) == 0);
+    le_drift_render(&g_drift, l, r, 9600);
+    le_drift_render(&g_drift, l, r, 9600);
+    float hi = 0.0f, lo = 0.0f;
+    for (int32_t f = 0; f < 9600; ++f) {
+      hi = l[f] > hi ? l[f] : hi;
+      lo = l[f] < lo ? l[f] : lo;
+    }
+    ratio[k] = hi / -lo;
+  }
+  CHECK(fabsf(ratio[0] - 1.0f) < 0.02f);
+  CHECK(ratio[1] < 0.95f);
+}
+
 /* ---- the engine: a slot playing Drift ---- */
 
 /* Processes [frames] in blocks of [block]; when [l] and [r] are given,
@@ -562,6 +710,11 @@ static void run_drift_tests(void) {
   test_drift_mode_change_releases_held_notes();
   test_drift_retriggered_attack_keeps_its_time();
   test_drift_group_needs_every_lane_free();
+  test_drift_lfo_rate_modes();
+  test_drift_shark_has_no_dc();
+  test_drift_reset_phase_and_reuse();
+  test_drift_ratio_lfo_is_phase_modulation();
+  test_drift_filter_input_clips_asymmetrically();
   test_engine_drift_slot_matches_offline();
   test_engine_drift_voice_budget();
   test_engine_drift_params_and_switching();

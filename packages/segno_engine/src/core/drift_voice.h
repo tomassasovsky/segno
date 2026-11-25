@@ -81,10 +81,11 @@ typedef struct le_drift_voice {
   int32_t lane;    /* 0..3 within its note's group */
   float velocity;  /* 0..1 */
   float key;       /* (note - 69) / 120 */
-  /* pitch: the glided note frequency and the voice's fixed ratio (voice
-   * mode detune, per-key tuning) */
-  float hz;
-  float hz_target;
+  /* pitch: the glided note pitch and its target in log2 Hz (a glide moves
+   * evenly in pitch), and the voice's fixed ratio (voice mode detune,
+   * per-key tuning) */
+  float pitch;
+  float pitch_target;
   float ratio;
   /* the voice mode's gains */
   float gain_l, gain_r;
@@ -101,8 +102,9 @@ typedef struct le_drift_voice {
   float lfo_ph;
   float lfo_hold, lfo_from, lfo_to; /* S&H and Wander */
   int32_t lfo_done;                 /* a one-shot LFO shape ended */
-  /* filters: the low-pass (type II uses all four), the high-pass */
-  float lp[4];
+  /* filters: the low-pass (type I uses two, type II six: two sections of
+   * two states and the band output), the high-pass */
+  float lp[6];
   float hp[2];
   /* fade (stolen, struck again, cut, device change) */
   float fade;
@@ -149,18 +151,16 @@ typedef struct le_drift {
   uint32_t sustain[LE_DRIFT_SUSTAIN_MAX];
   int32_t sustain_n;
   uint32_t sustain_refused;
-  /* the last note's frequency, where a glide starts */
-  float last_hz;
   /* Mono: the held notes, newest last, for last-note priority */
   int32_t mono_n;
   int32_t mono_note[LE_DRIFT_MONO_STACK];
   uint32_t mono_origin[LE_DRIFT_MONO_STACK];
   float mono_velocity[LE_DRIFT_MONO_STACK];
-  /* per note: the loudness compensation, and the per-key tuning in cents
-   * for each lane of a note (a Stereo or Unison note's voices are tuned
-   * apart), filled at init */
+  /* per note: the loudness compensation and the per-key tuning in cents;
+   * per voice: its own tuning in cents (Drift Depth), filled at init */
   float note_gain[128];
-  float key_cents[4][128];
+  float key_cents[128];
+  float voice_cents[LE_DRIFT_VOICES];
   /* Poly allocation: where the round robin starts */
   int32_t next_voice;
   int32_t voice_limit; /* sounding voices allowed (the engine's overload) */
