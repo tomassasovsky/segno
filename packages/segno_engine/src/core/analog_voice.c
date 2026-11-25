@@ -292,8 +292,21 @@ static le_analog_voice* free_slot(le_analog* d) {
  * fine tune included. */
 static float key_pitch(const le_analog* d, int32_t note) {
   const float fine = (vf(d, LE_ANALOG_FINE_TUNE) - 0.5f) * 2.0f / 12.0f;
-  return ((float)(note - 60) + (float)vi(d, LE_ANALOG_TRANSPOSE)) / 12.0f +
-         (float)vi(d, LE_ANALOG_OCTAVE) + fine;
+  const float key = (float)(note + vi(d, LE_ANALOG_TRANSPOSE) + 12 * vi(d, LE_ANALOG_OCTAVE));
+  /* fit: Keyboard Stretch widens the scale about A4, 0.8 cent a semitone
+   * at either end of the knob (the stretch renders, C2 to C7) */
+  const float stretch = 2.0f * (le_aas_clamp(vf(d, LE_ANALOG_STRETCH), 0.0f, 1.0f) - 0.5f) * 0.8f / 1200.0f;
+  return (key - 60.0f) / 12.0f + stretch * (key - 69.0f) + fine;
+}
+
+/* fit: Keyboard Error sharpens each copy of a note by a random amount, up
+ * to 24 cents times the knob, u^2 of it for a uniform u (eight strikes at
+ * Error 1 and 0.5: all sharp, means 7.6 and 3.6 cents, the largest 23). */
+static float key_error(const le_analog* d, le_analog_copy* cp) {
+  const float e = le_aas_clamp(vf(d, LE_ANALOG_ERROR), 0.0f, 1.0f);
+  if (e <= 0.0f) return 0.0f;
+  const float u = le_aas_unit(&cp->rng);
+  return e * u * u * 24.0f / 1200.0f;
 }
 
 /* fit: the glide time knob, 3 ms .. 9 s (the glide renders' time
@@ -341,8 +354,12 @@ static void start_copy(le_analog* d, le_analog_voice* v, le_analog_copy* cp) {
     ch->ph2 = 0.0;
     ch->sub_sign = -1;
     ch->dc = shape == 2 ? 0.0365f + 0.4635f * le_aas_knob(cf(d, c, LE_ANALOG_OSC_PW)) : 0.0f;
+    /* with Retrigger the LFO restarts at its Phase; without, it runs on
+     * from a random point up to Phase into the cycle */
     if (ci(d, c, LE_ANALOG_LFO_GATE_RESET)) {
       ch->lfo_ph = cf(d, c, LE_ANALOG_LFO_PHASE);
+    } else {
+      ch->lfo_ph = cf(d, c, LE_ANALOG_LFO_PHASE) * le_aas_unit(&cp->rng);
     }
     /* fit: the random waves start from a random value, noise held there
      * for the first cycle (the lfo-wave renders) */
@@ -386,7 +403,7 @@ static void start_voice(le_analog* d, le_analog_voice* v, uint32_t origin, int32
   const float delay = unison_expz(0.002f, 0.1f, vf(d, LE_ANALOG_UNISON_DELAY)) * (float)d->sample_rate;
   for (int32_t k = 0; k < v->copies; ++k) {
     le_analog_copy* cp = &v->c[k];
-    cp->detune = step * kSteps[k];
+    cp->detune = step * kSteps[k] + key_error(d, cp);
     cp->delay = (int32_t)(delay * (float)k / (float)(v->copies > 1 ? v->copies - 1 : 1));
     start_copy(d, v, cp);
   }
@@ -740,7 +757,10 @@ static void tick_chain(le_analog* d, le_analog_voice* v, le_analog_copy* cp, int
     t->sub = 0.0f;
   } else {
     const float f = f_key * exp2f(lfo_pitch + env_amt * ch->penv);
-    ch->inc = fminf(f, 0.25f * rate) / rate;
+    /* the saw and rectangle stop at a quarter of the rate (their 4-sample
+     * period); fit: the sine goes on to 16 kHz and beyond (penv-1-t04's
+     * 3-sample periods) */
+    ch->inc = fminf(f, (ci(d, c, LE_ANALOG_OSC_SHAPE) == 0 ? 0.45f : 0.25f) * rate) / rate;
     ch->inc_m = ch->inc;
     const float s = le_aas_exp(0.01f, 1.0f, cf(d, c, LE_ANALOG_OSC_SUB));
     t->sub = s <= 0.0101f ? 0.0f : s;
@@ -791,9 +811,11 @@ static void tick_chain(le_analog* d, le_analog_voice* v, le_analog_copy* cp, int
            (1.0f + le_aas_blin(1.0f, cf(d, c, LE_ANALOG_AMP_LFO_VOL)) * lfo) *
            expf(le_aas_blin(1.0f, cf(d, c, LE_ANALOG_AMP_KEY_VOL)) * v->pitch);
   }
-  /* fit: the pan is its stored value, centred exactly at 0.5 (the pan
-   * renders), not a 128-step knob position */
-  const float p = le_aas_clamp(cf(d, c, LE_ANALOG_AMP_PAN), 0.0f, 1.0f);
+  /* fit: the pan is the knob position on the 0..127 scale like the other
+   * knobs (0.5 sits at 64/127, 0.4 % right of centre, below what the pan
+   * renders can show); the near-centre pans of Thick Chord Pad, Saw Detune
+   * Sync Lead and Saw Pure Brass need it */
+  const float p = le_aas_knob(cf(d, c, LE_ANALOG_AMP_PAN));
   const float pm = le_aas_clamp(le_aas_blin(1.0f, cf(d, c, LE_ANALOG_AMP_KEY_PAN)) * v->pitch, -1.0f, 1.0f) +
                    le_aas_blin(1.0f, cf(d, c, LE_ANALOG_AMP_ENV_PAN)) * aenv +
                    le_aas_blin(1.0f, cf(d, c, LE_ANALOG_AMP_LFO_PAN)) * lfo;

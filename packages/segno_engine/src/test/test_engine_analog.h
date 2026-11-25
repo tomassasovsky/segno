@@ -416,6 +416,25 @@ static void test_analog_mono_retrigger(void) {
   CHECK(opr_peak(l + N / 2, N / 2) > 0.9f * kAnalogSinePeak);
 }
 
+/* Keyboard Stretch turns about A4: at full stretch C2 sits 26 cents flat
+ * and A4 in tune. */
+static void test_analog_stretch(void) {
+  printf("test_analog_stretch\n");
+  enum { N = 48000 };
+  static float l[N], r[N];
+  const double c4 = opr_note_hz(60) * pow(2.0, -0.98 / 1200.0);
+  const int32_t notes[2] = {36, 69};
+  const double cents[2] = {-26.4, 0.0};
+  for (int32_t i = 0; i < 2; ++i) {
+    analog_reference(&g_analog);
+    analog_set(&g_analog, LE_ANALOG_STRETCH, 1.0f);
+    CHECK(le_analog_note_on(&g_analog, 1, notes[i], 127, 0) == 0);
+    le_analog_render(&g_analog, l, r, N);
+    const double hz = c4 * pow(2.0, (notes[i] - 60) / 12.0 + cents[i] / 1200.0);
+    CHECK(opr_component(l + N / 2, N / 2, hz) > 0.9 * kAnalogSinePeak);
+  }
+}
+
 /* ---- the engine: a slot playing Analog ---- */
 
 static void test_engine_analog_slot_matches_offline(void) {
@@ -516,6 +535,7 @@ static void run_analog_tests(void) {
   test_analog_mono_hand_offs();
   test_analog_oscillator_start();
   test_analog_mono_retrigger();
+  test_analog_stretch();
   test_engine_analog_slot_matches_offline();
   test_engine_analog_params_and_switching();
   test_engine_analog_midi();

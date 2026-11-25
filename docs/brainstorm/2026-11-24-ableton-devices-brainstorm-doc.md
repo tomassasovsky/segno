@@ -1004,7 +1004,8 @@ Tags as for Meld. Segno's implementation is `analog_voice.c`.
   can also feed filter 2 (Filter 1 > 2, 2u^2). Amp 1 hears filter 1, amp 2
   filter 2. **[code]** **[measured]** (the balance's direction)
 - The device's output is 2u^2 x Volume (no further gain) x the sum of the
-  amps; pan is constant power, centred exactly at the stored 0.5.
+  amps; pan is constant power, at the knob's 0..127 position (0.5 is
+  64/127).
   **[code]** **[measured]**
 - Pitch, cutoffs, levels and the LFOs are recomputed every 32 samples;
   the oscillators, filters and envelopes run every sample, the amp gains
@@ -1169,6 +1170,37 @@ and Segno cannot do:
   0.6 % small against the curves, while the rate at 0.75 matches exactly;
   the Live round segno-analog-fit4 sweeps both.
 
+
+
+Round 4 (segno-analog-fit4, 65 renders) settled:
+
+- Keyboard Stretch widens the scale about A4: 0.8 cent a semitone at
+  either end of the knob, linear in between (C2 26 cents flat, C7 22
+  sharp at full). **[measured]**
+- Keyboard Error sharpens each copy of each note by a random amount, never
+  flat: up to 24 cents times the knob, u^2 of it for a uniform u (eight
+  strikes at 1 and 0.5 average 7.6 and 3.6 cents, the largest 23).
+  **[measured]**
+- The pan is the knob position like the other knobs (0.5 sits at 64/127):
+  the near-centre pans of three presets need it, and the pan renders
+  cannot tell 64/127 from 0.5 (side/mid below -40 dB). **[measured]**
+- Without Retrigger an LFO runs on from a random point up to Phase into
+  its cycle. **[code]**
+- The sine runs to 16 kHz and beyond where the saw and rectangle stop at a
+  quarter of the rate. **[measured]**
+- The LFO's rate follows Exp(3, 1000) per minute to within 0.4 % across the
+  knob, its depth on pitch Sq(0, 4) octaves less 0.4 %; neither deviation
+  is a smooth law, and both stay below the pitch metric's reach on all but
+  the 0.5 and 0.55 rates.
+
+Still open after round 4: the unison delay (a delayed copy is not the
+first one shifted in time: no single delay law fits the five delay
+renders' comb spectra), the pitch envelope's fall at full depth (Live's
+falls about 13 % slower at 0.15 and its 6 octaves at 0.4 hold the shape),
+the note events' timing (Live's note-ons land up to 85 samples before the
+note, after its first note; the held-out round's deterministic presets
+fail on the cells at those onsets), Kick Complex Perc (each oscillator
+alone fits, the two together do not).
 
 ## Decisions
 
