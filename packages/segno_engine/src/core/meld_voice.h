@@ -90,6 +90,7 @@ typedef struct le_meld_engine {
   /* the envelope rates the matrix last set, per sample (Amp) or tick (Mod) */
   float amp_dx[3], mod_dx[3];
   float amp_sustain, mod_sustain;
+  float mod_prev; /* the Mod envelope's value at the last tick (0 at the note) */
   /* the tone filter: a low-pass and a high-pass one-pole */
   float tone_lp, tone_hp, tone_glp, tone_ghp;
   /* the output gains, ramped across a tick */

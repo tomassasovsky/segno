@@ -64,9 +64,9 @@ static inline float le_aas_bipolar(uint32_t* s) { return 2.0f * le_aas_unit(s) -
 /* ---- the envelope ---- */
 
 /* Its segments: attack, decay, the sustain stage, the stage after the
- * sustain time, release, done. */
+ * sustain time, release, done, and a retrigger's drop before its attack. */
 enum { LE_AAS_SEG_ATTACK = 0, LE_AAS_SEG_DECAY, LE_AAS_SEG_SUSTAIN, LE_AAS_SEG_POST, LE_AAS_SEG_RELEASE,
-       LE_AAS_SEG_IDLE };
+       LE_AAS_SEG_IDLE, LE_AAS_SEG_DROP };
 
 /* Its knobs, in Analog's stored order (LE_ANALOG_ENV_*). */
 enum { LE_AAS_ENV_EXP = 0, LE_AAS_ENV_LOOP, LE_AAS_ENV_FREE_RUN, LE_AAS_ENV_LEGATO, LE_AAS_ENV_ATTACK_VEL,
@@ -125,6 +125,14 @@ static inline void le_aas_env_start(le_aas_env* e, const le_aas_env_set* p, floa
   le_aas_env_segment(e, LE_AAS_SEG_ATTACK, e->scale, le_aas_env_attack_time(p, vel), p->exp_, rate);
 }
 
+/* A retrigger: a straight fall to 0 over 0.7 ms, then the attack (fit:
+ * Analog's glide renders' dip at the key change). */
+static inline void le_aas_env_drop(le_aas_env* e, const le_aas_env_set* p, float vel, float rate) {
+  e->scale = exp2f(p->vel_level * (vel - 0.5f));
+  if (e->seg == LE_AAS_SEG_IDLE) e->y = 0.0f;
+  le_aas_env_segment(e, LE_AAS_SEG_DROP, 0.0f, 0.0007f, 0, rate);
+}
+
 /* fit (the Analog envelope renders): the sustain stage is a fall from the
  * sustain level to 0 over Sustain Time (its top position holds); loop
  * mode 1 repeats attack and decay while the gate is held; mode 2 attack,
@@ -167,6 +175,9 @@ static inline void le_aas_env_next(le_aas_env* e, const le_aas_env_set* p, int h
       }
       e->y = 0.0f;
       break;
+    case LE_AAS_SEG_DROP:
+      le_aas_env_segment(e, LE_AAS_SEG_ATTACK, e->scale, le_aas_env_attack_time(p, vel), p->exp_, rate);
+      break;
     case LE_AAS_SEG_POST:
       /* mode 3's rise at the gate's end, then the release */
       le_aas_env_segment(e, LE_AAS_SEG_RELEASE, 0.0f, p->release, p->exp_, rate);
@@ -202,15 +213,16 @@ static inline float le_aas_env_tick(le_aas_env* e, const le_aas_env_set* p, int 
 
 /* ---- the LFO ---- */
 
-/* The tempo divisions 1..23 in beats per cycle: 16 bars down to an eighth,
- * each dotted, straight and triplet (index 0 is free running). */
+/* The tempo divisions 0..23 in beats per cycle: 16 beats down to an
+ * eighth of a beat, each dotted, straight and triplet (fit: Analog's brass
+ * presets' LFO pan, whose divisions 3 and 4 run 6 and 4 s at 120 BPM). */
 static inline float le_aas_sync_beats(int32_t s) {
-  static const float bars[8] = {16.0f, 8.0f, 4.0f, 2.0f, 1.0f, 0.5f, 0.25f, 0.125f};
-  if (s < 1) s = 1;
+  static const float beats[8] = {16.0f, 8.0f, 4.0f, 2.0f, 1.0f, 0.5f, 0.25f, 0.125f};
+  if (s < 0) s = 0;
   if (s > 23) s = 23;
-  const int32_t i = (s - 1) / 3, kind = (s - 1) % 3;
-  const float beats = 4.0f * bars[i];
-  return kind == 0 ? 1.5f * beats : kind == 1 ? beats : beats * 2.0f / 3.0f;
+  const int32_t kind = s % 3;
+  const float b = beats[s / 3];
+  return kind == 0 ? 1.5f * b : kind == 1 ? b : b * 2.0f / 3.0f;
 }
 
 /* Sine, triangle, rectangle, sample and hold, noise at phase p; w the
@@ -244,9 +256,10 @@ typedef struct le_aas_filter {
 
 /* The coefficients for types 0..7 at fc Hz and resonance q. */
 static inline void le_aas_filter_set(le_aas_filter* f, int32_t type, float fc, float q, float rate) {
-  /* fit: BP12's two stages each take the full Q (the BP12 render); the
-   * other 4-pole types take sqrt(Q) each */
-  const float qs = type % 2 == 1 && type != 3 ? sqrtf(q) : q;
+  /* fit: BP12's and Notch4's two stages each take the full Q (Analog's
+   * BP12 and Notch4 renders); LP24's and HP24's take sqrt(Q) each. The
+   * clamp to 100 is the stage's, after the sqrt (LP24 at full Q) */
+  const float qs = fminf(type == 1 || type == 7 ? sqrtf(q) : q, 100.0f);
   f->g[0] = tanf(LE_AAS_PI * fc / rate);
   f->k = 1.0f / fmaxf(qs, 0.01f);
 }

@@ -60,7 +60,7 @@ typedef struct le_operator_wave {
   int32_t levels;                             /* tables in use */
   float gain;
   float freq_mult; /* 1, or 1/64 for the noises */
-  int32_t white;   /* Noise White: one sample per output sample */
+  int32_t white;   /* Noise White: a fresh random value per engine sample */
 } le_operator_wave;
 
 /* One envelope's run state. */
@@ -72,6 +72,8 @@ typedef struct le_operator_env {
   float s;       /* segment slope */
   float y;       /* output, before the level scale */
   double repeat; /* Beat/Sync: samples to the next retrigger */
+  float scale;   /* the level scale the one-pole's span is measured in */
+  float ratio;   /* pitch envelope: its amount in octaves per semitone, or 0 */
 } le_operator_env;
 
 typedef struct le_operator_voice {
@@ -97,7 +99,6 @@ typedef struct le_operator_voice {
   float inc[LE_OPERATOR_OPS];                        /* per engine sample */
   float amp[LE_OPERATOR_OPS], amp_step[LE_OPERATOR_OPS];
   int32_t table[LE_OPERATOR_OPS]; /* band-limited copy in use */
-  uint32_t white_pos[LE_OPERATOR_OPS];
   le_operator_env env[LE_OPERATOR_OPS];
   le_operator_env fenv, penv, lenv;
   /* LFO */

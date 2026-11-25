@@ -368,6 +368,54 @@ static void test_analog_mono_hand_offs(void) {
   }
 }
 
+/* Where the saw and the rectangle start, as Live's do: nothing for the
+ * band-limited step's half length, the saw's first reset half a period in,
+ * the rectangle without a DC offset from its first cycle. */
+static void test_analog_oscillator_start(void) {
+  printf("test_analog_oscillator_start\n");
+  enum { N = 24000 };
+  static float l[N], r[N];
+  const double period = OPR_SR / (opr_note_hz(48) * pow(2.0, -0.98 / 1200.0));
+  analog_reference(&g_analog);
+  analog_chain(&g_analog, 0, LE_ANALOG_OSC_SHAPE, 1.0f);
+  CHECK(le_analog_note_on(&g_analog, 1, 48, 127, 0) == 0);
+  le_analog_render(&g_analog, l, r, N);
+  CHECK(opr_peak(l, LE_ANALOG_BL_HALF) == 0.0f);
+  int32_t drop = 0;
+  for (int32_t i = 1; i < (int32_t)period; ++i) { /* the first cycle */
+    if (l[i] - l[i + 1] > l[drop] - l[drop + 1]) drop = i;
+  }
+  CHECK(fabs((double)drop - (LE_ANALOG_BL_HALF + 0.5 * period)) < 4.0);
+  /* the narrowest pulse: its mean over whole cycles is 0 from the start */
+  analog_reference(&g_analog);
+  analog_chain(&g_analog, 0, LE_ANALOG_OSC_SHAPE, 2.0f);
+  analog_chain(&g_analog, 0, LE_ANALOG_OSC_PW, 0.0f);
+  CHECK(le_analog_note_on(&g_analog, 1, 48, 127, 0) == 0);
+  le_analog_render(&g_analog, l, r, N);
+  const int32_t a = 2400, n = (int32_t)(10.0 * period);
+  double mean = 0.0;
+  for (int32_t i = a; i < a + n; ++i) mean += l[i];
+  mean /= n;
+  CHECK(fabs(mean) < 0.01 * opr_peak(l + a, n));
+}
+
+/* A mono key change retriggers the amp envelope through a drop to 0. */
+static void test_analog_mono_retrigger(void) {
+  printf("test_analog_mono_retrigger\n");
+  enum { N = 4800 };
+  static float l[N], r[N];
+  analog_reference(&g_analog);
+  analog_set(&g_analog, LE_ANALOG_POLYPHONY, 0.0f);
+  analog_set(&g_analog, LE_ANALOG_PRIORITY, 2.0f);
+  CHECK(le_analog_note_on(&g_analog, 1, 48, 127, 0) == 0);
+  le_analog_render(&g_analog, l, r, N);
+  CHECK(opr_peak(l + N / 2, N / 2) > 0.9f * kAnalogSinePeak);
+  CHECK(le_analog_note_on(&g_analog, 2, 60, 127, 0) == 0);
+  le_analog_render(&g_analog, l, r, N);
+  CHECK(opr_peak(l + 31, 6) < 0.1f * kAnalogSinePeak); /* the drop's 0.7 ms */
+  CHECK(opr_peak(l + N / 2, N / 2) > 0.9f * kAnalogSinePeak);
+}
+
 /* ---- the engine: a slot playing Analog ---- */
 
 static void test_engine_analog_slot_matches_offline(void) {
@@ -466,6 +514,8 @@ static void run_analog_tests(void) {
   test_analog_block_size();
   test_analog_fresh_voice();
   test_analog_mono_hand_offs();
+  test_analog_oscillator_start();
+  test_analog_mono_retrigger();
   test_engine_analog_slot_matches_offline();
   test_engine_analog_params_and_switching();
   test_engine_analog_midi();
