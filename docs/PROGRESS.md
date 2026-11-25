@@ -1,4 +1,4 @@
-<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass -->
+<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Metalic -->
 # Segno — Progress & Roadmap
 
 <!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs multicore smarttune -->
@@ -61,9 +61,38 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
 | SEG-22 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track and lane chains) is #1729 | build | needs-plan-approval | `claude/fx-multicore-1515-p1b` |
 | SEG-107 | Save As failed with Out of Memory: the mixdown asked for the LCM of two Song-mode tracks (24.7 GB); it now spans the longest lane past 600 s, and the save refuses a length no loop can hold | in-review | needs-hardware | `claude/save-oom-SEG-107` |
 | SEG-63 | Console WiFi against an ASUS RT-AX89X with 802.11ax on: firmware already matches Pi OS; brcmfmac options aligned with Pi OS and a troubleshooting note; failure not reproduced, issue stays open until it recurs | in-review | agent-merges | `claude/wifi-firmware-1816` |
-| SEG-109 | Ableton Live device presets on the pedal, Drift first: presets read from the user's own copy; Drift's behavior learned with rea + Ghidra from Live 12.2.7 and reimplemented, no Ableton code or presets in the repo. Plan approved 2026-11-25 (P1-P6); P1 stereo buses, P2 preset reader, P3 the Drift device and P4 its fit in review; the Operator device (P7) and the Meld device (P8) in review | in-review | needs-merge | `claude/ableton-devices-SEG-109`, `claude/ableton-operator-SEG-109-p7`, `claude/ableton-meld-SEG-109-p8` |
+| SEG-109 | Ableton Live device presets on the pedal, Drift first: presets read from the user's own copy; Drift's behavior learned with rea + Ghidra from Live 12.2.7 and reimplemented, no Ableton code or presets in the repo. Plan approved 2026-11-25 (P1-P6); P1 stereo buses, P2 preset reader, P3 the Drift device and P4 its fit in review; the Operator (P7), Meld (P8) and Analog (P9) devices in review | in-review | needs-merge | `claude/ableton-devices-SEG-109`, `claude/ableton-operator-SEG-109-p7`, `claude/ableton-meld-SEG-109-p8`, `claude/ableton-analog-SEG-109-p9` |
 
 ---
+
+## November 2026 The Analog device plays on an instrument slot (SEG-109 P9)
+
+- Live 12.2.7's Analog read with rea + Ghidra from its AAS engine (the
+  device, then its formant filter) and written as "Analog: behavior" in the
+  Ableton devices brainstorm; `analog_voice.c` is written from it.
+  `LE_INST_DEVICE_ANALOG` takes an Analog preset's 171 values
+  (`le_analog_param`: the device's own, then two chain blocks of 67).
+- Two chains per voice, each an oscillator (sine, saw, rectangle, noise,
+  sub or sync), a filter (all ten types, the formants among them) with its
+  drive, an amp, an LFO and two looping envelopes, plus noise, glide with
+  key priority, vibrato and unison of 2 or 4 copies.
+- The slots reach every device through one table of functions
+  (`instrument_devices.c`), so a device is one entry; each keeps its own
+  instances, so a device change still fades the old voices out under the
+  new ones.
+- Fitted against 178 Live renders: levels, routing, pan, envelopes and
+  loops, the LFO waves, glide, the filters and drive within 0.1 to 2.5 dB
+  rms (round totals 1.9, 1.4, 1.9). Measured where the reading was silent:
+  the balance's direction, the sustain stage and loops, the glide time's
+  curve, the unison offsets, the LFO triangle's start and the noise ramp;
+  the filter envelope's depth is 16 u^4 octaves (Tension's reading of the
+  shared filter), which brought the factory presets from 13.5 to 5.3 dB.
+- 23 factory presets, octave bands rms: 12 within 2.2 dB; Kick Complex
+  Perc 26.5 and Organ Vibrato 36.8 are the open ones (the pitch
+  envelope's shape, the unison detune past 0.5).
+- A voice of two saw chains through LP24 costs 0.9 us per millisecond on
+  the dev machine, four unison copies 3.7, the formant filter 1.0. A
+  device holds 40 copies (88 KB).
 
 ## November 2026 The Meld device plays on an instrument slot (SEG-109 P8)
 
