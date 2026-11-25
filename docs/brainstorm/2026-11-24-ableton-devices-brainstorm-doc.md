@@ -1,6 +1,6 @@
 # Ableton Live device presets on the pedal — brainstorm
 
-<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance kModBy kCarriers Celesta transconductances Bandpass Bitgrunge Csound Drivetime Extratone Filther Lofi Lowpass Megatripolis Minnaert Sawstyle Starchestra polyBLEP Metalic Formant formants Barney Asym quintic Wurli MKII Schroeder Fretless Balafon Glockenspiel Perc halvings Inharmonicity travelled Inharmonics atan Freq -->
+<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance kModBy kCarriers Celesta transconductances Bandpass Bitgrunge Csound Drivetime Extratone Filther Lofi Lowpass Megatripolis Minnaert Sawstyle Starchestra polyBLEP Metalic Formant formants Barney Asym quintic Wurli MKII Schroeder Fretless Balafon Glockenspiel Perc halvings Inharmonicity travelled Inharmonics atan Freq bilinearly penv mvol -->
 
 **Date:** 2026-11-24
 **Issue:** SEG-109 (related: SEG-57, Segno's own instrument voices)
@@ -1105,14 +1105,21 @@ Meld. Segno's implementation is `collision_voice.c`.
 
 - Presets store each value in its own unit (semitones, cents, degrees,
   -5..5 amounts); a knob reaches the engine as one of 128 steps (a 0..1
-  knob by the 128 / 126 rule, a ranged one by its range), a matrix amount
-  as is. **[code]**
+  knob by the 128 / 126 rule, Filter Q by 127 / 126, a ranged one by its
+  range; Fine Tune and the bipolar knobs with 0 at step 64, 63 steps up
+  and 63.5 down; Radius inverted), a matrix amount as is. The linear,
+  square and cube curves put step 64 at exactly their middle, the
+  exponential curve does not. **[code]** The master Volume and the LFOs'
+  free Rate are not taken down to their step. **[measured]** (Vibes
+  Basic's level; lfo-pitch's rate, 0.641 Hz against 0.624 for the step)
 - A per-voice matrix sums amount x source into each destination: key
   ((note - 60) / 12 with bend), velocity ((vel - 64) / 63), bend, mod
   wheel, pressure, both LFOs. The "< Vel" and "< Key" knobs are fixed
   routes; the LFO, bend, wheel and pressure choosers pick from 17
-  destinations, each in its own unit (an octave of pitch or cutoff, a
-  doubling of a gain, a rate or a depth, a unit of pan or hit). **[code]**
+  destinations, each in its own unit (an octave of cutoff, a doubling of
+  a gain, a rate or a depth, a unit of pan or hit). **[code]** A chooser's
+  amount moves a resonator's pitch by an eighth of an octave a unit.
+  **[measured]** (lfo-pitch: 0.25 swings 37.7 cents; Music Box Slide)
 
 ### Exciters
 
@@ -1122,19 +1129,30 @@ Meld. Segno's implementation is `collision_voice.c`.
   the pulse by (1 - w) + w noise, w = (atan(a)/pi + 1/2)^3, a =
   Lin(-4, 4). **[code]**
 - The noise source: white noise through a low-pass, high-pass, band-pass
-  or a low-pass and high-pass pair a width apart, under a linear ADSR,
-  its cutoff moved by the envelope (Freq < Env octaves) and the routes.
-  **[code]**
+  (of constant skirt: its peak gain is Q) or a low-pass and high-pass pair
+  a width apart, under a linear ADSR, its cutoff moved by the envelope
+  (Freq < Env octaves) and the routes. The cutoff is recomputed every 10
+  ms and the coefficients ramp to it across the 10 ms. **[code]** A fresh
+  voice starts on its first coefficients. **[Segno]**
 
 ### Resonators
 
 - Modal types: string (harmonic), beam (free-free, from cos b cosh b =
-  1), marimba (a tuned bar, 1 : 3.96 : 10.7 : 19.2 : 27, then its
-  asymptote), membrane and plate (rectangular, side ratio Exp(1, 20)).
-  Quality keeps 4, 16, 30 or 70 modes; Inharmonics raises each ratio to
-  1 + chi, chi = clamp(I^3, -1, 1); modes above 0.4167 of the sample rate
-  drop. **[code]** **[Segno]** (the marimba's continuation past its fifth
-  partial)
+  1), marimba (a tuned bar, 1 : 3.96 : 10.67 : 19.17 : 27, then sqrt 2
+  (k + 3/2) pi over the beam's first root), membrane and plate
+  (rectangular, side ratio Exp(1, 20), the lowest modes of a grid of m up
+  to floor(sqrt(N a)) + 1 and n up to floor(sqrt(N / a)) + 1). Quality
+  keeps 4, 16, 30 or 70 modes; Inharmonics raises each ratio to 1 + chi,
+  chi = clamp(I^3, -1, 1); modes above 0.4167 of the sample rate drop.
+  **[code]** **[measured]** (the marimba's 10.67, 19.17 and its sixth
+  partial at 37.3; type-3-r1)
+- A mode's shape at the hit and the two listening points is read off the
+  grid the engine samples it on: sin(k pi x) on N + 2 points along a bar
+  of N modes, read linearly; sin(m pi x) sin(n pi y) on G x G points for a
+  membrane or plate, G = floor(sqrt N) + 3, read bilinearly. High modes
+  of a coarse grid come out weaker or stronger than the exact sine.
+  **[code]** **[measured]** (q-0 1.0 to 0.02 dB, the membranes and plates
+  at every ratio)
 - Each mode decays as e^(-alpha t), alpha = (8/T) 2^e, where Material
   tilts e towards long highs (metal) or long lows (wood); its two-pole
   filter takes the exciter times the shape at the hit point and is heard
@@ -1144,49 +1162,78 @@ Meld. Segno's implementation is `collision_voice.c`.
   **[code]** No mode rings longer than the knob's 35 s, and the decay
   routes keep T 2^d within 10 ms and 35 s. **[Segno]** (a bound the
   reading does not show; the metal presets with long highs fit it)
+- A pitch move retunes the modes at most every 200 samples (Segno: every
+  6 ticks of 32) and keeps their amplitude: each mode's newer state
+  scales by the old frequency over the new, its step from the older
+  state stays. **[code]**
 - Pipe and tube: two waveguide lines with Lagrange reads, the far end a
   first-order reflection set by radius and opening; the pipe keeps every
   harmonic, the tube (its reflection negated) the odd ones. Decay is e^-4
-  a round trip per T. **[code]** **[measured]** (Live's tube is odd-only)
-  The lines hold 4096 samples and a delay of at least 3: note 0 at 48 kHz,
-  about note 6 at 96 kHz, and the highest pipe and tube notes share the
-  top pitch. **[Segno]**
-- Decay Exp(0.05, 35) s, Off Decay shortening it after the release; pitch
-  from Tune, Fine and the key, with a pitch envelope; pan by a balance
-  law, volume Sq(0, 2). In series resonator 2 hears resonator 1's sum,
-  in parallel the exciter. The hit position is the knob plus the Hit
-  destination, held to the knob's window, plus the strike's random
-  offset. **[code]**
+  a round trip per T. Each line delays sr / (K f0) + 0.75 samples: the
+  sr / (K f0) - 0.75 the engine computes plus the 1.5 samples its 5-tap
+  read sits behind that point. **[code]** **[measured]** (Live's tube is
+  odd-only; the pipes were 27 cents flat without the 1.5 samples, the
+  tube at note 60 53 cents) The lines hold 4096 samples and a delay of at
+  least 3.5: note 0 at 48 kHz, about note 6 at 96 kHz, and the highest
+  pipe and tube notes share the top pitch. **[Segno]**
+- Decay Exp(0.05, 35) s; after the release T becomes 0.05 + (T - 0.05)
+  (1 - u)^3, u the Off Decay knob: 0 keeps the decay, 1 cuts it to 50 ms.
+  **[code]** **[measured]** (decay-1: Live's note falls 28 dB in 20 ms
+  after the release at Off Decay 1; the presets at 0 ring on) Pitch from
+  Tune, Fine and the key, with a pitch envelope that falls exponentially:
+  A (1.0314 e^(-3.49 t / T) - 0.0314), reaching 0 at its time T.
+  **[code]** **[measured]** (penv-1's pitch track) Pan by a balance law,
+  volume Sq(0, 2). In series resonator 2 hears resonator 1's outputs
+  summed, the bleed's included; in parallel the exciter. The hit position
+  is the knob plus the Hit destination, held to the knob's window, plus
+  the strike's random offset. **[code]**
 
 ### Voices and level
 
 - 2p voices (p = 0: mono); Retrigger strikes a sounding key's own voice
   again, the modes ringing on at the same pitch. Two LFOs per voice, seven
-  shapes, free or synced; a strike reads each LFO at its start phase. A
-  released voice ends after 50 ms below -100 dBFS, counted once the
-  mallet's pulse and both waveguides' round trips have passed. **[code]**
-  **[Segno]** (the voice end, the synced lengths' order)
+  shapes, free or synced; the synced lengths follow Live's menu, its note
+  values from the longest down: 8, 6, 4, 3, 2, 1.5, 1, 3/4, 1/2, 3/8, 1/3,
+  5/16, 1/4, 3/16, 1/6, 1/8, 1/12, 1/16, 1/24, 1/32, 1/48, 1/64 whole
+  notes. A strike reads each LFO at its start phase. A released voice
+  ends after 50 ms below -100 dBFS, counted once the mallet's pulse and
+  both waveguides' round trips have passed. **[code]** **[measured]**
+  (Bells Attack's synced pan, 21.7 to 3.9 dB) **[Segno]** (the voice end)
 - The output is the voices' sum times Volume (Sq(0, 2)), then times 4,
-  held within +-1. **[code]** **[measured]** (the x4 reaches Live's
-  output here, and the loudest renders peak at exactly 1)
+  then a look-ahead peak limiter at 1: the gain each sample needs is held
+  as the least over the next 17 samples, released towards 1 with a 70 ms
+  time constant and averaged over 17 samples, so it ramps down before a
+  peak and no peak passes 1. The output lags the strike by 16 samples.
+  **[code]** **[measured]** (the x4 reaches Live's output; renders that
+  would pass 1 hold their peaks at exactly 1 with little distortion, the
+  gain recovering in about 70 ms: mvol-1, serial; Live's renders start 16
+  samples after the note)
 
 ### The fits so far
 
-92 renders (third-octave bands from the strike): total 4.5 dB rms; 28 of
-59 single changes within 1 dB (the reference 0.7; types beam, marimba,
-string; material, brightness, inharmonics, hit, listening, bleed, pan,
-tune, quality, the volumes, parallel structure). Factory presets (octave
-bands): Vibes Basic 0.4, Digital String 0.9, E-Piano Dreamy and Marimba
-Classic 1.5, Music Box Beam 2.4, Air Of Dread and Xylophone Basic 2.7, ten
-more within 5.7, the rest 6.5 to 13.9 (Bells Attack). Presets with a
-random hit, sample-and-hold LFOs or loud mallet noise move by several dB
-between noise seeds (Xylophone Dark 6 to 17 dB in third-octave bands),
-so their scores are rough.
+92 Live renders (single changes around a plain mallet-on-beam reference,
+and the 33 factory presets) scored by the strict score (third-octave x 50
+ms cells, the first 150 ms in octave x 5 ms cells, stereo, pitch, level
+and onset, each against a limit; renders with randomness against two
+Segno seeds' own difference): 51 of 92 pass, 6 of the 33 factory presets
+(Bell Plate Long, Bells Mellow, Digital String, E-Piano Dreamy, Marimba
+Classic, Vibes Basic), from 32 and 1. Every single-change waveguide,
+membrane and plate render passes.
 
-Still open: the series structure (resonator 2 rings far too bright on
-resonator 1's output, 30 dB), membrane and plate at mid ratios (9.9),
-Mallet Volume at its top (12), the noise filters (6.7 to 8.2), the pitch
-envelope (7.7), the synced LFO lengths' order, the MPE destinations.
+What is left is mostly random. The mallet's noise, the noise source and
+the random hit drive narrow modes whose energies vary by several dB
+between strikes; for most of the failing presets two Segno seeds differ
+from each other as much as Segno differs from Live (the score's noise
+check still fails both). Clearly beyond that: the noise source's low-pass
+(Segno 9 dB too strong at the fundamental and 10 to 20 dB too weak above
+10 kHz in noise-lp and noise-env), the modes above 10 kHz the mallet's
+tiny noise excites (stiff-0, mat-1, bright-1), the series structure at
+full drive (serial 3.6 dB) and a mallet at full volume (mvol-1 3.7 dB),
+the pitch envelope's sweep (penv-1 3.5 dB), and Bells Deep, Balafon
+Bright, Toy Piano Bells and Xylophone Dark (noise source with a fast
+Freq < Env, 8 to 15 dB). Live also ends a held voice once it falls to
+about -94 dBFS (Segno lets it ring), which the score barely sees. Still
+open besides: the MPE destinations.
 
 ## Decisions
 

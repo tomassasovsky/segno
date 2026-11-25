@@ -1,4 +1,4 @@
-<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Metalic Wurli MKII Schroeder Fretless Balafon Glockenspiel Perc halvings Inharmonicity travelled Inharmonics atan Freq -->
+<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Metalic Wurli MKII Schroeder Fretless Balafon Glockenspiel Perc halvings Inharmonicity travelled Inharmonics atan Freq bilinearly penv mvol -->
 # Segno — Progress & Roadmap
 
 <!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs multicore smarttune -->
@@ -76,10 +76,15 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   marimba, string, membrane, plate as banks of up to 70 modes; pipe and
   tube as waveguides) in series or parallel, with two LFOs and the
   per-voice modulation matrix.
-- Fitted against 92 Live renders: total 4.5 dB rms, 28 of 59 single
-  changes within 1 dB. Measured: the bundle's x4 reaches the output here,
-  held within +-1. Factory presets 0.4 to 13.9 dB (octave bands); the
-  series structure is the largest gap left.
+- Fitted against 92 Live renders: 51 pass the strict score (32 before),
+  6 of the 33 factory presets (1 before), every single-change waveguide,
+  membrane and plate render. Measured: the waveguides' read offset, the
+  inverted Off Decay, the engine's grids for the mode shapes, the synced
+  LFO lengths, an exponential pitch envelope, and a look-ahead limiter at
+  1 after the bundle's x4. Most of what fails is random (noisy mallets,
+  the noise source, random hits) within two Segno seeds' own spread; the
+  noise source's low-pass and fast Freq < Env presets are the largest
+  gaps left.
 - A voice costs 0.8 us per millisecond on the dev machine, two 70-mode
   resonators 1.4. A device holds 24 voices (1.7 MB).
 
