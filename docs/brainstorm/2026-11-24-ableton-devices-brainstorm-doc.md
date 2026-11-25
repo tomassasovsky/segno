@@ -1543,43 +1543,49 @@ Meld. Segno's implementation is `collision_voice.c`.
   higher, which the output level does not explain) **[Segno]** (the
   released voice's 50 ms)
 - The output is the voices' sum times Volume (Sq(0, 2)), then times 4,
-  then a look-ahead peak limiter at 1: the gain each sample needs is held
-  as the least over the next 17 samples, released towards 1 with a 70 ms
-  time constant and averaged over 17 samples, so it ramps down before a
-  peak and no peak passes 1. The output lags the strike by 16 samples.
-  **[code]** **[measured]** (the x4 reaches Live's output; renders that
-  would pass 1 hold their peaks at exactly 1 with little distortion, the
-  gain recovering in about 70 ms: mvol-1, serial; Live's renders start 16
-  samples after the note)
+  then a look-ahead peak limiter at 1: the gain each sample needs is taken
+  as the least over the next 17 samples, held 5 ms, released towards 1
+  with a 10 ms time constant and averaged over 17 samples, so it ramps
+  down before a peak and no peak passes 1. The output lags the strike by
+  16 samples. **[code]** **[measured]** (the x4 reaches Live's output;
+  renders that would pass 1 hold their peaks at exactly 1 with little
+  distortion; the hold and release from the lim-* renders, mvol-08,
+  mvol-09 and mvol-1, which pass, against the series string's slow build,
+  serial and serial-m03, which want a slower release; Live's renders start
+  16 samples after the note)
+- Each resonator's volume and pan ramp to their values over 2 ms, from
+  where the voice's last note left them; a voice never played starts at
+  the knobs' own volume and pan, without the key's or the matrix's pan. A
+  full device restarts its oldest note's own voice, its states cleared;
+  only a cut of the engine's slot limit fades a voice. **[code]**
+  **[measured]** (the ramp is read; Bell Plate Long's phrase, whose hard
+  C5 takes over the C3's hard-left voice, and Marimba Glassy's Pan < Key,
+  whose first notes start centred)
 
 ### The fits so far
 
-Three rounds of Live renders (single changes around a plain
+Four rounds of Live renders (single changes around a plain
 mallet-on-beam reference, the 33 factory presets, the matrix units, the
 pitch envelope, Off Decay, pipes across the keyboard, Live copies of the
-random renders, and the noise excitation through a dense 70-mode
-membrane), scored by the strict score with three Segno seeds and Live's
-own spread where copies exist: 96 of 131 pass, 18 of the 33 factory
+random renders, the noise excitation through a dense 70-mode membrane,
+presets playing the held-out phrase with copies, and the limiter's
+release), scored by the strict score with three Segno seeds and Live's
+own spread where copies exist: 106 of 152 pass, 18 of the 33 factory
 presets. The held-out round (every preset, a quiet C3, a loud C4 triad
-and a hard C5, with Live's copies) passes 10 of 33.
+and a hard C5, with Live's copies) passes 11 of 33.
 
-What the dense membrane shows: the mallet and its pulse match within 1.4
-dB in every band; the noise source's low-pass matches within Live's
-spread; its high-pass and band-pass lack 7 to 34 dB below 250 Hz against
-Live, and the mallet's noise is 3 to 10 dB too strong above 10 kHz. Two
-guesses did not hold: the filters ramping in from the default low-pass
-(it gives the low end but costs 4 dB of level) and a two-tap average on
-the mallet's noise (right on the membrane, wrong on the plain beam).
-Beyond those: the limiter wants a fast release for a loud strike
-(mvol-08, mvol-09, mvol-1 pass at 5 to 20 ms) and a slow one for the
-series string's slow build (serial, serial-m03 at 70 ms); an upward
-pitch sweep leaves the second and fourth beam modes 3 and 9 dB low
-(penv-1, also on 4 modes and on a string); and in the held-out round the
-side signal below 200 Hz is 3 to 12 dB weaker than Live's over a whole
-phrase (Bell Plate Long, the marimbas) while every note on its own
-matches. Live's notes after the first also land about 1 ms (50 samples)
-early against the first, in every held-out render. Still open besides:
-the MPE destinations.
+Left: the noise source's high-pass and band-pass lack 7 to 34 dB below
+250 Hz against Live on the dense membrane, and the mallet's noise is 3 to
+10 dB too strong above 10 kHz there (two guesses failed: ramping the
+filters in from the default low-pass, a two-tap average on the mallet's
+noise). The limiter's one hold and release cannot serve both a loud
+strike and the series string's slow build (serial-m03 passes at 70 ms,
+the loud strikes at 10). An upward pitch sweep leaves the second and
+fourth beam modes 3 and 9 dB low (penv-1, also on 4 modes and a string).
+In the held-out round the marimbas' side signal is 0.3 dB high below
+500 Hz and 3 dB low at 8 kHz. Live's AAS notes after the first land about
+51 samples early; that belongs to the harness and is not fitted. Still
+open besides: the MPE destinations.
 
 ## Decisions
 

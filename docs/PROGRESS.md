@@ -76,16 +76,16 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   marimba, string, membrane, plate as banks of up to 70 modes; pipe and
   tube as waveguides) in series or parallel, with two LFOs and the
   per-voice modulation matrix.
-- Fitted against 131 Live renders in three rounds: 96 pass the strict
+- Fitted against 152 Live renders in four rounds: 106 pass the strict
   score (32 of 92 at the start), 18 of the 33 factory presets (1); the
-  held-out round passes 10 of 33. Measured: the waveguides' read offset,
+  held-out round passes 11 of 33. Measured: the waveguides' read offset,
   the inverted Off Decay, the engine's grids for the mode shapes, the
   synced LFO lengths, an exponential pitch envelope, the chooser's pitch
   unit, a look-ahead limiter at 1 after the bundle's x4, the noise
-  filters stepping every 10 ms when modulated, and held voices ending at
-  about -94 dBFS. Left: the noise filters' low end, the limiter's release
-  on loud strikes, an upward pitch sweep, the held-out phrases' low side
-  signal.
+  filters stepping every 10 ms when modulated, the resonators' gains
+  ramping from the voice's last note, stolen voices restarted in place,
+  and held voices ending at about -94 dBFS. Left: the noise filters' low
+  end, the limiter on the series string, an upward pitch sweep.
 - A voice costs 0.8 us per millisecond on the dev machine, two 70-mode
   resonators 1.4. A device holds 24 voices (1.7 MB).
 

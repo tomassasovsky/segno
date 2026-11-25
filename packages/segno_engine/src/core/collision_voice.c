@@ -374,9 +374,11 @@ int32_t le_collision_init(le_collision* d, int32_t sample_rate) {
   d->sample_rate = sample_rate;
   d->bpm = 120.0f;
   d->voice_limit = LE_COLLISION_VOICE_SLOTS;
+  for (int32_t i = 0; i < LE_COLLISION_VOICE_SLOTS; ++i) d->voices[i].r[0].amp_n = d->voices[i].r[1].amp_n = -1;
   for (int32_t p = 0; p < LE_COLLISION_PARAMS; ++p) d->values[p] = le_collision_default(p);
   d->gain = -1.0f;
   d->limit = 1.0f;
+  d->lim_held = 1.0f;
   for (int32_t k = 0; k < LE_COLLISION_LOOKAHEAD; ++k) d->lim_need[k] = d->lim_g[k] = 1.0f;
   return 0;
 }
@@ -748,6 +750,19 @@ int32_t le_collision_note_on(le_collision* d, uint32_t origin, int32_t note, int
     return 0;
   }
   const int32_t count = voice_count(d);
+  /* a full device restarts its oldest note's own slot, as the engine's
+   * voices are reused (fit: Bell Plate Long's phrase); a cut of the slot
+   * count (the engine's limit) fades the rest */
+  if (note_count(d) >= count) {
+    le_collision_voice* o = oldest(d, LE_COLLISION_VOICE_RELEASED);
+    if (o == NULL) o = oldest(d, LE_COLLISION_VOICE_SUSTAINED);
+    if (o == NULL) o = oldest(d, LE_COLLISION_VOICE_HELD);
+    if (o != NULL && note_count(d) == count) {
+      d->stolen++;
+      start_voice(d, o, origin, note, velocity, 1);
+      return 0;
+    }
+  }
   while (note_count(d) >= count) {
     le_collision_voice* o = oldest(d, LE_COLLISION_VOICE_RELEASED);
     if (o == NULL) o = oldest(d, LE_COLLISION_VOICE_SUSTAINED);
@@ -1149,7 +1164,34 @@ static void render_voice(le_collision* d, le_collision_voice* v, float* left, fl
       }
       float g = vg;
       if (v->state == LE_COLLISION_VOICE_FADING) g *= fade_step * (float)(v->fade_left > s ? v->fade_left - s : 0);
-      float yl = g * (v->r[0].gain_l * l1 + v->r[1].gain_l * l2), yr = g * (v->r[0].gain_r * r1 + v->r[1].gain_r * r2);
+      /* each resonator's volume and pan ramp to their values over 2 ms, from
+       * where the slot's last note left them (a slot never played starts
+       * at the knobs' own, without the key's or the matrix's pan) (fit: the
+       * phrase renders' side signal) */
+      for (int32_t q = 0; q < 2; ++q) {
+        le_collision_res* rq = &v->r[q];
+        if (rq->amp_n < 0) {
+          const float vol = k_sq(d, LE_COLLISION_RES(q, LE_COLLISION_R_VOLUME), 0.0f, 2.0f) * (rq->kind >= 2 ? 1.011f : 1.0f);
+          const float p0 = k_lin(d, LE_COLLISION_RES(q, LE_COLLISION_R_PAN), -1.0f, 1.0f);
+          rq->amp_l = vol * fminf(1.0f, 1.0f - p0);
+          rq->amp_r = vol * fminf(1.0f, 1.0f + p0);
+          rq->amp_n = 0;
+          rq->amp_tl = rq->amp_tr = -1.0f;
+        }
+        if (rq->gain_l != rq->amp_tl || rq->gain_r != rq->amp_tr) {
+          rq->amp_tl = rq->gain_l;
+          rq->amp_tr = rq->gain_r;
+          rq->amp_n = d->sample_rate / 500;
+          rq->amp_sl = (rq->gain_l - rq->amp_l) / (float)rq->amp_n;
+          rq->amp_sr = (rq->gain_r - rq->amp_r) / (float)rq->amp_n;
+        }
+        if (rq->amp_n > 0) {
+          rq->amp_l += rq->amp_sl;
+          rq->amp_r += rq->amp_sr;
+          if (--rq->amp_n == 0) rq->amp_l = rq->amp_tl, rq->amp_r = rq->amp_tr;
+        }
+      }
+      float yl = g * (v->r[0].amp_l * l1 + v->r[1].amp_l * l2), yr = g * (v->r[0].amp_r * r1 + v->r[1].amp_r * r2);
       yl = yl == yl ? clampf(yl, -1e6f, 1e6f) : 0.0f;
       yr = yr == yr ? clampf(yr, -1e6f, 1e6f) : 0.0f;
       if (v->age < settle) v->age++;
@@ -1198,15 +1240,16 @@ void le_collision_render(le_collision* d, float* left, float* right, int32_t fra
   /* the master volume, Sq(0, 2), smoothed over 1 ms, then the bundle's x4
    * (fit: the renders sit 12 dB above the voices' sum), then a look-ahead
    * peak limiter at 1 (fit: renders that would pass 1 hold their peaks at
-   * exactly 1 with little distortion, the gain returning to unity with a
-   * 70 ms time constant: mvol-1, serial; the output lags the strike by 16
-   * samples, as Live's renders do). The gain a sample needs is held as the
-   * least over the next 17, released, and averaged over 17, so it ramps
-   * down before a peak and never lets one pass 1. */
+   * exactly 1 with little distortion: mvol-1, serial; the output lags the
+   * strike by 16 samples, as Live's renders do). The gain a sample needs is
+   * taken as the least over the next 17, held 5 ms, released with a 10 ms
+   * time constant (fit: the lim-* renders, mvol-08, mvol-09) and averaged
+   * over 17, so it ramps down before a peak and never lets one pass 1. */
   const float target = k_sq(d, LE_COLLISION_VOLUME, 0.0f, 2.0f);
   if (d->gain < 0.0f) d->gain = target;
   const float a = 1.0f / (0.001f * (float)d->sample_rate);
-  const float rel = 1.0f - expf(-1.0f / (0.07f * (float)d->sample_rate));
+  const float rel = 1.0f - expf(-1.0f / (0.01f * (float)d->sample_rate));
+  const int32_t hold = d->sample_rate / 200;
   for (int32_t s = 0; s < frames; ++s) {
     d->gain += a * (target - d->gain);
     const float l = 4.0f * d->gain * left[s], r = 4.0f * d->gain * right[s];
@@ -1215,7 +1258,10 @@ void le_collision_render(le_collision* d, float* left, float* right, int32_t fra
     d->lim_need[at] = pk > 1.0f ? 1.0f / pk : 1.0f;
     float need = 1.0f;
     for (int32_t k = 0; k < LE_COLLISION_LOOKAHEAD; ++k) need = fminf(need, d->lim_need[k]);
-    d->limit = fminf(need, d->limit + (1.0f - d->limit) * rel);
+    if (need <= d->lim_held) d->lim_held = need, d->lim_hold = hold;
+    else if (d->lim_hold > 0) d->lim_hold--;
+    else d->lim_held = need;
+    d->limit = fminf(d->lim_held, d->limit + (1.0f - d->limit) * rel);
     d->lim_g[at] = d->limit;
     float g = 0.0f;
     for (int32_t k = 0; k < LE_COLLISION_LOOKAHEAD; ++k) g += d->lim_g[k];

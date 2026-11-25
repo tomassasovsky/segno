@@ -98,6 +98,8 @@ typedef struct le_collision_res {
   float pe_amp, pe_x, pe_mul; /* its depth, its exponential's value and step a tick */
   int32_t pe_left;             /* samples to its end */
   float gain_l, gain_r; /* volume and pan */
+  float amp_l, amp_r, amp_sl, amp_sr, amp_tl, amp_tr; /* the gains heard, their steps and targets */
+  int32_t amp_n;                               /* samples left of the ramp; -1 never played */
   /* what the coefficients were set from */
   int32_t released;
   int32_t since; /* samples since the coefficients were set */
@@ -155,6 +157,8 @@ typedef struct le_collision {
   float lim_l[LE_COLLISION_LOOKAHEAD], lim_r[LE_COLLISION_LOOKAHEAD]; /* the output, delayed */
   float lim_need[LE_COLLISION_LOOKAHEAD], lim_g[LE_COLLISION_LOOKAHEAD];
   int32_t lim_pos;
+  float lim_held;
+  int32_t lim_hold;
   uint32_t serial_values; /* bumped by every set_values */
   le_collision_voice voices[LE_COLLISION_VOICE_SLOTS];
 } le_collision;
