@@ -1,4 +1,4 @@
-<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Metalic Perc -->
+<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Metalic Perc retrigger retriggers unsynced -->
 # Segno — Progress & Roadmap
 
 <!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs multicore smarttune -->
@@ -91,6 +91,15 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   shared filter), which brought the factory presets from 13.5 to 5.3 dB.
 - 23 factory presets, octave bands rms: 13 within 2.2 dB; Kick Complex
   Perc (26.5) is the open one.
+- The strict score (third-octave x 50 ms cells, the attack, stereo, f0,
+  level, onset) passes 171 of 201 renders (from 91), 5 of the 23 factory
+  presets (from 0): the oscillators start and band-limit as Live's do,
+  13 samples late, the rectangle without its DC offset (most of the
+  presets' 2 to 6 dB excess), the amp envelope per sample with a start
+  ramp, the tempo divisions and LFO depths on the amp, the mono
+  retrigger. Left: Live's early note events, its random sources (S&H and
+  noise LFOs, Keyboard Error), and the LFO and unison-delay laws the Live
+  round segno-analog-fit4 measures.
 - A voice of two saw chains through LP24 costs 0.9 us per millisecond on
   the dev machine, four unison copies 3.7, the formant filter 1.0. A
   device holds 40 copies (88 KB).

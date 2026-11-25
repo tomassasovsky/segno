@@ -1,6 +1,6 @@
 # Ableton Live device presets on the pedal — brainstorm
 
-<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance kModBy kCarriers Celesta transconductances Bandpass Bitgrunge Csound Drivetime Extratone Filther Lofi Lowpass Megatripolis Minnaert Sawstyle Starchestra polyBLEP Metalic Formant formants Barney Asym quintic Perc -->
+<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance kModBy kCarriers Celesta transconductances Bandpass Bitgrunge Csound Drivetime Extratone Filther Lofi Lowpass Megatripolis Minnaert Sawstyle Starchestra polyBLEP Metalic Formant formants Barney Asym quintic Perc retrigger retriggers unsynced -->
 
 **Date:** 2026-11-24
 **Issue:** SEG-109 (related: SEG-57, Segno's own instrument voices)
@@ -821,7 +821,10 @@ Tags as for Meld. Segno's implementation is `analog_voice.c`.
   **[code]** **[measured]**
 - Pitch, cutoffs, levels and the LFOs are recomputed every 32 samples;
   the oscillators, filters and envelopes run every sample, the amp gains
-  ramped across each tick. **[Segno]**
+  ramped across each tick. **[Segno]** The amp envelope multiplies every
+  sample, and a fresh copy's amps rise from 0 over their first control
+  period, rate / 441 samples (108 at 48 kHz): the attack renders' gain is
+  the envelope times that ramp to within 0.004. **[measured]**
 - Knob positions follow the engine's 0..127 scale (0.5 is exactly 64).
   The curves: Exp(lo, hi), Lin, Sq (u^2) and, for the filter envelope's
   depth, u^4; a bipolar amount takes its magnitude through the curve and
@@ -830,10 +833,26 @@ Tags as for Meld. Segno's implementation is `analog_voice.c`.
 ### Oscillators
 
 - Sine (a quintic of the phase, at 0.7), saw and rectangle (peak to peak
-  1, polyBLEP edges, pulse width 3.65 % to 50 %), and noise. **[code]**
-  **[measured]** (the sine's level)
+  1, pulse width 3.65 % to 50 %), and noise. **[code]** **[measured]**
+  (the sine's level)
+- The saw's and rectangle's edges are band-limited steps: the running sum
+  of a sinc under a raised-cosine window, 13 zero crossings each side,
+  centred on the edge, so every oscillator (and the noise) comes out 13
+  samples late. **[code]** **[measured]** (the phase against the
+  envelope; the saw's top octave, which polyBLEP left 2 to 8 dB low)
+- Where they start: the saw halfway up its ramp (its first reset half a
+  period in, a sync slave too), the rectangle at the start of its low
+  part, high for the last w of the cycle, with no DC offset from the first
+  cycle (Live's integrator starts at its steady state: the rectangle
+  renders are DC-free, which took 1.6 dB off the square's level), the sub
+  square low. **[measured]**
+- C4 sits 0.98 cent below equal temperament at every note the renders
+  play. **[measured]**
 - Sub: a square an octave down, Exp(0.01, 1). Sync: a master at the note
-  and a slave at Exp(1, 20) times it (the sine does not sync). **[code]**
+  and a slave at Exp(1, 20) times it (the sine does not sync); at a ratio
+  of 1 the master still resets the slave, which moves the saw half a
+  period against an unsynced one (Saw Pure Brass's chains beat in Live's
+  phase only so). **[code]** **[measured]**
 - Octave, semitone and Detune (+-1/4 octave as a square), a pitch
   envelope of Exp(0.01, 6) octaves falling to 0 over Exp(0.01, 10) s, LFO
   to pitch and to pulse width. Key tracking (Mod 1) at 0.5 is 1.
@@ -842,10 +861,13 @@ Tags as for Meld. Segno's implementation is `analog_voice.c`.
 ### Filters
 
 - LP12/24, BP6/12, Notch 2/4 and HP12/24: bilinear 2-pole sections,
-  linear, at Exp(30, 22000) Hz and Q Exp(0.1, 120) (at most 100); the
-  4-pole types cascade two, each at sqrt(Q), except BP12, whose stages
-  each take the full Q. The band-pass is the band node itself, peaking at
-  Q. **[code]** **[measured]** (BP's level, BP12's Q)
+  linear, at Exp(30, 22000) Hz and Q Exp(0.1, 120) (each stage's Q at
+  most 100, LP24 at full Q 1.2 dB louder than a clamp before the sqrt
+  gives); the 4-pole types cascade two, LP24's and HP24's stages each at
+  sqrt(Q),
+  BP12's and Notch4's at the full Q. The band-pass is the band node itself,
+  peaking at Q. **[code]** **[measured]** (BP's level, BP12's and
+  Notch4's Q)
 - Formant 6 and 12: three band-passes in parallel at a vowel's formants,
   the middle one inverted, each at Q 20 (Formant 6) or 45 (Formant 12) and
   8/sqrt(Q) times its level. The Q knob picks the vowel, 0..9 across its
@@ -878,8 +900,18 @@ Tags as for Meld. Segno's implementation is `analog_voice.c`.
   division, with delay, fade-in, phase and retrigger. **[code]**
   **[measured]** (the triangle's start, the noise ramp, the random
   waves' random start)
-- Amp: Exp(0.01, 2) times the envelope, LFO and key; key, envelope and
-  LFO move the pan. **[code]**
+- The tempo divisions 0..23 run 16 beats down to an eighth of a beat,
+  each dotted, straight and triplet (division 4 is 8 beats, 3 is 12): the
+  brass presets' LFO pan cycles in 4 and 6 s at 120 BPM. **[measured]**
+- Amp: Exp(0.01, 2) times the envelope, (1 + depth x LFO) and the key;
+  key, envelope and LFO move the pan. The LFO's depths on the level and
+  the pan are linear in the knob (Tremolo Tines' pan swing and the lfo-amp
+  render). **[code]** **[measured]**
+- A mono key change (a new key, or a released key handing the voice to a
+  held one) retriggers each envelope whose Legato is off: a straight fall
+  to 0 over 0.7 ms, then the attack from 0; the oscillators keep their
+  phase. **[measured]** (the glide renders dip to silence at the key
+  change)
 
 ### Voices
 
@@ -893,10 +925,14 @@ Tags as for Meld. Segno's implementation is `analog_voice.c`.
   it to overlapping notes. **[code]** **[measured]** (T's curve)
 - Unison: the copies sit 0, +1, -1, +2 steps from the note, a step of
   ExpZ(0.001, 1) octaves on 127 times the stored value (0.379 semitone at
-  0.5, an octave at 1); they start ExpZ(0.002, 0.1) s apart. Vibrato:
-  Lin(0.25, 10) Hz, its depth and the mod wheel's up to 2 semitones, with
-  delay and fade-in. **[code]** (Tension's reading of the shared unison)
-  **[measured]** (the offsets' pattern; 0.374 semitone at 0.5)
+  0.5, an octave at 1); they start ExpZ(0.002, 0.1) s apart. A copy's
+  offset goes through the engine's cubic 2^x (exact at whole octaves, up
+  to 1.3 cents sharp between), which puts the lower copy 0.3 cent sharp
+  as the renders show. Vibrato: Lin(0.25, 10) Hz, each cycle's rate off by
+  a random fraction up to Error = Lin(0, 0.2), its depth and the mod
+  wheel's up to 2 semitones, with delay and fade-in. **[code]** (Tension's
+  reading of the shared unison; the vibrato error) **[measured]** (the
+  offsets' pattern; 0.374 semitone at 0.5; the cubic on the offsets)
 
 ### The fits so far
 
@@ -916,6 +952,35 @@ one note in both.
 Still open: Kick Complex Perc (its pitch envelope, or filter 1 into
 filter 2), Keyboard Stretch and Error, and the MPE destinations (stored,
 not played).
+
+### The strict score
+
+The stricter score (third-octave x 50 ms cells, the first 150 ms in 5 ms
+frames, side/mid per band, f0 in cents, level, onset; 201 renders) went
+from 91 to 171 passing, the factory presets from 0 to 5 (Metalic Lead,
+Organ Vibrato, Saw Sub Complex Bass, Square Pure Bass, Tremolo Tines),
+with the oscillator starts, the band-limited steps and their latency, the
+DC-free rectangle (most of the presets' 2 to 6 dB excess), the amp's
+per-sample envelope and start ramp, the tempo divisions, the linear LFO
+depths on the amp, sync at ratio 1, Notch4's Q, the cubic on the unison
+offsets, the per-stage Q clamp, the mono retrigger and the vibrato
+error. What the renders show
+and Segno cannot do:
+
+- Live's note events take effect up to 107 samples early: a note-off at
+  1 s, 3 s or a glide's key change starts its release 36 to 48 samples
+  before the event, as if each were applied at the start of the 108-sample
+  control period it falls in (3 s is 36 samples past one, 1 s 48). Segno
+  applies an event when it arrives; the release tails differ by that much.
+  **[measured]**
+- Random sources: the S&H and noise LFOs (Live's values differ between two
+  renders of one patch), Keyboard Error (a per-note detune: the presets
+  that set it sit 1.4 to 6.6 cents off where Segno plays them, both chains
+  alike) and the vibrato error. Segno's draws cannot be Live's; the
+  pitch metric has no noise floor, so these fail it whatever the model.
+- The LFO's rate at 0.5 runs 0.4 % slow and its depth on pitch at 0.25
+  0.6 % small against the curves, while the rate at 0.75 matches exactly;
+  the Live round segno-analog-fit4 sweeps both.
 
 ## Decisions
 

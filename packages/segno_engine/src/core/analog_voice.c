@@ -207,6 +207,16 @@ static uint32_t xs_next(uint32_t* s) {
 static float xs_unit(uint32_t* s) { return (float)(xs_next(s) >> 8) * (1.0f / 16777216.0f); }
 static float xs_bipolar(uint32_t* s) { return 2.0f * xs_unit(s) - 1.0f; }
 
+/* A cubic 2^x: 2^i times 1 + y + y^2 (1/2 + c y) on the fraction f, y =
+ * f ln 2, c chosen so the cubic meets 2 at f = 1 (its error peaks at 1.3
+ * cents near f = 0.75). */
+static float exp2_cubic(float x) {
+  const float ln2 = 0.69314718f;
+  const float c = (1.0f - ln2 - 0.5f * ln2 * ln2) / (ln2 * ln2 * ln2);
+  const float i = floorf(x), y = (x - i) * ln2;
+  return ldexpf(1.0f + y + y * y * (0.5f + c * y), (int)i);
+}
+
 /* The engine's sine: a quintic on the phase in [0, 1) that meets sin(2 pi x)
  * at the quarter points, its small error a faint series of partials. */
 static float av_sine(double ph) {
@@ -226,19 +236,22 @@ static double bl_kernel(double x) {
 }
 
 /* The table of what a band-limited unit step adds to the naive one: row r
- * is a step r / LE_ANALOG_BL_PHASES of a sample before the current sample,
- * column j the sample j - LE_ANALOG_BL_HALF from it. The step is the
- * running sum of the impulse's samples, scaled to end at exactly 1. */
+ * is a step r / LE_ANALOG_BL_PHASES of the way from the last sample to the
+ * current one, column j the sample j - LE_ANALOG_BL_HALF from the current
+ * one. The step is the running sum of the impulse's samples, scaled to end
+ * at exactly 1. */
 static void bl_init(le_analog* d) {
   const int32_t H = LE_ANALOG_BL_HALF;
   for (int32_t r = 0; r <= LE_ANALOG_BL_PHASES; ++r) {
     const double frac = (double)r / LE_ANALOG_BL_PHASES;
+    /* the impulse's samples: sample j - H sits x = j - H + 1 - frac after it */
+    double k[2 * LE_ANALOG_BL_HALF + 1];
     double total = 0.0;
-    for (int32_t i = -H - 1; i <= H + 1; ++i) total += bl_kernel((double)i + 1.0 - frac);
+    for (int32_t j = 0; j <= 2 * H; ++j) total += (k[j] = bl_kernel((double)(j - H) + 1.0 - frac));
+    double run = 0.0;
     for (int32_t j = 0; j < 2 * H; ++j) {
-      const double x = (double)(j - H) + 1.0 - frac; /* the sample's time after the step */
-      double run = 0.0;
-      for (int32_t i = 0; i <= 2 * H + 1; ++i) run += bl_kernel(x - (double)i);
+      run += k[j];
+      const double x = (double)(j - H) + 1.0 - frac;
       d->bl[r][j] = (float)(run / total - (x >= 0.0 ? 1.0 : 0.0));
     }
   }
@@ -504,6 +517,8 @@ static int32_t priority_index(const le_analog* d) {
 static void start_copy(le_analog* d, le_analog_voice* v, le_analog_copy* cp) {
   const float rate = (float)d->sample_rate;
   cp->noise_lp = 0.0f;
+  memset(cp->noise_ring, 0, sizeof(cp->noise_ring));
+  cp->noise_at = 0;
   for (int32_t c = 0; c < 2; ++c) {
     le_analog_chain* ch = &cp->ch[c];
     const av_env fe = read_env(d, c, LE_ANALOG_FILTER_ENV);
@@ -557,6 +572,7 @@ static void start_voice(le_analog* d, le_analog_voice* v, uint32_t origin, int32
   v->fade_left = 0;
   v->fade_len = (int32_t)lroundf(0.001f * (float)d->sample_rate);
   v->vib_t = 0.0f;
+  v->vib_dev = 0.0f;
   v->pitch_to = key_pitch(d, note);
   v->pitch = glide ? d->last_pitch : v->pitch_to;
   /* the unison copies sit 0, +1, -1, +2 steps from the note (fit: the
@@ -953,7 +969,9 @@ static void tick_chain(le_analog* d, le_analog_voice* v, le_analog_copy* cp, int
   const float lfo_pitch = b_sq(4.0f, cf(d, c, LE_ANALOG_OSC_LFO_PITCH)) * lfo;
   const float key = clampf(pitch_cv + cp->detune + vib, -8.0f, 8.0f);
   const float sync = ci(d, c, LE_ANALOG_OSC_MODE) == 1 && ci(d, c, LE_ANALOG_OSC_SHAPE) != 0;
-  const float f_key = AV_C4 * exp2f(base + k1 * key);
+  /* fit: the unison copy's offset goes through the cubic 2^x (the
+   * unison renders' lower copy sits 0.3 cent sharp, as the cubic puts it) */
+  const float f_key = AV_C4 * exp2f(base + k1 * (key - cp->detune)) * exp2_cubic(k1 * cp->detune);
   if (sync) {
     t->ratio = c_exp(1.0f, 20.0f, cf(d, c, LE_ANALOG_OSC_SUB));
     ch->inc_m = fminf(f_key, 0.25f * rate) / rate;
@@ -996,7 +1014,7 @@ static void tick_chain(le_analog* d, le_analog_voice* v, le_analog_copy* cp, int
   const float e_q = b_sq(4.0f, cf(d, c, LE_ANALOG_FILTER_KEY_Q)) * pitch_cv +
                     b_sq(4.0f, cf(d, c, LE_ANALOG_FILTER_LFO_Q)) * lfo +
                     b_sq(4.0f, cf(d, c, LE_ANALOG_FILTER_ENV_Q)) * fenv;
-  t->q = fminf(c_exp(0.1f, 120.0f, cf(d, c, LE_ANALOG_FILTER_Q)) * exp2f(e_q), 100.0f);
+  t->q = c_exp(0.1f, 120.0f, cf(d, c, LE_ANALOG_FILTER_Q)) * exp2f(e_q); /* each stage clamps its own */
   t->fc = fminf(fmaxf(fc, 10.0f), 0.49f * rate);
   if (ci(d, c, LE_ANALOG_FILTER_TYPE) >= 8) formant_tick(d, ch, c, e_cut, e_q, rate);
   /* the amp: level, LFO, key (the envelope applies per sample); the pan.
@@ -1170,7 +1188,9 @@ static void render_voice(le_analog* d, le_analog_voice* v, float* left, float* r
       const float dtk = (float)LE_ANALOG_TICK / rate;
       v->vib_t += dtk;
       if (vi(d, LE_ANALOG_VIBRATO_ON)) {
-        const float hz = c_lin(0.25f, 10.0f, vf(d, LE_ANALOG_VIBRATO_SPEED));
+        /* the rate, off by up to Error = Lin(0, 0.2) of it, a new draw each
+         * cycle */
+        const float hz = clampf(c_lin(0.25f, 10.0f, vf(d, LE_ANALOG_VIBRATO_SPEED)) * (1.0f + v->vib_dev), 0.1f, 15.0f);
         float depth = (vf(d, LE_ANALOG_VIBRATO_AMOUNT) > 0.0f
                            ? c_exp(0.0002f, 1.0f / 6.0f, vf(d, LE_ANALOG_VIBRATO_AMOUNT))
                            : 0.0f) +
@@ -1184,7 +1204,10 @@ static void render_voice(le_analog* d, le_analog_voice* v, float* left, float* r
         if (v->vib_t < delay) depth = 0.0f;
         else if (fade > 0.0f) depth *= fminf((v->vib_t - delay) / fade, 1.0f);
         v->vib_ph += (double)(hz * dtk);
-        v->vib_ph -= floor(v->vib_ph);
+        if (v->vib_ph >= 1.0) {
+          v->vib_ph -= floor(v->vib_ph);
+          v->vib_dev = c_lin(0.0f, 0.2f, vf(d, LE_ANALOG_VIBRATO_ERROR)) * xs_bipolar(&v->c[0].rng);
+        }
         vib = depth * sinf(2.0f * AV_PI * (float)v->vib_ph);
       }
       const float pitch_cv = v->pitch + vf(d, LE_ANALOG_BEND_RANGE) * d->bend;
@@ -1198,9 +1221,11 @@ static void render_voice(le_analog* d, le_analog_voice* v, float* left, float* r
           const float q = cp->ch[c].t.q;
           const int32_t ft = ci(d, c, LE_ANALOG_FILTER_TYPE);
           if (ft >= 8) continue; /* formant_tick set them */
-          /* fit: BP12's two stages each take the full Q (the BP12 render);
-           * the other 4-pole types take sqrt(Q) each */
-          const float qs = ft % 2 == 1 && ft != 3 ? sqrtf(q) : q;
+          /* fit: BP12's and Notch4's two stages each take the full Q (the
+           * BP12 and Notch4 renders); LP24's and HP24's take sqrt(Q) each */
+          /* fit: the clamp to 100 is the stage's, after the sqrt (LP24 at
+           * full Q) */
+          const float qs = fminf(ft == 1 || ft == 7 ? sqrtf(q) : q, 100.0f);
           cp->ch[c].g[0] = tanf(AV_PI * cp->ch[c].t.fc / rate);
           cp->ch[c].k = 1.0f / fmaxf(qs, 0.01f);
         }
@@ -1242,8 +1267,13 @@ static void render_voice(le_analog* d, le_analog_voice* v, float* left, float* r
         }
         if (noise_on) {
           cp->noise_lp += noise_a * (0.9f * xs_bipolar(&cp->rng) - cp->noise_lp);
-          pre[0] += noise_lvl * sinf(0.5f * AV_PI * noise_bal) * cp->noise_lp;
-          pre[1] += noise_lvl * cosf(0.5f * AV_PI * noise_bal) * cp->noise_lp;
+          /* fit: the noise comes out as late as the oscillators (Zap's and
+           * the noise renders' onsets) */
+          cp->noise_ring[cp->noise_at] = cp->noise_lp;
+          const float nz = cp->noise_ring[(cp->noise_at - LE_ANALOG_BL_HALF) & (LE_ANALOG_BL_RING - 1)];
+          cp->noise_at = (cp->noise_at + 1) & (LE_ANALOG_BL_RING - 1);
+          pre[0] += noise_lvl * sinf(0.5f * AV_PI * noise_bal) * nz;
+          pre[1] += noise_lvl * cosf(0.5f * AV_PI * noise_bal) * nz;
         }
         float l = 0.0f, r = 0.0f, y1 = 0.0f;
         for (int32_t c = 0; c < 2; ++c) {
