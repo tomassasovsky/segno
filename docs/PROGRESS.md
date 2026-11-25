@@ -1,4 +1,4 @@
-<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Quantizer -->
+<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Quantizer autocorrelation tfz unmeasured -->
 # Segno — Progress & Roadmap
 
 <!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs multicore smarttune -->
@@ -121,24 +121,33 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   glide, Retrigger Mode and the voice table up to 48.
 - Fitted against 255 Live renders: waveforms, FM, feedback, envelopes, LFO,
   glide, Spread, pan, Tone and the routes within 0.5 dB rms each. Measured
-  where the reading was silent: envelope slopes other than 0 and 1 hold and
-  jump (as Live renders them), EnvTimeIncludeAttack changes nothing, the
-  routes' sources and units (gain destinations only attenuate).
+  where the reading was silent: an operator envelope's slopes other than 0
+  and 1 hold and jump (as Live renders them; the filter and pitch
+  envelopes curve), EnvTimeIncludeAttack changes nothing, the routes'
+  sources and units (gain destinations only attenuate).
 - The filters: Clean and Morph (Live's own noise through Segno's filter
   within 0.5 dB), MS2 on the section Drift's filter II uses (now shared,
   `ms2_section.h`; Drift renders bit-identical), and Segno's own models of
   PRD (a four-stage ladder) and OSR (a state-variable loop with a diode
   bounding its resonance), each fitted to Live's renders; SMP runs on
-  MS2's section with its own constants. The MS2 and PRD high-passes are
-  not read yet: Clean's high-pass stands in (three factory presets).
+  MS2's section with its own constants. MS2's and SMP's high-passes are
+  fitted shapes; PRD's is not read yet: Clean's high-pass stands in.
 - The routes, measured in a fifth and sixth round: sources bipolar or
   resting at 0, gain destinations attenuating by 1 - a+ + a u, the LFO's
   and pitch envelope's routes scaled by their own amounts, the pitch
   envelope moving in ratio and its route in semitones.
 - Ten factory presets, octave bands rms: seven within 1.6 dB (Sub Sine Bass
   0.0 to Bells Brushed Hits 1.6), Metallic FM 2.3, OP Bass 3.1 within
-  40 dB of its loudest, Celesta 4.2 (its partials match; two octaves
-  around its morph filter do not yet).
+  40 dB of its loudest, Celesta 4.2 (its partials match).
+- The strict score: 277 of 298 renders and 6 of 10 factory presets pass
+  (from 248 and 4): curved filter and pitch envelope slopes, the
+  one-poles measured in scaled levels (an operator's amplitude, the pitch
+  envelope's ratios), the envelope floor as silence, random white noise,
+  continuous LFO shapes, MIDI routes slowing the LFO rate, the filter
+  envelope's amount as a gain destination, Spread in whole percent, no
+  glide into a stolen voice, the MS2 and SMP high-passes, SMP's and PRD's
+  resonance. Celesta, Bells Brushed Hits and Metallic FM are held by
+  Live's random pan and phases; round 7 (52 renders) isolates the rest.
 - A voice costs 2.7 us per period at 48 kHz on the dev machine, 4.5 with
   Antialias (a Drift voice 7.1).
 
