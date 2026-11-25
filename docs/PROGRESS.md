@@ -85,7 +85,7 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   and the largest gap left; the factory presets sit 2.6 to 11.3 dB
   (octave bands).
 - A voice costs 1.8 us per millisecond with the hammer, 0.6 with the bow,
-  the body 0.4 more. A device holds 32 strings (1.2 MB).
+  the body 0.4 more. A device holds 32 strings (1.7 MB).
 
 ## November 2026 The Electric device plays on an instrument slot (SEG-109 P10)
 
