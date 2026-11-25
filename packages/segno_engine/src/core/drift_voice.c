@@ -454,41 +454,32 @@ static int32_t osc2_wave(int32_t stored) {
 
 /* Drift Depth's tuning: a deviation per key plus one per voice, both fixed
  * (neither moves over time, nor between strikes, nor between instances),
- * linear in w = Drift Depth / 0.58. The values are Segno's own
- * pseudo-random draws, shaped to the statistics measured on Live's renders
- * (cents per unit of w, round 17): the per-key part, C1..B5 (24..83) only,
- * has a mean of +1.18, a spread of 3.63 and a correlation of 0.53 between
- * neighbouring keys (0.12 two keys apart); the per-voice part a mean of
- * +2.26 and a spread of 7.2, independent from voice to voice (so a Stereo
- * pair's or a Unison group's lanes are as far apart as any two voices).
- * The streams are Segno's choice among those whose own 60 keys and 32
- * voices show those statistics: keys mean 1.25, spread 3.67, correlation
- * 0.55 / 0.12; voices mean 2.14, spread 7.19, from -10.1 to +11.7. */
-
-/* A draw of mean 0 and spread 1 for index k of stream `salt`. */
-static float drift_draw(int32_t k, uint32_t salt) {
-  uint32_t h = (uint32_t)k * 2654435761u ^ salt; /* an integer hash */
-  h ^= h >> 16;
-  h *= 0x7feb352du;
-  h ^= h >> 15;
-  h *= 0x846ca68bu;
-  h ^= h >> 16;
-  return 1.7320508f * ((float)(int32_t)h * (1.0f / 2147483648.0f));
-}
+ * linear in w = Drift Depth / 0.58, in cents per unit of w. Measured on
+ * Live 12.2.7's renders (round 17, a sine at Drift Depth 1): the per-voice
+ * offsets from each lane of 16 Stereo pairs alone on its channel (pair p
+ * is voices 2p and 2p + 1, at notes 84 + p, above the per-key range), the
+ * per-key ones from C1..B5 struck one at a time on voice 0, minus voice
+ * 0's offset. Keys outside C1..B5 have no per-key offset. */
+static const float kKeyCents[60] = {
+    3.57f, 0.35f, -4.53f, -4.30f, -5.11f, 1.15f, 5.36f, 14.07f, 9.55f, 6.31f,
+    0.90f, -0.95f, -2.81f, -2.41f, -2.80f, 0.40f, -0.14f, 5.80f, 7.48f, 5.31f,
+    1.22f, -1.59f, -2.09f, -1.00f, -1.50f, 0.10f, -0.38f, 0.40f, 1.95f, 4.81f,
+    6.55f, 1.78f, 0.39f, -1.58f, 0.13f, 12.94f, 0.49f, 0.10f, -0.97f, 0.96f,
+    0.90f, 2.83f, 3.29f, -0.43f, -1.28f, -0.00f, 0.13f, 0.41f, 0.16f, 1.35f,
+    1.09f, 0.12f, 0.38f, -0.14f, 0.96f, 0.68f, 0.81f, 1.18f, -2.28f, 0.40f,
+};
+static const float kVoiceCents[32] = {
+    2.48f, 9.20f, 9.57f, 9.28f, -2.86f, 8.99f, -4.34f, 3.96f, 5.89f, 2.19f,
+    1.00f, 6.91f, -7.42f, -3.03f, 10.76f, -1.34f, 2.89f, -4.67f, -12.33f, 3.59f,
+    -4.33f, 4.67f, -4.88f, 7.44f, -11.87f, -1.30f, -12.83f, -1.56f, 9.76f,
+    0.24f, 11.13f, 11.25f,
+};
 
 static float key_cents(int32_t note) {
-  if (note < 24 || note > 83) return 0.0f;
-  /* neighbouring draws smoothed by (a, 1, a): a = 0.319 gives the
-   * correlations 0.53 and 0.09 */
-  const float a = 0.319f;
-  const float e = a * drift_draw(note - 1, 2217u) + drift_draw(note, 2217u) +
-                  a * drift_draw(note + 1, 2217u);
-  return 1.18f + 3.63f * e / sqrtf(1.0f + 2.0f * a * a);
+  return note < 24 || note > 83 ? 0.0f : kKeyCents[note - 24];
 }
 
-static float voice_cents(int32_t voice) {
-  return 2.26f + 7.2f * drift_draw(voice, 7172u);
-}
+static float voice_cents(int32_t voice) { return kVoiceCents[voice]; }
 
 /* The ISO 226:2003 40-phon equal-loudness level at 1/10-decade steps from
  * 20 Hz (the standard's frequencies and parameters). */

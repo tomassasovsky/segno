@@ -93,6 +93,10 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   a scratch build 245 of 263: 41 renders fail only on the exact drift
   values, pending the owner's decision on measured per-key values.
   Held-out: 8 of 89 (14 of 89 with the measured values).
+- The owner allowed values measured from Live's rendered audio: Drift
+  Depth uses the measured per-key and per-voice tables (round 17). Strict
+  score 247 of 263, factory presets 3 of 5 (Bloom Pad, Euphoria Lead,
+  80s Tape).
 
 ## November 2026 Drift's filter II as an MS-20 circuit model (SEG-109 P4, round 4)
 

@@ -342,15 +342,21 @@ written from it.
 - Drift Depth: a fixed tuning offset per key plus one per voice, linear
   in w = depth / 0.58. The same key on the same voice always gets the same
   offset, in every instance (three Live renders of one patch, each a fresh
-  device, are identical). **[measured]** Statistics, in cents per unit of
-  w, from Live's key sweeps on one voice and all 32 voices above the key
-  range (round 17): per key (C1..B5 only) a mean of +1.18, a spread of
-  3.63, neighbouring keys correlated 0.53 (0.12 two apart); per voice a
-  mean of +2.26 and a spread of 7.2, independent from voice to voice;
-  Stereo pairs and Unison groups are consecutive voices with their own
-  offsets (no fixed split). Segno draws its own values with these
-  statistics **[Segno]**; Live's values are not used. Whether measured
-  per-key values may be used is the owner's call (SEG-109).
+  device, are identical). **[measured]** Segno uses the measured values
+  (the owner's decision, 2026-11-25, on values measured from Live's
+  rendered audio), in cents per unit of w, from round 17 at Drift Depth 1
+  with a sine: per voice (32) from `dv-stereo`, each lane of 16 Stereo
+  pairs alone on its channel at notes 84..99 (pair p is voices 2p, 2p + 1;
+  cross-checked against `dv-poly` voices 0..18 and against half depth in
+  `dv-poly-d05`, both within 0.01 cent; `dv-poly`'s voices 19..31 sit
+  where a lower note's third harmonic falls, which spoiled them); per key
+  (C1..B5) from `dk-a/b/c`, the keys struck one at a time on voice 0,
+  minus voice 0's offset. Statistics of the values: per key a mean of
+  +1.18, a spread of 3.63, neighbours correlated 0.53; per voice a mean of
+  +2.26 and a spread of 7.2, independent from voice to voice; Stereo pairs
+  and Unison groups are consecutive voices. Keys outside C1..B5 get no
+  per-key offset in Segno until round 18 measures them. The measurement
+  script is the fit tooling's `dfit/drift_tables.py`.
 - SerialNumber: a random number per instance, saved in the preset,
   probably the seed for per-instance randomness. **[inferred]**
 - Glide: a one-pole in hertz (not in pitch) with time constant 0.144 x
@@ -473,7 +479,9 @@ What the strict score still fails, and why **[measured]**:
   presets 0 of 5); a scratch build with the measured per-key and per-voice
   values instead (not kept) passes 245 of 263 (presets 2 of 5): 41
   renders fail only because of the exact drift values (the list is kept
-  with the fit tooling, `dfit/drift_only_list.txt`).
+  with the fit tooling, `dfit/drift_only_list.txt`). With the measured tables
+  in the product (the owner allowed values measured from renders): 247 of
+  263, factory presets 3 of 5, and every one of those 41 passes.
 - Round 16 settled two questions. Live's drift is the same in every
   instance: three Live renders of one Drift Depth patch, each a fresh
   device, correlate 1.0000. And Bloom Pad's filter peak came from key

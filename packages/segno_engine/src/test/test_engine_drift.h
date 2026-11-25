@@ -533,34 +533,23 @@ static void test_drift_filter2_starts_at_rest(void) {
   CHECK(g_drift.voices[0].lfo_hold != 0.0f);
 }
 
-/* Drift Depth's own tables carry the statistics measured on Live: per key
- * (C1..B5, none outside) a mean near +1.2 cents per unit of depth / 0.58,
- * a spread near 3.6 and neighbours correlated near 0.5; per voice a mean
- * near +2.3 and a spread near 7.2. Unison's first lane is the sharpest,
- * panned left. */
-static void test_drift_tuning_statistics(void) {
-  printf("test_drift_tuning_statistics\n");
+/* Drift Depth's tuning is the measured table: a few values pinned (cents
+ * per unit of depth / 0.58: voice 0 +2.48, voice 18 -12.33, key 31 +14.07,
+ * key 59 +12.94, none outside C1..B5), and a note's ratio is the sum at
+ * w. Unison's first lane is the sharpest, panned left. */
+static void test_drift_tuning_table(void) {
+  printf("test_drift_tuning_table\n");
   drift_init(&g_drift, DRIFT_SR);
-  double m = 0.0, s = 0.0, c1 = 0.0;
-  for (int32_t k = 24; k <= 83; ++k) m += g_drift.key_cents[k];
-  m /= 60.0;
-  for (int32_t k = 24; k <= 83; ++k) {
-    const double x = g_drift.key_cents[k] - m;
-    s += x * x;
-    if (k < 83) c1 += x * (g_drift.key_cents[k + 1] - m);
-  }
-  CHECK(fabs(m - 1.18) < 0.3);
-  CHECK(fabs(sqrt(s / 60.0) - 3.63) < 0.3);
-  CHECK(fabs(c1 / s - 0.53) < 0.08);
+  CHECK(fabsf(g_drift.voice_cents[0] - 2.48f) < 0.005f);
+  CHECK(fabsf(g_drift.voice_cents[18] + 12.33f) < 0.005f);
+  CHECK(fabsf(g_drift.key_cents[31] - 14.07f) < 0.005f);
+  CHECK(fabsf(g_drift.key_cents[59] - 12.94f) < 0.005f);
   CHECK(g_drift.key_cents[23] == 0.0f && g_drift.key_cents[84] == 0.0f);
-  double vm = 0.0, vs = 0.0;
-  for (int32_t i = 0; i < LE_DRIFT_VOICES; ++i) vm += g_drift.voice_cents[i];
-  vm /= LE_DRIFT_VOICES;
-  for (int32_t i = 0; i < LE_DRIFT_VOICES; ++i) {
-    vs += (g_drift.voice_cents[i] - vm) * (g_drift.voice_cents[i] - vm);
-  }
-  CHECK(fabs(vm - 2.26) < 0.4);
-  CHECK(fabs(sqrt(vs / LE_DRIFT_VOICES) - 7.2) < 0.4);
+  drift_set(&g_drift, LE_DRIFT_DRIFT_DEPTH, 0.58f); /* w = 1 */
+  CHECK(le_drift_note_on(&g_drift, 1, 59, 100, 0) == 0);
+  const float cents = 1200.0f * log2f(g_drift.voices[0].ratio);
+  CHECK(fabsf(cents - (12.94f + 2.48f)) < 0.01f);
+  drift_init(&g_drift, DRIFT_SR);
   drift_set(&g_drift, LE_DRIFT_DRIFT_DEPTH, 0.0f);
   drift_set(&g_drift, LE_DRIFT_VOICE_MODE, 3.0f);
   drift_set(&g_drift, LE_DRIFT_UNISON_DEPTH, 1.0f);
@@ -892,7 +881,7 @@ static void run_drift_tests(void) {
   test_drift_glide_in_hertz();
   test_drift_block_reset_lfo_phase();
   test_drift_filter2_starts_at_rest();
-  test_drift_tuning_statistics();
+  test_drift_tuning_table();
   test_drift_ratio_lfo_is_phase_modulation();
   test_drift_filter_input_clips_asymmetrically();
   test_drift_voice_blocks();
