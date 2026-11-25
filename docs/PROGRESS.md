@@ -61,9 +61,39 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
 | SEG-22 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track and lane chains) is #1729 | build | needs-plan-approval | `claude/fx-multicore-1515-p1b` |
 | SEG-107 | Save As failed with Out of Memory: the mixdown asked for the LCM of two Song-mode tracks (24.7 GB); it now spans the longest lane past 600 s, and the save refuses a length no loop can hold | in-review | needs-hardware | `claude/save-oom-SEG-107` |
 | SEG-63 | Console WiFi against an ASUS RT-AX89X with 802.11ax on: firmware already matches Pi OS; brcmfmac options aligned with Pi OS and a troubleshooting note; failure not reproduced, issue stays open until it recurs | in-review | agent-merges | `claude/wifi-firmware-1816` |
-| SEG-109 | Ableton Live device presets on the pedal, Drift first: presets read from the user's own copy; Drift's behavior learned with rea + Ghidra from Live 12.2.7 and reimplemented, no Ableton code or presets in the repo. Plan approved 2026-11-25 (P1-P6); P1 stereo buses, P2 preset reader, P3 the Drift device and P4 its fit in review; the Operator device (P7, the next instrument) in review | in-review | needs-merge | `claude/ableton-devices-SEG-109`, `claude/ableton-operator-SEG-109-p7` |
+| SEG-109 | Ableton Live device presets on the pedal, Drift first: presets read from the user's own copy; Drift's behavior learned with rea + Ghidra from Live 12.2.7 and reimplemented, no Ableton code or presets in the repo. Plan approved 2026-11-25 (P1-P6); P1 stereo buses, P2 preset reader, P3 the Drift device and P4 its fit in review; the Operator device (P7) and the Meld device (P8) in review | in-review | needs-merge | `claude/ableton-devices-SEG-109`, `claude/ableton-operator-SEG-109-p7`, `claude/ableton-meld-SEG-109-p8` |
 
 ---
+
+## November 2026 The Meld device plays on an instrument slot (SEG-109 P8)
+
+- Live 12.2.7's Meld read with rea + Ghidra (seven readers: the oscillators
+  in three passes, the filters in two, the modulation, the voices) and
+  written as "Meld: behavior" in the Ableton devices brainstorm;
+  `meld_voice.c`, `meld_osc.c` and `meld_filter.c` are written from it.
+  `LE_INST_DEVICE_MELD` takes a Meld preset's 1082 values (`le_meld_param`:
+  two engine blocks of 60, the device's own, then the 50 x 19 modulation
+  matrix) through the same slot API as Drift and Operator.
+- Two engines per voice, each one of 25 oscillators (all built) and 17
+  filters (all built), an Amp and a Mod envelope, LFO 1 with six generators
+  and 19 transformers, LFO 2; the matrix's sums and gain products; unison
+  up to three copies with Spread; Mono, legato and glide; the per-copy
+  drive and limiter.
+- Shared with Operator: its OSR circuit, now `osr_section.h`, is Meld's
+  Bandpass (Operator's renders bit-identical). Meld's Lowpass is the
+  shared MS-20 section with its second integrator saturating too.
+- Fitted against 282 Live renders: the output chain, levels, pan, tone,
+  drive, limiter, tuning, unison, envelopes, both LFOs and every matrix
+  target within 0.1 dB rms; most oscillators within 0.6 and 13 of 17
+  filters within 0.5. Measured where the reading was silent: the matrix
+  targets' scales, the times' and rates' cubic knob positions, where the
+  limiter listens, Sub's clip, the comb's loop length.
+- 21 factory presets, octave bands rms: 13 within 1 dB; Sugar Bass is off
+  (34) where the note source moves its filter, and the Chord inversions,
+  Square Sync's slave frequency and the Highpass circuit are still open.
+- A voice with both engines on a Basic Shapes saw and SVF 12 costs 1.8 us
+  per millisecond on the dev machine; MS2 6.8, a Swarm 3.7, three unison
+  copies 5.6.
 
 ## November 2026 The Operator device plays on an instrument slot (SEG-109 P7)
 

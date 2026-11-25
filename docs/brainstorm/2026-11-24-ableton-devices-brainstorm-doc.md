@@ -593,6 +593,202 @@ Brushed Hits 1.6, Metallic FM 2.3, OP Bass 3.1 within 40 dB of its loudest
 around its morph filter differ by 7 to 8 dB). A voice costs 2.7 µs per
 period at 48 kHz, 4.5 with Antialias.
 
+## Meld: behavior
+
+Learned 2026-11-25 from Live 12.2.7 (seven reads: the oscillators in three
+passes, the filters in two, the modulation, the voices), then measured
+against 316 Live renders of single-change patches and 21 factory presets.
+Tags as for Drift; **[measured]** marks what the renders settled where the
+reading was silent or disagreed, **[Segno]** a table the reading gave only
+the shape of, rebuilt by Segno's own rule. Segno's implementation is
+`meld_voice.c`, `meld_osc.c` and `meld_filter.c`.
+
+### Structure
+
+- A note takes one voice of 1 to 3 unison copies; each copy runs two
+  engines, A and B. An engine is an oscillator, its Amp envelope (applied
+  before the filter), a filter, and a tone filter, volume and pan; the
+  copy sums both engines, then the voice's drive and limiter. **[code]**
+- The device's output is 0.5 x Volume (linear) x the sum of the voices;
+  copies sum at 1/sqrt(N). Engine volume is dB, pan constant power (sine
+  law, -3 dB a side at centre). **[code]** **[measured]**
+- The Mod envelopes, both LFOs and the matrix run once per 16 samples; the
+  oscillators, filters and Amp envelopes every sample. Macros and gains
+  glide over 5 ms. **[code]**
+- Engine B starts (pitch, phase, envelopes) after Engine B Delay, floored to
+  16 samples. A voice ends when every Amp envelope is idle and its output
+  has stayed at or below 0.0002 for 10 ms. **[code]**
+
+### Oscillators
+
+All 25 types are built. Each takes the frequency and two macros; the FM
+types, Noisy Shapes, Squelch, Tarp and Extratone run at min(rate, 44.1 kHz),
+Chip at min(rate, 10.05 kHz), all read back through a 4-point Hermite.
+**[code]**
+
+- Basic Shapes: sine, triangle, saw, pulse crossfaded by Macro 1; Macro 2
+  folds the sine (a sine of a sine, its mean taken out) and the triangle,
+  adds a second saw half a cycle along, narrows the pulse to 0.05 %.
+  polyBLEP/BLAMP edges. **[code]** **[measured]**
+- Dual Basic Shapes: two of the plain shapes, the second up to an octave
+  above (2^M2), fading out between rate/8 and rate/4. **[code]**
+- Noisy Shapes: two triangle-saw-square oscillators beating up to +-2 Hz,
+  each with a high-passed noise burst in its first tenth, locked together
+  below Macro 2 = 0.5, then driven into an anti-aliased sine.
+- Square Sync: two squares hard-synced to the note, each up to 2 kHz above.
+  **[code]** (the slave frequency law fits Live's renders only at the
+  macros' zero: **[open]**)
+- Square 5th: a pulse with two notches that morph a square at f into one at
+  3f, then 3f into 9f; Macro 2 skews the width and notches. **[code]**
+- Sub: a sine an octave down through a biased parabolic clip that holds at
+  its peak, a 5 Hz DC blocker, plus a sine two octaves down at 2 M2^2.5.
+  **[code]** **[measured]** (the clip's hold)
+- Swarm Sine/Triangle/Saw/Square: 2 x 12 voices at the ratios of 9 voicing
+  stacks crossfaded by Macro 2, each drifting in pitch by up to 0.13 M1^2 +
+  0.002 over 0.32..0.65 s segments, random phases at each note, x 1/sqrt 12.
+  **[code]** The stacks follow the reading's counts of unison, octave,
+  fifth, fourth and third entries. **[Segno]**
+- Harmonic FM: two FM pairs at neighbouring ratios of an 18-entry list,
+  crossfaded; the index is M1 cycles, capped so carrier, modulator and
+  deviation stay below 0.4 of the rate. **[code]** The list is Segno's
+  (simple fractions, unity, the ratios to 2, the integers to 10) and
+  matches Live's renders exactly. **[Segno]** **[measured]**
+- Fold FM: the Harmonic FM core at position M1^2 and amount 4 M1, through
+  tanh at 1 + 7.7 M2, phase-modulating a parabolic sine that is folded at
+  1 + 2 M2. **[code]** **[measured]** (the parabolic sine)
+- Squelch: an FM bass two octaves down with a self-modulated triangle and a
+  triangle 32 times higher as modulators. Simple FM: one sine pair, index
+  0.01..4 cycles, ratio 8 M2^2. **[code]**
+- Chip: an 8-bit polyBLEP pulse (50 % .. 12.5 %) trilling at 50 M2^2 Hz to
+  f 2^(2 M1), a fifth of each step silent, with a hiss 45 dB down. **[code]**
+- Shepard's Pi: eight parabolic sines an octave apart gliding at (2 M1 -
+  1)^3 cycles of 8 octaves a second under a trapezoid window of 2 + 5.5 M2
+  octaves. **[code]**
+- Tarp and Extratone: a sine whose pitch and a noise low-pass sweep down
+  over a time set by Macro 1 (Tarp, per note) or 100..20 ms restarted at
+  f/8 (Extratone), then a biased tanh. **[code]**
+- Noise Loop: two refreshing taps, each looping two periods of noise
+  low-passed at 2.5 kHz with a click-free pair of read heads, refreshed
+  0.12..60 times a second, windowed by Macro 2 from full crossfades to hard
+  switches with random levels; a high-pass at f/2. **[code]** Segno
+  regenerates each stretch from a seeded hash instead of recording it
+  (Live's three 100 ms buffers start full of unfiltered noise, which Segno
+  plays until a tap's first refresh). **[measured]**
+- Filtered Noise: white noise through a low-pass and a high-pass around
+  f 2^(4 M1 - 2), 6 octaves wide down to coincident, then resonant, with a
+  level that compensates. **[code]**
+- Bitgrunge: the parity of counter bits a..b, a square or a Walsh pattern
+  with 1 % glitches, the same on every note. Crackle: Poisson noise bursts,
+  20..2000 a second, band-passed around the note, driven and clipped below.
+  Rain: eight lanes of Poisson drops into resonant band-passes scattered
+  about the note, over pink noise swelling at 0.1 Hz. Bubble: 64 decaying,
+  rising sines (Minnaert's pitch for a random radius). **[code]**
+- Chord: 8 saws, two chords of up to 4 tones built by scale degree on the
+  note's major scale (13 types: triad, seventh, add9, the sixth, sus4 and
+  sus2 families, add10, by Macro 1), at two inversions crossfaded equal
+  power by Macro 2, x 0.3. **[code]** Which octave an inversion's top tone
+  takes still differs from Live's renders. **[open]**
+- Use Scale has nothing to quantize to: Segno sends no scale, as Live with
+  no clip or Set scale. **[code]**
+
+### Filters
+
+All 17 types are built; 13 match Live's renders within 0.5 dB rms per
+third-octave band. **[measured]**
+
+- SVF 12 and 24: a trapezoidal state-variable filter, resonance m1 clamped
+  to 0.9 through q = 4r/(3r + 1), morphing low, band, high and notch by
+  Macro 2; 24 dB adds a second stage at damping 2 - q. **[code]**
+- Lowpass: one section of the MS-20 model Drift's filter II uses
+  (`ms2_section.h`), with the second integrator's transconductance
+  saturating like the first's; drive -18..+24 dB in, made up by 18 dB
+  falling to 0 at 0.7. **[code]** **[measured]** (1.4 dB rms; full drive 6)
+- Highpass: the same drive around a state-variable high-pass at the
+  section's small-signal Q. **[open]** (the circuit's own high-pass)
+- Bandpass: the OSR circuit Operator uses (`osr_section.h`, now shared) at
+  its band tap, leaving at 0.55. **[code]** **[measured]**
+- DFM: a two-pole Sallen-Key with unequal capacitors and a cubic soft clip
+  in its feedback, solved in closed form. Filther: a diode clipper, the SVF
+  low-pass, a fixed 6.76 kHz low-pass and a sine saturator. **[code]**
+- SRF: the SVF low-pass at twice the rate with its integrators switched by a
+  160 Hz .. 41 kHz clock for the share of each period that gives the cutoff.
+  **[code]** **[measured]** (1.2 dB rms)
+- EqPeak and EqNotch: bells of up to 24 dB with Q 0.4..18 and 2..24 and an
+  output trim. Phaser: six all-pass stages at one frequency with negative
+  feedback to 0.98 solved without delay. Redux: resampling at the
+  Frequency in Hz, 8..1 bits, cubic to held by Lofi. **[code]**
+- Vowel: five band-passes A, E, I, O, U; Segno's formants are the published
+  bass-voice averages Csound documents (the reading gave the table's shape
+  only: four formants, a fifth at 4950 Hz, levels relative to the first, -10
+  dB). **[Segno]**
+- Comb and Comb Inverted: a feedback delay of c rate/f samples (c = 1, 0.5),
+  decaying 60 dB in 0.001 + 15 M1^4 s, with a tilt filter in the loop.
+  **[code]** **[measured]** (the loop length)
+- Plate and Membrane: 32 band-pass modes x 0.0125, at the plate's grid
+  ratios or the membrane's Bessel-zero ratios (computed), decaying in
+  0.45 (0.1 + 19.9 M1^3) s. **[code]**
+
+### Envelopes and LFOs
+
+- Each segment ramps x from 0 to 1 over its time and follows (e^(kx) - 1) /
+  (e^k - 1), k = -7.5 slope. A note restarts the attack from the initial
+  level. Loop modes: None, Trigger (ignores note-off), Loop (the tail, then
+  again), AD Loop. The Mod envelope holds its loop through note-off unless
+  LegacyEnvLoopBehaviour. Link Envelopes gives engine B engine A's.
+  **[code]** **[measured]**
+- LFO 1: six generators (Basic Shapes, Ramp, Wander, Alternate, Euclid,
+  Pulsate) and two of 19 transformers in series; LFO 2: six plain waves.
+  Free rates in Hz, Tempo divisions as Drift's; Retrigger restarts the
+  phase. **[code]** **[measured]** (rates, phase offset, shapes)
+
+### Modulation matrix **[measured]**
+
+- 25 targets per engine, 19 sources each. A target takes the sum of amount
+  x the bipolar source, and the gain targets (Volume, Amp Sustain, Mod
+  Sustain) the product of max(0, 1 + a u - a+). **[code]** **[measured]**
+- Sources: the two engines' Amp and Mod envelopes, LFO 1 before and after
+  its transformers, LFO 2; velocity (2v - 1 | v), the note ((n - 60)/48 |
+  n/120), pitch bend, per-note bend, pressure, slide, the mod wheel, a
+  random value per copy, and Spread (the copy's position x Spread).
+- Scales, each measured on a render: Detune 1 semitone per unit, Pitch Mod
+  48, Pitch Quant 48 rounded to whole semitones, the macros 1, Filter Freq
+  10 octaves, Tone and Pan 2 (their knobs' ranges), the times and free LFO
+  rates through their knobs' cubic position (a time is 40 s x pos^3, a rate
+  78.7 Hz x pos^3), Tempo rates 22 divisions.
+- The note source's scale for Filter Freq disagrees with Sugar Bass's
+  render. **[open]**
+
+### Voices
+
+- Poly 2, 3, 4, 5, 6, 8 or 12 voices, or Mono; the oldest released voice is
+  stolen first, fading over 1 ms. Mono legato moves the voice without
+  restarting it, and a note-off returns to the newest key still held.
+  Glide: portamento in semitones over Glide Time, Glissando by whole steps,
+  from the newest key held. **[code]**
+- Spread positions: copies at symmetric positions in [-1, 1]; a single
+  copy takes its note's arrival slot among the voice count.
+  ResetToVoiceOffset starts the phase at frac(6 x the position), unscaled
+  by Spread. **[code]** **[measured]**
+- The drive (two tanh stages after up to 18 dB in) and the limiter (4:1
+  above -6 dBFS, 10 ms attack, 100 ms release, at the device's level) run
+  per copy. **[code]** **[measured]** (where the limiter listens)
+
+### The fits so far
+
+Two rounds, 282 single-change renders (third-octave bands within 60 dB of
+each render's loudest): the output chain, levels, pan, tone, drive,
+limiter, tuning, unison, envelopes, both LFOs and every matrix target
+within 0.1 dB rms; Basic Shapes, Dual Basic, Square 5th, Sub, Harmonic
+FM, Squelch, Simple FM, Tarp at its lower macros, Chip and Filtered Noise
+within 0.6, Shepard's Pi, Extratone and Bitgrunge within 2; the random
+ones (Swarm, Rain, Crackle, Bubble, Noise Loop) at their own spread. 21
+factory presets (octave bands): 13 within 1 dB (Carbon String 0.0,
+Vertical Bass 0.1, Acid Kick, Key Ups and Drivetime Sine 0.2, Fatal Bass,
+Bully Bass, Woozy Bass and Old School Raver 0.3, Plastic Lead and FM Organ
+0.4, Detuned String Machine 0.7, Flab 0.9); Starchestra 2.0, Plate Kick
+2.3, Happy Chords 2.7, Megatripolis 3.7, Sawstyle 6.3, Granny State 7.5,
+Lively Ringer 10.0, Sugar Bass 34 (the note into Filter Freq).
+
 ## Decisions
 
 | Decision | Proposal | State |
