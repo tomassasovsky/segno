@@ -288,10 +288,29 @@ static void build_modes(le_collision_res* r, int32_t type, int32_t n, float aspe
   (void)r;
 }
 
-/* A mode's shape at x along the bar (and y across, for 2-D types). */
-static float shape(int32_t type, int32_t m, int32_t n, float x) {
-  if (type == 3 || type == 4) return sinf((float)m * CV_PI * x) * sinf((float)n * CV_PI * 0.44375f);
-  return sinf((float)m * CV_PI * x);
+/* A mode's shape at x along the bar (and y across, for 2-D types), read off
+ * the grid the engine samples it on: N + 2 points from end to end for a bar
+ * of N modes, read linearly; G x G points for a membrane or plate, G =
+ * floor(sqrt N) + 3, read bilinearly. */
+static float shape(int32_t type, int32_t m, int32_t n, float x, int32_t modes) {
+  if (type == 3 || type == 4) {
+    int32_t s = (int32_t)sqrtf((float)modes);
+    if ((s + 1) * (s + 1) <= modes) s++;
+    const float span = (float)(s + 2); /* G - 1 */
+    const float tx = clampf(x, 0.0f, 1.0f) * span, ty = 0.44375f * span;
+    const float ix = fminf(floorf(tx), span - 1.0f), iy = floorf(ty);
+    const float fx = tx - ix, fy = ty - iy;
+    const float a = CV_PI * (float)m / span, b = CV_PI * (float)n / span;
+    const float x0 = sinf(a * ix), x1 = sinf(a * (ix + 1.0f));
+    const float y0 = sinf(b * iy), y1 = sinf(b * (iy + 1.0f));
+    return (x0 + fx * (x1 - x0)) * (y0 + fy * (y1 - y0));
+  }
+  const float span = (float)(modes | 1); /* N + 1 for the even mode counts */
+  const float t = clampf(x, 0.0f, 1.0f) * (float)(modes + 1);
+  const float j = fminf(floorf(t), (float)modes);
+  const float f = t - j, a = CV_PI * (float)m / span;
+  const float s0 = sinf(a * j), s1 = sinf(a * (j + 1.0f));
+  return s0 + f * (s1 - s0);
 }
 
 /* ---- voices ---- */
@@ -377,14 +396,15 @@ static float bq_tick(le_collision_bq* q, float x) {
   return y;
 }
 
-/* RBJ low-pass, high-pass and band-pass at f Hz, quality q. */
+/* RBJ low-pass, high-pass and band-pass (constant skirt: its peak gain is
+ * q) at f Hz, quality q. */
 static void bq_filter(le_collision_bq* bq, int32_t type, float f, float q, float rate) {
   f = clampf(f, 0.0003f * rate, 0.45f * rate);
   q = clampf(q, 0.05f, 100.0f);
   const float w = 2.0f * CV_PI * f / rate, c = cosf(w), s = sinf(w), a = s / (2.0f * q);
   if (type == 0) bq_set(bq, (1.0f - c) / 2.0f, 1.0f - c, (1.0f - c) / 2.0f, 1.0f + a, -2.0f * c, 1.0f - a);
   else if (type == 1) bq_set(bq, (1.0f + c) / 2.0f, -(1.0f + c), (1.0f + c) / 2.0f, 1.0f + a, -2.0f * c, 1.0f - a);
-  else bq_set(bq, a, 0.0f, -a, 1.0f + a, -2.0f * c, 1.0f - a);
+  else bq_set(bq, s / 2.0f, 0.0f, -s / 2.0f, 1.0f + a, -2.0f * c, 1.0f - a);
 }
 
 /* ---- the matrix ---- */
@@ -570,9 +590,9 @@ static void tune_res(le_collision* d, le_collision_voice* v, int32_t r, float pi
     rs->a2[k] = (1.0f - g) / (1.0f + g);
     const float B = powf(ratio[k] / 4.0f, bright) * exp2f(pitch);
     const float G = g * amp * B / (2.0f * alpha * (1.0f + g));
-    rs->e[k] = 0.5f * shape(type, mm[k], nn[k], hit);
-    rs->gl[k] = 3000.0f * G * 0.5f * shape(type, mm[k], nn[k], xl);
-    rs->gr[k] = 3000.0f * G * 0.5f * shape(type, mm[k], nn[k], xr);
+    rs->e[k] = 0.5f * shape(type, mm[k], nn[k], hit, n);
+    rs->gl[k] = 3000.0f * G * 0.5f * shape(type, mm[k], nn[k], xl, n);
+    rs->gr[k] = 3000.0f * G * 0.5f * shape(type, mm[k], nn[k], xr, n);
     used = k + 1;
     top_w = th;
     top_b = B;
@@ -620,6 +640,8 @@ static void start_voice(le_collision* d, le_collision_voice* v, uint32_t origin,
     memset(&v->mnoise, 0, sizeof(v->mnoise));
     memset(&v->nf1, 0, sizeof(v->nf1));
     memset(&v->nf2, 0, sizeof(v->nf2));
+    memset(v->nf_step, 0, sizeof(v->nf_step));
+    v->nf_left = -1;
     v->env = 0.0f;
     for (int32_t l = 0; l < 2; ++l) v->lfo[l].out = v->lfo[l].rnd = v->lfo[l].rnd_prev = 0.0f;
   }
@@ -872,6 +894,21 @@ static void tick_lfos(le_collision* d, le_collision_voice* v, int advance) {
   }
 }
 
+/* The noise filters' coefficients at the envelope's current value. */
+static void noise_filter(const le_collision* d, const le_collision_voice* v, le_collision_bq* q1, le_collision_bq* q2) {
+  const float rate = (float)d->sample_rate;
+  const int32_t type = vi(d, LE_COLLISION_NOISE_FILTER);
+  const float f = k_exp(d, LE_COLLISION_NOISE_FREQ, 50.0f, 18000.0f) * exp2f(v->dest[LE_COLLISION_D_NOISE_FREQ]) *
+                  exp2f(vf(d, LE_COLLISION_NOISE_FREQ_ENV) * v->env);
+  if (type == 3) {
+    const float w = k_lin(d, LE_COLLISION_NOISE_Q, 0.5f, 9.0f);
+    bq_filter(q1, 1, clampf(f / exp2f(0.5f * w), 50.0f, 18000.0f), 0.707f, rate);
+    bq_filter(q2, 0, clampf(f * exp2f(0.5f * w), 50.0f, 18000.0f), 0.707f, rate);
+  } else {
+    bq_filter(q1, type, f, k_exp(d, LE_COLLISION_NOISE_Q, 0.2f, 3.0f), rate);
+  }
+}
+
 static void tick_voice(le_collision* d, le_collision_voice* v) {
   const float rate = (float)d->sample_rate;
   /* the noise source off: its envelope idle, so the voice can end */
@@ -914,19 +951,6 @@ static void tick_voice(le_collision* d, le_collision_voice* v) {
     if (rs->pe != 0.0f) {
       const float next = rs->pe - rs->pe_step * (float)LE_COLLISION_TICK;
       rs->pe = (rs->pe > 0.0f) == (next > 0.0f) ? next : 0.0f;
-    }
-  }
-  /* the noise filter, every tick */
-  if (vi(d, LE_COLLISION_NOISE_ON)) {
-    const int32_t type = vi(d, LE_COLLISION_NOISE_FILTER);
-    const float f = k_exp(d, LE_COLLISION_NOISE_FREQ, 50.0f, 18000.0f) * exp2f(v->dest[LE_COLLISION_D_NOISE_FREQ]) *
-                    exp2f(vf(d, LE_COLLISION_NOISE_FREQ_ENV) * v->env);
-    if (type == 3) {
-      const float w = k_lin(d, LE_COLLISION_NOISE_Q, 0.5f, 9.0f);
-      bq_filter(&v->nf1, 1, clampf(f / exp2f(0.5f * w), 50.0f, 18000.0f), 0.707f, rate);
-      bq_filter(&v->nf2, 0, clampf(f * exp2f(0.5f * w), 50.0f, 18000.0f), 0.707f, rate);
-    } else {
-      bq_filter(&v->nf1, type, f, k_exp(d, LE_COLLISION_NOISE_Q, 0.2f, 3.0f), rate);
     }
   }
 }
@@ -1045,6 +1069,26 @@ static void render_voice(le_collision* d, le_collision_voice* v, float* left, fl
           v->env_seg = ENV_IDLE;
           v->env_step = 0.0f;
         }
+        /* the filters move every 10 ms, their coefficients ramping to the
+         * new values across the 10 ms; a fresh voice starts on them */
+        if (v->nf_left <= 0) {
+          le_collision_bq t1 = v->nf1, t2 = v->nf2;
+          noise_filter(d, v, &t1, &t2);
+          const int32_t per = d->sample_rate / 100;
+          float* c[10] = {&v->nf1.b0, &v->nf1.b1, &v->nf1.b2, &v->nf1.a1, &v->nf1.a2,
+                          &v->nf2.b0, &v->nf2.b1, &v->nf2.b2, &v->nf2.a1, &v->nf2.a2};
+          const float tg[10] = {t1.b0, t1.b1, t1.b2, t1.a1, t1.a2, t2.b0, t2.b1, t2.b2, t2.a1, t2.a2};
+          for (int32_t k = 0; k < 10; ++k) {
+            if (v->nf_left < 0) *c[k] = tg[k], v->nf_step[k] = 0.0f;
+            else v->nf_step[k] = (tg[k] - *c[k]) / (float)per;
+          }
+          v->nf_left = per;
+        }
+        v->nf_left--;
+        v->nf1.b0 += v->nf_step[0]; v->nf1.b1 += v->nf_step[1]; v->nf1.b2 += v->nf_step[2];
+        v->nf1.a1 += v->nf_step[3]; v->nf1.a2 += v->nf_step[4];
+        v->nf2.b0 += v->nf_step[5]; v->nf2.b1 += v->nf_step[6]; v->nf2.b2 += v->nf_step[7];
+        v->nf2.a1 += v->nf_step[8]; v->nf2.a2 += v->nf_step[9];
         float z = 2.0f * (float)((v->rng = v->rng * 1664525u + 1013904223u) >> 8) / 16777216.0f - 1.0f;
         z = bq_tick(&v->nf1, z);
         if (vi(d, LE_COLLISION_NOISE_FILTER) == 3) z = bq_tick(&v->nf2, z);
