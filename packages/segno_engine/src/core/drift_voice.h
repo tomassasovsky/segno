@@ -78,8 +78,8 @@ typedef struct le_drift_voice {
   int32_t lane;    /* 0..3 within its note's group */
   float velocity;  /* 0..1 */
   float key;       /* (note - 69) / 120 */
-  /* pitch: the glided note pitch and its target in log2 Hz (a glide moves
-   * evenly in pitch), and the voice's fixed ratio (voice mode detune,
+  /* pitch: the glided note frequency and its target in Hz (a glide moves
+   * evenly in hertz), and the voice's fixed ratio (voice mode detune,
    * per-key tuning) */
   float pitch;
   float pitch_target;
@@ -111,8 +111,11 @@ typedef struct le_drift_voice {
   float lp[12];
   int32_t lp_kind; /* the filter type lp holds the state of */
   float hp[2];
-  /* fade (stolen, struck again, cut, device change) */
+  /* fade (stolen, cut, device change) */
   float fade;
+  /* Reset Oscillator Phase: a note struck on a sounding voice waits while
+   * the voice's envelopes fall fast, then starts from silence */
+  int32_t pending;
 } le_drift_voice;
 
 /* Everything a chunk's samples read, derived from the stored values,
@@ -139,6 +142,7 @@ typedef struct le_drift_derived {
   float bend_ratio; /* pitch bend and Transpose */
   float glide;      /* the glide's one-pole coefficient */
   float fade_step;
+  float pending_fall; /* per sample, a pending voice's envelopes */
 } le_drift_derived;
 
 typedef struct le_drift {
@@ -168,6 +172,10 @@ typedef struct le_drift {
   float note_gain[128];
   float key_cents[128];
   float voice_cents[LE_DRIFT_VOICES];
+  /* filter II's state at rest, where a voice's filter starts */
+  float f2_rest[12];
+  /* the voice mode the blocks were last reset for (-1: not yet) */
+  int32_t block_mode;
   /* Poly allocation: where the round robin starts */
   int32_t next_voice;
   int32_t voice_limit; /* sounding voices allowed (the engine's overload) */
