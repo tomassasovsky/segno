@@ -112,18 +112,17 @@ control block, per note), and its order in the voice.
 | Decision | Proposal | State |
 | --- | --- | --- |
 | Where Drift renders | A new engine module beside `synth_voice.c`, with its own voice pool, behind the same instrument slots, note rings and MIDI routing (SEG-57 Part 2). An instrument is either a Segno patch or a device. | open |
-| Mono or stereo | Drift's Stereo mode and unison spread need two channels; instrument buses are mono today. Either stereo instrument buses, or Drift renders mono until they exist. | open |
+| Mono or stereo | Instrument buses become stereo now, for every instrument (Segno patches fill both channels with the same signal). Drift's Stereo mode and unison spread render as Live does. | owner, 2026-11-24 |
 | Preset reader | A pure Dart package (`packages/ableton_preset`): gunzip (`dart:io`), XML (`package:xml`), device kind plus a typed parameter map, and a list of what it could not read. | proposed |
 | What a session stores | The parameter values Segno uses, not the `.adv` file, so a session never depends on the preset staying on the drive. | proposed |
 | Where presets come from | The user's own copy: a USB drive or a folder copied to Internal. Nothing from Ableton ships in the image. | proposed |
-| UI | Drift presets appear in the Instruments sound library, by Live's folder names. Needs a Penpot change (pen section 54). | open |
+| UI: where presets appear | A separate Ableton section of the Instruments sound library, by device and then Live's folder names, apart from the 19 Segno patches. Needs a Penpot change (pen section 54). | owner, 2026-11-24 |
+| UI: editing | Drift's parameters are editable on the console, starting from the loaded preset; an edited sound is saved with the session. Needs a Drift editor screen in Penpot. | owner, 2026-11-24 |
 | Order after Drift | Operator, Wavetable, Analog, Meld, Tension, Collision, Electric; Simpler, Sampler and Impulse need the preset's sample files. | proposed |
 | CPU | Measured with `bench_instruments` at 96 kHz / 64 frames against the 667 µs period, as SEG-57 Part 1 did. A Drift voice costs more than a Segno patch voice; the voice limit follows the measurement. | proposed |
 
-## Open questions for the owner
+## Owner's answers (2026-11-24)
 
-1. Stereo instrument buses now, or Drift mono first?
-2. Does a Drift preset become a sound in the existing library (beside the 19
-   patches), or a separate "Ableton" section?
-3. Should Segno also expose Drift's parameters for editing on the console, or
-   only play presets as they are?
+1. Stereo instrument buses now.
+2. Ableton presets get their own section of the sound library.
+3. Drift's parameters are editable on the console.
