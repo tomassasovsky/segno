@@ -1251,6 +1251,27 @@ Open after round 5, with what the renders show:
   per-cycle one; neither width helps.
 - The unison delay, as after round 4.
 
+Round 6 (segno-analog-fit6: 38 presets that fail the held-out round, on a D2
+at 64, an F4 triad at 90 and an A5 at 120, with Live copies of the random
+ones) shows what separates them on unfitted notes:
+
+- The deterministic mono basses (Muted Dark Bass, Square Pure Bass, Saw
+  Sub Complex Bass) match Live's level within 0.3 dB while each note
+  sounds; they fail on the cells at the later notes' onsets, where Live's
+  note starts abruptly (a broadband click from the first sample) and
+  Segno's rises smoothly. Moving Segno's onsets by up to 60 samples does
+  not change those cells; letting a mono slot's oscillator run on through
+  silence helps Dual OSC Rubber Bass and hurts Muted Dark Bass. Open.
+- Square Pure Bass's A5 decays 6 dB faster in Live than in Segno, its D2
+  not at all: a key or velocity dependence of its filter envelope's
+  closing that no fit round has isolated.
+- Organ Church Slow's triad has 12 dB more at 10 to 16 kHz in Live, where
+  chain 2's key-tracked high-pass at Q 100 rings near its cutoff.
+- Dual OSC Buzz Lead plays in Live's level here (0.9 dB, its pitch
+  matched); its held-out loud notes (+7.6 dB) do not come back on these
+  notes. Starting a mono voice once for a chord's keys, without a
+  retrigger between them, made the other mono presets worse.
+
 ## Decisions
 
 | Decision | Proposal | State |
