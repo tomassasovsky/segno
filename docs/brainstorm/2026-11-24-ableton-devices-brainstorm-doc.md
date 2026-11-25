@@ -1,6 +1,6 @@
 # Ableton Live device presets on the pedal — brainstorm
 
-<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance kModBy kCarriers Celesta transconductances Bandpass Bitgrunge Csound Drivetime Extratone Filther Lofi Lowpass Megatripolis Minnaert Sawstyle Starchestra polyBLEP Metalic Formant formants Barney Asym quintic -->
+<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance kModBy kCarriers Celesta transconductances Bandpass Bitgrunge Csound Drivetime Extratone Filther Lofi Lowpass Megatripolis Minnaert Sawstyle Starchestra polyBLEP Metalic Formant formants Barney Asym quintic Wurli MKII -->
 
 **Date:** 2026-11-24
 **Issue:** SEG-109 (related: SEG-57, Segno's own instrument voices)
@@ -916,6 +916,93 @@ Still open: the unison detune's law past 0.5 (Organ Vibrato, at Detune 1,
 shows no spread in Live), the pitch envelope's shape (Kick Complex Perc),
 Organ Vibrato's even harmonics, the unison delay's law, Keyboard Stretch
 and Error, and the MPE destinations (stored, not played).
+
+## Electric: behavior
+
+Learned 2026-11-25 from Live 12.2.7's Electric engine (an AAS bundle, one
+reader), then measured against 69 Live renders: single-change patches
+around a centred reference, and all 17 factory presets, six of them also
+two octaves down or up. Tags as for Meld. Segno's implementation is
+`electric_voice.c`.
+
+### Structure
+
+- Per voice: a mallet pulse and a damper's noise burst excite a fork of
+  four resonators, whose sum goes through a pickup. The voices sum, then
+  Volume (2u^2, nothing after it), copied to both channels. **[code]**
+  **[measured]** (no further gain)
+- The engine moves in 1 ms blocks: a note strikes at the start of the
+  block after the one it arrives in. A key struck again while its voice
+  still rings fades that voice out across the block, then the fork and
+  pickup restart from rest. **[code]**
+- Knob positions follow the engine's 0..127 scale, as in Analog.
+  **[code]**
+
+### Mallet
+
+- Four one-pole stages, all the strike's energy put in at once: two at
+  the cutoff S 2^(k_key K - k_vel v), two 27 times higher. S =
+  Exp(10, 7593) Hz; the key and velocity amounts (4^(m/64) - 1)/3, so 1 at
+  the centre; velocity lowers the cutoff. **[code]**
+- The strike's size: Force (m/128 + 1/64) times 2^(2 (g_k P + g_v v)),
+  g_k = Lin(-0.5, 0.9) per octave of pitch, g_v = Lin(0, 3.5) per unit of
+  velocity. **[code]** (the 2 is the patch's fixed value)
+
+### Fork
+
+- Four constant-Q band-passes, reset at each strike: the tone bar at the
+  note (261.62 Hz at C4), the tine at 7.349 times the note, its partial
+  2.8169 times the tine, and the "mallet noise" at 367.31 Hz 2^N, which
+  does not follow the key. Their decay rates scale with the pitch.
+  **[code]** **[measured]** (the tine's ratio)
+- Levels and decays: Tone Bar Volume 10^(0.0109375 m - 1.1), Tine and
+  Noise 10^(0.021875 m - 2.5); the decays as halvings per second,
+  1024 e^(-(m/2 + 64)/14) for the tone bar, e^(-(m/2 + 32)/14) for the
+  tines (the partial at 0.7 of it), e^(-m/28) for the noise.
+  **[code]**
+- Tine Color is the tines' key exponent (m/32 - 1, 1 at the centre: no
+  key scaling) and Tine < Key their balance (cos and sin of a quarter
+  turn), the other way round from the controls' names. **[measured]**
+- Releasing the key switches the three tuned resonators to decay rates of
+  52.8, 38.3 and 26.8 per second over Release Time R = 2 x
+  10^(0.01171875 m - 1), at the pitch's scale, raising their tuning so
+  the damped ring stays at pitch. **[code]**
+
+### Damper and pickup
+
+- The damper fires at the strike and at the key's release, split between
+  them by Balance: a two-stage envelope at the Damper Tone (Exp(4, 3490)
+  Hz, following the key) over low-passed noise, into the fork only.
+  **[code]**
+- The pickup, latched at the strike. R (electromagnetic): the motion,
+  through a leaky integrator, sets a point on a softly saturating flux
+  profile; the output is the derivative of motion times flux. W
+  (electrostatic): the derivative of the motion times a profile peaking
+  near the rest point. Symmetry offsets the rest point (even harmonics),
+  Distance scales it; Amp In, Amp Out and Amp < Key set the levels.
+  **[code]**
+
+### Voices
+
+- 2 to 32 voices (Voices + 2); the oldest released voice is stolen first,
+  fading over 1 ms. A released voice ends after 10 ms below -100 dBFS.
+  Semitone and Detune shift the key by (S + D)/12 - 1.0417 octaves;
+  Keyboard Stretch only offsets every note by up to 7 cents (its scaling
+  input is unconnected in Live). **[code]** **[Segno]** (the voice end)
+
+### The fits so far
+
+69 renders (third-octave bands within 60 dB of each render's loudest,
+from the strike): total 1.09 dB rms; the reference at 0.5, every single
+change within 1.6 dB but six. The factory presets (octave bands): 19 of
+23 renders within 1.0 dB, twelve within 0.2 (E-Piano MKII Old, Short
+Sharp, Short Soft, Organ Soft, Wurli Classic, Wurli Short at 0.0); Vibes
+Soft 1.4 to 3.9 across its three octaves.
+
+Still open: at full Force < Velocity (20.4 dB) and full Tone Bar Volume
+(8.3 dB) Live's output carries more above 10 kHz in the first 0.3 s;
+Stiffness at 0 (5.9 dB); Live strikes about 16 samples later in its
+block than Segno.
 
 ## Decisions
 

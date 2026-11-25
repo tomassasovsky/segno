@@ -5285,6 +5285,7 @@ LE_EXPORT int32_t le_engine_instrument_sustain(le_engine* engine, int32_t slot,
 #define LE_INST_DEVICE_OPERATOR 2
 #define LE_INST_DEVICE_MELD 3
 #define LE_INST_DEVICE_ANALOG 4
+#define LE_INST_DEVICE_ELECTRIC 5
 
 typedef enum le_drift_param {
   LE_DRIFT_OSC1_TYPE = 0,      /* 0..6: Sine, Triangle, Shark Tooth, Saturated,
@@ -5736,14 +5737,60 @@ typedef enum le_analog_param {
 /* Chain `c` (0, 1), field `field`. */
 #define LE_ANALOG_CHAIN(c, field) (LE_ANALOG_CHAINS + (c) * LE_ANALOG_CHAIN_FIELDS + (field))
 
+/* Electric (docs/brainstorm/2026-11-24-ableton-devices-brainstorm-doc.md,
+ * "Electric: behavior"): a mallet strikes a fork of four resonators (the
+ * tone bar, two tine partials and a fixed-pitch "mallet noise"), a damper
+ * thumps it at note-on and note-off, and a pickup turns it into the output,
+ * in the values its presets store: knob positions 0..1, Semitone 0..24
+ * (12 in tune), Voices 0..30 and the pickup model 0/1, in the presets'
+ * order. */
+
+typedef enum le_electric_param {
+  LE_ELECTRIC_VOICES = 0,            /* 0..30: 2..32 voices */
+  LE_ELECTRIC_BEND_RANGE,            /* octaves, 0..1 */
+  LE_ELECTRIC_NOTE_BEND_RANGE,       /* semitones, 0..48 (MPE, stored) */
+  LE_ELECTRIC_VOLUME,                /* 0..1 */
+  LE_ELECTRIC_SEMITONE,              /* 0..24, 12 in tune */
+  LE_ELECTRIC_DETUNE,                /* 0..1, 0.5 in tune: +-50 cents */
+  LE_ELECTRIC_STRETCH,               /* 0..1 */
+  LE_ELECTRIC_MALLET_STIFFNESS,      /* 0..1: 10 Hz .. 7.6 kHz */
+  LE_ELECTRIC_STIFFNESS_KEY,         /* 0..1 */
+  LE_ELECTRIC_STIFFNESS_VEL,         /* 0..1 */
+  LE_ELECTRIC_MALLET_FORCE,          /* 0..1 */
+  LE_ELECTRIC_FORCE_KEY,             /* 0..1 */
+  LE_ELECTRIC_FORCE_VEL,             /* 0..1 */
+  LE_ELECTRIC_NOISE_PITCH,           /* 0..1 */
+  LE_ELECTRIC_NOISE_DECAY,           /* 0..1 */
+  LE_ELECTRIC_NOISE_AMOUNT,          /* 0..1 */
+  LE_ELECTRIC_NOISE_KEY,             /* 0..1 */
+  LE_ELECTRIC_RELEASE,               /* 0..1: the fork's release time */
+  LE_ELECTRIC_TINE_DECAY,            /* 0..1 */
+  LE_ELECTRIC_TINE_VOLUME,           /* 0..1 */
+  LE_ELECTRIC_TINE_KEY,              /* 0..1 */
+  LE_ELECTRIC_TINE_COLOR,            /* 0..1 */
+  LE_ELECTRIC_TONE_DECAY,            /* 0..1 */
+  LE_ELECTRIC_TONE_VOLUME,           /* 0..1 */
+  LE_ELECTRIC_PICKUP_SYMMETRY,       /* 0..1 */
+  LE_ELECTRIC_PICKUP_DISTANCE,       /* 0..1 */
+  LE_ELECTRIC_PICKUP_MODEL,          /* 0: R (electromagnetic), 1: W */
+  LE_ELECTRIC_PICKUP_IN,             /* 0..1 */
+  LE_ELECTRIC_PICKUP_OUT,            /* 0..1 */
+  LE_ELECTRIC_PICKUP_KEY,            /* 0..1 */
+  LE_ELECTRIC_DAMPER_TONE,           /* 0..1 */
+  LE_ELECTRIC_DAMPER_AMOUNT,         /* 0..1 */
+  LE_ELECTRIC_DAMPER_BALANCE,        /* 0..1: note-on .. note-off */
+  LE_ELECTRIC_PARAMS
+} le_electric_param;
+
 /* The most parameters any device takes. */
 #define LE_INST_DEVICE_MAX_PARAMS LE_MELD_PARAMS
 
-/* Gives `slot` device `device` (LE_INST_DEVICE_DRIFT, _OPERATOR, _MELD or
- * _ANALOG) with `values` (the device's parameter count of them, in its
- * le_<device>_param order: LE_DRIFT_PARAMS, LE_OPERATOR_PARAMS,
- * LE_MELD_PARAMS or LE_ANALOG_PARAMS; NULL: the device's defaults; each
- * clamped to its range). Ends a patch or device the slot
+/* Gives `slot` device `device` (LE_INST_DEVICE_DRIFT, _OPERATOR, _MELD,
+ * _ANALOG or _ELECTRIC) with `values` (the device's parameter count of
+ * them, in its le_<device>_param order: LE_DRIFT_PARAMS,
+ * LE_OPERATOR_PARAMS, LE_MELD_PARAMS, LE_ANALOG_PARAMS or
+ * LE_ELECTRIC_PARAMS; NULL: the device's defaults; each clamped to its
+ * range). Ends a patch or device the slot
  * played (its voices fade). Returns LE_OK, LE_ERR_INVALID (a bad slot,
  * device or NaN value), LE_ERR_CAPACITY (the note-on ring is full: nothing
  * changed, retry) or LE_ERR_NOT_RUNNING before configure. */

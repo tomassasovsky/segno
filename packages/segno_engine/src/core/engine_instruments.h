@@ -22,7 +22,7 @@ extern "C" {
 int le_instruments_create(le_engine* e);
 
 /* Slot `slot`'s instance of device `device` (LE_INST_DEVICE_*, a known
- * one): an le_drift, le_operator, le_meld or le_analog. For tests and the
+ * one): an le_drift, le_operator, le_meld, le_analog or le_electric. For tests and the
  * slot code; the audio thread owns it once the engine runs. */
 void* le_instruments_device(le_engine* e, int32_t device, int32_t slot);
 

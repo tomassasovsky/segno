@@ -54,6 +54,7 @@ const _enums = {
   'le_operator_param',
   'le_meld_param',
   'le_analog_param',
+  'le_electric_param',
 };
 
 Future<void> main() async {

@@ -2032,11 +2032,12 @@ external int le_engine_set_instrument(
   ffi.Pointer<ffi.Float> params,
 );
 
-/// Gives `slot` device `device` (LE_INST_DEVICE_DRIFT, _OPERATOR, _MELD or
-/// _ANALOG) with `values` (the device's parameter count of them, in its
-/// le_<device>_param order: LE_DRIFT_PARAMS, LE_OPERATOR_PARAMS,
-/// LE_MELD_PARAMS or LE_ANALOG_PARAMS; NULL: the device's defaults; each
-/// clamped to its range). Ends a patch or device the slot
+/// Gives `slot` device `device` (LE_INST_DEVICE_DRIFT, _OPERATOR, _MELD,
+/// _ANALOG or _ELECTRIC) with `values` (the device's parameter count of
+/// them, in its le_<device>_param order: LE_DRIFT_PARAMS,
+/// LE_OPERATOR_PARAMS, LE_MELD_PARAMS, LE_ANALOG_PARAMS or
+/// LE_ELECTRIC_PARAMS; NULL: the device's defaults; each clamped to its
+/// range). Ends a patch or device the slot
 /// played (its voices fade). Returns LE_OK, LE_ERR_INVALID (a bad slot,
 /// device or NaN value), LE_ERR_CAPACITY (the note-on ring is full: nothing
 /// changed, retry) or LE_ERR_NOT_RUNNING before configure.
@@ -4267,6 +4268,8 @@ const int LE_INST_DEVICE_ANALOG = 4;
 
 const int LE_INST_DEVICE_DRIFT = 1;
 
+const int LE_INST_DEVICE_ELECTRIC = 5;
+
 const int LE_INST_DEVICE_MAX_PARAMS = 1082;
 
 const int LE_INST_DEVICE_MELD = 3;
@@ -6077,6 +6080,156 @@ enum le_drift_param {
     78 => LE_DRIFT_HIQUALITY,
     79 => LE_DRIFT_PARAMS,
     _ => throw ArgumentError('Unknown value for le_drift_param: $value'),
+  };
+}
+
+/// Electric (docs/brainstorm/2026-11-24-ableton-devices-brainstorm-doc.md,
+/// "Electric: behavior"): a mallet strikes a fork of four resonators (the
+/// tone bar, two tine partials and a fixed-pitch "mallet noise"), a damper
+/// thumps it at note-on and note-off, and a pickup turns it into the output,
+/// in the values its presets store: knob positions 0..1, Semitone 0..24
+/// (12 in tune), Voices 0..30 and the pickup model 0/1, in the presets'
+/// order.
+enum le_electric_param {
+  /// 0..30: 2..32 voices
+  LE_ELECTRIC_VOICES(0),
+
+  /// octaves, 0..1
+  LE_ELECTRIC_BEND_RANGE(1),
+
+  /// semitones, 0..48 (MPE, stored)
+  LE_ELECTRIC_NOTE_BEND_RANGE(2),
+
+  /// 0..1
+  LE_ELECTRIC_VOLUME(3),
+
+  /// 0..24, 12 in tune
+  LE_ELECTRIC_SEMITONE(4),
+
+  /// 0..1, 0.5 in tune: +-50 cents
+  LE_ELECTRIC_DETUNE(5),
+
+  /// 0..1
+  LE_ELECTRIC_STRETCH(6),
+
+  /// 0..1: 10 Hz .. 7.6 kHz
+  LE_ELECTRIC_MALLET_STIFFNESS(7),
+
+  /// 0..1
+  LE_ELECTRIC_STIFFNESS_KEY(8),
+
+  /// 0..1
+  LE_ELECTRIC_STIFFNESS_VEL(9),
+
+  /// 0..1
+  LE_ELECTRIC_MALLET_FORCE(10),
+
+  /// 0..1
+  LE_ELECTRIC_FORCE_KEY(11),
+
+  /// 0..1
+  LE_ELECTRIC_FORCE_VEL(12),
+
+  /// 0..1
+  LE_ELECTRIC_NOISE_PITCH(13),
+
+  /// 0..1
+  LE_ELECTRIC_NOISE_DECAY(14),
+
+  /// 0..1
+  LE_ELECTRIC_NOISE_AMOUNT(15),
+
+  /// 0..1
+  LE_ELECTRIC_NOISE_KEY(16),
+
+  /// 0..1: the fork's release time
+  LE_ELECTRIC_RELEASE(17),
+
+  /// 0..1
+  LE_ELECTRIC_TINE_DECAY(18),
+
+  /// 0..1
+  LE_ELECTRIC_TINE_VOLUME(19),
+
+  /// 0..1
+  LE_ELECTRIC_TINE_KEY(20),
+
+  /// 0..1
+  LE_ELECTRIC_TINE_COLOR(21),
+
+  /// 0..1
+  LE_ELECTRIC_TONE_DECAY(22),
+
+  /// 0..1
+  LE_ELECTRIC_TONE_VOLUME(23),
+
+  /// 0..1
+  LE_ELECTRIC_PICKUP_SYMMETRY(24),
+
+  /// 0..1
+  LE_ELECTRIC_PICKUP_DISTANCE(25),
+
+  /// 0: R (electromagnetic), 1: W
+  LE_ELECTRIC_PICKUP_MODEL(26),
+
+  /// 0..1
+  LE_ELECTRIC_PICKUP_IN(27),
+
+  /// 0..1
+  LE_ELECTRIC_PICKUP_OUT(28),
+
+  /// 0..1
+  LE_ELECTRIC_PICKUP_KEY(29),
+
+  /// 0..1
+  LE_ELECTRIC_DAMPER_TONE(30),
+
+  /// 0..1
+  LE_ELECTRIC_DAMPER_AMOUNT(31),
+
+  /// 0..1: note-on .. note-off
+  LE_ELECTRIC_DAMPER_BALANCE(32),
+  LE_ELECTRIC_PARAMS(33);
+
+  final int value;
+  const le_electric_param(this.value);
+
+  static le_electric_param fromValue(int value) => switch (value) {
+    0 => LE_ELECTRIC_VOICES,
+    1 => LE_ELECTRIC_BEND_RANGE,
+    2 => LE_ELECTRIC_NOTE_BEND_RANGE,
+    3 => LE_ELECTRIC_VOLUME,
+    4 => LE_ELECTRIC_SEMITONE,
+    5 => LE_ELECTRIC_DETUNE,
+    6 => LE_ELECTRIC_STRETCH,
+    7 => LE_ELECTRIC_MALLET_STIFFNESS,
+    8 => LE_ELECTRIC_STIFFNESS_KEY,
+    9 => LE_ELECTRIC_STIFFNESS_VEL,
+    10 => LE_ELECTRIC_MALLET_FORCE,
+    11 => LE_ELECTRIC_FORCE_KEY,
+    12 => LE_ELECTRIC_FORCE_VEL,
+    13 => LE_ELECTRIC_NOISE_PITCH,
+    14 => LE_ELECTRIC_NOISE_DECAY,
+    15 => LE_ELECTRIC_NOISE_AMOUNT,
+    16 => LE_ELECTRIC_NOISE_KEY,
+    17 => LE_ELECTRIC_RELEASE,
+    18 => LE_ELECTRIC_TINE_DECAY,
+    19 => LE_ELECTRIC_TINE_VOLUME,
+    20 => LE_ELECTRIC_TINE_KEY,
+    21 => LE_ELECTRIC_TINE_COLOR,
+    22 => LE_ELECTRIC_TONE_DECAY,
+    23 => LE_ELECTRIC_TONE_VOLUME,
+    24 => LE_ELECTRIC_PICKUP_SYMMETRY,
+    25 => LE_ELECTRIC_PICKUP_DISTANCE,
+    26 => LE_ELECTRIC_PICKUP_MODEL,
+    27 => LE_ELECTRIC_PICKUP_IN,
+    28 => LE_ELECTRIC_PICKUP_OUT,
+    29 => LE_ELECTRIC_PICKUP_KEY,
+    30 => LE_ELECTRIC_DAMPER_TONE,
+    31 => LE_ELECTRIC_DAMPER_AMOUNT,
+    32 => LE_ELECTRIC_DAMPER_BALANCE,
+    33 => LE_ELECTRIC_PARAMS,
+    _ => throw ArgumentError('Unknown value for le_electric_param: $value'),
   };
 }
 
