@@ -76,7 +76,9 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   (`le_fx_monitor_job`), a monitor with no chain, the heard image where
   there is no chain, and the heard tail's ring, which keeps an instrument's
   right channel in a second buffer so a take's rendered tail starts from
-  both channels. A sound-start take arms on the louder channel.
+  both channels. That buffer is as large as the ring (2^21 floats, 8 MB at
+  96 kHz) and is mapped only for an instrument source a lane holding an
+  image records. A sound-start take arms on the louder channel.
 - What records one channel takes the mono sum (L + R) / 2: the clean take
   and the raw performance tap (#1805). Equal channels give that channel
   exactly, so a patch's clean take is bit-identical to the mono bus's.
