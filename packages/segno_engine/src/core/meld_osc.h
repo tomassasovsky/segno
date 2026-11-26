@@ -94,7 +94,10 @@ typedef struct le_meld_resampler {
  * generator, the recording low-pass and the random levels. */
 #define LE_MELD_LOOP_MAX 4800
 typedef struct le_meld_nloop {
-  float buf[3][LE_MELD_LOOP_MAX];
+  /* the three buffers, kept by the oscillator's owner (le_meld_osc_init):
+   * they hold nothing until the first use copies the fill in, so building
+   * an oscillator does not touch them */
+  float (*buf)[LE_MELD_LOOP_MAX];
   int32_t w[3];
   int32_t n;
   int32_t ra, rb, wr;
@@ -203,8 +206,10 @@ typedef struct le_meld_osc {
 /* Builds the shared tables (idempotent; call from a slow path first). */
 void le_meld_osc_tables(void);
 
-/* Prepares `o` at the host `rate`, seeding its random generator. */
-void le_meld_osc_init(le_meld_osc* o, float rate, uint32_t seed);
+/* Prepares `o` at the host `rate`, seeding its random generator. `loop`
+ * is three LE_MELD_LOOP_MAX buffers for Noise Loop that the caller keeps
+ * (uninitialised is fine: they are filled on first use). */
+void le_meld_osc_init(le_meld_osc* o, float rate, uint32_t seed, float (*loop)[LE_MELD_LOOP_MAX]);
 
 /* Selects `type` (LE_MELD_OSC_*). Its state starts afresh and its macros
  * jump to their targets. */

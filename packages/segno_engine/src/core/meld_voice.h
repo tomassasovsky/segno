@@ -154,6 +154,9 @@ typedef struct le_meld {
   le_meld_route routes[2][LE_MELD_ROUTES];
   int32_t route_n[2];
   le_meld_voice voices[LE_MELD_VOICE_SLOTS];
+  /* each oscillator's three Noise Loop buffers, last so le_meld_init can
+   * leave them out of its clear: they are filled on first use */
+  float loops[LE_MELD_VOICE_SLOTS][LE_MELD_COPIES][2][3][LE_MELD_LOOP_MAX];
 } le_meld;
 
 /* The default value of each parameter (an initialised device), and its
