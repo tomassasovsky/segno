@@ -1,4 +1,4 @@
-<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Quantizer autocorrelation tfz unmeasured retriggered isolations pul meldfit -->
+<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Quantizer autocorrelation tfz unmeasured retriggered isolations pul meldfit Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Perc Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penv penvd rndpan -->
 # Segno — Progress & Roadmap
 
 <!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs multicore smarttune -->
@@ -150,7 +150,8 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   PRD (a four-stage ladder) and OSR (a state-variable loop with a diode
   bounding its resonance), each fitted to Live's renders; SMP runs on
   MS2's section with its own constants. MS2's and SMP's high-passes are
-  fitted shapes; PRD's is not read yet: Clean's high-pass stands in.
+  fitted shapes (damping fitted at resonance 0 to 1); PRD's is not read
+  yet: Clean's high-pass stands in.
 - The routes, measured in a fifth and sixth round: sources bipolar or
   resting at 0, gain destinations attenuating by 1 - a+ + a u, the LFO's
   and pitch envelope's routes scaled by their own amounts, the pitch
@@ -167,6 +168,26 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   glide into a stolen voice, the MS2 and SMP high-passes, SMP's and PRD's
   resonance. Celesta, Bells Brushed Hits and Metallic FM are held by
   Live's random pan and phases; round 7 (52 renders) isolates the rest.
+- Round 7 and the held-out round (scorer round 2): Sync on the song's
+  sixteenths, LFO Rate and the crossfades taking controllers as bipolar
+  (Analog Bouquet Brass now passes), the MS2 high-pass's damping, legato
+  keeping the first note's key scaling. 324 of 349 fit renders, 9 of 10
+  presets; held out 32 of 67 (from 29). Live's random pan and phases
+  differ between instances, so Segno draws its own. Round 8 (81 renders)
+  plays the failing held-out kinds with another phrase.
+- Round 8: the pitch envelope moves the LFO rate in ratio, the Volume
+  route scales the voice's output (not the modulators, after the
+  shaper), Res takes controllers as bipolar, a loop's restart runs a
+  minimal attack. 335 of 390 fit renders (round 8 13 of 41, from 9), 8 of
+  10 presets; held out 35 of 67 (from 32).
+- Round 9: the pitch envelope's one-pole keeps one shape whatever its
+  span, Res, Filter Drive and Aux Env are gain destinations, OSR's
+  self-oscillation refitted, envelope segments last whole samples. 363 of
+  419 fit renders (round 9 23 of 29), 8 of 10 presets; held out 36 of 67.
+- Held-out pass: Beat and Sync retrigger a whole period after their start,
+  a releasing envelope ends at 10^-3 and its voice a block later, a chord
+  joining a voice that took a sounding one's place does not glide. 365 of
+  419 fit renders, 8 of 10 presets; held out 38 of 67.
 - A voice costs 2.7 us per period at 48 kHz on the dev machine, 4.5 with
   Antialias (a Drift voice 7.1).
 
@@ -187,7 +208,48 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
 - What still fails is Drift Depth (Segno's tuning values are its own by
   rule; with Live's table in a scratch check the drift renders passed) and
   random sources (noise, Sample & Hold) that no render can match draw for
-  draw. Bloom Pad's filter peak (37 cents low) waits on round 16.
+  draw. Round 16: key tracking is a blend in hertz ((1 - t) + t f / 440,
+  which fixed Bloom Pad's filter peak), and Live's drift is the same in
+  every instance. Strict score 207 of 244 with round 16; held-out 8 of 89.
+- Round 17: Drift Depth now uses Segno's own tables with the statistics
+  measured on Live (per key: mean +1.18, spread 3.63 cents per unit,
+  neighbours correlated 0.53; per voice: mean +2.26, spread 7.2,
+  independent), and Unison's lanes run sharpest first as the code orders
+  them. Strict score 204 of 263 (presets 0 of 5); with measured values in
+  a scratch build 245 of 263: 41 renders fail only on the exact drift
+  values, pending the owner's decision on measured per-key values.
+  Held-out: 8 of 89 (14 of 89 with the measured values).
+- The owner allowed values measured from Live's rendered audio: Drift
+  Depth uses the measured per-key and per-voice tables (round 17). Strict
+  score 247 of 263, factory presets 3 of 5 (Bloom Pad, Euphoria Lead,
+  80s Tape).
+- Round 18 (51 renders): keys outside C1..B5 carry no drift offset, the
+  per-voice offset does not depend on the key, the per-key offset follows
+  the key played, and C1..F#1 are remeasured (round 17's windows were too
+  short there). A Ratio-mode LFO follows a Mono lane's octave (Crunch
+  Arcade: pitch an octave off before, tf 11.8 to 3.1), and the cycling
+  envelope in Ratio mode on a pitch slot is phase modulation (Bellatine:
+  336 cents sharp before, tf 15.7 to 2.9). Strict score 252 of 296 before
+  and after with round 18 included, factory presets 3 of 5; held-out 14 of
+  89 (Bellatine and Crunch Arcade much closer, still failing).
+- Round 19 (39 renders): Osc 2 has its own per-voice drift offset on top
+  of Osc 1's (tape-chord's stereo 1.87 to 0.04 dB); the voice's output
+  clip is 0.35 and the filter input's negative side runs on to -1.6 (hot
+  inputs into either filter within 1.7 dB rms, from up to 8.4); the
+  cycling envelope's phase modulation is centred on its middle; the Ratio
+  rates follow the per-key drift. The Key source, Pulse's shape clamp and
+  when a releasing voice is free already matched. Strict score 300 of 335
+  (round 19 included; 264 of the 296 scored before, from 252), factory
+  presets 3 of 5; held-out 45 of 89, from 14.
+- Round 20 (16 renders): Drift Depth's per-voice tables follow the
+  preset's SerialNumber (clamped to 0..8388607; each serial its own
+  values, the per-key table shared). Segno carries the measured tables of
+  the factory presets' serials (0, 2217915, 8388607) and serial 0's for
+  any other; SerialNumber is a new device parameter
+  (`LE_DRIFT_SERIAL_NUMBER`), which the preset reader must pass. Monday
+  Morning, Synth on Screen, Grimer Bass and Game Console now pass. Strict
+  score 318 of 351 (rounds 19 and 20 included), factory presets 3 of 5;
+  held-out 47 of 89.
 
 ## November 2026 Drift's filter II as an MS-20 circuit model (SEG-109 P4, round 4)
 

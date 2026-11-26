@@ -5729,7 +5729,12 @@ enum le_drift_param {
 
   /// 0/1
   LE_DRIFT_HIQUALITY(78),
-  LE_DRIFT_PARAMS(79);
+
+  /// 0..8388607: the preset's SerialNumber,
+  /// which picks Drift Depth's per-voice
+  /// tuning
+  LE_DRIFT_SERIAL_NUMBER(79),
+  LE_DRIFT_PARAMS(80);
 
   final int value;
   const le_drift_param(this.value);
@@ -5814,7 +5819,8 @@ enum le_drift_param {
     76 => LE_DRIFT_TRANSPOSE,
     77 => LE_DRIFT_RESET_OSC_PHASE,
     78 => LE_DRIFT_HIQUALITY,
-    79 => LE_DRIFT_PARAMS,
+    79 => LE_DRIFT_SERIAL_NUMBER,
+    80 => LE_DRIFT_PARAMS,
     _ => throw ArgumentError('Unknown value for le_drift_param: $value'),
   };
 }

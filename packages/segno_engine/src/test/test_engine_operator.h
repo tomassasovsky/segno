@@ -436,6 +436,48 @@ static void test_operator_strict_fits(void) {
   CHECK(c0 > 0.0 && fabs(c1 / c0) < 0.1);
 }
 
+/* Round 8's fits: the Volume route scales the voice's output and leaves
+ * the modulators whole (an FM pair's sideband against its carrier is the
+ * same at velocity 64 as at 127 with velocity +100 % on Volume). */
+static void test_operator_round8_fits(void) {
+  printf("test_operator_round8_fits\n");
+  enum { N = 16384 };
+  static float l[N], r[N];
+  double ratio[2], level[2];
+  const int32_t vels[2] = {127, 64};
+  for (int k = 0; k < 2; ++k) {
+    opr_reference(&g_opr);
+    opr_set(&g_opr, LE_OPERATOR_ALGORITHM, 0.0f);
+    opr_op(&g_opr, 1, LE_OPERATOR_OP_ON, 1.0f);
+    opr_op(&g_opr, 1, LE_OPERATOR_OP_COARSE, 2.0f);
+    opr_op(&g_opr, 1, LE_OPERATOR_OP_VOLUME, 0.3f);
+    opr_set(&g_opr, LE_OPERATOR_ROUTE, 20.0f); /* velocity, route 0: Volume */
+    opr_set(&g_opr, LE_OPERATOR_ROUTE + 1, 100.0f);
+    CHECK(le_operator_note_on(&g_opr, 1, 60, vels[k], 0) == 0);
+    le_operator_render(&g_opr, l, r, N);
+    const double c = opr_component(l + N / 2, N / 2, opr_note_hz(60));
+    const double sb = opr_component(l + N / 2, N / 2, 3.0 * opr_note_hz(60));
+    ratio[k] = sb / c;
+    level[k] = c;
+  }
+  CHECK(fabs(ratio[1] / ratio[0] - 1.0) < 0.01);
+  CHECK(fabs(level[1] / level[0] - 64.0 / 127.0) < 0.01);
+  /* round 9: the mod wheel at rest with +100 % on Aux Env silences the
+   * pitch envelope (a gain destination); a +12 semitone level then plays
+   * the note's own pitch */
+  opr_reference(&g_opr);
+  opr_op(&g_opr, 0, LE_OPERATOR_OP_PITCH_ENV_ON, 1.0f);
+  opr_set(&g_opr, LE_OPERATOR_PITCH_ENV_ON, 1.0f);
+  opr_set(&g_opr, LE_OPERATOR_PITCH_ENV + LE_OPERATOR_ENV_ATTACK_LEVEL, 12.0f);
+  opr_set(&g_opr, LE_OPERATOR_PITCH_ENV + LE_OPERATOR_ENV_DECAY_LEVEL, 12.0f);
+  opr_set(&g_opr, LE_OPERATOR_PITCH_ENV + LE_OPERATOR_ENV_SUSTAIN, 12.0f);
+  opr_set(&g_opr, LE_OPERATOR_ROUTE + 16, 19.0f); /* mod wheel, route 0: Aux Env */
+  opr_set(&g_opr, LE_OPERATOR_ROUTE + 17, 100.0f);
+  CHECK(le_operator_note_on(&g_opr, 1, 60, 127, 0) == 0);
+  le_operator_render(&g_opr, l, r, N);
+  CHECK(opr_component(l + N / 2, N / 2, opr_note_hz(60)) > 0.9);
+}
+
 /* Voice bookkeeping: a mono legato note whose held voice was taken still
  * sounds; glide starts only while a voice sounds; fading a Spread note
  * reports its two voices; a Trigger-mode voice frees once it is silent,
@@ -597,6 +639,7 @@ static void run_operator_tests(void) {
   test_operator_controllers_rest();
   test_operator_voice_bookkeeping();
   test_operator_strict_fits();
+  test_operator_round8_fits();
   test_engine_operator_slot_matches_offline();
   test_engine_operator_params_and_switching();
   test_engine_operator_midi();
