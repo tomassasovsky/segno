@@ -20,10 +20,19 @@
 #define AV_PI_D 3.14159265358979323846
 /* The oscillator's pitch tick, samples. */
 #define AV_OSC_TICK 40
-/* fit: the pitch envelope falls over 1.035 x Exp(0.01, 10) s (penv-1-t015's
- * zero crossings and tail phase, the Kick Complex Perc renders; the
- * sweeps' slopes put it at 1.02 to 1.025 for 0.3 and 0.4) */
-#define AV_PENV_K 1.035f
+/* fit: the pitch envelope's length over Exp(0.01, 10) s, by the time knob
+ * (each value the best fit of a full-depth sweep's onset and 8 Hz tail:
+ * segno-analog-fit7 penv7-t005 .. t060, penv-1-t015, Kick Complex Perc);
+ * linear between the points, flat beyond them */
+static float penv_factor(float knob) {
+  static const float kAt[9] = {0.05f, 0.10f, 0.15f, 0.20f, 0.25f, 0.30f, 0.40f, 0.50f, 0.60f};
+  static const float kK[9] = {0.99f, 1.04f, 1.035f, 1.0275f, 1.025f, 1.0205f, 1.025f, 1.0243f, 1.0245f};
+  if (knob <= kAt[0]) return kK[0];
+  for (int32_t i = 1; i < 9; ++i) {
+    if (knob <= kAt[i]) return kK[i - 1] + (kK[i] - kK[i - 1]) * (knob - kAt[i - 1]) / (kAt[i] - kAt[i - 1]);
+  }
+  return kK[8];
+}
 
 enum {
   LE_ANALOG_VOICE_FREE = 0,
@@ -405,7 +414,11 @@ static void start_copy(le_analog* d, le_analog_voice* v, le_analog_copy* cp) {
     int from = 0;
     if (d->lv_used[v->lv] && ci(d, c, LE_ANALOG_FILTER_ENV + LE_ANALOG_ENV_LEGATO)) {
       ch->fenv = d->lv_fenv[v->lv][cp - v->c][c];
-      env_advance(&ch->fenv, d->age - d->lv_quiet[v->lv]);
+      /* fit: it runs on for 0.1 s after the voice goes quiet, then holds
+       * (fleg-on, fleg-on-mono, fleg-on-pos: 0.08 to 0.12 s fit, the whole
+       * gap leaves the later notes 2 to 5 dB too bright) */
+      const int32_t gap = d->age - d->lv_quiet[v->lv], run_on = d->sample_rate / 10;
+      env_advance(&ch->fenv, gap < run_on ? gap : run_on);
       from = ch->fenv.seg != LE_AAS_SEG_IDLE;
     }
     le_aas_env_start(&ch->fenv, &fe, v->velocity, rate, from);
@@ -417,7 +430,7 @@ static void start_copy(le_analog* d, le_analog_voice* v, le_analog_copy* cp) {
     ch->penv = 1.0f;
     ch->per = 0.0f;
     ch->otick = 0;
-    ch->penv_step = 1.0f / fmaxf(AV_PENV_K * le_aas_exp(0.01f, 10.0f, cf(d, c, LE_ANALOG_OSC_ENV_TIME)) * rate, 1.0f);
+    ch->penv_step = 1.0f / fmaxf(penv_factor(cf(d, c, LE_ANALOG_OSC_ENV_TIME)) * le_aas_exp(0.01f, 10.0f, cf(d, c, LE_ANALOG_OSC_ENV_TIME)) * rate, 1.0f);
     /* fit: the oscillators start where Live's do (the oscillator renders):
      * the saw halfway up its ramp (the sync slave too), the rectangle at the
      * start of its low part, the sub square low, the sync master at its
