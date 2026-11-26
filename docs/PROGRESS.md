@@ -114,9 +114,16 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   rates follow the per-key drift. The Key source, Pulse's shape clamp and
   when a releasing voice is free already matched. Strict score 300 of 335
   (round 19 included; 264 of the 296 scored before, from 252), factory
-  presets 3 of 5; held-out 45 of 89, from 14. Drift Depth's tables follow
-  the preset's SerialNumber (the presets with 2217915 or 8388607 are the
-  ones off pitch): round 20 is built to measure them.
+  presets 3 of 5; held-out 45 of 89, from 14.
+- Round 20 (16 renders): Drift Depth's per-voice tables follow the
+  preset's SerialNumber (clamped to 0..8388607; each serial its own
+  values, the per-key table shared). Segno carries the measured tables of
+  the factory presets' serials (0, 2217915, 8388607) and serial 0's for
+  any other; SerialNumber is a new device parameter
+  (`LE_DRIFT_SERIAL_NUMBER`), which the preset reader must pass. Monday
+  Morning, Synth on Screen, Grimer Bass and Game Console now pass. Strict
+  score 318 of 351 (rounds 19 and 20 included), factory presets 3 of 5;
+  held-out 47 of 89.
 
 ## November 2026 Drift's filter II as an MS-20 circuit model (SEG-109 P4, round 4)
 

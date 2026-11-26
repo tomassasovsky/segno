@@ -214,6 +214,7 @@ static const drift_param_def kParams[LE_DRIFT_PARAMS] = {
     [LE_DRIFT_TRANSPOSE] = {0.0f, -48.0f, 48.0f, 1},
     [LE_DRIFT_RESET_OSC_PHASE] = {0.0f, 0.0f, 1.0f, 1},
     [LE_DRIFT_HIQUALITY] = {1.0f, 0.0f, 1.0f, 1},
+    [LE_DRIFT_SERIAL_NUMBER] = {0.0f, 0.0f, 8388607.0f, 1},
 };
 
 float le_drift_default(int32_t param) {
@@ -475,30 +476,69 @@ static const float kKeyCents[60] = {
     0.90f, 2.83f, 3.29f, -0.43f, -1.28f, -0.00f, 0.13f, 0.41f, 0.16f, 1.35f,
     1.09f, 0.12f, 0.38f, -0.14f, 0.96f, 0.68f, 0.81f, 1.18f, -2.28f, 0.40f,
 };
-static const float kVoiceCents[32] = {
-    2.48f, 9.20f, 9.57f, 9.28f, -2.86f, 8.99f, -4.34f, 3.96f, 5.89f, 2.19f,
-    1.00f, 6.91f, -7.42f, -3.03f, 10.76f, -1.34f, 2.89f, -4.67f, -12.33f, 3.59f,
-    -4.33f, 4.67f, -4.88f, 7.44f, -11.87f, -1.30f, -12.83f, -1.56f, 9.76f,
-    0.24f, 11.13f, 11.25f,
+/* The per-voice offsets depend on the preset's SerialNumber (each serial
+ * its own values; the per-key table is the same for all). Measured for the
+ * three serials Live's factory presets hold, 0 (also -2147483648, which
+ * Live clamps to 0), 2217915 and 8388607 (also every value above, which
+ * Live clamps to it): per voice from each lane of 16 Stereo pairs alone on
+ * its channel at notes 84..99 (rounds 17 and 20; serials 2217915 and
+ * 8388607 cross-checked within 0.2 cent on their pairs at 24..83); Osc 2's
+ * extra from Osc 2 alone on the same pairs (rounds 19 and 20), the same
+ * within 0.14 cent at keys 8..83, at Osc 2 -1 octave, Detune +7 and
+ * Transpose +24. Any other serial has values of its own in Live (1, 12345
+ * measured: 17 and 20 cents rms from serial 0's); Segno uses serial 0's
+ * for them. */
+enum { TUNING_SETS = 3 };
+static const int32_t kTuningSerials[TUNING_SETS] = {0, 2217915, 8388607};
+static const float kVoiceCents[TUNING_SETS][32] = {
+    {2.48f, 9.20f, 9.57f, 9.28f, -2.86f, 8.99f, -4.34f, 3.96f, 5.89f, 2.19f,
+     1.00f, 6.91f, -7.42f, -3.03f, 10.76f, -1.34f, 2.89f, -4.67f, -12.33f,
+     3.59f, -4.33f, 4.67f, -4.88f, 7.44f, -11.87f, -1.30f, -12.83f, -1.56f,
+     9.76f, 0.24f, 11.13f, 11.25f},
+    {-11.79f, -11.91f, -6.31f, 4.99f, 6.26f, -11.56f, -12.12f, -1.21f, -4.17f,
+     5.03f, -13.33f, 10.91f, 12.79f, -7.13f, -4.49f, 1.34f, 10.98f, 0.99f,
+     10.78f, -8.11f, -3.59f, -10.64f, -10.95f, -11.65f, 10.30f, 4.25f, -0.40f,
+     7.65f, -7.38f, 10.99f, -5.35f, -7.51f},
+    {-3.90f, -5.35f, 12.87f, -3.67f, -4.73f, 11.47f, -3.45f, -0.21f, -7.71f,
+     4.26f, -5.93f, -9.95f, -8.52f, 10.62f, -5.80f, 1.59f, -4.39f, 5.13f,
+     -11.09f, -2.32f, 2.58f, 4.69f, 10.99f, 2.39f, -12.83f, 1.60f, 4.39f,
+     4.62f, 8.43f, -12.37f, 9.26f, -5.62f},
+};
+static const float kOsc2VoiceCents[TUNING_SETS][32] = {
+    {0.21f, -0.19f, -0.34f, -0.74f, -0.22f, 0.76f, -0.60f, 0.62f, -0.66f,
+     -0.04f, -0.53f, 0.40f, 0.19f, 0.67f, -0.67f, 0.79f, 0.76f, 0.25f, 0.22f,
+     0.83f, 0.75f, 0.27f, -0.81f, 0.21f, 0.80f, -0.23f, -0.03f, 0.31f, -0.70f,
+     -0.37f, -0.82f, 0.57f},
+    {0.70f, -0.20f, 0.83f, -0.49f, -0.39f, -0.81f, -0.82f, 0.76f, 0.75f,
+     0.51f, -0.16f, -0.54f, -0.77f, -0.05f, 0.25f, 0.41f, 0.26f, -0.12f,
+     0.79f, 0.52f, -0.44f, 0.21f, -0.60f, 0.01f, 0.32f, 0.55f, -0.56f, -0.25f,
+     0.32f, -0.15f, -0.76f, 0.70f},
+    {0.54f, -0.50f, -0.66f, 0.02f, 0.09f, -0.40f, 0.08f, 0.15f, 0.49f, -0.33f,
+     0.01f, 0.31f, -0.20f, 0.77f, -0.83f, 0.52f, -0.10f, -0.40f, -0.32f,
+     0.58f, -0.04f, 0.40f, -0.41f, -0.83f, 0.59f, -0.83f, -0.24f, 0.30f,
+     -0.67f, -0.10f, -0.38f, -0.78f},
 };
 
-/* Osc 2 adds one more offset per voice to the two above, the same at every
- * key, octave, Detune and Transpose. Measured on round 19 (Osc 2 alone, a
- * sine at Drift Depth 1, each lane of 16 Stereo pairs on its channel at
- * notes 84..99); the same extra within 0.14 cent at keys 8..83, at Osc 2
- * -1 octave, Detune +7 and Transpose +24. */
-static const float kOsc2VoiceCents[32] = {
-    0.21f,  -0.19f, -0.34f, -0.74f, -0.22f, 0.76f,  -0.60f, 0.62f,
-    -0.66f, -0.04f, -0.53f, 0.40f,  0.19f,  0.67f,  -0.67f, 0.79f,
-    0.76f,  0.25f,  0.22f,  0.83f,  0.75f,  0.27f,  -0.81f, 0.21f,
-    0.80f,  -0.23f, -0.03f, 0.31f,  -0.70f, -0.37f, -0.82f, 0.57f,
-};
+/* The tuning set a serial picks: its own measured one, else serial 0's. */
+static int32_t tuning_set(int32_t serial) {
+  for (int32_t i = 1; i < TUNING_SETS; ++i) {
+    if (serial == kTuningSerials[i]) return i;
+  }
+  return 0;
+}
+
+/* Loads tuning set `t` into the per-voice tables. */
+static void load_tuning(le_drift* d, int32_t t) {
+  for (int32_t i = 0; i < LE_DRIFT_VOICES; ++i) {
+    d->voice_cents[i] = kVoiceCents[t][i];
+    d->osc2_cents[i] = kOsc2VoiceCents[t][i];
+  }
+  d->tuning_set = t;
+}
 
 static float key_cents(int32_t note) {
   return note < 24 || note > 83 ? 0.0f : kKeyCents[note - 24];
 }
-
-static float voice_cents(int32_t voice) { return kVoiceCents[voice]; }
 
 /* The ISO 226:2003 40-phon equal-loudness level at 1/10-decade steps from
  * 20 Hz (the standard's frequencies and parameters). */
@@ -579,6 +619,10 @@ static void derive(le_drift* d) {
       d->voices[i].lfo_ph = lfo_start_phase(vi(d, LE_DRIFT_LFO_SHAPE));
       lfo_draw(&d->voices[i]);
     }
+  }
+  {
+    const int32_t t = tuning_set(vi(d, LE_DRIFT_SERIAL_NUMBER));
+    if (t != d->tuning_set) load_tuning(d, t);
   }
   x->osc1 = osc1_wave(vi(d, LE_DRIFT_OSC1_TYPE));
   x->osc2 = osc2_wave(vi(d, LE_DRIFT_OSC2_TYPE));
@@ -707,9 +751,8 @@ int32_t le_drift_init(le_drift* d, int32_t sample_rate) {
     d->key_cents[n] = key_cents(n);
   }
   f2_rest_state(d->f2_rest);
+  load_tuning(d, 0);
   for (int32_t i = 0; i < LE_DRIFT_VOICES; ++i) {
-    d->voice_cents[i] = voice_cents(i);
-    d->osc2_cents[i] = kOsc2VoiceCents[i];
     d->voices[i].rng = 0x9e3779b9u ^ (uint32_t)(i * 2654435761u);
     d->voices[i].lfo_mod = 1.0f;
     clear_lowpass(d, &d->voices[i], 0);

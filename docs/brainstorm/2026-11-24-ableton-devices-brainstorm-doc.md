@@ -393,16 +393,22 @@ written from it.
   Detune +7 and Transpose +24; with it tape-chord's stereo goes from 1.87
   to 0.04 dB. Transpose +24 leaves both oscillators' tables as they are
   (`o1-st-t24`, `o2-st-t24` within 0.02 cent).
-- The tables follow the preset's SerialNumber **[measured, open]**: the
-  factory presets hold 0, -2147483648 (0 in its low 23 bits), 2217915 and
-  8388607, and the presets off the serial-0 tables are exactly the ones
-  with the last two (Monday Morning about 12 cents flat throughout,
-  Synth on Screen, Grimer Bass, Game Console, each failing pitch). Six of
-  the 89 factory presets use them. Round 20 measures both serials' tables
-  and checks other values; Segno uses the serial-0 tables for every
-  preset until then.
+- The per-voice tables follow the preset's SerialNumber; the per-key
+  table is the same for every serial **[measured]** (round 20): Live
+  clamps the serial to 0..8388607 (8388608 plays 8388607's values,
+  -2147483648 serial 0's), and every serial measured has values of its
+  own (1 and 12345: 17 and 20 cents rms from serial 0's). The factory
+  presets hold 0, -2147483648, 2217915 and 8388607, so Segno carries the
+  measured per-voice and Osc 2 tables for serials 0, 2217915 and 8388607
+  (each from its Stereo pairs at 84..99, cross-checked within 0.2 cent on
+  pairs at 24..83) and uses serial 0's for any other serial **[Segno]**.
+  The presets that were off pitch on serial 0's tables (Monday Morning
+  12 cents, Synth on Screen, Grimer Bass, Game Console) now sit within
+  0.4 cent. Script: `dfit/drift_tables_serial.py`.
 - SerialNumber: a random number per instance, saved in the preset; it
-  selects Drift Depth's tables (see above). **[measured]**
+  selects Drift Depth's per-voice tables (see above) **[measured]**. The
+  preset reader must pass `Global_SerialNumber` as the device parameter
+  `LE_DRIFT_SERIAL_NUMBER` (integer, 0..8388607).
 - Glide: a one-pole in hertz (not in pitch) with time constant 0.144 x
   Glide **[measured]**: on Live's octave glides at 0.5, 1 and 2 s the
   distance to the new note in hertz falls by the same ratio every 50 ms,
@@ -541,9 +547,9 @@ What the strict score still fails, and why **[measured]**:
   and when a releasing voice counts as free (`free-tie-*`: the voice Live
   picks, read from its drift, matches Segno's for every gap). Strict score
   300 of 335 (264 of the 296 scored before round 19, from 252), factory
-  presets 3 of 5; held-out 45 of 89, from 14. Still failing: the four
-  presets with SerialNumber 2217915 or 8388607 (pitch; round 20), Chirp
-  Pluck and Clob Bass, the Mono presets Sol Bass, Seventy Two Bass, Rogue
+  presets 3 of 5; held-out 45 of 89, from 14. Round 20 then measured the
+  SerialNumber tables (see Voices): 318 of 351, held-out 47 of 89. Still
+  failing: Chirp Pluck and Clob Bass, the Mono presets Sol Bass, Seventy Two Bass, Rogue
   and Crunch Arcade (tf 3 to 4.5), Metallic Strings (random Sample & Hold),
   and filter I at a hot input with resonance (`drv-f1-g4-r07`, 2.0).
 - Round 16 settled two questions. Live's drift is the same in every

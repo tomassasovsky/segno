@@ -176,6 +176,7 @@ typedef struct le_drift {
   float key_cents[128];
   float voice_cents[LE_DRIFT_VOICES];
   float osc2_cents[LE_DRIFT_VOICES];
+  int32_t tuning_set; /* which serial's per-voice tables are loaded */
   /* filter II's state at rest, where a voice's filter starts */
   float f2_rest[12];
   /* the voice mode the blocks were last reset for (-1: not yet) */

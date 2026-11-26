@@ -562,6 +562,22 @@ static void test_drift_tuning_table(void) {
   CHECK(g_drift.voices[0].gain_l > g_drift.voices[0].gain_r);
 }
 
+/* The preset's SerialNumber picks the per-voice tuning: serials 2217915 and
+ * 8388607 (and above, clamped) their own measured values, any other serial
+ * serial 0's. */
+static void test_drift_serial_picks_tuning(void) {
+  printf("test_drift_serial_picks_tuning\n");
+  static float l[32], r[32];
+  static const struct { float serial, voice0; } k[] = {
+      {2217915.0f, -11.79f}, {2217914.0f, 2.48f}, {9.0e6f, -3.90f}, {0.0f, 2.48f}};
+  drift_init(&g_drift, DRIFT_SR);
+  for (int i = 0; i < 4; ++i) {
+    drift_set(&g_drift, LE_DRIFT_SERIAL_NUMBER, k[i].serial);
+    le_drift_render(&g_drift, l, r, 32);
+    CHECK(fabsf(g_drift.voice_cents[0] - k[i].voice0) < 0.005f);
+  }
+}
+
 /* An LFO in Ratio mode routed to pitch moves the oscillators' phase, not
  * their frequency: the phase accumulators run as without it. In Freq mode
  * the same routing is vibrato and they do not. The cycling envelope in
@@ -911,6 +927,7 @@ static void run_drift_tests(void) {
   test_drift_block_reset_lfo_phase();
   test_drift_filter2_starts_at_rest();
   test_drift_tuning_table();
+  test_drift_serial_picks_tuning();
   test_drift_ratio_lfo_is_phase_modulation();
   test_drift_mono_lane_ratio_lfo();
   test_drift_filter_input_clips_asymmetrically();
