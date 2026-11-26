@@ -13,6 +13,10 @@
 
 #include "fft.h"
 #include "ms2_section.h"
+/* Operator's OSR fit (round 9: self-oscillation level within 0.6 dB, pitch within
+ * 1 cent at 100 Hz and 6 at 1 kHz); Meld's Bandpass keeps the section's defaults. */
+#define LE_OSR_DK 0.85f
+#define LE_OSR_KAPPA 0.145f
 #include "osr_section.h"
 #include "synth_voice.h" /* LE_SYNTH_BEND, LE_SYNTH_MOD, LE_SYNTH_PRESSURE */
 
@@ -38,6 +42,11 @@ enum {
   DST_PITCH_ENV, DST_VOLUME, DST_PAN, DST_TONE, DST_TIME
 };
 enum { SRC_VELOCITY = 0, SRC_KEY, SRC_PRESSURE, SRC_BEND, SRC_MOD };
+
+/* The key a voice's key scalings follow: its first note's, kept through a
+ * legato glide (a mono triad's later notes keep the first's operator key
+ * scaling: diagnosed on a held-out preset, round 8 confirms) */
+#define VKEY(v) ((v)->key)
 
 /* ---- parameters ---- */
 
@@ -511,11 +520,16 @@ static void env_segment(le_operator_env* e, int32_t state, float y1, float ms, f
   e->t = 0.0;
   e->dt = 1.0 / n;
   /* slope 1: a one-pole that comes within ENV_EPS of the target as its time
-   * runs out */
-  /* the pitch envelope's runs on its frequency ratios */
-  const double d0 = e->ratio != 0.0f
-                        ? exp2((double)e->y0 * (double)e->ratio) - exp2((double)y1 * (double)e->ratio)
-                        : ((double)e->y0 - (double)y1) * (double)e->scale;
+   * runs out, its span measured in the scaled level. The pitch envelope's
+   * keeps one shape whatever its span, reaching 10^-3.95 of it (the curve's
+   * constant): falls and rises of 2 to 24 semitones at amounts 0.5 to 1
+   * all want the same rate (measured: round 9's penvd renders, the span
+   * the old rule would need 0.44 to 0.66 of a ratio unit every time) */
+  if (e->pitch) {
+    e->c = 9.0949 / fmax(n, 10.0);
+    return;
+  }
+  const double d0 = ((double)e->y0 - (double)y1) * (double)e->scale;
   const double span = fmax(fabs(d0), 2.0 * ENV_EPS);
   e->c = log(span / ENV_EPS) / fmax(n, 10.0);
 }
@@ -529,13 +543,18 @@ typedef struct env_ctx {
   float rate;
   float fglob;  /* EnvTime and its key scaling */
   float bpm;
+  double clock; /* the device clock at the chunk, samples (Sync's grid) */
 } env_ctx;
 
+/* from_initial: 1 at a note (a minimal attack starts at the peak), 2 at a
+ * loop's restart (it runs even a minimal attack: measured, Geigerzaehler
+ * Bleep and round 9 loop-minatt), 0
+ * from the current value (Beat and Sync). */
 static void env_attack(le_operator_env* e, const env_def* p, float fv, const env_ctx* c,
                        int from_initial) {
   const float fa = fv * c->fglob;
   if (from_initial) {
-    if (p->at <= 0.11f) {
+    if (p->at <= 0.11f && from_initial == 1) {
       /* a minimal attack starts at the peak */
       e->y = p->dl;
       env_segment(e, ENV_DECAY, p->sl, p->dt, fv * c->fglob, p->ds, c->rate);
@@ -548,7 +567,16 @@ static void env_attack(le_operator_env* e, const env_def* p, float fv, const env
 
 static void env_start(le_operator_env* e, const env_def* p, float fv, const env_ctx* c) {
   env_attack(e, p, fv, c, 1);
-  e->repeat = (double)kRepeatBeats[p->repeat] * 60.0 / (double)c->bpm * (double)c->rate;
+  const double period = (double)kRepeatBeats[p->repeat] * 60.0 / (double)c->bpm * (double)c->rate;
+  e->repeat = period;
+  if (p->loop == LOOP_SYNC) {
+    /* Sync: the first retrigger a period after the note, moved on to the
+     * next sixteenth of the device clock; the rest a period apart
+     * (measured: a note 0.1 s into the song retriggers at 0.25, 0.375 ..) */
+    const double grid = 0.25 * 60.0 / (double)c->bpm * (double)c->rate;
+    const double at = c->clock + period;
+    e->repeat = ceil(at / grid - 1e-6) * grid - c->clock;
+  }
 }
 
 static void env_release(le_operator_env* e, const env_def* p, float fv, const env_ctx* c) {
@@ -576,7 +604,10 @@ static float env_curve(float y0, float y1, float s, double t) {
 static float env_tick(le_operator_env* e, const env_def* p, float fv, const env_ctx* c) {
   if (p->loop == LOOP_BEAT || p->loop == LOOP_SYNC) {
     e->repeat -= 1.0;
-    if (e->repeat <= 0.0) {
+    /* the retrigger falls a whole period after its start, so one due at a
+     * note-off finds the release begun (measured: round 7's sync and beat
+     * renders, 0.69 dB to 0.14; held out, Pure Bell 8ths 6.0 to 0.1) */
+    if (e->repeat < 0.0) {
       e->repeat += (double)kRepeatBeats[p->repeat] * 60.0 / (double)c->bpm * (double)c->rate;
       if (e->state != ENV_RELEASE && e->state != ENV_OFF) env_attack(e, p, fv, c, 0);
     }
@@ -587,7 +618,10 @@ static float env_tick(le_operator_env* e, const env_def* p, float fv, const env_
   }
   if (e->state == ENV_OFF) return e->y;
   e->t += e->dt;
-  if (e->t >= 1.0) {
+  /* a segment lasts its time rounded up to whole samples, with no sample
+   * lost to rounding (measured: round 9 loop-minatt, 3029 samples a cycle
+   * for 0.1 + 13 + 50 ms, the first 3024) */
+  if (e->t >= 1.0 - 1e-9) {
     e->y = e->y1;
     switch (e->state) {
       case ENV_ATTACK:
@@ -603,7 +637,7 @@ static float env_tick(le_operator_env* e, const env_def* p, float fv, const env_
         }
         break;
       case ENV_LOOP:
-        env_attack(e, p, fv, c, 1);
+        env_attack(e, p, fv, c, 2);
         break;
       default:
         e->state = ENV_OFF;
@@ -695,6 +729,7 @@ void le_operator_set_tempo(le_operator* d, float bpm) {
 typedef struct op_mods {
   float m[LE_OPERATOR_DESTS];  /* the adding sum: amount x s */
   float g[LE_OPERATOR_DESTS];  /* the gain sum: amount x u - a+ */
+  float bi[LE_OPERATOR_DESTS]; /* amount x (2u - 1): u made bipolar */
   float lfo_rate;              /* LFO Rate, octaves */
   float time;                  /* Time, octaves */
 } op_mods;
@@ -702,6 +737,7 @@ typedef struct op_mods {
 static void route_add(op_mods* r, int32_t dst, float amount, float sb, float su) {
   r->m[dst] += amount * sb;
   r->g[dst] += amount * su - fmaxf(amount, 0.0f);
+  r->bi[dst] += amount * (2.0f * su - 1.0f);
 }
 
 /* `lfo` the LFO's output (shape x envelope), `penv_st` the pitch envelope's
@@ -709,15 +745,11 @@ static void route_add(op_mods* r, int32_t dst, float amount, float sb, float su)
 static void route_mods(const le_operator* d, const le_operator_voice* v, float lfo, float penv_st,
                        int with_lfo, op_mods* r) {
   memset(r, 0, sizeof(*r));
-  float self_rate = 0.0f;
   if (with_lfo && vi(d, LE_OPERATOR_LFO_ON)) {
     const float s = clampf(lfo, -1.0f, 1.0f);
-    const float a = vf(d, LE_OPERATOR_LFO_DEST_AMOUNT) / 100.0f * vf(d, LE_OPERATOR_LFO_AMOUNT);
-    if (vi(d, LE_OPERATOR_LFO_DEST) == DST_LFO_RATE) {
-      self_rate = a * s;
-    } else {
-      route_add(r, vi(d, LE_OPERATOR_LFO_DEST), a, s, 0.5f * (s + 1.0f));
-    }
+    route_add(r, vi(d, LE_OPERATOR_LFO_DEST),
+              vf(d, LE_OPERATOR_LFO_DEST_AMOUNT) / 100.0f * vf(d, LE_OPERATOR_LFO_AMOUNT), s,
+              0.5f * (s + 1.0f));
   }
   if (vi(d, LE_OPERATOR_PITCH_ENV_ON)) {
     const float s = clampf(penv_st / 48.0f, -1.0f, 1.0f);
@@ -726,7 +758,7 @@ static void route_mods(const le_operator* d, const le_operator_voice* v, float l
               s, 0.5f * (s + 1.0f));
   }
   const float sv = 2.0f * v->velocity - 1.0f;
-  const float sk = clampf(((float)v->note - vf(d, LE_OPERATOR_ROUTE_NEUTRAL_KEY)) / 63.5f, -1.0f, 1.0f);
+  const float sk = clampf(((float)VKEY(v) - vf(d, LE_OPERATOR_ROUTE_NEUTRAL_KEY)) / 63.5f, -1.0f, 1.0f);
   const float sb[LE_OPERATOR_ROUTE_SOURCES] = {sv, sk, d->pressure, d->bend, d->mod};
   const float su[LE_OPERATOR_ROUTE_SOURCES] = {v->velocity, 0.5f * (sk + 1.0f), d->pressure,
                                                0.5f * (d->bend + 1.0f), d->mod};
@@ -737,10 +769,10 @@ static void route_mods(const le_operator* d, const le_operator_voice* v, float l
     }
   }
   r->m[DST_OFF] = r->g[DST_OFF] = 0.0f;
-  /* LFO Rate: 8 octaves per unit; the LFO's own route adds, every other
-   * source attenuates like a gain destination (aftertouch at rest with
-   * +20 % slows the rate 1.6 octaves: OP Bass) */
-  r->lfo_rate = 8.0f * (self_rate + r->g[DST_LFO_RATE]);
+  /* LFO Rate: 8 octaves per unit of amount x (2u - 1), so aftertouch and
+   * the mod wheel at rest count as -1 there (measured: +20 % at rest slows
+   * the rate 1.6 octaves, -20 % speeds it 1.6) */
+  r->lfo_rate = 8.0f * r->bi[DST_LFO_RATE];
   r->time = 3.0f * r->m[DST_TIME]; /* 3 octaves per unit */
 }
 
@@ -757,6 +789,7 @@ static float lfo_periodic(int32_t type, double u);
 static float op_amp(const le_operator* d, const le_operator_voice* v, int32_t op);
 
 /* ---- voices ---- */
+
 
 /* Spread in whole percent: Live plays 0.5 % as off and 1 % as Spread
  * (measured) */
@@ -827,6 +860,7 @@ static env_ctx make_ctx(const le_operator* d, int32_t note, float rate, float ti
   c.fglob = time_mod * exp2f(3.0f * vf(d, LE_OPERATOR_ENV_TIME) / 100.0f -
                   6.0f * (vf(d, LE_OPERATOR_ENV_TIME_KEY) / 100.0f) * ((float)note - 70.0f) / 127.0f);
   c.bpm = d->bpm;
+  c.clock = d->clock;
   return c;
 }
 
@@ -836,7 +870,7 @@ static float penv_amount(const le_operator* d) {
 
 static void start_envelopes(le_operator* d, le_operator_voice* v) {
   const float rate = (float)d->sample_rate;
-  const env_ctx c = make_ctx(d, v->note, rate, v->time_mod);
+  const env_ctx c = make_ctx(d, VKEY(v), rate, v->time_mod);
   const float vel127 = v->velocity * 127.0f;
   for (int32_t op = 0; op < LE_OPERATOR_OPS; ++op) {
     const env_def e = read_env(d, LE_OPERATOR_OP(op, LE_OPERATOR_OP_ENV));
@@ -857,6 +891,7 @@ static void start_voice(le_operator* d, le_operator_voice* v, uint32_t origin, i
   v->rng = rng;
   v->state = LE_OPERATOR_VOICE_HELD;
   v->note = note;
+  v->key = note;
   v->origin = origin;
   v->serial = serial;
   v->side = side;
@@ -892,7 +927,7 @@ static void start_voice(le_operator* d, le_operator_voice* v, uint32_t origin, i
    * amplitude, 1 for the others */
   for (int32_t op = 0; op < LE_OPERATOR_OPS; ++op) v->env[op].scale = op_amp(d, v, op);
   v->fenv.scale = v->penv.scale = v->lenv.scale = 1.0f;
-  v->penv.ratio = penv_amount(d) / 12.0f;
+  v->penv.pitch = 1;
   start_envelopes(d, v);
   v->gl = v->gr = -1.0f; /* set at the first chunk without a ramp */
 }
@@ -921,7 +956,7 @@ static void held_drop(le_operator* d, uint32_t origin) {
 
 static void release_voice(le_operator* d, le_operator_voice* v) {
   v->state = LE_OPERATOR_VOICE_RELEASED;
-  const env_ctx c = make_ctx(d, v->note, (float)d->sample_rate, v->time_mod);
+  const env_ctx c = make_ctx(d, VKEY(v), (float)d->sample_rate, v->time_mod);
   const float vel127 = v->velocity * 127.0f;
   for (int32_t op = 0; op < LE_OPERATOR_OPS; ++op) {
     const env_def e = read_env(d, LE_OPERATOR_OP(op, LE_OPERATOR_OP_ENV));
@@ -965,6 +1000,13 @@ int32_t le_operator_note_on(le_operator* d, uint32_t origin, int32_t note, int32
                                        1000.0f / (float)LE_OPERATOR_CHUNK);
       v->glide_chunks = chunks < 1 ? 1 : chunks;
       v->pitch_step = ((float)note - v->pitch) / (float)v->glide_chunks;
+      /* a voice that has just taken a sounding voice's place (and so starts
+       * at its own pitch) takes the chord's later notes at theirs too
+       * (measured: Harsh FM Bass, round 8, 1.9 dB to 1.1) */
+      if (v->snap) {
+        v->glide_chunks = 0;
+        v->pitch = (float)note;
+      }
       v->note = note;
       v->origin = origin;
       retuned = 1;
@@ -1010,6 +1052,11 @@ int32_t le_operator_note_on(le_operator* d, uint32_t origin, int32_t note, int32
   } else {
     le_operator_voice* a = free_slot(d);
     if (a != NULL) start_voice(d, a, origin, note, vel, serial, SIDE_BOTH, pan_rnd, glide);
+  }
+  if (took) {
+    for (int32_t i = 0; i < LE_OPERATOR_VOICE_SLOTS; ++i) {
+      if (d->voices[i].serial == serial) d->voices[i].snap = 1;
+    }
   }
   d->last_pitch = (float)note;
   d->played = 1;
@@ -1234,8 +1281,9 @@ enum { CIRC_CLEAN = 0, CIRC_OSR, CIRC_MS2, CIRC_SMP, CIRC_PRD, CIRC_MS2_HP };
 
 /* MS2's and SMP's high-pass: a linear state-variable section's high output
  * plus c x its band output, so it falls 12 dB an octave just below the
- * cutoff and 6 below c x cutoff, damped by 2 (1 - feedback x q) (fit: the
- * HP renders' third-octave bands, c 0.43 for MS2 and 0.49 for SMP) */
+ * cutoff and 6 below c x cutoff, damped by 0.37 + 1.26 (1 - q)^1.32 (q
+ * at most 1: it does not self-oscillate) (fit: the HP renders' third-octave
+ * bands at resonance 0, 0.5 and 1, c 0.43 for MS2 and 0.49 for SMP) */
 #ifndef OP_MS2_HP_C
 #define OP_MS2_HP_C 0.43f
 #endif
@@ -1444,7 +1492,7 @@ static float op_amp(const le_operator* d, const le_operator_voice* v, int32_t op
     lvl *= 4.0f * g * g;
   }
   const float ks = opf(d, op, LE_OPERATOR_OP_KEY_SCALE) / 100.0f;
-  if (ks != 0.0f) lvl *= exp2f(ks * ((float)v->note - 60.0f) / 12.0f);
+  if (ks != 0.0f) lvl *= exp2f(ks * ((float)VKEY(v) - 60.0f) / 12.0f);
   return lvl;
 }
 
@@ -1466,7 +1514,8 @@ typedef struct chunk_ctx {
 /* Sets the voice's per-chunk operator increments, levels, filter, gains;
  * returns the filter target and LFO coefficients through the pointers. */
 static void voice_chunk(le_operator* d, le_operator_voice* v, const chunk_ctx* c,
-                        filter_target* ft, lfo_coef* lc, float* lfo_a, int32_t frames) {
+                        filter_target* ft, lfo_coef* lc, float* lfo_a, float* penv_a,
+                        int32_t frames) {
   const float rate = (float)d->sample_rate;
   /* glide */
   if (v->glide_chunks > 0) {
@@ -1481,10 +1530,13 @@ static void voice_chunk(le_operator* d, le_operator_voice* v, const chunk_ctx* c
   const float lfo_gain = route_gain(&rm, DST_LFO_AMOUNT);
   route_mods(d, v, v->lfo_out * lfo_gain, penv_st, 1, &rm);
   const float* mod = rm.m;
+  /* Aux Env (the pitch envelope's amount) is a gain destination: the mod
+   * wheel at rest with +100 % silences it (measured: round 9 mw-auxenv) */
+  *penv_a = c->penv_amount * route_gain(&rm, DST_PITCH_ENV);
   /* LFO */
-  float fl = lfo_hz(d, v->note, 1) * exp2f(rm.lfo_rate);
+  float fl = lfo_hz(d, VKEY(v), 1) * exp2f(rm.lfo_rate);
   if (vi(d, LE_OPERATOR_LFO_PITCH_ENV_ON) && c->penv_active) {
-    fl *= exp2f(v->penv.y * c->penv_amount);
+    fl *= penv_ratio(v->penv.y, &v->penv, *penv_a);
   }
   *lc = lfo_coefs(fl, rate);
   const float amount = vf(d, LE_OPERATOR_LFO_AMOUNT);
@@ -1544,10 +1596,11 @@ static void voice_chunk(le_operator* d, le_operator_voice* v, const chunk_ctx* c
     lvl *= w->gain * route_gain(&rm, DST_VOL_A + op);
     /* oversampled white noise gets back the power the decimator drops */
     if (w->white && c->aa) lvl *= 1.41421356f;
-    if (op == 0 || op == 1) lvl *= clampf(1.0f - mod[op == 0 ? DST_XFADE_AC : DST_XFADE_BD], 0.0f, 2.0f);
-    else lvl *= clampf(1.0f + mod[op == 2 ? DST_XFADE_AC : DST_XFADE_BD], 0.0f, 2.0f);
+    /* the crossfades take amount x (2u - 1): the mod wheel at rest with
+     * +58 % gives C 0.42 and A 1.58 (measured: Analog Bouquet Brass) */
+    if (op == 0 || op == 1) lvl *= clampf(1.0f - rm.bi[op == 0 ? DST_XFADE_AC : DST_XFADE_BD], 0.0f, 2.0f);
+    else lvl *= clampf(1.0f + rm.bi[op == 2 ? DST_XFADE_AC : DST_XFADE_BD], 0.0f, 2.0f);
     if (!(kCarriers[c->alg] & (1u << op))) lvl *= route_gain(&rm, DST_FM_DRIVE);
-    lvl *= route_gain(&rm, DST_VOLUME);
     if (v->gl < 0.0f) {
       v->amp[op] = lvl;
       v->amp_step[op] = 0.0f;
@@ -1557,7 +1610,7 @@ static void voice_chunk(le_operator* d, le_operator_voice* v, const chunk_ctx* c
   }
   /* filter */
   if (c->filter_on) {
-    const float s = ((float)v->note - 70.0f) * vf(d, LE_OPERATOR_FILTER_KEY) / 100.0f +
+    const float s = ((float)VKEY(v) - 70.0f) * vf(d, LE_OPERATOR_FILTER_KEY) / 100.0f +
                     (vel127 - 70.0f) * vf(d, LE_OPERATOR_FILTER_VEL) / 100.0f +
                     v->lfo_filter +
                     1.08f * vf(d, LE_OPERATOR_FILTER_ENV_AMOUNT) *
@@ -1565,21 +1618,28 @@ static void voice_chunk(le_operator* d, le_operator_voice* v, const chunk_ctx* c
                     OP_FILTER_K * mod[DST_FILTER_FREQ];
     float fc = vf(d, LE_OPERATOR_FILTER_FREQ) * exp2f(clampf(s / 12.0f, -31.0f, 31.0f));
     fc = clampf(fc, 30.0f, fminf(0.48f * rate, 18500.0f));
-    const float res = vf(d, LE_OPERATOR_FILTER_RES) + mod[DST_FILTER_RES];
+    /* Res and Drive are gain destinations: the mod wheel at rest with +50 %
+     * halves the resonance, -50 % leaves it, +100 % opens none and takes
+     * all the drive (measured: round 9 mw-res-p50, -m50, mw-fdrive; Harsh
+     * FM Bass) */
+    const float res = vf(d, LE_OPERATOR_FILTER_RES) * route_gain(&rm, DST_FILTER_RES);
     /* Clean holds resonance at 0.9; the analog circuits take up to 2 */
     const float r = clampf(res, 0.0f, 0.9f);
     ft->q = 4.0f * r / (3.0f * r + 1.0f);
     ft->g = tanf((float)OP_PI * fc / rate);
     ft->fc = fc;
     ft->r = clampf(res, 0.0f, 2.0f);
-    ft->drive = powf(10.0f, clampf(vf(d, LE_OPERATOR_FILTER_DRIVE) + 24.0f * mod[DST_FILTER_DRIVE],
+    ft->drive = powf(10.0f, clampf(vf(d, LE_OPERATOR_FILTER_DRIVE) * route_gain(&rm, DST_FILTER_DRIVE),
                                    0.0f, 24.0f) / 20.0f);
     morph_weights(vf(d, LE_OPERATOR_FILTER_MORPH) + mod[DST_FILTER_MORPH], ft->w);
   }
   /* gains */
   const float q = clampf(vf(d, LE_OPERATOR_PAN) + v->pan + mod[DST_PAN], -1.0f, 1.0f);
   const float th = (q + 1.0f) * 0.25f * (float)OP_PI;
-  const float vol = vf(d, LE_OPERATOR_VOLUME);
+  /* the Volume route scales the voice's output, after the filter and the
+   * shaper (measured: Creep Bass, velocity on Volume, drives its shaper as
+   * hard at velocity 64 as at 127, and leaves its modulators whole) */
+  const float vol = vf(d, LE_OPERATOR_VOLUME) * route_gain(&rm, DST_VOLUME);
   float gl = fmaxf(1.41421356f * cosf(th), 1e-5f) * vol;
   float gr = fmaxf(1.41421356f * sinf(th), 1e-5f) * vol;
   if (v->side == SIDE_LEFT) gr = 0.0f;
@@ -1642,13 +1702,23 @@ static float operators_tick(le_operator* d, le_operator_voice* v, const chunk_ct
   return sum;
 }
 
-/* Whether every sounding carrier's envelope has ended. */
+/* Whether every sounding carrier's envelope has ended: run out, or fallen
+ * in its release below 10^-3 of full level (before the operator's own
+ * amplitude). Live ends a voice there, about 40 samples later: a 50 ms
+ * release at 1760 samples from full level, 1648 from 0.25, 2296 from full
+ * level at volume 0.1 (measured: sine, env-loop-1, round 9's rel-in-*
+ * and osr-self renders, all at 10^-3 within 2 %). */
+#ifndef ENV_END
+#define ENV_END 1e-3f
+#endif
 static int voice_done(const le_operator_voice* v, const chunk_ctx* c) {
   int any = 0;
   for (int32_t op = 0; op < LE_OPERATOR_OPS; ++op) {
     if (!c->on[op] || !(kCarriers[c->alg] & (1u << op))) continue;
     any = 1;
-    if (v->env[op].state != ENV_OFF) return 0;
+    const le_operator_env* e = &v->env[op];
+    if (e->state != ENV_OFF && !(e->state == ENV_RELEASE && fabsf(e->y) < ENV_END && e->y1 < ENV_END))
+      return 0;
   }
   return any || v->state == LE_OPERATOR_VOICE_RELEASED;
 }
@@ -1669,8 +1739,9 @@ static void render_voice(le_operator* d, le_operator_voice* v, const chunk_ctx* 
                          float* right, int32_t frames) {
   filter_target ft = {0};
   lfo_coef lc;
-  float lfo_a;
-  voice_chunk(d, v, c, &ft, &lc, &lfo_a, frames);
+  float lfo_a, penv_a;
+  v->snap = 0;
+  voice_chunk(d, v, c, &ft, &lc, &lfo_a, &penv_a, frames);
   if (c->filter_on) {
     if (v->f_g <= 0.0f) {
       v->f_g = ft.g;
@@ -1696,10 +1767,14 @@ static void render_voice(le_operator* d, le_operator_voice* v, const chunk_ctx* 
   if ((circuit == CIRC_MS2 || circuit == CIRC_SMP) && c->filter_type == 1) {
     const float fcs = fminf(fmaxf(ft.fc, 1.0f), 0.48f * rate);
     ms2.g = tanf(fminf((float)OP_PI * fcs / rate, 1.54f));
-    /* linear: held short of self-oscillation, which bounds it */
-    k1 = fmaxf(2.0f * (1.0f - (circuit == CIRC_SMP ? 0.904249f : LE_MS2_FEEDBACK) *
-                                  le_ms2_q(ft.r, ft.fc, rate)),
-               0.05f);
+    {
+      /* the damping falls from 1.63 at resonance 0 to 0.37 at 1 and stays
+       * there (fit: the HP renders at resonance 0, 0.5 and 1) */
+      const float q = fminf(le_ms2_q(ft.r, ft.fc, rate), 1.0f);
+      k1 = 0.37f + 1.26f * powf(1.0f - q, 1.32f);
+      const float q2 = q * (OP_MS2_K2 + OP_MS2_K2R * ft.r);
+      k2 = 0.37f + 1.26f * powf(1.0f - q2, 1.32f);
+    }
     hp_c = circuit == CIRC_SMP ? OP_SMP_HP_C : OP_MS2_HP_C;
     circuit = CIRC_MS2_HP;
   }
@@ -1738,7 +1813,7 @@ static void render_voice(le_operator* d, le_operator_voice* v, const chunk_ctx* 
     k1 = 2.0f * (1.0f - le_ms2_q(ft.r, ft.fc, rate)) - 0.01f;
     k2 = 2.0f * (1.0f - OP_OSR_K2 * le_ms2_q(ft.r, ft.fc, rate)) - 0.01f;
   }
-  const env_ctx ec = make_ctx(d, v->note, rate, v->time_mod);
+  const env_ctx ec = make_ctx(d, VKEY(v), rate, v->time_mod);
   const float vel127 = v->velocity * 127.0f;
   float fv[LE_OPERATOR_OPS];
   for (int32_t op = 0; op < LE_OPERATOR_OPS; ++op) fv[op] = env_vel_factor(&c->env[op], vel127);
@@ -1759,7 +1834,7 @@ static void render_voice(le_operator* d, le_operator_voice* v, const chunk_ctx* 
     const float fenv = c->filter_on ? env_tick(&v->fenv, &c->fenv, fvf, &ec) : 0.0f;
     (void)fenv;
     const float pmul = c->penv_active ? penv_ratio(env_tick(&v->penv, &c->penv, fvp, &ec),
-                                                   &v->penv, c->penv_amount)
+                                                   &v->penv, penv_a)
                                       : 1.0f;
     float la = 0.0f;
     if (c->lfo_active) {
@@ -1801,7 +1876,7 @@ static void render_voice(le_operator* d, le_operator_voice* v, const chunk_ctx* 
         clean_section(v->f_an, v->f_an + 2, ft.drive * x, ms2.g, k1, &l, &b, &h);
         y = h + hp_c * b;
         if (c->slope) {
-          clean_section(v->f_an + 4, v->f_an + 6, y, ms2.g, k1, &l, &b, &h);
+          clean_section(v->f_an + 4, v->f_an + 6, y, ms2.g, k2, &l, &b, &h);
           y = h + hp_c * b;
         }
         y = 8.0f * tanhf(0.125f * y); /* the output stage's rails */
@@ -1848,7 +1923,11 @@ static void render_voice(le_operator* d, le_operator_voice* v, const chunk_ctx* 
   if (v->state != LE_OPERATOR_VOICE_FADING && voice_done(v, c) &&
       ((v->state != LE_OPERATOR_VOICE_HELD && v->state != LE_OPERATOR_VOICE_SUSTAINED) ||
        carriers_triggered(c))) {
-    v->state = LE_OPERATOR_VOICE_FREE;
+    /* Live ends it a block after: one more chunk */
+    if (v->ending) v->state = LE_OPERATOR_VOICE_FREE;
+    v->ending = 1;
+  } else {
+    v->ending = 0;
   }
 }
 
@@ -1913,6 +1992,7 @@ void le_operator_render(le_operator* d, float* left, float* right, int32_t frame
       render_voice(d, v, &c, left + done, right + done, n);
     }
     d->lfo_free += (double)lfo_hz(d, 60, 0) * (double)n / (double)d->sample_rate;
+    d->clock += (double)n;
     if (d->lfo_free >= 1.0) d->lfo_free -= floor(d->lfo_free);
     d->chunk_left -= n;
     done += n;
