@@ -1345,6 +1345,7 @@ static void render_voice(le_tension* d, le_tension_voice* v, float* out, int32_t
     const float period = rate / (TV_C4 * exp2_engine(fminf(v->pitch_to + bend_oct(d), v->p0)));
     for (int32_t s = 0; s < n; ++s) {
       float y = string_tick(d, v, held);
+      const float y_string = y; /* the string's own sound, before the filter */
       if (v->sh_mix > 0.0f || v->sh_mix_step > 0.0f) {
         const float z = shift_tick(v, y, period);
         y = y + v->sh_mix * (z - y);
@@ -1359,15 +1360,17 @@ static void render_voice(le_tension* d, le_tension_voice* v, float* out, int32_t
         y *= fade_step * (float)(v->fade_left > s ? v->fade_left - s : 0);
       }
       out[i + s] += y;
-      /* fit: a released string ends after 50 ms below -100 dBFS, counted
-       * by the sample, and not while its damper is still in the air (it
-       * lands again and the string sounds: Wurli Mellow's low thump 190
-       * ms after a release), for at most 2 s of flight [Segno] */
+      /* fit: a released string ends after its own sound (not the
+       * filter's, which an LFO may close for a while: Moving Space Alarm)
+       * stays 50 ms below -100 dBFS, counted by the sample, and not while
+       * its damper is still in the air (it lands again and the string
+       * sounds: Wurli Mellow's low thump 190 ms after a release), for at
+       * most 2 s of flight [Segno] */
       if (v->state == LE_TENSION_VOICE_RELEASED) {
         const int flying = v->damper.on && v->damper.f <= 0.0f && v->damper.grav != 0.0f &&
                            v->flying < (int32_t)(2.0f * rate);
         v->flying += flying;
-        v->quiet = fabsf(y) < 1e-5f && !flying ? v->quiet + 1 : 0;
+        v->quiet = fabsf(y_string) < 1e-5f && !flying ? v->quiet + 1 : 0;
         if (v->quiet >= quiet_end) {
           v->state = LE_TENSION_VOICE_FREE;
           return;

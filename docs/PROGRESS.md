@@ -79,8 +79,8 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
 - Analog's envelope, LFO waves, filter (with the formants) and drive move
   into `aas_parts.h`, which both devices use; Analog's 201 fit renders are
   bit-identical across the move.
-- Fitted against 219 Live renders in five rounds. Strict score: 186 of 219
-  pass, 28 of the 38 factory-preset renders; the held-out round of every
+- Fitted against 266 Live renders in six rounds. Strict score: 214 of 266
+  pass, 41 of the 67 factory-preset renders; the held-out round of every
   factory preset 60 of 107 (from 8); the chaotic bowed and bouncing
   renders are scored against Segno's own spread. Measured: the keyboard's
   Stretch and Fine Tune, the key amounts' resting 0.1, the bridge read's
@@ -95,8 +95,8 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   the exciters' values, the finger and contacts in double precision.
   Measured in round 5: unison strings counting as voices, the unison delay
   in whole milliseconds; read: velocity as (v - 1) / 126. Open: Live's cut
-  of quiet released voices, Soft Buzz Bass's chord, Live's random Keyboard
-  Error.
+  of released voices (measured, rule not found), Soft Buzz Bass's chord,
+  Live's random Keyboard Error.
 - A voice costs 1.8 us per millisecond with the hammer, 0.6 with the bow,
   the body 0.4 more. A device holds 32 strings (1.7 MB).
 

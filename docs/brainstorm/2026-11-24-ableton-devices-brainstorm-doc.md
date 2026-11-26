@@ -1456,11 +1456,15 @@ are built from the same modules.
   fourth strings at delays 0.25 to 1 land on Live's sample; with the
   velocity the hammer references match Live's to -100 dB, from -80)
   A key struck again strikes its ringing string
-  without resetting it. A released string ends after 50 ms below
-  -100 dBFS, but not while its gated damper is still in the air (for at
-  most 2 s of flight): the damper lands again and the string sounds.
+  without resetting it. A released string ends after its own sound
+  (before the filter, which an LFO can close for a while) stays 50 ms
+  below -100 dBFS, but not while its gated damper is still in the air
+  (for at most 2 s of flight): the damper lands again and the string
+  sounds.
   **[code]** **[Segno]** (the voice end) **[measured]** (Wurli Mellow's
-  phrase: a low thump 190 ms after a release, as in Live)
+  phrase: a low thump 190 ms after a release, as in Live; Moving Space
+  Alarm, whose LFO closes its filter after a release while Live's string
+  rings on)
 
 ### The fits so far
 
@@ -1584,6 +1588,25 @@ references), others later; Segno's ends only below -100 dBFS. With round 5 and t
 186 of 219 fit renders pass, 28 of the 38 factory-preset renders;
 held-out 60 of 107 (hammer 16 of 26, plucked 38 of 60, bouncing 3 of 6,
 bowed 3 of 15).
+
+Round 6 (49 renders). Soft Buzz Bass's B3 fails alone as its chord does
+(the chord is not the cause) and passes with the damper off; its damper
+sits on the right sample, so the difference is in how the heavy resting
+damper treats B3's partials (2.5 kHz decays 1 to 4 dB fast, 6.4 kHz 3 to
+4 dB strong), still open. Live's voice cut, read to the sample from its
+exact zeros (`tools/tension_voicecut.py`): a released voice is cut only
+on a 1 ms block boundary after the note-off, never sooner than 84 blocks
+(4032 samples at 48 kHz) after it; a voice whose string is silent or held
+still at the release (decayed, resting damper, finger on the fret) is cut
+exactly 84 blocks after it; a string still ringing (-46 dBFS and louder)
+is not cut; the others are cut later (a terminated string released loud
+at 132 blocks, a gated damper at 139 to 143, presets up to 400 and more).
+No threshold on the output level fits every render, so the countdown
+watches something inside the voice; Segno does not cut. The short notes
+of the failing bowed and bouncing presets: where a 1e-6 change leaves
+Segno's attack in place (Cello and Ensemble Strings at D3, Strings Quartet
+at A4, Wow Pad and Moving Space Alarm at D3) the first 150 ms differ from
+Live's for a reason of the model's, not chaos.
 
 ## Decisions
 
