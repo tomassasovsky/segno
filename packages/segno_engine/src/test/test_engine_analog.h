@@ -436,8 +436,8 @@ static void test_analog_lfo_starts(void) {
   le_analog_render(&g_analog, l, r, N);
   CHECK(g_analog.voices[0].c[0].ch[0].lfo == 0.0f);
   CHECK(fabsf(opr_peak(l + N / 2, N / 2) - kAnalogSinePeak) < 0.002f);
-  /* a free LFO on a fresh voice: three quarters of Phase at the device's
-   * start, then the free rate */
+  /* a free LFO on a fresh voice: 0.07 + 0.648 Phase at the device's first
+   * note, wherever that falls, then the free rate */
   analog_reference(&g_analog);
   analog_chain(&g_analog, 0, LE_ANALOG_LFO_ON, 1.0f);
   analog_chain(&g_analog, 0, LE_ANALOG_LFO_GATE_RESET, 0.0f);
@@ -448,7 +448,7 @@ static void test_analog_lfo_starts(void) {
   {
     /* Exp(3, 1000) a minute at the knob's 0.5, position 64 of 127 */
     const double hz = 3.0 * pow(1000.0 / 3.0, 64.0 / 127.0) / 60.0;
-    double want = 0.75 + hz * (double)(N + LE_ANALOG_TICK) / OPR_SR;
+    double want = 0.07 + 0.648 + hz * (double)LE_ANALOG_TICK / OPR_SR;
     want -= floor(want);
     CHECK(fabs(g_analog.voices[0].c[0].ch[0].lfo_ph - want) < 2e-4);
   }
@@ -488,6 +488,40 @@ static void test_analog_lfo_starts(void) {
     double want = poly ? 0.0 : (0.25 + 9.75 * 64.0 / 127.0) * (double)(3 * N) / OPR_SR; /* Lin(0.25, 10) */
     want -= floor(want);
     CHECK(v != NULL && fabs(v->vib_ph - want) < 1e-3);
+  }
+}
+
+/* A delayed unison copy releases as late as it started; a quiet device
+ * voice is busy for its run-on, so a note 0.1 s after the last takes the
+ * next one, a note 0.2 s after takes it back. */
+static void test_analog_copies_and_voices(void) {
+  printf("test_analog_copies_and_voices\n");
+  enum { N = 4800 };
+  static float l[N], r[N];
+  analog_reference(&g_analog);
+  analog_chain(&g_analog, 0, LE_ANALOG_AMP_ENV + LE_ANALOG_ENV_RELEASE, 0.0f);
+  analog_set(&g_analog, LE_ANALOG_UNISON_ON, 1.0f);
+  analog_set(&g_analog, LE_ANALOG_UNISON_DELAY, 0.5f); /* 14 ms */
+  CHECK(le_analog_note_on(&g_analog, 1, 60, 127, 0) == 0);
+  le_analog_render(&g_analog, l, r, N);
+  le_analog_note_off(&g_analog, 1);
+  le_analog_render(&g_analog, l, r, 480); /* 10 ms: copy 1 is out, copy 2 not yet */
+  CHECK(opr_peak(l + 384, 96) > 0.3f * kAnalogSinePeak);
+  le_analog_render(&g_analog, l, r, N);
+  CHECK(le_analog_active(&g_analog) == 0);
+  /* the device voices a mono voice's notes take */
+  const int32_t gaps[2] = {4800, 9600};
+  const int32_t want[2] = {1, 0};
+  for (int32_t g = 0; g < 2; ++g) {
+    analog_reference(&g_analog);
+    analog_set(&g_analog, LE_ANALOG_POLYPHONY, 0.0f);
+    analog_chain(&g_analog, 0, LE_ANALOG_AMP_ENV + LE_ANALOG_ENV_RELEASE, 0.0f);
+    CHECK(le_analog_note_on(&g_analog, 1, 60, 127, 0) == 0);
+    le_analog_render(&g_analog, l, r, N);
+    le_analog_note_off(&g_analog, 1);
+    for (int32_t i = 0; i < gaps[g]; i += N / 4) le_analog_render(&g_analog, l, r, N / 4);
+    CHECK(le_analog_note_on(&g_analog, 2, 64, 127, 0) == 0);
+    CHECK(g_analog.lv_last == want[g]);
   }
 }
 
@@ -665,6 +699,7 @@ static void run_analog_tests(void) {
   test_analog_oscillator_start();
   test_analog_mono_retrigger();
   test_analog_lfo_starts();
+  test_analog_copies_and_voices();
   test_analog_stretch();
   test_analog_key_pitch();
   test_analog_pitch_envelope();

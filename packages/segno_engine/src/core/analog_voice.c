@@ -321,18 +321,73 @@ static void lv_store(le_analog* d, le_analog_voice* v, int32_t at) {
 }
 
 /* The device voice a new note takes: the stolen one's, else an idle one. */
+static float lfo_hz(const le_analog* d, int32_t c);
+
+/* fit: a device voice that went quiet stays with its last note for
+ * AV_LV_RUN_ON s, its free LFOs running; a note in the first AV_LV_RETAKE s
+ * of that takes it back, a later one takes another voice (segno-analog-fit8
+ * lvr-gap050 keeps one voice, lvr-gap100 and round 5's lfo-free alternate
+ * two, gaps of 150 ms and more find the first one idle again). */
+#define AV_LV_RUN_ON 0.1125
+#define AV_LV_RETAKE 0.06
+
 static int32_t lv_pick(le_analog* d) {
   if (d->lv_steal >= 0) return d->lv_steal;
   int32_t n = kVoices[vi(d, LE_ANALOG_POLYPHONY)];
+  if (n < 2) n = 2; /* a mono voice alternates two as well */
   if (n > LE_ANALOG_DEVICE_VOICES) n = LE_ANALOG_DEVICE_VOICES;
   int32_t busy[LE_ANALOG_DEVICE_VOICES] = {0};
   for (int32_t i = 0; i < LE_ANALOG_VOICE_SLOTS; ++i) {
     if (d->voices[i].state != LE_ANALOG_VOICE_FREE && d->voices[i].lv >= 0) busy[d->voices[i].lv] = 1;
   }
+  const int32_t run_on = (int32_t)(AV_LV_RUN_ON * (double)d->sample_rate);
+  const int32_t retake = (int32_t)(AV_LV_RETAKE * (double)d->sample_rate);
+  int32_t back = -1;
   for (int32_t j = 0; j < n; ++j) {
-    if (!busy[j]) return j; /* the lowest idle one */
+    if (busy[j] || !d->lv_used[j]) continue;
+    const int32_t q = d->age - d->lv_quiet[j];
+    if (q < retake && (back < 0 || q < d->age - d->lv_quiet[back])) back = j;
+  }
+  if (back >= 0) return back;
+  for (int32_t j = 0; j < n; ++j) {
+    if (!busy[j] && (!d->lv_used[j] || d->age - d->lv_quiet[j] >= run_on)) return j; /* the lowest idle one */
+  }
+  for (int32_t j = 0; j < n; ++j) {
+    if (!busy[j]) return j;
   }
   return (d->lv_last + 1) % n;
+}
+
+/* A device voice's free LFOs run on while it is quiet for its run-on, and
+ * whenever another voice of the device sounds (fit: lvr-gap100, whose
+ * first voice's LFO runs through the second voice's note and stops when it
+ * ends). */
+static void lv_run_on(le_analog* d, int32_t frames) {
+  int32_t attached[LE_ANALOG_DEVICE_VOICES] = {0};
+  int active = 0;
+  for (int32_t i = 0; i < LE_ANALOG_VOICE_SLOTS; ++i) {
+    const le_analog_voice* v = &d->voices[i];
+    if (v->state == LE_ANALOG_VOICE_FREE) continue;
+    active = 1;
+    if (v->lv >= 0) attached[v->lv] = 1;
+  }
+  const int32_t run_on = (int32_t)(AV_LV_RUN_ON * (double)d->sample_rate);
+  for (int32_t j = 0; j < LE_ANALOG_DEVICE_VOICES; ++j) {
+    if (attached[j] || !d->lv_used[j] || (!active && d->age - d->lv_quiet[j] >= run_on)) continue;
+    for (int32_t c = 0; c < 2; ++c) {
+      if (!ci(d, c, LE_ANALOG_LFO_ON) || ci(d, c, LE_ANALOG_LFO_GATE_RESET)) continue;
+      const double dph = (double)lfo_hz(d, c) * (double)frames / (double)d->sample_rate;
+      for (int32_t k = 0; k < LE_ANALOG_COPIES; ++k) {
+        double ph = d->lv_ph[j][k][c] + dph;
+        if (ph >= 1.0) {
+          ph -= floor(ph);
+          d->lv_sh[j][k][c][1] = d->lv_sh[j][k][c][0];
+          d->lv_sh[j][k][c][0] = le_aas_bipolar(&d->rng);
+        }
+        d->lv_ph[j][k][c] = ph;
+      }
+    }
+  }
 }
 
 /* The keyboard pitch of `note` in octaves from C4: transpose, octave and
@@ -464,23 +519,22 @@ static void start_copy(le_analog* d, le_analog_voice* v, le_analog_copy* cp) {
       double ph;
       const int32_t k = (int32_t)(cp - v->c);
       if (!d->lv_used[v->lv]) {
-        ph = 0.75 * cf(d, c, LE_ANALOG_LFO_PHASE) + (double)lfo_hz(d, c) * (double)d->age / (double)d->sample_rate;
+        /* fit: from the device's first note, 0.07 + 0.648 Phase cycles in
+         * there (lvr-gap and lfo9-late at Phase 0, lfo-free at Phase 1;
+         * lfo9-late's one note at 1.3 s starts where a note at 0 s does) */
+        ph = 0.07 + 0.648 * cf(d, c, LE_ANALOG_LFO_PHASE) +
+             (double)lfo_hz(d, c) * (double)(d->age - d->first_age) / (double)d->sample_rate;
         /* fit: a free random wave holds 0 until its first cycle ends (Live's
          * copies of the free S&H and noise presets agree to the sample until
          * then; segno-analog-fit6 Dual OSC Sample & Hold Bass's first 0.35 s
          * from 17.9 dB to 0.45, Overtones' 6.8 to 0.7) */
         ch->lfo_sh = ch->lfo_sh_prev = 0.0f;
       } else {
-        const double gap = (double)(d->age - d->lv_quiet[v->lv]) / (double)d->sample_rate;
-        ph = d->lv_ph[v->lv][k][c] + (double)lfo_hz(d, c) * (gap < 0.052 ? gap : 0.052);
-        /* the device voice's held values carry on, a new one drawn if the
-         * run-on ends a cycle */
+        /* as the device voice left it, run on by lv_run_on, its held
+         * random values with it */
+        ph = d->lv_ph[v->lv][k][c];
         ch->lfo_sh = d->lv_sh[v->lv][k][c][0];
         ch->lfo_sh_prev = d->lv_sh[v->lv][k][c][1];
-        if (ph >= 1.0) {
-          ch->lfo_sh_prev = ch->lfo_sh;
-          ch->lfo_sh = le_aas_bipolar(&cp->rng);
-        }
       }
       ch->lfo_ph = ph - floor(ph);
     }
@@ -534,6 +588,7 @@ static void start_voice(le_analog* d, le_analog_voice* v, uint32_t origin, int32
    * times 127 (Tension's reading of the shared unison; 0.379 semitone at
    * 0.5 where the renders measure 0.374, an octave at 1 as Organ Vibrato
    * shows); the copies start ExpZ(0.002, 0.1) s apart */
+  if (!d->played) d->first_age = d->age;
   v->lv = lv_pick(d);
   d->lv_last = v->lv;
   d->lv_steal = -1;
@@ -545,7 +600,7 @@ static void start_voice(le_analog* d, le_analog_voice* v, uint32_t origin, int32
   if (mono(d)) {
     const double hz = (double)le_aas_lin(0.25f, 10.0f, vf(d, LE_ANALOG_VIBRATO_SPEED));
     const double ph = d->lv_used[v->lv] ? d->lv_vib[v->lv] + hz * (double)(d->age - d->lv_quiet[v->lv]) / (double)d->sample_rate
-                                        : hz * (double)d->age / (double)d->sample_rate;
+                                        : hz * (double)(d->age - d->first_age) / (double)d->sample_rate;
     v->vib_ph = ph - floor(ph);
   } else {
     v->vib_ph = 0.0;
@@ -557,8 +612,15 @@ static void start_voice(le_analog* d, le_analog_voice* v, uint32_t origin, int32
     le_analog_copy* cp = &v->c[k];
     cp->detune = step * kSteps[k] + key_error(d, cp);
     /* fit: copy k starts k delays after the note (uni4-dly-100's copies
-     * enter at 0.1, 0.2 and 0.3 s; its level from 5.4 dB low to 0.7) */
+     * enter at 0.1, 0.2 and 0.3 s; its level from 5.4 dB low to 0.7), and
+     * its release comes as late. It starts ahead of a copy begun at that
+     * moment, by four times its own pitch over the delay and 13 samples
+     * (segno-analog-fit8: separating the ud8 sines' copies puts copy k at
+     * 4 (k D) / P cycles, D from 2.9 to 100 ms; the ud8 sines from 5 to 20
+     * dB to 0.2 to 3, the saws from 8 to 0.3 to 1.6) */
     cp->delay = (int32_t)(delay * (float)k);
+    cp->rel_at = -1;
+    for (int32_t c = 0; c < 2; ++c) cp->ch[c].ph_lead = cp->delay > 0 ? (float)cp->delay + 13.0f : 0.0f;
     start_copy(d, v, cp);
   }
   d->last_pitch = v->pitch_to;
@@ -588,10 +650,10 @@ static void held_drop(le_analog* d, uint32_t origin) {
   d->held_n = keep;
 }
 
-static void release_voice(le_analog* d, le_analog_voice* v) {
-  v->state = LE_ANALOG_VOICE_RELEASED;
+static void release_copy(le_analog* d, le_analog_voice* v, int32_t k) {
   const float rate = (float)d->sample_rate;
-  for (int32_t k = 0; k < v->copies; ++k) {
+  v->c[k].rel_at = -1;
+  {
     for (int32_t c = 0; c < 2; ++c) {
       const le_aas_env_set fe = read_env(d, c, LE_ANALOG_FILTER_ENV);
       const le_aas_env_set ae = read_env(d, c, LE_ANALOG_AMP_ENV);
@@ -601,6 +663,17 @@ static void release_voice(le_analog* d, le_analog_voice* v) {
       if (!fe.free_run) le_aas_env_release(&v->c[k].ch[c].fenv, &fe, v->velocity, rate);
       if (!ae.free_run) le_aas_env_release(&v->c[k].ch[c].aenv, &ae, v->velocity, rate);
     }
+  }
+}
+
+/* The gate's end: a delayed copy releases as many samples later as it
+ * started (fit: segno-analog-fit8's ud8 renders, whose second copy rings
+ * on for its delay after the note-off). */
+static void release_voice(le_analog* d, le_analog_voice* v) {
+  v->state = LE_ANALOG_VOICE_RELEASED;
+  for (int32_t k = 0; k < v->copies; ++k) {
+    if (v->c[k].delay > 0) v->c[k].rel_at = v->since + v->c[k].delay;
+    else release_copy(d, v, k);
   }
 }
 
@@ -684,6 +757,7 @@ int32_t le_analog_note_on(le_analog* d, uint32_t origin, int32_t note, int32_t v
       }
       v->state = LE_ANALOG_VOICE_HELD;
       for (int32_t k = 0; k < v->copies; ++k) {
+        v->c[k].rel_at = -1;
         for (int32_t c = 0; c < 2; ++c) {
           le_analog_chain* ch = &v->c[k].ch[c];
           const int fleg = overlapping && was_held && ci(d, c, LE_ANALOG_FILTER_ENV + LE_ANALOG_ENV_LEGATO);
@@ -1069,7 +1143,20 @@ static void osc_pitch(le_analog_chain* ch, const av_tick* t, float rate) {
   if (ch->otick <= 0) {
     const float e = fmaxf(ch->penv - ch->penv_step * (float)AV_OSC_TICK, 0.0f);
     const float target = rate / le_aas_clamp(t->f_osc * exp2_cubic(t->x_osc + t->env_amt * e), t->f_lo, t->f_hi);
-    if (ch->per <= 0.0f) ch->per = rate / le_aas_clamp(t->f_osc * exp2_cubic(t->x_osc), t->f_lo, t->f_hi);
+    if (ch->per <= 0.0f) {
+      ch->per = rate / le_aas_clamp(t->f_osc * exp2_cubic(t->x_osc), t->f_lo, t->f_hi);
+      if (ch->ph_lead > 0.0f) {
+        /* a delayed copy's lead (start_voice); a sine's sub at half */
+        const double a = 4.0 * (double)ch->ph_lead / (double)ch->per;
+        ch->ph += a - floor(a);
+        ch->ph -= floor(ch->ph);
+        if (t->ratio <= 0.0f) {
+          ch->ph2 += 0.5 * a;
+          ch->ph2 -= floor(ch->ph2);
+        }
+        ch->ph_lead = 0.0f;
+      }
+    }
     ch->per_step = (target - ch->per) / (float)AV_OSC_TICK;
     ch->penv = e;
     ch->otick = AV_OSC_TICK;
@@ -1211,7 +1298,7 @@ static void render_voice(le_analog* d, le_analog_voice* v, float* left, float* r
         continue;
       }
       const int32_t s0 = v->since < cp->delay ? cp->delay - v->since : 0;
-      const int held = v->state == LE_ANALOG_VOICE_HELD || v->state == LE_ANALOG_VOICE_SUSTAINED;
+      int held = v->state == LE_ANALOG_VOICE_HELD || v->state == LE_ANALOG_VOICE_SUSTAINED || cp->rel_at >= 0;
       le_aas_env_set fe[2], ae[2];
       for (int32_t c = 0; c < 2; ++c) {
         fe[c] = read_env(d, c, LE_ANALOG_FILTER_ENV);
@@ -1219,6 +1306,10 @@ static void render_voice(le_analog* d, le_analog_voice* v, float* left, float* r
       }
       for (int32_t s = s0; s < n; ++s) {
         float pre[2] = {0.0f, 0.0f};
+        if (cp->rel_at >= 0 && v->since + s >= cp->rel_at) {
+          release_copy(d, v, k);
+          held = 0;
+        }
 
         /* fit: the amps' gain smoothing starts from 0 when the device
          * starts and reaches its value over the first control period, rate
@@ -1291,6 +1382,7 @@ void le_analog_render(le_analog* d, float* left, float* right, int32_t frames) {
   if (d == NULL || left == NULL || right == NULL || frames <= 0) return;
   memset(left, 0, sizeof(float) * (size_t)frames);
   memset(right, 0, sizeof(float) * (size_t)frames);
+  lv_run_on(d, frames);
   for (int32_t i = 0; i < LE_ANALOG_VOICE_SLOTS; ++i) {
     le_analog_voice* v = &d->voices[i];
     if (v->state != LE_ANALOG_VOICE_FREE) render_voice(d, v, left, right, frames);
