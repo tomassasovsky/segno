@@ -65,6 +65,7 @@ typedef struct le_tension_voice {
   float detune;   /* octaves: its unison offset */
   int32_t delay;  /* samples before it starts */
   int32_t since;  /* samples since the note, saturating */
+  int32_t off_wait; /* samples until a released copy lets go, its delay after the key */
   int32_t fade_left, fade_len;
   int32_t quiet;  /* released 1 ms blocks in a row that were quiet */
   int32_t flying; /* released samples with the damper off the string */
