@@ -878,7 +878,7 @@ static void nl_tables(float rate) {
 
 static void nl_ensure(le_meld_nloop* l) {
   if (l->built) return;
-  memcpy(l->buf, g_nl_fill, sizeof(l->buf));
+  memcpy(l->buf, g_nl_fill, sizeof(g_nl_fill));
   l->gx = g_nl_after.gx;
   l->gy = g_nl_after.gy;
   l->w[0] = l->w[1] = l->w[2] = 0;
@@ -1166,8 +1166,9 @@ static float bubble_tick(le_meld_osc* o) {
 
 /* ---- the interface ---- */
 
-void le_meld_osc_init(le_meld_osc* o, float rate, uint32_t seed) {
+void le_meld_osc_init(le_meld_osc* o, float rate, uint32_t seed, float (*loop)[LE_MELD_LOOP_MAX]) {
   memset(o, 0, sizeof(*o));
+  o->nloop.buf = loop;
   le_meld_osc_tables();
   o->rate = rate;
   o->irate = fminf(rate, 44100.0f);

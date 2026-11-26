@@ -8,6 +8,7 @@
 #include "meld_voice.h"
 
 #include <math.h>
+#include <stddef.h>
 #include <string.h>
 
 #include "synth_voice.h" /* LE_SYNTH_BEND, LE_SYNTH_MOD, LE_SYNTH_PRESSURE */
@@ -207,7 +208,8 @@ static void build_routes(le_meld* d) {
 int32_t le_meld_init(le_meld* d, int32_t sample_rate) {
   if (d == NULL || sample_rate <= 0) return -1;
   le_meld_osc_tables();
-  memset(d, 0, sizeof(*d));
+  /* everything but the Noise Loop buffers, which are filled on first use */
+  memset(d, 0, offsetof(le_meld, loops));
   d->sample_rate = sample_rate;
   d->bpm = 120.0f;
   d->voice_limit = LE_MELD_VOICE_SLOTS * LE_MELD_COPIES;
@@ -220,7 +222,8 @@ int32_t le_meld_init(le_meld* d, int32_t sample_rate) {
       le_meld_copy* cp = &d->voices[i].c[c];
       cp->rng = 0x9e3779b9u ^ (uint32_t)((i * LE_MELD_COPIES + c + 1) * 2654435761u);
       for (int32_t e = 0; e < 2; ++e) {
-        le_meld_osc_init(&cp->e[e].osc, rate, cp->rng ^ (uint32_t)(e + 1) * 0x85ebca6bu);
+        le_meld_osc_init(&cp->e[e].osc, rate, cp->rng ^ (uint32_t)(e + 1) * 0x85ebca6bu,
+                         d->loops[i][c][e]);
         cp->e[e].lfo2_sh = kSampleHold[0];
         le_meld_filter_init(&cp->e[e].filter, rate);
       }
