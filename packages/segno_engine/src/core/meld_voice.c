@@ -347,6 +347,17 @@ static float env_step(le_meld_env* e, const env_def* p) {
   }
 }
 
+/* Whether `e` is idle or takes its last step to idle next: the voice's
+ * quiet count starts there. fit: nloop-55-notes, where Live counts from
+ * the release's last step, one sample before Segno's envelope reaches 0 */
+static int env_ending(const le_meld_env* e, const env_def* p) {
+  if (e->state == ENV_IDLE) return 1;
+  if (e->state == ENV_RELEASE || (e->state == ENV_TAIL && p->loop != LOOP_LOOP)) {
+    return e->x + p->dx[2] >= 1.0f;
+  }
+  return 0;
+}
+
 /* 2^x through the polynomial the Noise Loop description gives for its pow
  * (segno-re-findings/rng-01-drift-meld.md 2.3): Live's note frequency
  * follows it. [measured] (nl-n12, -n24, -n36, -n60: Noise Loop matches
@@ -813,13 +824,21 @@ static void engine_start(le_meld* d, le_meld_voice* v, le_meld_copy* cp, int32_t
   en->glide_to = target;
   /* the oscillator's phase: a note on a silent voice starts it as Reset
    * does, Reset or not [measured] (reset-off: both notes start at the
-   * sine render's phase); Reset off lets a legato restart of a ringing
-   * voice run on [Segno] */
-  if (ei(d, e, LE_MELD_E_RESET) || !v->legato) {
+   * sine render's phase). A legato restart of a ringing voice lets the
+   * oscillator run on, Reset or not [measured] (The Rhythm's Noise Loop
+   * and Plate Kick's FM run on through it in Live; tr-gotta-catchem tf
+   * 8.20 to 7.24, level 2.01 to 0.54, tr-comb-bass and tr-bully-bass
+   * pass), except Tarp, whose sweep restarts with its phase (the
+   * thunder-kick renders pass that way only) */
+  if (!v->legato || (ei(d, e, LE_MELD_E_RESET) && en->osc.type == LE_MELD_OSC_TARP)) {
     float phase = 0.0f;
     if (ei(d, e, LE_MELD_E_RESET_OFFSET)) {
-      /* the copy's position, not scaled by Spread (fit: the unison renders) */
-      const float f = 6.0f * cp->position;
+      /* unison copies: the copy's position, not scaled by Spread (fit: the
+       * unison renders, reset-offset-u3, Happy Chords' engine B); a single
+       * copy: its Spread source, the position times Spread (fit:
+       * tr-detuned-string-machine, every note in phase with Live's, attack
+       * 2.94 to 0.14 dB; tr-gametal) */
+      const float f = 6.0f * (v->copies >= 2 ? cp->position : cp->spread);
       phase = f - truncf(f);
       if (phase < 0.0f) phase += 1.0f;
     }
@@ -1429,7 +1448,12 @@ static void render_voice(le_meld* d, le_meld_voice* v, float* left, float* right
   const int limiter = vi(d, LE_MELD_LIMITER);
   const float att = 1.0f - expf(-1.0f / (0.01f * rate));
   const float rel = 1.0f - expf(-1.0f / (0.1f * rate));
-  const float out_gain = 0.5f * vf(d, LE_MELD_VOLUME) / sqrtf((float)v->copies);
+  /* fit: Live's output sits 0.0206 dB below 0.5 x Volume (Live / Segno
+   * 0.99763 in every render: plain shapes, pan, unison, drive) */
+  const float out_gain = 0.4988165f * vf(d, LE_MELD_VOLUME) / sqrtf((float)v->copies);
+  /* the end check's level: the reading's 0.0002 on the voice's |L + R|,
+   * before the device's 0.5 x Volume (fit below) */
+  const float quiet_level = 0.0001f * vf(d, LE_MELD_VOLUME);
   const float fade_step = 1.0f / (0.001f * rate);
   /* the output gains follow the matrix through a one-pole of 4.8 ms
    * [measured]: Detuned String Machine's LFO 1, gated into Volume, has
@@ -1457,9 +1481,13 @@ static void render_voice(le_meld* d, le_meld_voice* v, float* left, float* right
       }
       v->tick_left = LE_MELD_TICK;
     }
-    const int32_t n = v->tick_left < frames - i ? v->tick_left : frames - i;
+    int32_t n = v->tick_left < frames - i ? v->tick_left : frames - i;
+    /* a block ends where the voice could end, so nothing runs past it */
+    if (v->quiet > 0 && quiet_need - v->quiet < n) n = quiet_need - v->quiet;
     float vl[LE_MELD_TICK] = {0}, vr[LE_MELD_TICK] = {0};
-    int idle = 1;
+    /* per sample: whether every Amp envelope has reached its last step */
+    int idle[LE_MELD_TICK];
+    for (int32_t k = 0; k < n; ++k) idle[k] = 1;
     for (int32_t c = 0; c < v->copies; ++c) {
       le_meld_copy* cp = &v->c[c];
       memset(bl, 0, sizeof(float) * (size_t)n);
@@ -1467,7 +1495,7 @@ static void render_voice(le_meld* d, le_meld_voice* v, float* left, float* right
       for (int32_t e = 0; e < 2; ++e) {
         le_meld_engine* en = &cp->e[e];
         if (!en->live) {
-          idle = 0; /* engine B still to start */
+          for (int32_t k = 0; k < n; ++k) idle[k] = 0; /* engine B still to start */
           continue;
         }
         const env_def a = amp_def(d, e, en->amp_dx, en->amp_sustain);
@@ -1475,6 +1503,7 @@ static void render_voice(le_meld* d, le_meld_voice* v, float* left, float* right
         const int filt = ei(d, e, LE_MELD_E_FILTER_ON);
         for (int32_t k = 0; k < n; ++k) {
           const float amp = env_step(&en->amp, &a);
+          if (!env_ending(&en->amp, &a)) idle[k] = 0;
           float x = on ? le_meld_osc_tick(&en->osc) * amp : 0.0f;
           if (filt) x = le_meld_filter_tick(&en->filter, x);
           /* tone: the low-pass, then the high-pass as low-pass's remainder */
@@ -1490,7 +1519,6 @@ static void render_voice(le_meld* d, le_meld_voice* v, float* left, float* right
           bl[k] += y * en->gl;
           br[k] += y * en->gr;
         }
-        if (en->amp.state != ENV_IDLE) idle = 0;
       }
       for (int32_t k = 0; k < n; ++k) {
         float l = bl[k], r = br[k];
@@ -1530,9 +1558,16 @@ static void render_voice(le_meld* d, le_meld_voice* v, float* left, float* right
       const float l = vl[k] * g, r = vr[k] * g;
       left[i + k] += l;
       right[i + k] += r;
-      /* the end: every Amp envelope idle and 10 ms at or below -74 dB */
-      if (idle && v->state != LE_MELD_VOICE_FADING && v->state != LE_MELD_VOICE_FREE) {
-        if (fabsf(l + r) <= 0.0002f) {
+      /* the end: every Amp envelope at its last step or idle, then 10 ms at
+       * or below the quiet level; the oscillators stop with the voice.
+       * fit: nloop-55-notes, five Noise Loop notes on one voice whose
+       * generator runs on from note to note: with this rule each note
+       * ends on Live's sample (26878, 26998, 26878, 26878, 26878 samples
+       * ticked), the second where its tail crosses the level, and every
+       * note matches Live's to the sample; the 0.0002 after the 0.5,
+       * counting only from idle, or a count of 481 each part from it */
+      if (idle[k] && v->state != LE_MELD_VOICE_FADING && v->state != LE_MELD_VOICE_FREE) {
+        if (fabsf(l + r) <= quiet_level) {
           if (++v->quiet >= quiet_need) v->state = LE_MELD_VOICE_FREE;
         } else if (v->quiet > 0) {
           v->quiet = 0;

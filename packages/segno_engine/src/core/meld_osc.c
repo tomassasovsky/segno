@@ -593,7 +593,10 @@ static const float kFoldRatios[MO_FOLD_RATIOS] = {
 /* Two FM pairs at the neighbouring ratios of `ratios` at position `pos`
  * (0..1), crossfaded; `amount` in cycles, each pair's index capped so that
  * the carrier, the modulator and the deviation stay below 0.4 of the
- * rate. */
+ * rate. An entry's modulator is the oscillator of its parity, so the ratio
+ * a crossing keeps runs on and the one it brings in takes the phase of the
+ * one it drops. fit: tr-rich-n-reich, an LFO moving Harmonic FM's ratio
+ * across an entry: Live runs on without a kink (tf 2.75 to 0.68 dB) */
 static float fm_pairs(le_meld_osc* o, const float* ratios, int n, float pos, float amount) {
   const double dc = o->hz / o->irate;
   const float p = mo_clamp(pos, 0.0f, 1.0f) * (float)(n - 1);
@@ -605,9 +608,10 @@ static float fm_pairs(le_meld_osc* o, const float* ratios, int n, float pos, flo
     const float r = ratios[a + k];
     const float cap = fmaxf(0.0f, (0.4f - (float)dc - (float)dc * r) / (float)fmax(dc, 1e-9));
     const float index = fminf(amount, cap);
-    const float yk = sinf((float)(MO_TWO_PI * (o->s.fm.c + index * mo_sine(o->s.fm.m[k]))));
+    const int q = (a + k) & 1;
+    const float yk = sinf((float)(MO_TWO_PI * (o->s.fm.c + index * mo_sine(o->s.fm.m[q]))));
     y += (k == 0 ? 1.0f - fr : fr) * yk;
-    o->s.fm.m[k] = mo_wrap(o->s.fm.m[k] + fmin(dc * r, 0.5));
+    o->s.fm.m[q] = mo_wrap(o->s.fm.m[q] + fmin(dc * r, 0.5));
   }
   o->s.fm.c = mo_wrap(o->s.fm.c + dc);
   return y;
