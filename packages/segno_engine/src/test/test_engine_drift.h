@@ -767,6 +767,33 @@ static void test_drift_silent_voices_run(void) {
   CHECK(v->env1 == held && drift_peak(l, 480) == 0.0f);
 }
 
+/* Filter I's output saturates softly: through the open filter a sine at
+ * Gain 1 against one at Gain 0.25 comes out about 0.28 dB lower than
+ * through filter II (both share the input clip and the voice clip). */
+static void test_drift_filter1_output_saturates(void) {
+  printf("test_drift_filter1_output_saturates\n");
+  static float l[9600], r[9600];
+  float rms[2][2];
+  for (int type = 0; type < 2; ++type) {
+    for (int k = 0; k < 2; ++k) {
+      drift_init(&g_drift, DRIFT_SR);
+      drift_set(&g_drift, LE_DRIFT_OSC1_TYPE, 0.0f); /* sine */
+      drift_set(&g_drift, LE_DRIFT_OSC1_GAIN, k ? 1.0f : 0.25f);
+      drift_set(&g_drift, LE_DRIFT_FILTER_TYPE, (float)type);
+      drift_set(&g_drift, LE_DRIFT_FILTER_FREQ, 20000.0f);
+      drift_set(&g_drift, LE_DRIFT_FILTER_RES, 0.0f);
+      CHECK(le_drift_note_on(&g_drift, 1, 60, 127, 0) == 0);
+      le_drift_render(&g_drift, l, r, 9600);
+      double s = 0.0;
+      for (int i = 4800; i < 9600; ++i) s += (double)l[i] * l[i];
+      rms[type][k] = (float)sqrt(s / 4800.0);
+    }
+  }
+  const float f1 = 20.0f * log10f(rms[0][1] / (4.0f * rms[0][0]));
+  const float f2 = 20.0f * log10f(rms[1][1] / (4.0f * rms[1][0]));
+  CHECK(f1 < f2 - 0.15f && f1 > f2 - 0.45f);
+}
+
 /* A Filter Type change while a note sounds starts the new filter from
  * rest: no jolt from the other filter's state, either way round. */
 static void test_drift_filter_type_switch_is_smooth(void) {
@@ -1018,6 +1045,7 @@ static void run_drift_tests(void) {
   test_drift_filter_input_clips_asymmetrically();
   test_drift_voice_blocks();
   test_drift_silent_voices_run();
+  test_drift_filter1_output_saturates();
   test_drift_filter_type_switch_is_smooth();
   test_engine_drift_slot_matches_offline();
   test_engine_drift_voice_budget();
