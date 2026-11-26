@@ -77,6 +77,7 @@ typedef struct le_tension_voice {
   float p0;              /* the pitch at the strike */
   double vib_ph;
   float vib_t;
+  float vib_dev; /* this cycle's rate error, a fraction of the rate */
   /* the string */
   float a[LE_TENSION_RAIL], b[LE_TENSION_RAIL];
   int32_t w;       /* the rails' write index */
