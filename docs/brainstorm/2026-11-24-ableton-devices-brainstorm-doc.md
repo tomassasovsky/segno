@@ -1057,10 +1057,14 @@ Tags as for Meld. Segno's implementation is `analog_voice.c`.
   **[code]** (the 40-sample tick and the period ramp) **[measured]** (the
   envelope's value at the tick's end, the first ramp's start: penv-1-t015's
   zero crossings fall within 3 samples of Live's, from 102 to 839, and its
-  8 Hz tail lands in Live's phase). The envelope falls over 1.035 times
-  Exp(0.01, 10) s: the tail's phase of penv-1-t015 and Kick Complex Perc
-  need 1.035 within 0.005, the slopes of the longer sweeps (0.3, 0.4) read
-  1.02 to 1.025. **[measured]** A mono retrigger restarts the pitch
+  8 Hz tail lands in Live's phase). The envelope falls over Exp(0.01, 10)
+  s times a factor of the time knob: 0.99 at 0.05, 1.04 at 0.1, 1.035 at
+  0.15, 1.0275 at 0.2, 1.025 at 0.25, 1.0205 at 0.3, 1.025 at 0.4, 1.0243
+  at 0.5 and 1.0245 at 0.6, linear between and flat beyond. Each is the
+  best fit of one full-depth sweep of a C-1 sine (segno-analog-fit7
+  penv7-t005 to t060, penv-1-t015, Kick Complex Perc), whose 8 Hz tail
+  pins the length to 0.1 % on the long sweeps; no smooth law in the knob
+  fits them all. **[measured]** A mono retrigger restarts the pitch
   envelope with the amp's. **[code]**
 
 ### Filters
@@ -1134,8 +1138,11 @@ Tags as for Meld. Segno's implementation is `analog_voice.c`.
   stolen voice, or the lowest idle one. A free LFO starts three quarters
   of Phase into its cycle on the voice's first note and runs while the
   voice plays and for 52 ms after it goes quiet; a Legato filter envelope
-  carries its value into the voice's next note, its release run on
-  through the gap, and rises from there; without Legato it starts from 0.
+  carries its value into the voice's next note, its release run on for
+  0.1 s after the voice went quiet and then held (fleg-on, fleg-on-mono,
+  fleg-on-pos fit best between 0.08 and 0.12 s; running the release
+  through the whole gap leaves the later notes 2 to 5 dB too bright), and
+  rises from there; without Legato it starts from 0.
   **[measured]** (the free LFO renders; Rhythmic Octaves Bass's triad on
   two voices, from 127 cents median pitch error to 21; Square Pure Bass's
   triad, whose onset cells go from 11 dB too bright to within 0.1 dB;
@@ -1320,11 +1327,10 @@ dB; now 246 of 345 and 17 of 79, 10 of 58 held out at a median of 3.89 dB):
 
 - The pitch envelope: Live's oscillator updates its period every 40
   samples and ramps to it, the first ramp from the unmodulated period, and
-  the envelope falls 3.5 % slower than Exp(0.01, 10). Kick Complex Perc
+  the envelope falls 2 to 4 % slower than Exp(0.01, 10). Kick Complex Perc
   from 26.3 to 0.4 dB (its noise-off variant 26.7 to 0.4, passing),
-  penv-1-t015 0.8 to 0.3, penv-1-t04 0.8 to 0.5. The longer sweeps' slopes
-  read 1.02 to 1.025, the short one's phase 1.035: a single factor is a
-  compromise; segno-analog-fit7 sweeps the time knob to settle the law.
+  penv-1-t015 0.8 to 0.3, penv-1-t04 0.8 to 0.5; round 7 settled the
+  factor per time knob (above).
 - The cubic 2^x on the keyboard pitch: the mono chords' G4 from 1.17
   cents off to 0.01, the poly chord from 1.5 to 0.5 dB.
 - Free Run ignores the key's release: Zap from 24.9 to 9.2 dB (held out
@@ -1335,6 +1341,40 @@ dB; now 246 of 345 and 17 of 79, 10 of 58 held out at a median of 3.89 dB):
 
 What still differs, with what the renders show:
 
+- Round 7 (segno-analog-fit7) passes 27 of 39 as it came in and all its
+  pitch-envelope renders (time, depth, saw, rectangle) once the factor
+  per time knob is in; Free Run, the second notes (but the mono sine's
+  onset cell, 1.9 dB, and Live's host offset on later notes), the Legato
+  carry-on and the LFO rates (but 0.35, 3.2 cents) pass.
+- The free LFO's run-on after a voice goes quiet is not one time. lv-idle2
+  and lv-idle4 (notes 0.3 s long every 0.6 s, on 2 and 4 voices) render
+  alike in Live, so the voice a note takes is the same, the lowest idle one
+  as Segno picks; between notes Live's LFO advances 0.695 cycle where
+  0.418 s of running would give it (0.113 s after the voice is quiet),
+  while lfo-free (0.3 s notes every 0.4 s) alternates between running
+  through the 0.1 s gap and stopping 12 to 17 ms after quiet. No single
+  run-on reproduces both (0.052 s keeps lfo-free, 0.13 s helps lv-idle2 and
+  breaks lfo-free); Segno keeps 52 ms. The lv renders fail on pitch (120 to
+  170 cents median).
+- Velocity: the shared front end of Live's other AAS devices sends
+  (velocity - 1) / 126; Analog's velocity renders fit velocity / 127
+  better (avel-v001's level -0.01 dB against -0.21, the pv-* presets at 30
+  and 64 0.05 dB closer), so Segno keeps velocity / 127.
+- Release tails: every Analog render's tail ends at its release
+  segment's end, within one 32-sample tick (282 ms for a release of
+  282.6, 641 for 641.4, 25.1 for 25.8, 49 single-note renders); none is
+  cut to silence early, unlike the 84 ms cut Tension's renders show.
+- On 9 of the 17 deterministic held-out failures the phrase's quiet C3
+  fits (within 1.5 dB) and the error sits on the triad and the hard C5
+  (Square Pure Bass, Fourths Lead, Saw Pure Muted Bass, Muted Dark Bass,
+  Saw Sub Complex Bass, Square Percussive Bass, Organ Church Slow, Kick
+  Complex Perc, Glass Low Strings Pad); on the other 8 the C3 fails too. Square Pure Bass
+  and Fourths Lead are mono with a Legato filter envelope: the 0.1 s
+  run-on takes Square Pure Bass from 2.65 to 1.68 dB; Fourths Lead's error
+  is a 5 Hz alternation at 160 to 640 Hz (its vibrato's phase against
+  Live's: resetting or free-running the vibrato moves the presets by 0.1
+  dB, neither fits). Saw Pure Muted Bass's hard C5 is 2.5 dB low at 160 to
+  640 Hz alone (its fundamental), open.
 - A saw or rectangle swept up fast starts in Live with a hump: the
   output rises over about 12 samples to twice the saw's swing, then falls
   back within 5 (Zap's later notes, peak 2.1 where Segno's is 0.6;
@@ -1359,7 +1399,7 @@ What still differs, with what the renders show:
 - Random sources (S&H, noise LFOs, Keyboard Error, vibrato error) as
   before.
 
-segno-analog-fit7 (39 renders, built, to be exported): the pitch
+segno-analog-fit7 (39 renders, exported and scored as above): the pitch
 envelope's time law (a C-1 sine swept 6 octaves at eight times) and depth
 law (four depths), the fast-sweep hump (saw and rectangle at C2, a saw at
 half depth), a mono and a poly voice's second note, Free Run on the amp

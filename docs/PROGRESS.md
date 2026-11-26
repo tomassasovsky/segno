@@ -117,6 +117,12 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   fast upward sweeps, the LFO rate's dips, the random sources;
   segno-analog-fit7 (39 renders) isolates the first two and the per-voice
   state.
+  Round 7 (segno-analog-fit7): the pitch envelope's length per time knob
+  and a 0.1 s run-on of a Legato filter envelope after its voice goes
+  quiet: 248 of the 345 earlier fit renders (281 of 384 with round 7), 18 of 79 factory presets; round 7 itself 33 of 39 (the free LFO's run-on between
+  notes is left), 10 of 58 (median 3.89 dB) held out. Analog keeps velocity / 127 (its
+  renders fit it better than the other AAS devices' (velocity - 1) / 126),
+  and its release tails end at the release's end, with no early cut.
 - A voice of two saw chains through LP24 costs 0.9 us per millisecond on
   the dev machine, four unison copies 3.7, the formant filter 1.0. A
   device holds 40 copies (229 KB).
