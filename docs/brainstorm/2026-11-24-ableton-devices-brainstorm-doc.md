@@ -1162,10 +1162,50 @@ from the deterministic ones: a stolen voice's note waits for the fade
 Kick 1.80 to 1.59, its copy 2.13 to 1.71), and
 the 16-sample control rate (Nebulae Keys 2.6 to 1.0, round 8 and 11's
 copies 2.9 to 1.2); the fit rounds pass 391 of 452 (from 387), the
-held-out round 41 of 67 (from 39). Release Bass, whose C5 opens a Clean
+held-out round 41 of 67 (from 39); with the scorer's five seeds the fit
+rounds pass 399 and the held-out round 48.
+Release Bass, whose C5 opens a Clean
 filter from closed through 108 semitones of envelope, matches Live's
 onset better with the old 32-sample first block (1.1 dB against 1.5), so
 the filter's own control rate may differ from the gains'. **[open]**
+The fit rounds do not settle it: holding the filter's targets on a
+32-sample grid (the gains at 16) moves none of the 63 fit renders with a
+filter envelope or the filter LFO by more than 0.1 dB, and brings
+Release Bass to 1.2; round 12's fenv-onset renders isolate it.
+
+Sweep Wobble's pitch multiplier: the fit renders rule out a cap at 2.5,
+the value that holds the held-out render's match past the wrap. Noise
+Slow Sweep Pad's round 8 copies reach a multiplier of 3 at audio rate
+and match Live uncapped (a cap at 2.5 takes their pitch from 18 cents to
+115), and Synth Reso Sweep 16ths fails with it (1.50); a cap at 3 is
+neutral there, cannot reach the held-out render (its multiplier peaks at
+2.74) and brings the round 8 copy only from 2.16 to 1.92. So the wrap
+mismatch is not a plain limit; round 12's lfo-zero renders take the
+amount through 0.6, 0.8 and 1. **[open]**
+
+MS2 under a loud input (Wobbly Flag Bass, the circ2-saw renders; the fix
+belongs in `ms2_section.h`, shared with Drift). The section's linear
+response matches Live: white noise through it at resonance 0.25, 0.75 and
+24 dB stays within 0.4 dB per half-octave up to 11 kHz. A full-level Saw
+D at C3 through it at 1 kHz, resonance 0.5 and no drive (circ2-saw-r05)
+does not: the unfiltered wave matches to 0.1 dB at every harmonic
+(wave-10), while through the filter Segno's harmonics from 1.3 kHz up are
+too strong, +0.6 dB at the 10th, +2.1 at the 16th, +3.9 at the 20th, +5
+at the 22nd to 24th. Wobbly Flag Bass shows the same thing driven, 2 to 8
+dB too bright above 1 kHz on every note. So Live's section loses more of
+a loud waveform's top above the cutoff than Segno's does, while small
+signals pass alike. What was tried, on a copy: a linear transconductance
+(worse, +7.5 dB at the 24th), a linear diode (worse), wider buffer clips,
+six solver passes and 2x oversampling (no change, so it is not aliasing
+or convergence), a larger KAPPA (0.6 passes circ2-saw-r05 but takes
+circ2-r075 from passing to 3.1 dB) and a tanh transconductance (circ2-saw-d12
+4.8 to 3.1, the noise renders worse). What would need to change is the
+large-signal shape of the first integrator's transconductance, or what
+feeds it, without changing its small-signal slope: it has to compress
+the saw's edges (normalised input near 1.3) harder than the present
+z (1 - z^2/4 + |z|^3/16) does, while noise (normalised rms near 0.4)
+passes as now. Drift's filter II renders would have to confirm the same
+shape. **[open]**
 
 Round 12 (`segno-op-fit12`, 23 renders) asks Live: a 1.1 kHz sine LFO
 into Volume, an operator's volume, Pan, FM Drive, Filter Freq, Tone and
