@@ -2824,6 +2824,35 @@ phase; round 9's vibrato renders ask. Clean Chorus Guitar is within
 0.04 dB of its limit, its spread Segno's own (its resting damper makes
 a 1e-6 change show).
 
+Round 9 (57 renders) answers part of what it asked:
+
+- Unison copies: the host's offset is the event's place in Live's 1 ms
+  grid of blocks that start 16 samples into the render (32 for a note on
+  the grid); with it in the fit harness the notes off the grid match
+  (uni9-off50 and uni9-off75 to 0.18 dB).
+- Strings Quartet's departure after the bow's first block is not its
+  finger, damper, positions or inharmonicity: its exciter alone on the
+  reference string departs the same way at the same sample (bow9-sqx)
+  and matches at velocity 1, where the reference bow matches with a
+  velocity amount of its own; the force and speed taking their scalings
+  late, or the key part of the speed's, do not fit. Still open.
+- Upright Ambient Bass at C2 matches Live's to -90 dB with its filter
+  and body off; with them, the first 30 samples come out up to four
+  times Live's (its filter, nearly closed at 47 Hz, opened by an
+  envelope with no attack). Still open.
+- The mono string struck by a chord passes with its filter envelope, its
+  filter or its damper off, and fails only with all three; still open.
+- Vibrato: a single note at 1 s fails too (vib9-late-first), so the
+  phase depends on when the note comes; neither a reset at each note
+  nor a phase running from the device's start fits. Still open.
+- Ensemble Strings and Wow Pad fail with any one part off as with all
+  on. Still open.
+
+With the score's five noise seeds (from three), and round 9: 294 of 379
+fit renders pass (round 9 22 of 57), 38 of the 67 factory-preset
+renders (seven chaotic bowed renders that passed on three seeds' spread
+no longer do); held-out 81 of 107.
+
 
 ## Decisions
 
