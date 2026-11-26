@@ -310,10 +310,13 @@ static void lv_store(le_analog* d, le_analog_voice* v, int32_t at) {
   for (int32_t k = 0; k < LE_ANALOG_COPIES; ++k) {
     for (int32_t c = 0; c < 2; ++c) {
       d->lv_ph[v->lv][k][c] = v->c[k].ch[c].lfo_ph;
+      d->lv_sh[v->lv][k][c][0] = v->c[k].ch[c].lfo_sh;
+      d->lv_sh[v->lv][k][c][1] = v->c[k].ch[c].lfo_sh_prev;
       d->lv_fenv[v->lv][k][c] = v->c[k].ch[c].fenv;
     }
   }
   d->lv_quiet[v->lv] = at;
+  d->lv_vib[v->lv] = v->vib_ph;
   v->lv = -1;
 }
 
@@ -442,33 +445,64 @@ static void start_copy(le_analog* d, le_analog_voice* v, le_analog_copy* cp) {
     ch->dc = shape == 2 ? 0.0365f + 0.4635f * le_aas_knob(cf(d, c, LE_ANALOG_OSC_PW)) : 0.0f;
     /* with Retrigger the LFO restarts at its Phase at each note. fit:
      * without, each of the device's voices (as many as the Voices setting,
-     * a stolen one handing its LFOs to the note that takes it) starts its
-     * LFO three quarters of Phase into its cycle and then runs it while the
-     * voice plays and for 52 ms after it goes quiet (two Live instances
-     * render the same free LFO; eight strikes 0.4 s apart keep its phase
-     * from note to note, losing the rest of each gap; Rhythmic Octaves
-     * Bass's triad on two voices) */
+     * a stolen one handing its LFOs to the note that takes it) runs its
+     * LFO from the device's start, three quarters of Phase into its cycle
+     * there, until the voice's first note (segno-analog-fit6 Nasal Mod
+     * Lead's triad on fresh voices from 8.6 to 3.8 dB, Glass High Strings
+     * Pad 7.5 to 5.9; lfo-free's second voice enters within 0.013 cycle of
+     * that phase); from then on it runs while the voice plays and for 52 ms
+     * after it goes quiet (two Live instances render the same free LFO;
+     * eight strikes 0.4 s apart keep its phase from note to note, losing
+     * the rest of each gap; Rhythmic Octaves Bass's triad on two voices) */
     if (ci(d, c, LE_ANALOG_LFO_GATE_RESET)) {
       ch->lfo_ph = cf(d, c, LE_ANALOG_LFO_PHASE);
+      /* fit: a retriggered random wave starts from a random value, noise
+       * held there for the first cycle (the lfo-wave renders; Live's copies
+       * of lfo-wave3 differ from the first sample) */
+      ch->lfo_sh = ch->lfo_sh_prev = le_aas_bipolar(&cp->rng);
     } else {
       double ph;
       const int32_t k = (int32_t)(cp - v->c);
       if (!d->lv_used[v->lv]) {
-        ph = 0.75 * cf(d, c, LE_ANALOG_LFO_PHASE);
+        ph = 0.75 * cf(d, c, LE_ANALOG_LFO_PHASE) + (double)lfo_hz(d, c) * (double)d->age / (double)d->sample_rate;
+        /* fit: a free random wave holds 0 until its first cycle ends (Live's
+         * copies of the free S&H and noise presets agree to the sample until
+         * then; segno-analog-fit6 Dual OSC Sample & Hold Bass's first 0.35 s
+         * from 17.9 dB to 0.45, Overtones' 6.8 to 0.7) */
+        ch->lfo_sh = ch->lfo_sh_prev = 0.0f;
       } else {
         const double gap = (double)(d->age - d->lv_quiet[v->lv]) / (double)d->sample_rate;
         ph = d->lv_ph[v->lv][k][c] + (double)lfo_hz(d, c) * (gap < 0.052 ? gap : 0.052);
+        /* the device voice's held values carry on, a new one drawn if the
+         * run-on ends a cycle */
+        ch->lfo_sh = d->lv_sh[v->lv][k][c][0];
+        ch->lfo_sh_prev = d->lv_sh[v->lv][k][c][1];
+        if (ph >= 1.0) {
+          ch->lfo_sh_prev = ch->lfo_sh;
+          ch->lfo_sh = le_aas_bipolar(&cp->rng);
+        }
       }
       ch->lfo_ph = ph - floor(ph);
     }
-    /* fit: the random waves start from a random value, noise held there
-     * for the first cycle (the lfo-wave renders) */
-    ch->lfo_sh = ch->lfo_sh_prev = le_aas_bipolar(&cp->rng);
     ch->lfo_wait = le_aas_exp(0.2f, 5.0f, cf(d, c, LE_ANALOG_LFO_DELAY));
     if (cf(d, c, LE_ANALOG_LFO_DELAY) <= 0.0f) ch->lfo_wait = 0.0f;
     ch->lfo_amp = cf(d, c, LE_ANALOG_LFO_FADE) <= 0.0f ? 1.0f : 0.0f;
-    ch->gl = ch->gr = -1.0f;
+    ch->gl = ch->gr = 0.0f;
+    ch->g_fresh = 1;
   }
+}
+
+/* fit: a mono voice's new key restarts each retriggered LFO, at its Phase,
+ * with a fresh random value, its delay and its fade-in, as a new note does
+ * (segno-analog-fit6 Rhythmic Iron, whose A5 retakes the releasing voice:
+ * its S&H on the cutoff fading in again, from 10.4 to 5.8 dB). */
+static void lfo_restart(const le_analog* d, le_analog_copy* cp, int32_t c) {
+  le_analog_chain* ch = &cp->ch[c];
+  if (!ci(d, c, LE_ANALOG_LFO_GATE_RESET)) return;
+  ch->lfo_ph = cf(d, c, LE_ANALOG_LFO_PHASE);
+  ch->lfo_sh = ch->lfo_sh_prev = le_aas_bipolar(&cp->rng);
+  ch->lfo_wait = cf(d, c, LE_ANALOG_LFO_DELAY) <= 0.0f ? 0.0f : le_aas_exp(0.2f, 5.0f, cf(d, c, LE_ANALOG_LFO_DELAY));
+  ch->lfo_amp = cf(d, c, LE_ANALOG_LFO_FADE) <= 0.0f ? 1.0f : 0.0f;
 }
 
 /* The unison amounts' curve: Exp(lo, hi) on m = 127 v, exactly 0 at 0. */
@@ -503,6 +537,19 @@ static void start_voice(le_analog* d, le_analog_voice* v, uint32_t origin, int32
   v->lv = lv_pick(d);
   d->lv_last = v->lv;
   d->lv_steal = -1;
+  /* fit: a mono voice's vibrato runs on through the silence between its
+   * notes, from the device's start (segno-analog-fit6 Square Pure Bass's
+   * median pitch error from 0.38 to 0.04 cent, Saw Detune Sync Lead's from
+   * 12.0 to 2.8); a poly voice's starts at 0 with each note (Strings
+   * Detuned Pad's triad, 5.5 cents off if it ran on) */
+  if (mono(d)) {
+    const double hz = (double)le_aas_lin(0.25f, 10.0f, vf(d, LE_ANALOG_VIBRATO_SPEED));
+    const double ph = d->lv_used[v->lv] ? d->lv_vib[v->lv] + hz * (double)(d->age - d->lv_quiet[v->lv]) / (double)d->sample_rate
+                                        : hz * (double)d->age / (double)d->sample_rate;
+    v->vib_ph = ph - floor(ph);
+  } else {
+    v->vib_ph = 0.0;
+  }
   static const float kSteps[LE_ANALOG_COPIES] = {0.0f, 1.0f, -1.0f, 2.0f};
   const float step = unison_expz(0.001f, 1.0f, vf(d, LE_ANALOG_UNISON_DETUNE));
   const float delay = unison_expz(0.002f, 0.1f, vf(d, LE_ANALOG_UNISON_DELAY)) * (float)d->sample_rate;
@@ -645,7 +692,10 @@ int32_t le_analog_note_on(le_analog* d, uint32_t origin, int32_t note, int32_t v
           const le_aas_env_set ae = read_env(d, c, LE_ANALOG_AMP_ENV);
           if (!fleg) le_aas_env_drop(&ch->fenv, &fe, vel, (float)d->sample_rate);
           if (!aleg) le_aas_env_drop(&ch->aenv, &ae, vel, (float)d->sample_rate);
-          if (!aleg) ch->penv = 1.0f; /* the pitch envelope restarts with the amp's */
+          if (!aleg) {
+            ch->penv = 1.0f; /* the pitch envelope restarts with the amp's */
+            lfo_restart(d, &v->c[k], c);
+          }
         }
       }
       held_push(d, origin, note);
@@ -683,6 +733,7 @@ static void retrigger(le_analog* d, le_analog_voice* v) {
       if (!ci(d, c, LE_ANALOG_AMP_ENV + LE_ANALOG_ENV_LEGATO)) {
         le_aas_env_drop(&ch->aenv, &ae, v->velocity, (float)d->sample_rate);
         ch->penv = 1.0f;
+        lfo_restart(d, &v->c[k], c);
       }
     }
   }
@@ -899,8 +950,11 @@ static void tick_chain(le_analog* d, le_analog_voice* v, le_analog_copy* cp, int
      * 3-sample periods) */
     t->f_lo = 0.0f;
     t->f_hi = (ci(d, c, LE_ANALOG_OSC_SHAPE) == 0 ? 0.45f : 0.25f) * rate;
+    /* the knob is the sub's level only in Sub mode: a sine set to Sync has
+     * neither (fit: segno-analog-fit4 Soft Morning Keys with amp 1 off,
+     * from 3.9 to 0.2 dB; its sine's Sync mode left a sub 10 dB loud) */
     const float s = le_aas_exp(0.01f, 1.0f, cf(d, c, LE_ANALOG_OSC_SUB));
-    t->sub = s <= 0.0101f ? 0.0f : s;
+    t->sub = s <= 0.0101f || ci(d, c, LE_ANALOG_OSC_MODE) == 1 ? 0.0f : s;
     t->ratio = 0.0f; /* no sync */
   }
   /* the pulse width, folded into its range, then the LFO */
@@ -955,9 +1009,16 @@ static void tick_chain(le_analog* d, le_analog_voice* v, le_analog_copy* cp, int
   const float pm = le_aas_clamp(le_aas_blin(1.0f, cf(d, c, LE_ANALOG_AMP_KEY_PAN)) * v->pitch, -1.0f, 1.0f) +
                    le_aas_blin(1.0f, cf(d, c, LE_ANALOG_AMP_ENV_PAN)) * aenv +
                    le_aas_blin(1.0f, cf(d, c, LE_ANALOG_AMP_LFO_PAN)) * lfo;
-  const float pp = le_aas_clamp(p < 0.5f ? p + p * pm : p + pm * (1.0f - p), 0.0f, 1.0f);
+  /* fit: the modulated position is not clamped: past an edge the pan's
+   * angle runs on, the far channel's gain turning negative (segno-analog-
+   * fit4 Soft Morning Keys with amp 1 off, whose envelope and LFO pans add
+   * to 1.35: from 3.7 to 0.4 dB, its attack from 16.1 to 0.9, stereo from
+   * 1.0 to 0.15; clamping silenced the left channel where Live's stays 27
+   * dB down, and folding back gave the levels but not the side signal) */
+  const float pp = p < 0.5f ? p + p * pm : p + pm * (1.0f - p);
   const float gl = gain * cosf(0.5f * LE_AAS_PI * pp), gr = gain * sinf(0.5f * LE_AAS_PI * pp);
-  if (ch->gl < 0.0f) {
+  if (ch->g_fresh) {
+    ch->g_fresh = 0;
     ch->gl = gl;
     ch->gr = gr;
     ch->gl_step = ch->gr_step = 0.0f;
