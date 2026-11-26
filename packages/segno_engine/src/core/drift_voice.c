@@ -97,10 +97,13 @@ static float glide_coefficient(float seconds, float rate) {
   return 1.0f - expf(-1.0f / n);
 }
 
-/* Key tracking: 10 octaves per unit of the key value at Tracking 1, so 1:1
- * about A4. Being fitted. */
+/* Key tracking: the cutoff scaled by a blend, in hertz, of 1 and the
+ * note's frequency over A4's, weighted by Tracking: 1:1 about A4 at
+ * Tracking 1. Measured: filter II's peak at Tracking 0.3 on C3, C4 and C5
+ * and at 1 on C3, and Bloom Pad's cutoff (an octave scale, the old form,
+ * put C3 at 0.3 190 cents low). */
 static float key_tracking(float tracking, float key) {
-  return exp2f(10.0f * tracking * key);
+  return (1.0f - tracking) + tracking * exp2f(10.0f * key);
 }
 
 /* Stereo mode: the pair panned to -Spread and +Spread with sides
@@ -108,8 +111,12 @@ static float key_tracking(float tracking, float key) {
  * voice's level on each side, and both sides stay on pitch. */
 #define LE_DRIFT_STEREO_GAIN 0.5f
 
-/* The output clip of a voice. Provisional. */
-#define LE_DRIFT_VOICE_CLIP 2.0f
+/* The output clip of a voice (after the high-pass and the bypass sum).
+ * Measured: a saw at Gain 2 and two at Gain 2 into either filter at
+ * resonance 0.7 (round 19) peak at the same level in Live at C2 and C4
+ * (after the note gain), flat-topped; at 0.35 their harmonics 1 to 24 come
+ * within 1.7 dB rms of Live's (from 4.3 to 8.4 at no clip). */
+#define LE_DRIFT_VOICE_CLIP 0.35f
 
 /* The noise generator's level: unit-variance Gaussian x this, per sample
  * at the host's rate (so its level per hertz falls 3 dB when the rate
@@ -208,6 +215,7 @@ static const drift_param_def kParams[LE_DRIFT_PARAMS] = {
     [LE_DRIFT_TRANSPOSE] = {0.0f, -48.0f, 48.0f, 1},
     [LE_DRIFT_RESET_OSC_PHASE] = {0.0f, 0.0f, 1.0f, 1},
     [LE_DRIFT_HIQUALITY] = {1.0f, 0.0f, 1.0f, 1},
+    [LE_DRIFT_SERIAL_NUMBER] = {0.0f, 0.0f, 8388607.0f, 1},
 };
 
 float le_drift_default(int32_t param) {
@@ -451,28 +459,86 @@ static int32_t osc2_wave(int32_t stored) {
 /* ---- Pitch: per-key tuning and note gain ---- */
 
 /* Drift Depth's tuning: a deviation per key plus one per voice, both fixed
- * (neither moves over time nor changes between strikes on the same voice),
- * linear in Drift Depth. Segno's own pseudo-random values, sized to Live's
- * statistics: fitted, at Depth 1 the per-key part has an rms near 7 cents,
- * a Stereo note's two lanes sit 11.6 cents apart at every key, and voices
- * in other pairs up to about 11 cents away, so two lanes of a note, or one
- * key on two voices, differ. Values are stored at 0.58 of Depth 1.
- * The per-key part: C1..B5 (24..83), rms near 4, clipped at +-14. */
-static float key_cents(int32_t note) {
-  if (note < 24 || note > 83) return 0.0f;
-  uint32_t h = (uint32_t)(note * 2654435761u) ^ 0x5e9a7u;
-  float sum = 0.0f;
-  for (int i = 0; i < 4; ++i) sum += rnd_bipolar(&h);
-  return clampf(sum * 3.5f, -14.0f, 14.0f);
+ * (neither moves over time, nor between strikes, nor between instances),
+ * linear in w = Drift Depth / 0.58, in cents per unit of w. Measured on
+ * Live 12.2.7's renders (rounds 17 and 18, a sine at Drift Depth 1): the
+ * per-voice offsets from each lane of 16 Stereo pairs alone on its channel
+ * (pair p is voices 2p and 2p + 1, at notes 84 + p); the per-key ones on
+ * C1..B5 from voice 0 one key at a time and from every voice at once
+ * (Stereo pairs at notes 28..43 and 48..63), minus the voice's offset. The
+ * per-voice offset does not depend on the key, the per-key one follows the
+ * key played (not Transpose), and keys outside C1..B5 have none (0.00 +-
+ * 0.06 cents on Live's renders of keys 0..23 and 84..127). */
+static const float kKeyCents[60] = {
+    -0.17f, -2.40f, -5.12f, -4.06f, -4.36f, 1.83f, 5.63f, 14.06f, 9.53f, 6.27f,
+    0.88f, -0.99f, -2.83f, -2.40f, -2.74f, 0.41f, -0.14f, 5.78f, 7.47f, 5.27f,
+    1.22f, -1.58f, -2.10f, -1.00f, -1.50f, 0.10f, -0.39f, 0.41f, 1.96f, 4.81f,
+    6.56f, 1.79f, 0.39f, -1.57f, 0.14f, 12.94f, 0.49f, 0.10f, -0.98f, 0.96f,
+    0.90f, 2.83f, 3.29f, -0.43f, -1.28f, -0.00f, 0.13f, 0.41f, 0.16f, 1.35f,
+    1.09f, 0.12f, 0.38f, -0.14f, 0.96f, 0.68f, 0.81f, 1.18f, -2.28f, 0.40f,
+};
+/* The per-voice offsets depend on the preset's SerialNumber (each serial
+ * its own values; the per-key table is the same for all). Measured for the
+ * three serials Live's factory presets hold, 0 (also -2147483648, which
+ * Live clamps to 0), 2217915 and 8388607 (also every value above, which
+ * Live clamps to it): per voice from each lane of 16 Stereo pairs alone on
+ * its channel at notes 84..99 (rounds 17 and 20; serials 2217915 and
+ * 8388607 cross-checked within 0.2 cent on their pairs at 24..83); Osc 2's
+ * extra from Osc 2 alone on the same pairs (rounds 19 and 20), the same
+ * within 0.14 cent at keys 8..83, at Osc 2 -1 octave, Detune +7 and
+ * Transpose +24. Any other serial has values of its own in Live (1, 12345
+ * measured: 17 and 20 cents rms from serial 0's); Segno uses serial 0's
+ * for them. */
+enum { TUNING_SETS = 3 };
+static const int32_t kTuningSerials[TUNING_SETS] = {0, 2217915, 8388607};
+static const float kVoiceCents[TUNING_SETS][32] = {
+    {2.48f, 9.20f, 9.57f, 9.28f, -2.86f, 8.99f, -4.34f, 3.96f, 5.89f, 2.19f,
+     1.00f, 6.91f, -7.42f, -3.03f, 10.76f, -1.34f, 2.89f, -4.67f, -12.33f,
+     3.59f, -4.33f, 4.67f, -4.88f, 7.44f, -11.87f, -1.30f, -12.83f, -1.56f,
+     9.76f, 0.24f, 11.13f, 11.25f},
+    {-11.79f, -11.91f, -6.31f, 4.99f, 6.26f, -11.56f, -12.12f, -1.21f, -4.17f,
+     5.03f, -13.33f, 10.91f, 12.79f, -7.13f, -4.49f, 1.34f, 10.98f, 0.99f,
+     10.78f, -8.11f, -3.59f, -10.64f, -10.95f, -11.65f, 10.30f, 4.25f, -0.40f,
+     7.65f, -7.38f, 10.99f, -5.35f, -7.51f},
+    {-3.90f, -5.35f, 12.87f, -3.67f, -4.73f, 11.47f, -3.45f, -0.21f, -7.71f,
+     4.26f, -5.93f, -9.95f, -8.52f, 10.62f, -5.80f, 1.59f, -4.39f, 5.13f,
+     -11.09f, -2.32f, 2.58f, 4.69f, 10.99f, 2.39f, -12.83f, 1.60f, 4.39f,
+     4.62f, 8.43f, -12.37f, 9.26f, -5.62f},
+};
+static const float kOsc2VoiceCents[TUNING_SETS][32] = {
+    {0.21f, -0.19f, -0.34f, -0.74f, -0.22f, 0.76f, -0.60f, 0.62f, -0.66f,
+     -0.04f, -0.53f, 0.40f, 0.19f, 0.67f, -0.67f, 0.79f, 0.76f, 0.25f, 0.22f,
+     0.83f, 0.75f, 0.27f, -0.81f, 0.21f, 0.80f, -0.23f, -0.03f, 0.31f, -0.70f,
+     -0.37f, -0.82f, 0.57f},
+    {0.70f, -0.20f, 0.83f, -0.49f, -0.39f, -0.81f, -0.82f, 0.76f, 0.75f,
+     0.51f, -0.16f, -0.54f, -0.77f, -0.05f, 0.25f, 0.41f, 0.26f, -0.12f,
+     0.79f, 0.52f, -0.44f, 0.21f, -0.60f, 0.01f, 0.32f, 0.55f, -0.56f, -0.25f,
+     0.32f, -0.15f, -0.76f, 0.70f},
+    {0.54f, -0.50f, -0.66f, 0.02f, 0.09f, -0.40f, 0.08f, 0.15f, 0.49f, -0.33f,
+     0.01f, 0.31f, -0.20f, 0.77f, -0.83f, 0.52f, -0.10f, -0.40f, -0.32f,
+     0.58f, -0.04f, 0.40f, -0.41f, -0.83f, 0.59f, -0.83f, -0.24f, 0.30f,
+     -0.67f, -0.10f, -0.38f, -0.78f},
+};
+
+/* The tuning set a serial picks: its own measured one, else serial 0's. */
+static int32_t tuning_set(int32_t serial) {
+  for (int32_t i = 1; i < TUNING_SETS; ++i) {
+    if (serial == kTuningSerials[i]) return i;
+  }
+  return 0;
 }
 
-/* The per-voice part: the two voices of each pair sit 6.73 apart (11.6
- * cents at Depth 1, a Stereo note's lanes), around a centre of up to +-3
- * that differs from pair to pair. */
-static float voice_cents(int32_t voice) {
-  uint32_t h = 0x7f4a7c15u ^ (uint32_t)((voice / 2) * 2246822519u);
-  const float centre = 3.0f * rnd_bipolar(&h);
-  return centre + (voice % 2 ? 3.365f : -3.365f);
+/* Loads tuning set `t` into the per-voice tables. */
+static void load_tuning(le_drift* d, int32_t t) {
+  for (int32_t i = 0; i < LE_DRIFT_VOICES; ++i) {
+    d->voice_cents[i] = kVoiceCents[t][i];
+    d->osc2_cents[i] = kOsc2VoiceCents[t][i];
+  }
+  d->tuning_set = t;
+}
+
+static float key_cents(int32_t note) {
+  return note < 24 || note > 83 ? 0.0f : kKeyCents[note - 24];
 }
 
 /* The ISO 226:2003 40-phon equal-loudness level at 1/10-decade steps from
@@ -554,6 +620,10 @@ static void derive(le_drift* d) {
       d->voices[i].lfo_ph = lfo_start_phase(vi(d, LE_DRIFT_LFO_SHAPE));
       lfo_draw(&d->voices[i]);
     }
+  }
+  {
+    const int32_t t = tuning_set(vi(d, LE_DRIFT_SERIAL_NUMBER));
+    if (t != d->tuning_set) load_tuning(d, t);
   }
   x->osc1 = osc1_wave(vi(d, LE_DRIFT_OSC1_TYPE));
   x->osc2 = osc2_wave(vi(d, LE_DRIFT_OSC2_TYPE));
@@ -642,7 +712,9 @@ static void derive(le_drift* d) {
     const float f =
         440.0f * exp2f(w * (d->key_cents[69] + d->voice_cents[i]) / 1200.0f);
     v->dt1 = fminf(f * x->osc1_ratio / d->rate, 0.4999999f);
-    v->dt2 = fminf(f * x->osc2_ratio / d->rate, 0.4999999f);
+    v->dt2 = fminf(f * x->osc2_ratio * exp2f(w * d->osc2_cents[i] / 1200.0f) /
+                       d->rate,
+                   0.4999999f);
     /* and its LFO, in Ratio mode, at Ratio x A4: measured, a free LFO's
      * phase at a fresh voice's first note */
     v->lfo_inc = fminf(x->lfo_ratio * 440.0f / d->rate, 0.49999988f);
@@ -680,8 +752,8 @@ int32_t le_drift_init(le_drift* d, int32_t sample_rate) {
     d->key_cents[n] = key_cents(n);
   }
   f2_rest_state(d->f2_rest);
+  load_tuning(d, 0);
   for (int32_t i = 0; i < LE_DRIFT_VOICES; ++i) {
-    d->voice_cents[i] = voice_cents(i);
     d->voices[i].rng = 0x9e3779b9u ^ (uint32_t)(i * 2654435761u);
     d->voices[i].lfo_mod = 1.0f;
     clear_lowpass(d, &d->voices[i], 0);
@@ -749,11 +821,11 @@ static void lane_setup(const le_drift* d, le_drift_voice* v, int32_t lane,
     ratio = sub[lane];
     gl = gr = lane_gain[lane];
   } else if (mode == MODE_UNISON) {
-    /* lanes from flattest (right) to sharpest (left): fitted, the left side
-     * sharp, and with the per-voice drift (each pair's odd voice higher)
-     * widening the spread, never folding two lanes onto one pitch */
-    static const float pan[4] = {1.0f, 0.5f, -0.5f, -1.0f};
-    static const float detune[4] = {0.9760254f, 0.9879406f, 1.0122024f, 1.0245496f};
+    /* lanes from sharpest (left) to flattest (right), as the code orders
+     * them; measured with each voice's drift (Unison renders at Drift
+     * Depth 0.63 and Bloom Pad) */
+    static const float pan[4] = {-1.0f, -0.5f, 0.5f, 1.0f};
+    static const float detune[4] = {1.0245496f, 1.0122024f, 0.9879406f, 0.9760254f};
     const float s = vf(d, LE_DRIFT_UNISON_DEPTH);
     const float g = 0.4731513f; /* -6.5 dB */
     const float p = pan[lane];
@@ -772,6 +844,13 @@ static void lane_setup(const le_drift* d, le_drift_voice* v, int32_t lane,
   const float w = vf(d, LE_DRIFT_DRIFT_DEPTH) / 0.58f;
   const float cents = d->key_cents[note] + d->voice_cents[v - d->voices];
   v->ratio = ratio * exp2f(w * cents / 1200.0f);
+  v->osc2_drift = exp2f(w * d->osc2_cents[v - d->voices] / 1200.0f);
+  /* the Ratio rate modes follow a Mono lane's octave and the per-key
+   * tuning, not Unison's detune nor the per-voice tuning (measured: round
+   * 19's Ratio LFO on a pitch slot in Mono, Unison and Stereo at Drift
+   * Depth 1; Crunch Arcade's Mono LFO at Ratio 12) */
+  v->ref_ratio = (mode == MODE_MONO ? ratio : 1.0f) *
+                 exp2f(w * d->key_cents[note] / 1200.0f);
   const float ng = d->note_gain[note];
   v->gain_l = gl * ng;
   v->gain_r = gr * ng;
@@ -1209,7 +1288,15 @@ static float knee(float a, float t) {
 }
 
 static float filter_input(float x) {
-  return x >= 0.0f ? fminf(knee(x, 0.70f), 0.79f) : -knee(-x, 0.98f);
+  if (x >= 0.0f) return fminf(knee(x, 0.70f), 0.79f);
+  /* past the knee the negative side rises again, to the hard edge at -1.6:
+   * measured, a saw at Gain 2 and two saws at Gain 2 into either filter
+   * (round 19, harmonics 1 to 24 within 1 dB rms; held at the knee they
+   * were 2 to 5 dB low on harmonics 2 to 5) */
+  const float a = -x;
+  float y = knee(a, 0.98f);
+  if (a > 0.98f + 0.45f) y += a - (0.98f + 0.45f);
+  return -fminf(y, 1.6f);
 }
 
 /* Filter I's feedback shaper: the cubic v - 2 (0.55032 v)^3, held flat past
@@ -1413,19 +1500,30 @@ static void voice_sample(le_drift* d, le_drift_voice* v, float* out_l,
   }
   /* pitch */
   v->pitch += b->glide * (v->pitch_target - v->pitch);
-  /* the note's frequency alone, for the Ratio rate modes only */
+  /* the lane's note frequency (glided, a Mono lane's octave below), before
+   * the oscillators' own Transpose and pitch modulation, for the Ratio rate
+   * modes only */
   const int lfo_ratio = b->lfo_mode == RATE_RATIO;
-  const float note_f =
-      (lfo_ratio || b->cyc_mode == RATE_RATIO) ? v->pitch * b->bend_ratio
-                                               : 0.0f;
-  /* A pitch slot fed by an LFO in Ratio mode (audio rate) moves both
-   * oscillators' phase by LFO x amount cycles instead of their pitch:
-   * phase modulation, limited below one cycle. */
+  const float note_f = (lfo_ratio || b->cyc_mode == RATE_RATIO)
+                           ? v->pitch * b->bend_ratio * v->ref_ratio
+                           : 0.0f;
+  /* A pitch slot fed by a source running in Ratio mode (audio rate: the
+   * LFO, or Envelope 2 as the cycling envelope) moves both oscillators'
+   * phase instead of their pitch: phase modulation by source x amount x
+   * half the slot's range in octaves, in cycles, limited below one cycle;
+   * the cycling envelope centred on its middle (level - 0.5). Measured: the
+   * LFO (range 2) on Live's Ratio renders; the cycling envelope (range 4)
+   * on round 19's sine at Ratio 2 and 3, amounts 0.1 to 0.25 and two
+   * shapes (sidebands within 0.8 dB rms; uncentred 3 to 10 dB), and on
+   * Bellatine's at Ratio 14. */
+  const int cyc_ratio = b->cycling && b->cyc_mode == RATE_RATIO;
   float pitch = 0.0f, phase = 0.0f;
   for (int k = 0; k < 2; ++k) {
     const int32_t s = b->pm_src[k];
-    if (lfo_ratio && s == LE_DRIFT_SRC_LFO) {
-      phase += b->pm_amt[k] * src.bi[s];
+    if ((lfo_ratio && s == LE_DRIFT_SRC_LFO) ||
+        (cyc_ratio && s == LE_DRIFT_SRC_ENV2)) {
+      phase += b->pm_amt[k] * 0.5f * kPitchRange[s] *
+               (s == LE_DRIFT_SRC_ENV2 ? src.bi[s] - 0.5f : src.bi[s]);
     } else {
       pitch += b->pm_amt[k] * src.bi[s] * kPitchRange[s];
     }
@@ -1433,7 +1531,7 @@ static void voice_sample(le_drift* d, le_drift_voice* v, float* out_l,
   phase = clampf(phase, -0.9999999f, 0.9999999f);
   const float base = v->pitch * exp2f(pitch) * v->ratio * b->bend_ratio;
   const float f1 = base * x->osc1_ratio;
-  const float f2 = base * x->osc2_ratio * exp2f(add_detune);
+  const float f2 = base * x->osc2_ratio * v->osc2_drift * exp2f(add_detune);
   const float dt1 = fminf(f1 / rate, 0.4999999f);
   const float dt2 = fminf(f2 / rate, 0.4999999f);
   v->dt1 = dt1; /* kept for while the voice is silent (tick) */

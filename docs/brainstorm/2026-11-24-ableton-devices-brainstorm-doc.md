@@ -1,6 +1,6 @@
 # Ableton Live device presets on the pedal — brainstorm
 
-<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance kModBy kCarriers Celesta transconductances autocorrelation tfz unmeasured retriggered isolations Geigerzaehler -->
+<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance kModBy kCarriers Celesta transconductances autocorrelation tfz unmeasured retriggered isolations Geigerzaehler Bellatine Keystrike Numan -->
 
 **Date:** 2026-11-24
 **Issue:** SEG-109 (related: SEG-57, Segno's own instrument voices)
@@ -133,7 +133,12 @@ written from it.
    → high-pass.
 6. The bypassed sum × about −17.8 dB (roughly the filter path's pass-band
    gain, so a routing switch keeps the level) is added after the high-pass;
-   the sum is clipped at a fixed limit **[open: its value]**.
+   the sum is clipped at a fixed limit **[code]**, 0.35 in Segno's scale
+   (a third of the filter path's unity level) **[measured]**: saws at Gain
+   2 and two at Gain 2 into either filter at resonance 0.7 (round 19) peak
+   at the same flat-topped level in Live at C2 and C4; with the clip their
+   harmonics 1 to 24 come within 1.7 dB rms of Live's (4.3 to 8.4 without
+   it, the resonant peak too strong and the top harmonics 5 to 8 dB low).
 7. Amplitude: × Envelope 1 × (1 − VolVel + VolVel · velocity) × Main
    Volume gain (matrix target 11) × note gain × voice-mode gain and pan.
 
@@ -185,8 +190,12 @@ written from it.
   10 Hz..20 kHz, where S = Σ (filter mod source × amount) + matrix slots
   targeting LP Frequency: 10 octaves per unit. Resonance = stored 0..1.01 +
   matrix slots targeting LP Resonance, clamped to 0..1.3. **[code]**
-- Key tracking uses the voice's key value (note − 69)/120 **[code]**; the
-  formula with `Filter_Tracking` is **[open]**.
+- Key tracking uses the voice's key value (note − 69)/120 **[code]**. With
+  `Filter_Tracking` t the cutoff is scaled by (1 − t) + t · f / 440, a blend
+  in hertz of 1 and the note's frequency over A4's **[measured]**: filter
+  II's resonant peak at t = 0.3 on C3, C4 and C5 and at t = 1 on C3, within
+  5 cents (an octave-scaled form put C3 at 0.3 190 cents low, and Bloom
+  Pad's peak 40 cents low).
 - Type I: a two-pole zero-delay filter with two unequal one-pole
   integrators (capacitor ratio 3.3, so a 12 dB/oct slope with a soft knee),
   trapezoidal prewarp, a cubic soft clip in the feedback solved in closed
@@ -232,7 +241,11 @@ written from it.
 - Filter input: both types clip their input: linear to about +0.70 and
   -0.98, a soft knee, and a hard edge at +0.79 on the positive side. A sine
   at Gain 1 gets Live's harmonics 2 to 41 within 3 dB (the hard edge gives
-  the slowly falling tail); at Gain 0.5 it stays clean. The path around
+  the slowly falling tail); at Gain 0.5 it stays clean. Past the knee the
+  negative side rises again with slope 1 to a hard edge at -1.6 (the
+  code's ±1.6 clip of the sum) **[measured]**: a saw at Gain 2 and two at
+  Gain 2 into filter II at resonance 0 (round 19), harmonics within 1 dB
+  rms (held at the knee, harmonics 2 to 5 were 2 to 5 dB low). The path around
   the filters is about 1.8 dB louder for the oscillators than for the
   noise. **[fitted]**
 - High-pass: a linear 2-pole state-variable filter, Q about 1.47 (a small
@@ -266,7 +279,13 @@ written from it.
   2 ratio to the note, 3 tempo sync. **[code]**, and fitted (Time 0.5 s
   gives 2 Hz).
 - Ratio follows the note's frequency after glide, Transpose and pitch bend,
-  not the oscillators' own Transpose. Sync divisions 0..21 run slowest
+  not the oscillators' own Transpose. A Mono lane's Ratio LFO follows that
+  lane's octave (an octave or two below the note) and the per-key drift
+  offset, while Unison's detune and the per-voice drift offset do not
+  move it **[measured]**: round 19's Ratio LFO on a pitch slot in Mono,
+  Unison and Stereo at Drift Depth 1 (tf 0.3 to 0.9 dB; following the
+  per-voice offset too gave 3.4 to 5.3) and Crunch Arcade's Mono LFO at
+  Ratio 12 (its pitch an octave off before). Sync divisions 0..21 run slowest
   first, 8 bars to 1/64; the default is 15 (1/8). **[code]**, fitted.
 - LFO: a phase per voice, increment clamped below Nyquist, rate modes as
   the cycling envelope. Retrigger restarts it at the shape's peak (0.25
@@ -282,7 +301,13 @@ written from it.
   Live's renders were made, not of the device.
 - An LFO in Ratio mode routed to a pitch slot becomes phase modulation of
   both oscillators (LFO × amount cycles, below one cycle) instead of
-  vibrato. **[code]**, fitted (sidebands within 0.1 dB of Live's).
+  vibrato. **[code]**, fitted (sidebands within 0.1 dB of Live's). The
+  cycling envelope in Ratio mode does the same, centred on its middle:
+  phase modulation by (level - 0.5) × amount × 2 cycles, half the slot's
+  4-octave range as the LFO's depth is half of its 2 **[measured]**: round
+  19's sine at Ratio 2 and 3, amounts 0.1 to 0.25, two envelope shapes,
+  sidebands within 0.8 dB rms (3 to 10 uncentred); Bellatine's at Ratio
+  14 (as vibrato Segno's note sat 336 cents sharp).
 - LFO shapes 0..8: Sine,
   Triangle, two saws (rising and falling; which one is "Saw Up" is
   **[open]**), Square, Sample & Hold (two steps per cycle), Wander (smoothed
@@ -328,19 +353,62 @@ written from it.
     **[open]**.
   - Unison: four voices per note (8 notes at most), the left side sharp:
     +42 and +21 cents panned −1 and −0.5, −21 and −42 at +0.5 and +1 at
-    full Strength (Segno orders the lanes flattest first), both scaled
+    full Strength (lane 0 the sharpest, as the code orders them:
+    measured, with each voice's drift on its lane, Live's Unison renders at
+    Drift Depth 0.63 only line up that way), both scaled
     linearly by Strength; mode gain about −6.5 dB. The pan law is
     **[open]**.
 - Voice counts (0..4): 4, 8, 16, 24 and 32 voices; Stereo plays half as
   many notes, Unison a quarter. **[code]**
 - Drift Depth: a fixed tuning offset per key plus one per voice, linear
-  in depth. Fitted at Depth 1: the per-key part has an rms near 7 cents,
-  the two voices of a Stereo pair sit 11.6 cents apart at every key, and
-  voices of other pairs up to about 11 cents away. The same key on the
-  same voice always gets the same offset. Segno builds its own values with
-  these statistics; Live's table is not copied.
-- SerialNumber: a random number per instance, saved in the preset,
-  probably the seed for per-instance randomness. **[inferred]**
+  in w = depth / 0.58. The same key on the same voice always gets the same
+  offset, in every instance (three Live renders of one patch, each a fresh
+  device, are identical). **[measured]** Segno uses the measured values
+  (the owner's decision, 2026-11-25, on values measured from Live's
+  rendered audio), in cents per unit of w, from round 17 at Drift Depth 1
+  with a sine: per voice (32) from round 17's `dv-stereo`, each lane of 16
+  Stereo pairs alone on its channel at notes 84..99 (pair p is voices 2p,
+  2p + 1; cross-checked against `dv-poly` voices 0..18, half depth in
+  `dv-poly-d05` and round 18's `dv-poly-hi2` voices 16..31, all within
+  0.01 cent); per key (C1..B5) minus the voice's offset, from round 18:
+  C1..D#1 from `dk-lo2` (voice 0, the oscillator two octaves up so the
+  window holds 30 cycles), E1..G2 from `dv-st-lo` and C3..D#4 from
+  `dv-st-mid` (every voice at once, 3 s windows), G#2..B2 from
+  `dk-trans`, and E4..B5 from round 17's `dk-c`. Round 17's `dk-a` held
+  too few cycles at the lowest keys: C1..F#1 were 0.5 to 6.5 cents off.
+  Round 18 also settled: the per-voice offset does not depend on the key
+  (every pair's split at E1..G2 and C3..D#4 within 0.06 cent of the
+  table); the per-key offset follows the key played, not Transpose
+  (`dk-trans`); depth is linear (`dv-st-mid-d05` within 0.06 cent); and
+  keys outside C1..B5 have none (`dk-lo`, C-1..B0, and `dk-hi`, C6..G9,
+  within 0.07 cent). Statistics of the values: per key a mean of
+  +1.18, a spread of 3.63, neighbours correlated 0.53; per voice a mean of
+  +2.26 and a spread of 7.2, independent from voice to voice; Stereo pairs
+  and Unison groups are consecutive voices. The measurement script is the
+  fit tooling's `dfit/drift_tables.py`. Osc 2 adds one more offset per
+  voice (32 values, -0.82 to +0.83 cent per unit of w), the same at every
+  key, octave, Detune and Transpose **[measured]**: round 19's
+  `o2-stereo` (Osc 2 alone, a sine, Stereo pairs at 84..99), within 0.14
+  cent on `o2-st-a..d` (keys 24..83), `o2-st-out`, Osc 2 at -1 octave,
+  Detune +7 and Transpose +24; with it tape-chord's stereo goes from 1.87
+  to 0.04 dB. Transpose +24 leaves both oscillators' tables as they are
+  (`o1-st-t24`, `o2-st-t24` within 0.02 cent).
+- The per-voice tables follow the preset's SerialNumber; the per-key
+  table is the same for every serial **[measured]** (round 20): Live
+  clamps the serial to 0..8388607 (8388608 plays 8388607's values,
+  -2147483648 serial 0's), and every serial measured has values of its
+  own (1 and 12345: 17 and 20 cents rms from serial 0's). The factory
+  presets hold 0, -2147483648, 2217915 and 8388607, so Segno carries the
+  measured per-voice and Osc 2 tables for serials 0, 2217915 and 8388607
+  (each from its Stereo pairs at 84..99, cross-checked within 0.2 cent on
+  pairs at 24..83) and uses serial 0's for any other serial **[Segno]**.
+  The presets that were off pitch on serial 0's tables (Monday Morning
+  12 cents, Synth on Screen, Grimer Bass, Game Console) now sit within
+  0.4 cent. Script: `dfit/drift_tables_serial.py`.
+- SerialNumber: a random number per instance, saved in the preset; it
+  selects Drift Depth's per-voice tables (see above) **[measured]**. The
+  preset reader must pass `Global_SerialNumber` as the device parameter
+  `LE_DRIFT_SERIAL_NUMBER` (integer, 0..8388607).
 - Glide: a one-pole in hertz (not in pitch) with time constant 0.144 x
   Glide **[measured]**: on Live's octave glides at 0.5, 1 and 2 s the
   distance to the new note in hertz falls by the same ratio every 50 ms,
@@ -451,9 +519,43 @@ What the strict score still fails, and why **[measured]**:
   Sample & Hold and Wander renders and Chirp Pluck's pitch (its Sample &
   Hold moves pitch by up to 8 cents) cannot match draw for draw; Live
   copies (`-r2`, `-r3`) settle how far Live is from itself.
-- Bloom Pad's filter II peak sits 37 cents below Live's with its key
-  tracking and Env 2 modulation; the same filter without them is within 5
-  cents. Which of the two differs needs the renders requested for round 16.
+- Round 17 (2026-11-25): the Drift Depth statistics above, and the
+  held-out phrase (a quiet C2, a loud C4 triad, a hard C5) on twelve
+  isolation patches: velocity to volume and to the filter, release during
+  a long attack, one Unison slot, two Stereo slots, four Poly voices with
+  long releases, Mono, the cycling envelope in Sync and Freq. All twelve
+  pass, so none of those paths explains the held-out failures. With the
+  statistics-matched tables the strict score is 204 of 263 (factory
+  presets 0 of 5); a scratch build with the measured per-key and per-voice
+  values instead (not kept) passes 245 of 263 (presets 2 of 5): 41
+  renders fail only because of the exact drift values (the list is kept
+  with the fit tooling, `dfit/drift_only_list.txt`). With the measured tables
+  in the product (the owner allowed values measured from renders): 247 of
+  263, factory presets 3 of 5, and every one of those 41 passes. Still open in
+  the tables: a Stereo pair's split inside the key range looks larger than
+  at the notes 84..99 it was measured on (80s Tape's G2 pair: 0.68 against
+  0.29 cents per unit of w; Bloom Pad's lanes 2 and 3 within 0.9 cent), so
+  the per-voice offset may depend on the key; and the keys outside C1..B5.
+  Round 18 measured both (every voice at C3..D#4 and E1..G2, at two depths,
+  and voice 0 from C-1 to B0 and C6 to G9): neither holds, see Voices; the
+  80s Tape difference is Osc 2's own offset (round 19).
+- Round 19 (2026-11-26): Osc 2's own per-voice drift offset, the voice
+  clip and the filter input past the knee, the cycling envelope's centred
+  phase modulation and the Ratio reference's per-key drift (each above).
+  Settled as already right: the Key source's scale (`key-lp`,
+  `key-shape`), Pulse's shape clamped at 0 (`pulse-neg05`, `pulse-neg1`),
+  and when a releasing voice counts as free (`free-tie-*`: the voice Live
+  picks, read from its drift, matches Segno's for every gap). Strict score
+  300 of 335 (264 of the 296 scored before round 19, from 252), factory
+  presets 3 of 5; held-out 45 of 89, from 14. Round 20 then measured the
+  SerialNumber tables (see Voices): 318 of 351, held-out 47 of 89. Still
+  failing: Chirp Pluck and Clob Bass, the Mono presets Sol Bass, Seventy Two Bass, Rogue
+  and Crunch Arcade (tf 3 to 4.5), Metallic Strings (random Sample & Hold),
+  and filter I at a hot input with resonance (`drv-f1-g4-r07`, 2.0).
+- Round 16 settled two questions. Live's drift is the same in every
+  instance: three Live renders of one Drift Depth patch, each a fresh
+  device, correlate 1.0000. And Bloom Pad's filter peak came from key
+  tracking (now a blend in hertz, above); its Env 2 modulation matched.
 
 ## Operator: behavior
 

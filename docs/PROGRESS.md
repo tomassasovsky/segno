@@ -1,4 +1,4 @@
-<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated autocorrelation tfz unmeasured retriggered isolations Geigerzaehler -->
+<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated autocorrelation tfz unmeasured retriggered isolations Geigerzaehler Bellatine Keystrike Numan -->
 # Segno — Progress & Roadmap
 
 <!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs multicore smarttune -->
@@ -149,7 +149,48 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
 - What still fails is Drift Depth (Segno's tuning values are its own by
   rule; with Live's table in a scratch check the drift renders passed) and
   random sources (noise, Sample & Hold) that no render can match draw for
-  draw. Bloom Pad's filter peak (37 cents low) waits on round 16.
+  draw. Round 16: key tracking is a blend in hertz ((1 - t) + t f / 440,
+  which fixed Bloom Pad's filter peak), and Live's drift is the same in
+  every instance. Strict score 207 of 244 with round 16; held-out 8 of 89.
+- Round 17: Drift Depth now uses Segno's own tables with the statistics
+  measured on Live (per key: mean +1.18, spread 3.63 cents per unit,
+  neighbours correlated 0.53; per voice: mean +2.26, spread 7.2,
+  independent), and Unison's lanes run sharpest first as the code orders
+  them. Strict score 204 of 263 (presets 0 of 5); with measured values in
+  a scratch build 245 of 263: 41 renders fail only on the exact drift
+  values, pending the owner's decision on measured per-key values.
+  Held-out: 8 of 89 (14 of 89 with the measured values).
+- The owner allowed values measured from Live's rendered audio: Drift
+  Depth uses the measured per-key and per-voice tables (round 17). Strict
+  score 247 of 263, factory presets 3 of 5 (Bloom Pad, Euphoria Lead,
+  80s Tape).
+- Round 18 (51 renders): keys outside C1..B5 carry no drift offset, the
+  per-voice offset does not depend on the key, the per-key offset follows
+  the key played, and C1..F#1 are remeasured (round 17's windows were too
+  short there). A Ratio-mode LFO follows a Mono lane's octave (Crunch
+  Arcade: pitch an octave off before, tf 11.8 to 3.1), and the cycling
+  envelope in Ratio mode on a pitch slot is phase modulation (Bellatine:
+  336 cents sharp before, tf 15.7 to 2.9). Strict score 252 of 296 before
+  and after with round 18 included, factory presets 3 of 5; held-out 14 of
+  89 (Bellatine and Crunch Arcade much closer, still failing).
+- Round 19 (39 renders): Osc 2 has its own per-voice drift offset on top
+  of Osc 1's (tape-chord's stereo 1.87 to 0.04 dB); the voice's output
+  clip is 0.35 and the filter input's negative side runs on to -1.6 (hot
+  inputs into either filter within 1.7 dB rms, from up to 8.4); the
+  cycling envelope's phase modulation is centred on its middle; the Ratio
+  rates follow the per-key drift. The Key source, Pulse's shape clamp and
+  when a releasing voice is free already matched. Strict score 300 of 335
+  (round 19 included; 264 of the 296 scored before, from 252), factory
+  presets 3 of 5; held-out 45 of 89, from 14.
+- Round 20 (16 renders): Drift Depth's per-voice tables follow the
+  preset's SerialNumber (clamped to 0..8388607; each serial its own
+  values, the per-key table shared). Segno carries the measured tables of
+  the factory presets' serials (0, 2217915, 8388607) and serial 0's for
+  any other; SerialNumber is a new device parameter
+  (`LE_DRIFT_SERIAL_NUMBER`), which the preset reader must pass. Monday
+  Morning, Synth on Screen, Grimer Bass and Game Console now pass. Strict
+  score 318 of 351 (rounds 19 and 20 included), factory presets 3 of 5;
+  held-out 47 of 89.
 
 ## November 2026 Drift's filter II as an MS-20 circuit model (SEG-109 P4, round 4)
 
