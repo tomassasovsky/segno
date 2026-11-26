@@ -349,6 +349,14 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   without drive in Morph mode; Spread draws nothing per voice beyond its
   pans, the truncated table read and the sample-and-hold LFO match Live.
   387 of 452 fit renders, 8 of 10 presets; held out 39 of 67.
+- Held-out pass 2: a note that takes a sounding voice's place waits for
+  its 1 ms fade (Live's pending queue), and parameters apply per 16
+  samples (Nebulae Keys' audio-rate sample-and-hold), the voice end kept on
+  a 32-sample grid. 391 of 452 fit renders, 8 of 10 presets; held out 41
+  of 67. Most random held-out failures come from Segno's three seeds
+  drawing the first note's pan near the sides. Round 12 (23 renders) asks
+  Live for each destination's control rate, the steal wait, the pitch
+  multiplier through zero and the first random pan.
 - A voice costs 2.7 us per period at 48 kHz on the dev machine, 4.5 with
   Antialias (a Drift voice 7.1).
 
