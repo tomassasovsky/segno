@@ -61,7 +61,7 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
 | SEG-22 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track and lane chains) is #1729 | build | needs-plan-approval | `claude/fx-multicore-1515-p1b` |
 | SEG-107 | Save As failed with Out of Memory: the mixdown asked for the LCM of two Song-mode tracks (24.7 GB); it now spans the longest lane past 600 s, and the save refuses a length no loop can hold | in-review | needs-hardware | `claude/save-oom-SEG-107` |
 | SEG-63 | Console WiFi against an ASUS RT-AX89X with 802.11ax on: firmware already matches Pi OS; brcmfmac options aligned with Pi OS and a troubleshooting note; failure not reproduced, issue stays open until it recurs | in-review | agent-merges | `claude/wifi-firmware-1816` |
-| SEG-114 | Meters move smoothly, after the Looper X: part 1, the Tracks view's track meter fills with a gradient in its state colour (Looper X greens while playing), in review; the ballistics (rise and fall) wait for a rig rerun on an idle host | in-review | needs-merge | `claude/meter-ballistics-SEG-114` |
+| SEG-114 | Meters move smoothly, after the Looper X: part 1 (#1997), the Tracks view's track meter fills with a gradient in its state colour (Looper X greens while playing); part 2 (#1998), every meter peak rises at once and falls 11.8 dB/s in the engine, its rate to be tuned by eye on the console (build 297, experimental) | in-review | needs-merge | `claude/meter-ballistics-SEG-114`, `-p2` |
 
 ---
 
