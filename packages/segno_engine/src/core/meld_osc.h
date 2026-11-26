@@ -167,6 +167,8 @@ typedef struct le_meld_osc {
     } shepard;
     struct {
       uint32_t count;
+      uint32_t step; /* counts since the note started */
+      int32_t gi;    /* the next glitch in kGrungeGlitch */
       double frac;
       float out;
     } grunge;

@@ -73,12 +73,15 @@ typedef struct le_operator_env {
   float y;       /* output, before the level scale */
   double repeat; /* Beat/Sync: samples to the next retrigger */
   float scale;   /* the level scale the one-pole's span is measured in */
-  float ratio;   /* pitch envelope: its amount in octaves per semitone, or 0 */
+  int32_t pitch; /* the pitch envelope: its one-pole keeps one shape whatever its span */
 } le_operator_env;
 
 typedef struct le_operator_voice {
   int32_t state; /* LE_OPERATOR_VOICE_* (operator_voice.c) */
   int32_t note;
+  int32_t key; /* the note key scaling follows: kept through legato */
+  int32_t ending; /* its carriers ended in the last chunk: it frees after this one */
+  int32_t snap;   /* took a sounding voice's place and has not played yet: legato notes jump */
   uint32_t origin;
   uint64_t serial;
   int32_t side;   /* 0: both channels, 1: left only, 2: right only (Spread) */
@@ -142,6 +145,7 @@ typedef struct le_operator {
   float last_pitch; /* the last played note, the glide start */
   int32_t played;   /* whether a note has played since init */
   double lfo_free;  /* the free-running LFO phase (Retrigger off) */
+  double clock;     /* samples rendered since init: Sync's grid */
   int32_t voice_limit;
   uint32_t stolen;
   uint32_t rng;

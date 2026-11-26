@@ -393,7 +393,7 @@ static void test_meld_fits(void) {
   enum { N = 48000 };
   static float l[N], r[N];
   /* engine B alone sounding, its release linked to A's, which velocity
-   * stretches from 0.05 s to about 0.2 s: B still sounds 0.1 s after the
+   * stretches from 0.05 s to about 0.3 s: B still sounds 0.1 s after the
    * note ends */
   meld_reference(&g_meld);
   meld_eng(&g_meld, 0, LE_MELD_E_ON, 0.0f);
@@ -437,11 +437,137 @@ static void test_meld_fits(void) {
     rmin = fminf(rmin, opr_peak(r + i, 480));
   }
   CHECK(lmin < 0.01f && rmin < 0.01f);
+  /* Mono without legato, three keys at once: the second steals the first
+   * and starts after its 1 ms fade, the third finds nothing to steal and
+   * is dropped */
+  meld_reference(&g_meld);
+  meld_set(&g_meld, LE_MELD_MONO_POLY, 0.0f);
+  meld_set(&g_meld, LE_MELD_MONO_LEGATO, 0.0f);
+  CHECK(le_meld_note_on(&g_meld, 1, 60, 127, 0) == 0);
+  CHECK(le_meld_note_on(&g_meld, 2, 64, 127, 0) == 0);
+  CHECK(le_meld_note_on(&g_meld, 3, 67, 127, 0) == 0);
+  le_meld_render(&g_meld, l, r, 4800);
+  int sounding = 0, note = -1;
+  for (int32_t i = 0; i < LE_MELD_VOICE_SLOTS; ++i) {
+    if (g_meld.voices[i].state != 0) sounding++, note = g_meld.voices[i].note;
+  }
+  CHECK(sounding == 1 && note == 64);
+  CHECK(fabs(opr_component(l + 2400, 2400, opr_note_hz(64)) - 0.3536) < 0.01);
+  /* LFO 1's Pulsate draws the same pulses on every retriggered note */
+  {
+    static float a[4800], b[4800];
+    meld_reference(&g_meld);
+    meld_eng(&g_meld, 0, LE_MELD_E_LFO1_TYPE, 5.0f);
+    meld_eng(&g_meld, 0, LE_MELD_E_LFO1_MACRO1, 0.34f);
+    meld_eng(&g_meld, 0, LE_MELD_E_LFO1_MACRO2, 1.0f);
+    meld_eng(&g_meld, 0, LE_MELD_E_LFO1_FX1_TYPE, 0.0f);
+    meld_eng(&g_meld, 0, LE_MELD_E_LFO1_FX2_TYPE, 0.0f);
+    meld_eng(&g_meld, 0, LE_MELD_E_LFO1_RATE, 20.0f);
+    meld_set(&g_meld, LE_MELD_MOD_AMOUNT(0, 1, 2), 0.02f);
+    CHECK(le_meld_note_on(&g_meld, 1, 60, 127, 0) == 0);
+    le_meld_render(&g_meld, a, r, 4800);
+    le_meld_note_off(&g_meld, 1);
+    le_meld_render(&g_meld, l, r, 24000);
+    CHECK(le_meld_note_on(&g_meld, 2, 60, 127, 0) == 0);
+    le_meld_render(&g_meld, b, r, 4800);
+    float diff = 0.0f;
+    for (int32_t i = 0; i < 4800; ++i) diff = fmaxf(diff, fabsf(a[i] - b[i]));
+    /* the tone filter's state carries a trace of the first note (0.007);
+     * a different pulse sequence would detune the second by up to two
+     * semitones */
+    CHECK(diff < 0.02f);
+  }
+}
+
+/* The values measured from Live's renders: LFO 1's Pulsate heights, LFO
+ * 2's S&H steps, Wander's targets, Fold FM's intervals. */
+static void test_meld_measured(void) {
+  printf("test_meld_measured\n");
+  enum { N = 24000 };
+  static float l[N], r[N];
+  /* Pulsate at 4 Hz, every chance taken, pulses a fifth of a cycle: the
+   * first quarter's pulse +0.971, the second's -0.462 (pul-c100) */
+  meld_reference(&g_meld);
+  meld_eng(&g_meld, 0, LE_MELD_E_LFO1_TYPE, 5.0f);
+  meld_eng(&g_meld, 0, LE_MELD_E_LFO1_MACRO1, 1.0f);
+  meld_eng(&g_meld, 0, LE_MELD_E_LFO1_MACRO2, 0.252f);
+  meld_eng(&g_meld, 0, LE_MELD_E_LFO1_FX1_TYPE, 0.0f);
+  meld_eng(&g_meld, 0, LE_MELD_E_LFO1_FX2_TYPE, 0.0f);
+  meld_eng(&g_meld, 0, LE_MELD_E_LFO1_RATE, 4.0f);
+  meld_eng(&g_meld, 0, LE_MELD_E_LFO2_WAVE, 5.0f);
+  meld_eng(&g_meld, 0, LE_MELD_E_LFO2_RATE, 8.0f);
+  meld_eng(&g_meld, 0, LE_MELD_E_LFO2_RETRIGGER, 1.0f);
+  CHECK(le_meld_note_on(&g_meld, 1, 60, 127, 0) == 0);
+  le_meld_voice* v = NULL;
+  for (int32_t i = 0; i < LE_MELD_VOICE_SLOTS; ++i) {
+    if (g_meld.voices[i].state != 0) v = &g_meld.voices[i];
+  }
+  CHECK(v != NULL);
+  const le_meld_engine* en = &v->c[0].e[0];
+  le_meld_render(&g_meld, l, r, 1440); /* 30 ms */
+  CHECK(fabsf(en->lfo1.gen - 0.971f) < 1e-3f);
+  CHECK(fabsf(en->lfo2_sh - 0.152f) < 1e-3f); /* S&H's first step (sh-8hz) */
+  le_meld_render(&g_meld, l, r, 3000); /* 92.5 ms */
+  CHECK(fabsf(en->lfo1.gen + 0.462f) < 1e-3f);
+  le_meld_render(&g_meld, l, r, 4800); /* 192.5 ms: S&H's second step */
+  CHECK(fabsf(en->lfo2_sh + 0.600f) < 1e-3f);
+  /* Wander as plain random steps (Morph 0.5, Step 1): the first cycle
+   * holds -0.998, the second +0.974 (wander-step) */
+  meld_reference(&g_meld);
+  meld_eng(&g_meld, 0, LE_MELD_E_LFO1_TYPE, 2.0f);
+  meld_eng(&g_meld, 0, LE_MELD_E_LFO1_MACRO1, 0.5f);
+  meld_eng(&g_meld, 0, LE_MELD_E_LFO1_MACRO2, 1.0f);
+  meld_eng(&g_meld, 0, LE_MELD_E_LFO1_FX1_TYPE, 0.0f);
+  meld_eng(&g_meld, 0, LE_MELD_E_LFO1_FX2_TYPE, 0.0f);
+  meld_eng(&g_meld, 0, LE_MELD_E_LFO1_RATE, 4.0f);
+  CHECK(le_meld_note_on(&g_meld, 1, 60, 127, 0) == 0);
+  for (int32_t i = 0; i < LE_MELD_VOICE_SLOTS; ++i) {
+    if (g_meld.voices[i].state != 0) v = &g_meld.voices[i];
+  }
+  en = &v->c[0].e[0];
+  le_meld_render(&g_meld, l, r, 6000);
+  CHECK(fabsf(en->lfo1.gen + 0.998f) < 1e-3f);
+  le_meld_render(&g_meld, l, r, 12000);
+  CHECK(fabsf(en->lfo1.gen - 0.974f) < 1e-3f);
+  /* a free LFO 2 (no retrigger) at 2 Hz runs on through the silence
+   * between notes: a note 1.25 s after the first starts it at phase 0.5
+   * (free2-poly) */
+  meld_reference(&g_meld);
+  meld_eng(&g_meld, 0, LE_MELD_E_LFO2_WAVE, 0.0f);
+  meld_eng(&g_meld, 0, LE_MELD_E_LFO2_RATE, 2.0f);
+  meld_eng(&g_meld, 0, LE_MELD_E_LFO2_RETRIGGER, 0.0f);
+  meld_eng(&g_meld, 0, LE_MELD_E_AMP_RELEASE, 0.05f);
+  CHECK(le_meld_note_on(&g_meld, 1, 60, 127, 0) == 0);
+  le_meld_render(&g_meld, l, r, 24000);
+  le_meld_note_off(&g_meld, 1);
+  le_meld_render(&g_meld, l, r, 24000);
+  le_meld_render(&g_meld, l, r, 12000); /* 1.25 s */
+  CHECK(le_meld_note_on(&g_meld, 2, 60, 127, 0) == 0);
+  v = NULL;
+  for (int32_t i = 0; i < LE_MELD_VOICE_SLOTS; ++i) {
+    if (g_meld.voices[i].state != 0) v = &g_meld.voices[i];
+  }
+  CHECK(v != NULL);
+  CHECK(fabs(v->c[0].e[0].lfo2_ph - 0.5) < 1e-3);
+  /* Fold FM at Macro 1 squared = 3/7, on 7 semitones alone: a line at G4
+   * (1.498 f0), none at 1.26 f0 where the neighbouring 4 semitones would
+   * sit */
+  meld_reference(&g_meld);
+  meld_eng(&g_meld, 0, LE_MELD_E_OSC_TYPE, (float)LE_MELD_OSC_FOLD_FM);
+  meld_eng(&g_meld, 0, LE_MELD_E_OSC_MACRO1, sqrtf(3.0f / 7.0f));
+  meld_eng(&g_meld, 0, LE_MELD_E_OSC_MACRO2, 0.0f);
+  CHECK(le_meld_note_on(&g_meld, 1, 60, 127, 0) == 0);
+  le_meld_render(&g_meld, l, r, N);
+  const double f0 = opr_note_hz(60);
+  const double fund = opr_component(l + N / 2, N / 2, f0);
+  CHECK(opr_component(l + N / 2, N / 2, f0 * 1.4983071) > 0.003 * fund);
+  CHECK(opr_component(l + N / 2, N / 2, f0 * 1.2599210) < 0.0003 * fund);
 }
 
 static void run_meld_tests(void) {
   test_meld_sine_level();
   test_meld_fits();
+  test_meld_measured();
   test_meld_every_osc_and_filter();
   test_meld_matrix();
   test_meld_envelopes();
