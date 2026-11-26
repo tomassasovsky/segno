@@ -47,10 +47,14 @@ extern "C" {
 #define LE_MELD_ROUTES (LE_MELD_MOD_TARGETS * LE_MELD_MOD_SOURCES)
 
 /* One envelope's run state: a segment ramps x from 0 to 1 and the output
- * follows its curve from y0 to y1. */
+ * follows its curve from y0 to y1. x is double: in float its 1/n steps
+ * drift by a tenth of a sample over a release, which Live's does not (fit:
+ * nloop-55-notes, Live's release over Segno's 1.0000 to the last sample in
+ * double, rising to 1.0064 in float) */
 typedef struct le_meld_env {
   int32_t state;
-  float x, y0, y1, y;
+  double x;
+  float y0, y1, y;
 } le_meld_env;
 
 /* LFO 1's transformer state. */
