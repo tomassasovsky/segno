@@ -175,20 +175,20 @@ static void ledLevel() {
   state.active_button_mask = 1;
   state.pedal_colors[0] = {255, 0, 0};
   receive(state, now += 20);
-  assert(ind.shown[59] == (191u << 16));
+  assert(ind.shown[59] == (255u << 16));
   ringLink.sent.clear();
   receiveLedLevel(128, now += 1);
   at(now += RENDER_MS);  // one render: one fade step, not a jump
-  assert(ind.shown[59] == (onePixel(191, 255 - LED_FADE_STEP) << 16));
+  assert(ind.shown[59] == (onePixel(255, 255 - LED_FADE_STEP) << 16));
   assert(lastRingLevel() == 255 - LED_FADE_STEP);
   for (int i = 0; i < 60; ++i) at(now += RENDER_MS);
-  assert(ind.shown[59] == (onePixel(191, 128) << 16));
+  assert(ind.shown[59] == (onePixel(255, 128) << 16));
   assert(lastRingLevel() == 128);
   // The idle dim applies on top of the level.
   state.dimmed = 1;
   receive(state, now += 20);
   assert(ind.shown[59] ==
-         (onePixel(191, ring_link::outputLevel(128, true)) << 16));
+         (onePixel(255, ring_link::outputLevel(128, true)) << 16));
   state.dimmed = 0;
   receive(state, now += 20);
   // A level of 0 is refused and changes nothing.
@@ -196,19 +196,19 @@ static void ledLevel() {
                           PEDAL_LINK_TYPE_LED_LEVEL ^ 1};
   for (const uint8_t byte : zero) fake_arduino::received.push_back(byte);
   for (int i = 0; i < 10; ++i) at(now += RENDER_MS);
-  assert(ind.shown[59] == (onePixel(191, 128) << 16));
+  assert(ind.shown[59] == (onePixel(255, 128) << 16));
   // The app is gone: dark. A level that arrives before the next frame takes
   // effect at once, so a reconnect never flashes full and fades down.
   at(now += 5001);
   expectAllDark();
   receiveLedLevel(64, now += 1);
   receive(state, now += 20);
-  assert(ind.shown[59] == (onePixel(191, 64) << 16));
+  assert(ind.shown[59] == (onePixel(255, 64) << 16));
   // Without one the next app gets full, as firmware 2.6 showed.
   at(now += 5001);
   expectAllDark();
   receive(state, now += 20);
-  assert(ind.shown[59] == (191u << 16));
+  assert(ind.shown[59] == (255u << 16));
   ringLink.sent.clear();
   at(now += 120);
   assert(lastRingLevel() == 255);
@@ -309,8 +309,8 @@ static void lateTrigger() {
 // lights the whole pill. When the queue ends on a lit pill it blends to the
 // diffused curve over 300 ms.
 static void songQueueFill() {
-  const uint8_t level[8] = {28,69,151,191,191,151,69,28};
-  const unsigned uniform = 110;  // the mean of level[]
+  const uint8_t level[8] = {38,92,201,255,255,201,92,38};
+  const unsigned uniform = 147;  // the mean of level[]
   unsigned sum = 0;
   for (const uint8_t l : level) sum += l;
   assert((sum + 4) / 8 == uniform);
@@ -414,8 +414,8 @@ static void receiveClearHold(uint8_t button, uint8_t progress, uint32_t now) {
 // shows. It ends on a message with no button, when the messages stop, and with
 // the frame; it never lights a pill the app leaves dark.
 static void clearHoldFill() {
-  const uint8_t level[8] = {28,69,151,191,191,151,69,28};
-  const unsigned ink = 110;  // PILL_FILL_LEVEL, the red channel when covered
+  const uint8_t level[8] = {38,92,201,255,255,201,92,38};
+  const unsigned ink = 147;  // PILL_FILL_LEVEL, the red channel when covered
   pedal_state state = {};
   state.mode = PEDAL_MODE_REC;
   state.master_gain = 255;
@@ -525,10 +525,14 @@ static void clearHoldFill() {
   assert(red(3, 0) == ink && red(3, 3) == 0);  // track 1 fills beside it
   receiveClearHold(PEDAL_BTN_TRACK2 + 1, 64, now += 20);
   assert(!g_clearFlashing[PEDAL_BTN_TRACK2]);
+  // At 64 the ends are covered and the next pair only just starts (a fill of
+  // 1 of 255); the centre is untouched.
   for (unsigned pixel = 0; pixel < 8; ++pixel) {
     const bool end = pixel == 0 || pixel == 7;
-    assert(red(2, pixel) == (end ? ink : 0));
-    assert(green(2, pixel) == (end ? 0 : level[pixel]));
+    const bool next = pixel == 1 || pixel == 6;
+    assert(red(2, pixel) == (end ? ink : next ? (ink + 127) / 255 : 0));
+    assert(green(2, pixel) ==
+           (end ? 0 : next ? (level[pixel] * 254u + 127) / 255 : level[pixel]));
   }
   receiveClearHold(0, 0, now += 20);
   expectNormal(2);
@@ -585,7 +589,7 @@ static void clearFlashConstants() {
 // full brightness from both ends; releasing early restores it at once, and a
 // fired hold flashes as on any other pill.
 static void clearHoldUnderRed() {
-  const uint8_t level[8] = {28,69,151,191,191,151,69,28};
+  const uint8_t level[8] = {38,92,201,255,255,201,92,38};
   pedal_state state = {};
   state.mode = PEDAL_MODE_REC;
   state.master_gain = 255;
@@ -615,7 +619,7 @@ static void clearHoldUnderRed() {
   // Half way: full-brightness ends, a centre at about a third of its level.
   receiveClearHold(PEDAL_BTN_TRACK2 + 1, 128, now += 20);
   assert(red(0) == PILL_PEAK && red(1) == PILL_PEAK);
-  assert(red(3) == (191u * 85 + 127) / 255 && red(3) < level[3] / 2);
+  assert(red(3) == (255u * 85 + 127) / 255 && red(3) < level[3] / 2);
   // Released early: recording brightness at once.
   receiveClearHold(0, 0, now += 20);
   expectRecording();
@@ -644,7 +648,7 @@ static void clearHoldUnderRed() {
 // not cut the first flash short or a live fill elsewhere, and a pill the app
 // does not light when the hold fires does not flash (#1534).
 static void clearFlashPerPill() {
-  const uint8_t level[8] = {28,69,151,191,191,151,69,28};
+  const uint8_t level[8] = {38,92,201,255,255,201,92,38};
   const unsigned ink = PILL_FILL_LEVEL;
   pedal_state state = {};
   state.mode = PEDAL_MODE_REC;
@@ -689,7 +693,7 @@ int main() {
   setup();
   expectAllDark();
   const uint8_t buttons[10] = {7,6,5,4,3,2,1,0,8,9};
-  const uint8_t bright[8] = {28,69,151,191,191,151,69,28};
+  const uint8_t bright[8] = {38,92,201,255,255,201,92,38};
   pedal_state state = {};
   state.mode = PEDAL_MODE_CUSTOM;
   state.master_gain = 255;
@@ -758,7 +762,7 @@ int main() {
       assert(ind.shown[group * 8 + pixel] == (level << 16 | level << 8 | level));
     }
   }
-  assert(channelTotal() == 10u * 3u * 878u);
+  assert(channelTotal() == 10u * 3u * 1172u);
   const auto allWhite = ind.shown;
   for (unsigned repeat = 0; repeat < 8; ++repeat) {
     receive(state, now += 100);
@@ -786,7 +790,7 @@ int main() {
   state.active_button_mask = 1;
   state.pedal_colors[0] = {255,0,0};
   receive(state, now += 20);
-  assert(ind.shown[59] == (191u << 16));
+  assert(ind.shown[59] == (255u << 16));
   const auto sparse = ind.shown;
   const auto pushes = ind.showCount;
   at(now += 260);
@@ -795,7 +799,7 @@ int main() {
   // come back on the next undimmed frame.
   state.dimmed = 1;
   receive(state, now += 20);
-  assert(ind.shown[59] == (onePixel(191, ring_link::DIM_LEVEL) << 16));
+  assert(ind.shown[59] == (onePixel(255, ring_link::DIM_LEVEL) << 16));
   assert(lastRingState().flags & ring_link::FLAG_DIMMED);
   state.dimmed = 0;
   receive(state, now += 20);

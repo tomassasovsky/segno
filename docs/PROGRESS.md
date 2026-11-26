@@ -60,6 +60,7 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
 | SEG-48 | Effects budget from the app's measured headroom: 10-minute untraced in-app ladder at 48 kHz / 32 (build 279); track job 200 → 300 ns, chains on the callback charged 2.5× (`kFxSerialFactor`); 4 inputs + 7 tracks or + 1 output rack fit | in-review | agent-merges | `claude/fx-headroom-1724-p3` |
 | SEG-22 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track and lane chains) is #1729 | build | needs-plan-approval | `claude/fx-multicore-1515-p1b` |
 | SEG-107 | Save As failed with Out of Memory: the mixdown asked for the LCM of two Song-mode tracks (24.7 GB); it now spans the longest lane past 600 s, and the save refuses a length no loop can hold | in-review | needs-hardware | `claude/save-oom-SEG-107` |
+| SEG-115 | Console LEDs at full brightness ceilings: pills peak 255 on the curve (console 2.9), ring without the v2 cap at 255 (ring 1.3); segno-hardware docs carry the AUX budget and the ring trunk. Reaches the appliance only after the owner builds the trunk | in-review | needs-hardware | `claude/led-ceilings-SEG-115` |
 | SEG-63 | Console WiFi against an ASUS RT-AX89X with 802.11ax on: firmware already matches Pi OS; brcmfmac options aligned with Pi OS and a troubleshooting note; failure not reproduced, issue stays open until it recurs | in-review | agent-merges | `claude/wifi-firmware-1816` |
 
 ---

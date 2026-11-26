@@ -45,19 +45,26 @@ The approved console ring behaviour, now on this board:
 
 - **Comet** in the activity colour while the transport is active, one turn every
   1100 ms. The owner-approved 40-pixel sustained-fade duty profile is resampled
-  to the same angles on 35 pixels, with the two-pixel lead held at 192 and the
-  last quarter dark. Only the hue gets gamma.
+  to the same angles on 35 pixels and scaled so its two-pixel lead is at full
+  brightness, 255 (`COMET_LEAD`, firmware 1.3, SEG-115; the profile was
+  approved with its lead at 192), with the last quarter dark. Only the hue
+  gets gamma.
 - **Frozen comet** in its last colour when stopped with a loop loaded.
-- **Breathe** green at the ambient brightness (96) when live and idle; it never
-  reaches black.
+- **Breathe** green up to full brightness when live and idle (since 1.3; it
+  peaked at 96 before); it never reaches black.
 - **Gain arc** in the activity colour (or green) for 900 ms whenever the master
   level changes between two live states.
-- Every push shares one channel budget, 35 × 3 × 96 = 10,080; a larger frame is
-  scaled uniformly.
-- **LED level** (firmware 1.2, #1564): every push is scaled by LEVEL after the
-  budget, at once on a still frame. At 255 nothing changes.
-- **Dimmed**: while DIMMED is set, every push drops to about 20 % (51/255) after
-  the budget, whatever the view, and at once on a still frame. The level and
+- **No total current limit** (firmware 1.3, SEG-115). The v2-era channel
+  budget, 35 × 3 × 96 = 10,080, is gone, and the arc runs at full brightness
+  too. A full-white ring draws about 2.3 A; the ring trunk in
+  segno-hardware's `hardware/segno_wiring.md` feeds it. Install this firmware
+  only on a console with that trunk built: on the old J6 feed a full-white
+  ring measured 4.80 V at ring J1, 0.3 V above the 74AHCT125's floor.
+- **LED level** (firmware 1.2, #1564): every push is scaled by LEVEL, at once
+  on a still frame. At 255 nothing changes. With the dim below, this is what
+  sets the everyday brightness; 255 in a pattern is the ceiling.
+- **Dimmed**: while DIMMED is set, every push drops to about 20 % (51/255),
+  whatever the view, and at once on a still frame. The level and
   the dim are one factor (`ring_link::outputLevel`), and each pixel is rounded
   once (`scalePixel`) so its hue holds; a lit pixel keeps its strongest channel
   at 1 at least, so the dimmed breathe never reaches black. LED output is PIO/DMA (NeoPixelBus), so the link and
@@ -160,7 +167,7 @@ asks again; after the USB install on an unchanged image, remove that file. An up
 takes about ten seconds at 115200 baud.
 
 `firmware/test/test_ring_board.cpp` runs this sketch on the host: the comet
-profile and output, breathe, arc, freeze, budget, dimming, link timeout and the input
+profile and output, breathe, arc, freeze, no total limit, dimming, link timeout and the input
 snapshots. `firmware/test/test_ring_update.cpp` runs updates end to end, the
 Pi's engine against this sketch on simulated flash and bootrom. Encoder feel,
 UART noise immunity and LED timing still need the assembled board.

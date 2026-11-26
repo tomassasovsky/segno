@@ -64,9 +64,11 @@ struct Rgb { uint8_t r, g, b; };
 // pedal_link.h). 2.7: reads the light sensor on J22 and reports it
 // (AMBIENT), and shows the pills and the ring at the app's LED_LEVEL (#1564;
 // still protocol 12). 2.8: the pills have no current limit, so a press no
-// longer dims the others (#1957; still protocol 12).
+// longer dims the others (#1957; still protocol 12). 2.9: the pills' centre
+// LEDs reach full brightness, PILL_PEAK 255 on the same curve, and the fill
+// keeps the curve's total (SEG-115; still protocol 12).
 static const uint8_t FW_MAJOR = 2;
-static const uint8_t FW_MINOR = 8;
+static const uint8_t FW_MINOR = 9;
 
 // ---- pin map (console_board.py GPIO table) ---------------------------------
 static const uint8_t PIN_LINK_TX = 16, PIN_LINK_RX = 17;
@@ -108,13 +110,18 @@ static const uint8_t PILL_BUTTON[PEDAL_BTN_COUNT] = {
   PEDAL_BTN_MODE, PEDAL_BTN_UNDO, PEDAL_BTN_STOP, PEDAL_BTN_REC_PLAY,
   PEDAL_BTN_CLEAR, PEDAL_BTN_BANK
 };
-static const uint8_t PILL_PEAK = 191;
+// A lit pill's diffused curve: the two centre LEDs at full brightness (the
+// owner's call, 2026-08-28), dimming toward the ends. Never drive a pill flat
+// at 255: ten white pills would draw about 4.8 A, more than the 20 AWG pill
+// feed and the 10 A BUCK_AUX budget allow; on this curve they draw about
+// 2.8 A (segno-hardware hardware/segno_wiring.md).
+static const uint8_t PILL_PEAK = 255;
 static const uint8_t PILL_WEIGHTS[PILL_PIXELS] = {38, 92, 201, 255, 255, 201, 92, 38};
 // A waiting Song or Band section (#1323) and a clear-track hold (#1534) fill
 // at one level, with no centre curve: the mean of the diffused levels
-// {28, 69, 151, 191, 191, 151, 69, 28} (878 / 8), so a fully filled pill has
-// the same total brightness as the diffused curve.
-static const uint8_t PILL_FILL_LEVEL = 110;
+// {38, 92, 201, 255, 255, 201, 92, 38} (1172 / 8, rounded), so a fully
+// filled pill has the same total brightness as the diffused curve.
+static const uint8_t PILL_FILL_LEVEL = 147;
 // The colour a clear-track hold fills with, before gamma: the global red.
 static const Rgb PILL_CLEAR_RED = {255, 0, 0};
 // When a clear-track hold fires (a CLEAR_HOLD at 255), the board confirms it:
