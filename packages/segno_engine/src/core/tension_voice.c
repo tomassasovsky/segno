@@ -9,13 +9,14 @@
 #include "aas_parts.h"
 #include "synth_voice.h" /* LE_SYNTH_BEND, LE_SYNTH_MOD, LE_SYNTH_PRESSURE */
 
-#define TV_C4 261.6256f
+#define TV_C4 261.62f /* Hz: the string's C4, the engine's own [code] (the references keep Live's pitch) */
 #define TV_G 9.81f
 #define TV_MASK (LE_TENSION_RAIL - 1)
 #define TV_SMASK (LE_TENSION_SHIFT - 1)
 /* the filter envelope's segments are straight lines (its Exp switch, which
  * nothing in Live reaches, stays off) */
 #define TV_FENV_EXP 0.0f
+#define TV_BOW_HOLD 48 /* samples the bow's speed keeps its last scaling for, at a strike */
 #define TV_BRIDGE_READ 1.5f /* samples: rail B's read at the bridge sits this much past L + e */
 
 enum {
@@ -153,7 +154,7 @@ static int32_t knob_m(float v) {
   v = le_aas_clamp(v, 0.0f, 1.0f);
   return (int32_t)(v <= 0.5f ? 128.0f * v : 126.0f * v + 1.0f);
 }
-/* The curves on that step: Exp(lo, hi); Lin and Sq exactly at their
+/* The curves on that step: Exp(lo, hi); Lin exactly at its
  * middle at step 64; ExpZ exactly 0 at step 0. */
 static float exp_m(float lo, float hi, int32_t m) { return lo * powf(hi / lo, (float)m / 127.0f); }
 static float kexp(float lo, float hi, float v) { return exp_m(lo, hi, knob_m(v)); }
@@ -161,12 +162,10 @@ static float lin_int(float lo, float hi, float v) {
   const int32_t m = knob_m(v);
   return lo + (hi - lo) * (m == 64 ? 0.5f : (float)m / 127.0f);
 }
-static float ksq(float lo, float hi, float v) {
-  const int32_t m = knob_m(v);
-  const float u = (float)m / 127.0f;
-  return lo + (hi - lo) * (m == 64 ? 0.25f : u * u);
-}
 static float expz(float lo, float hi, float v) { return knob_m(v) <= 0 ? 0.0f : kexp(lo, hi, v); }
+/* The shared modules (vibrato, glide, the LFO) take the knob's position
+ * itself, not its whole step (fit: the vibrato renders' rate and depth). */
+static float mod_expz(float lo, float hi, float v) { return le_aas_knob(v) <= 0.0f ? 0.0f : le_aas_exp(lo, hi, v); }
 
 /* A key or velocity amount: Exp(0.1, 16) of its magnitude, with its sign.
  * At its bottom step (m = 0) most amounts keep their resting 0.1, which a
@@ -184,8 +183,21 @@ static float amount(const le_tension* d, int32_t p) {
   return (v < 0.0f ? -1.0f : 1.0f) * 0.1f * powf(160.0f, (float)(m > 127 ? 127 : m) / 127.0f);
 }
 
-/* 2^e for a key or velocity scaling, e held within 8 octaves either way. */
-static float scale2(float e) { return exp2f(le_aas_clamp(e, -8.0f, 8.0f)); }
+/* The engine's 2^x: the whole octaves exactly, the fraction f by a cubic,
+ * 1 + t + t^2 / 2 + 0.200064 t^3 with t = f ln 2 (exact at both ends of
+ * the octave, 0.05 % high near 0.85 of it), for the string's pitch and
+ * every key and velocity scaling. [code] (Sitar Far's parts at D2, which
+ * it brings to Live's sample for sample) */
+static float exp2_engine(float x) {
+  const float i = floorf(x);
+  const float t = (x - i) * 0.6931472f;
+  return ldexpf(t + 1.0f + (t * 0.200064f + 0.5f) * t * t, (int)i);
+}
+
+/* 2^e for a key or velocity scaling, which a full amount takes 16 octaves
+ * either way (held within 30, short of overflow). fit: the muted guitar preset's
+ * and Wurli Mellow's phrase renders, whose velocity amounts reach 15 octaves. */
+static float scale2(float e) { return exp2_engine(le_aas_clamp(e, -30.0f, 30.0f)); }
 
 /* The unison amounts' curve: Exp(lo, hi) on m = 127 v, exactly 0 at 0. */
 static float unison_expz(float lo, float hi, float v) {
@@ -230,7 +242,10 @@ static int32_t note_count(const le_tension* d) {
 }
 
 static int32_t voice_count(const le_tension* d) {
-  int32_t n = kVoices[vi(d, LE_TENSION_POLYPHONY)];
+  /* the voices count strings, so a unison note takes two or four of them
+   * [measured] (round 5: two voices with unison play one note of a
+   * chord, four play two) */
+  int32_t n = kVoices[vi(d, LE_TENSION_POLYPHONY)] / copies_per_note(d);
   const int32_t lim = d->voice_limit / copies_per_note(d);
   if (n > lim) n = lim;
   return n < 1 ? 1 : n;
@@ -317,13 +332,8 @@ static void held_drop(le_tension* d, uint32_t origin) {
 
 /* ---- the string ---- */
 
-/* The phase delay, in samples, of b (1 + z^-1) / (1 + a1 z^-1) and of the
- * all-pass (a + z^-1) / (1 + a z^-1) at w radians a sample. */
-static float lp_delay(float b, float a1, float w) {
-  const float re_n = b * (1.0f + cosf(w)), im_n = -b * sinf(w);
-  const float re_d = 1.0f + a1 * cosf(w), im_d = -a1 * sinf(w);
-  return -(atan2f(im_n, re_n) - atan2f(im_d, re_d)) / w;
-}
+/* The phase delay, in samples, of the all-pass (a + z^-1) / (1 + a z^-1)
+ * at w radians a sample. */
 static float ap_delay(float a, float w) {
   return -(atan2f(-sinf(w), a + cosf(w)) - atan2f(-a * sinf(w), 1.0f + a * cosf(w))) / w;
 }
@@ -331,7 +341,7 @@ static float ap_delay(float a, float w) {
 /* The loss per reflection for decay T at key pitch p. */
 static float string_loss(const le_tension* d, float p, float ratio) {
   const float T = kexp(0.1f, 100.0f, vf(d, LE_TENSION_STRING_DECAY));
-  const float fd = exp2f(p * (1.0f + amount(d, LE_TENSION_STRING_DECAY_KEY)));
+  const float fd = exp2_engine(p * (1.0f + amount(d, LE_TENSION_STRING_DECAY_KEY)));
   return powf(10.0f, -0.03f * ratio / (2.0f * T * fd));
 }
 
@@ -345,24 +355,29 @@ static int32_t clampi(int32_t x, int32_t lo, int32_t hi) { return x < lo ? lo : 
  * contact frame displacement `ys`, solving F = K max(delta, 0)^2 where
  * delta falls linearly with F (the body's, the felt's and the string's
  * give), in closed form. `moving`: the body moves under the force. */
-static float contact_force(const le_tension_contact* c, float ys, float u, int moving, float rate) {
-  const float c1 = 80.0f / (c->r * rate + 80.0f), c2 = 1.0f / (c->r * rate + 80.0f);
-  const float yb = moving ? c->y + (c->v + c->grav / rate) / rate : c->y + c->v / rate;
-  const float d0 = yb - c->z * (1.0f - c1) - ys - u / rate;
-  if (d0 <= 0.0f) return 0.0f;
-  const float beta = (moving ? 1.0f / (c->m * rate * rate) : 0.0f) + c2 + 0.5f / rate;
-  const float kb = c->k * beta;
-  const float s = 2.0f * kb * d0 + 1.0f;
+static float contact_force(const le_tension_contact* c, double ys, float u, int moving, float rate) {
+  const double sr = rate, c1 = 80.0 / (c->r * sr + 80.0), c2 = 1.0 / (c->r * sr + 80.0);
+  const double yb = moving ? c->y + (c->v + c->grav / sr) / sr : c->y + c->v / sr;
+  const double d0 = yb - c->z * (1.0 - c1) - ys - u / sr;
+  if (d0 <= 0.0) return 0.0f;
+  const double beta = (moving ? 1.0 / (c->m * sr * sr) : 0.0) + c2 + 0.5 / sr;
+  const double kb = c->k * beta;
+  const double s = 2.0 * kb * d0 + 1.0;
   /* F = K d0^2 * 2 / (s + sqrt(4 K beta d0 + 1)): the root that is small */
-  return c->k * d0 * d0 * 2.0f / (s + sqrtf(4.0f * kb * d0 + 1.0f));
+  return (float)(c->k * d0 * d0 * 2.0 / (s + sqrt(4.0 * kb * d0 + 1.0)));
 }
 
 /* Advances a contact by one sample under force f. */
 static void contact_step(le_tension_contact* c, float f, int moving, float rate) {
-  const float c1 = 80.0f / (c->r * rate + 80.0f), c2 = 1.0f / (c->r * rate + 80.0f);
-  if (moving) c->v += (c->grav - f / c->m) / rate;
-  c->y += c->v / rate;
-  c->z = c->z * (1.0f - c1) + f * c2;
+  const double sr = rate, c1 = 80.0 / (c->r * sr + 80.0), c2 = 1.0 / (c->r * sr + 80.0);
+  if (moving) c->v += (c->grav - f / c->m) / sr;
+  c->y += c->v / sr;
+  /* the felt's surface yields under the force but follows the body's own
+   * push only through the felt, so the body's give this sample comes off
+   * the compression. fit: the bouncing hammer's re-strikes (round 4) and
+   * the lightest hammer's level */
+  c->z = c->z * (1.0 - c1) + f * c2;
+  if (moving) c->z -= f / (c->m * sr * sr);
   c->f = f;
 }
 
@@ -370,7 +385,7 @@ static void contact_step(le_tension_contact* c, float f, int moving, float rate)
  * (key pitch `pk`), its contacts set. `fresh`: start from rest. */
 static void string_strike(le_tension* d, le_tension_voice* v, float p, float pk, int fresh) {
   const float rate = (float)d->sample_rate;
-  const float fkey = exp2f(pk);
+  const float fkey = exp2_engine(pk);
   /* the damping low-pass, the dispersion all-pass */
   const float fc = kexp(200.0f, 200000.0f, vf(d, LE_TENSION_STRING_DAMPING)) *
                    scale2(amount(d, LE_TENSION_STRING_DAMPING_KEY) * pk);
@@ -381,10 +396,13 @@ static void string_strike(le_tension* d, le_tension_voice* v, float p, float pk,
   const float dd = fmaxf(1.0f, inh / fkey + 1.0f);
   v->ap_a = (1.0f - dd) / (1.0f + dd);
   /* the length: the loop's filters' phase delay at the key's fundamental
-   * and the bridge read's own 2.5 samples taken off the period */
+   * and the bridge read's own 2.5 samples taken off the period. The
+   * damping's share is the engine's estimate, an analog one-pole's
+   * atan(w / wc) / w, not its filter's exact delay [code] (the reference
+   * at C6 keeps its pitch to 1 % for 2 s) */
   const float w0 = fminf(2.0f * LE_AAS_PI * TV_C4 * fkey / rate, 3.0f);
-  v->c_tune = lp_delay(v->lp_b, v->lp_a, w0) + ap_delay(v->ap_a, w0) + TV_BRIDGE_READ;
-  const float period = rate / (TV_C4 * exp2f(p));
+  v->c_tune = atanf(w0 / wl) / w0 + ap_delay(v->ap_a, w0) + TV_BRIDGE_READ;
+  const float period = rate / (TV_C4 * exp2_engine(p));
   const float h = fmaxf(0.5f * (period - v->c_tune), 4.0f);
   const int32_t len = clampi((int32_t)floorf(h), 4, LE_TENSION_RAIL / 2 - 8);
   /* positions */
@@ -443,51 +461,70 @@ static void string_strike(le_tension* d, le_tension_voice* v, float p, float pk,
     case EXC_HAMMER:
     case EXC_BOUNCE:
       c->on = 1;
-      /* each held to its knob's range taken 16 times further either way */
-      c->m = le_aas_clamp(X * kexp(1e-5f, 0.01f, xk), 6.25e-7f, 0.16f);
-      c->k = le_aas_clamp(S * kexp(1e3f, 1e11f, sk), 62.5f, 1.6e12f);
-      c->v = le_aas_clamp(V * kexp(0.01f, 100.0f, vk), 6.25e-4f, 1600.0f);
+      /* not held to any range: the muted guitar preset's velocity amounts take
+       * its hammer far past the knobs' ends [code] */
+      c->m = X * kexp(1e-5f, 0.01f, xk);
+      c->k = S * kexp(1e3f, 1e11f, sk);
+      c->v = V * kexp(0.01f, 100.0f, vk);
       c->r = kexp(0.01f, 1000.0f, damping);
       c->grav = v->exc_type == EXC_BOUNCE ? TV_G : -TV_G;
+      c->y0 = v->ys_exc;
       c->y = v->ys_exc - 1e-4f;
       break;
     case EXC_PLECTRUM:
       c->on = 1;
       c->reach = fminf(X * kexp(1e-4f, 0.01f, xk), 0.01f);
-      c->k = le_aas_clamp(S * kexp(1e3f, 1e11f, sk), 62.5f, 1.6e12f);
-      c->v = le_aas_clamp(V * kexp(0.01f, 5.0f, vk), 6.25e-4f, 80.0f);
+      c->k = S * kexp(1e3f, 1e11f, sk);
+      c->v = V * kexp(0.01f, 5.0f, vk);
       c->r = kexp(0.001f, 1000.0f, damping);
-      c->y = -1e-4f; /* behind the string's rest line */
+      c->y0 = v->ys_exc;
+      c->y = v->ys_exc - 1e-4f; /* just behind the string, as it stands */
       break;
     case EXC_BOW:
       v->bow_f = X * kexp(0.01f, 5.0f, xk);
       v->bow_vc = S * kexp(0.001f, 0.1f, sk);
-      v->bow_vb = V * kexp(0.001f, 10.0f, vk);
+      /* the bow's speed takes the strike's key and velocity scaling only
+       * from the engine's next block: until then it keeps the one it took
+       * last (none on a string never bowed). [code] Live's block falls
+       * anywhere against a note; Segno holds the old speed a fixed 48
+       * samples, so its output keeps to any block size [Segno]
+       * [measured] (a note at the start of a Live render: the C2 bow
+       * renders' first 100 samples then match Live's to -57 dB) */
+      v->bow_vb_late = V * kexp(0.001f, 10.0f, vk);
+      v->bow_vb = (v->bow_vscale > 0.0f ? v->bow_vscale : 1.0f) * kexp(0.001f, 10.0f, vk);
+      v->bow_vscale = V;
+      v->bow_hold = TV_BOW_HOLD;
       break;
     default:
       break;
   }
   /* the damper: on the string, or thrown off while the key is held */
   le_tension_contact* dm = &v->damper;
-  memset(dm, 0, sizeof(*dm));
+  const int damper_was = dm->on;
+  if (!vi(d, LE_TENSION_DAMPER_ON)) memset(dm, 0, sizeof(*dm));
   if (vi(d, LE_TENSION_DAMPER_ON)) {
     const float kk = scale2(amount(d, LE_TENSION_DAMPER_MASS_KEY) * pk);
     dm->on = 1;
-    dm->m = le_aas_clamp(kexp(1e-4f, 0.5f, vf(d, LE_TENSION_DAMPER_MASS)) * kk, 6.25e-6f, 8.0f);
-    dm->k = le_aas_clamp(kexp(1e4f, 1e12f, vf(d, LE_TENSION_DAMPER_STIFF)) *
-                             scale2(amount(d, LE_TENSION_DAMPER_STIFF_KEY) * pk), 625.0f, 1.6e13f);
+    /* none of the damper's or plectrum's values is held to a range either
+     * [code] (Nice Harp) */
+    dm->m = kexp(1e-4f, 0.5f, vf(d, LE_TENSION_DAMPER_MASS)) * kk;
+    dm->k = kexp(1e4f, 1e12f, vf(d, LE_TENSION_DAMPER_STIFF)) * scale2(amount(d, LE_TENSION_DAMPER_STIFF_KEY) * pk);
     dm->r = kexp(0.01f, 1000.0f, vf(d, LE_TENSION_DAMPER_DAMPING));
-    const float vd = le_aas_clamp(kexp(0.01f, 100.0f, vf(d, LE_TENSION_DAMPER_VEL)) *
-                                      scale2(amount(d, LE_TENSION_DAMPER_VEL_KEY) * p), 6.25e-4f, 1600.0f);
-    if (vi(d, LE_TENSION_DAMPER_GATED)) {
-      dm->y = v->ys_damp;
-      dm->v = -vd;
-      dm->grav = -TV_G;
-    } else {
-      /* resting on it: its weight against the felt and the contact */
+    const float vd =
+        kexp(0.01f, 100.0f, vf(d, LE_TENSION_DAMPER_VEL)) * scale2(amount(d, LE_TENSION_DAMPER_VEL_KEY) * p);
+    /* a string started again has the damper resting on it, its weight
+     * against the felt and the contact; a gated damper is thrown off from
+     * where it is, so it pushes the string while it parts from it */
+    if (reinit || !damper_was) {
       const float w = dm->m * TV_G;
       dm->z = w / 80.0f;
       dm->y = v->ys_damp + sqrtf(w / dm->k) + dm->z;
+      dm->v = 0.0f;
+    }
+    if (vi(d, LE_TENSION_DAMPER_GATED)) {
+      dm->v = -vd;
+      dm->grav = -TV_G;
+    } else {
       dm->grav = TV_G;
     }
     dm->reach = vd; /* the damper's speed, kept for the release */
@@ -517,7 +554,7 @@ static void string_strike(le_tension* d, le_tension_voice* v, float p, float pk,
   v->term = vi(d, LE_TENSION_TERM_ON);
   if (v->term) {
     v->tf_m = fminf(kexp(0.01f, 100.0f, vf(d, LE_TENSION_TERM_FINGER_FORCE)) *
-                        exp2f(amount(d, LE_TENSION_TERM_FINGER_FORCE_KEY) * p +
+                        exp2_engine(amount(d, LE_TENSION_TERM_FINGER_FORCE_KEY) * p +
                               amount(d, LE_TENSION_TERM_FINGER_FORCE_VEL) * vel),
                     100.0f);
     v->tf_k = kexp(1e3f, 1e12f, vf(d, LE_TENSION_TERM_FINGER_STIFF)) * fkey;
@@ -526,9 +563,9 @@ static void string_strike(le_tension* d, le_tension_voice* v, float p, float pk,
      * and the bent string's own push at the nut */
     if (reinit || !v->term_was) {
       const float w = v->tf_m * TV_G, wa = fmaxf(w + 2.0f * rest_wave, 0.0f);
-      v->te_y = -sqrtf(wa / v->ta_k);
-      v->tf_y = v->te_y - sqrtf(w / v->tf_k);
-      v->tf_v = 0.0f;
+      v->te_y = -sqrt((double)wa / v->ta_k);
+      v->tf_y = v->te_y - sqrt((double)w / v->tf_k);
+      v->tf_v = 0.0;
       v->t_ff = w;
       v->t_fa = wa;
     }
@@ -540,40 +577,48 @@ static void string_strike(le_tension* d, le_tension_voice* v, float p, float pk,
  * contacts' compressions solved together by Newton, the end free. Returns
  * the wave leaving the nut: the arriving wave and the contacts' push, the
  * loss taken on the sum. */
-static float finger_fret(le_tension_voice* v, float in, float rate) {
-  const float dt = 1.0f / rate;
-  const float ye0 = v->te_y + 2.0f * in * dt;
-  const float yf0 = v->tf_y + (v->tf_v - TV_G * dt) * dt;
-  const float bf = dt + dt * dt / v->tf_m;
-  float df = sqrtf(v->t_ff / v->tf_k), da = sqrtf(v->t_fa / v->ta_k);
+static float finger_fret(le_tension_voice* v, float in_wave, float rate) {
+  /* in double, as the engine's: the two forces are large (a heavy finger
+   * on a stiff fret) and the wave is their small difference, which single
+   * precision leaves 80 dB down in noise. [code] (Kalimba Big's highs) */
+  const double dt = 1.0 / (double)rate;
+  /* the fret lies on the side the exciters push toward: solved below in
+   * a frame with the fret underneath, so the waves change sign there.
+   * [code] fit: Sitar Far, Banjo and the upright and fretless basses */
+  const double in = -(double)in_wave;
+  const double kf = v->tf_k, ka = v->ta_k, g = TV_G;
+  const double ye0 = v->te_y + 2.0 * in * dt;
+  const double yf0 = v->tf_y + (v->tf_v - g * dt) * dt;
+  const double bf = dt + dt * dt / v->tf_m;
+  double df = sqrt(v->t_ff / kf), da = sqrt(v->t_fa / ka);
   for (int32_t it = 0; it < 24; ++it) {
-    const float dfp = fmaxf(df, 0.0f), dap = fmaxf(da, 0.0f);
-    const float ff = v->tf_k * dfp * dfp, fa = v->ta_k * dap * dap;
-    const float g1 = df - (ye0 - yf0 + fa * dt - ff * bf);
-    const float g2 = da - (-ye0 - fa * dt + ff * dt);
-    const float j11 = 1.0f + 2.0f * v->tf_k * bf * dfp, j12 = -2.0f * v->ta_k * dt * dap;
-    const float j21 = -2.0f * v->tf_k * dt * dfp, j22 = 1.0f + 2.0f * v->ta_k * dt * dap;
-    const float det = j11 * j22 - j12 * j21;
-    if (!(fabsf(det) > 1e-30f)) break;
-    const float sf = (g1 * j22 - g2 * j12) / det, sa = (g2 * j11 - g1 * j21) / det;
+    const double dfp = fmax(df, 0.0), dap = fmax(da, 0.0);
+    const double ff = kf * dfp * dfp, fa = ka * dap * dap;
+    const double g1 = df - (ye0 - yf0 + fa * dt - ff * bf);
+    const double g2 = da - (-ye0 - fa * dt + ff * dt);
+    const double j11 = 1.0 + 2.0 * kf * bf * dfp, j12 = -2.0 * ka * dt * dap;
+    const double j21 = -2.0 * kf * dt * dfp, j22 = 1.0 + 2.0 * ka * dt * dap;
+    const double det = j11 * j22 - j12 * j21;
+    if (!(fabs(det) > 1e-30)) break;
+    const double sf = (g1 * j22 - g2 * j12) / det, sa = (g2 * j11 - g1 * j21) / det;
     df -= sf;
     da -= sa;
-    if (fabsf(sf) < 1e-9f && fabsf(sa) < 1e-9f) break;
+    if (fabs(sf) < 1e-13 && fabs(sa) < 1e-13) break;
   }
-  if (!(df == df) || !(da == da)) df = da = 0.0f;
-  const float dfp = fmaxf(df, 0.0f), dap = fmaxf(da, 0.0f);
-  v->t_ff = v->tf_k * dfp * dfp;
-  v->t_fa = v->ta_k * dap * dap;
-  const float out = in + (v->t_fa - v->t_ff);
+  if (!(df == df) || !(da == da)) df = da = 0.0;
+  const double dfp = fmax(df, 0.0), dap = fmax(da, 0.0);
+  v->t_ff = kf * dfp * dfp;
+  v->t_fa = ka * dap * dap;
+  const double out = in + (v->t_fa - v->t_ff);
   v->te_y += (in + out) * dt;
-  v->tf_v += (v->t_ff / v->tf_m - TV_G) * dt;
+  v->tf_v += (v->t_ff / v->tf_m - g) * dt;
   v->tf_y += v->tf_v * dt;
-  return v->g * out;
+  return (float)(-(double)v->g * out);
 }
 
 /* The bow at junction velocity u (the incoming waves' sum): the velocity
- * it leaves, sticking within a zone around the bow's speed, released in a
- * short ramp beyond it, transparent past that. */
+ * it leaves, sticking within a zone around the bow's speed, released along
+ * a straight line (slope 10) back to u beyond it, transparent past that. */
 static float bow(const le_tension_voice* v, float u) {
   const float f = v->bow_f, vc = v->bow_vc, vb = v->bow_vb;
   if (f <= 0.0f) return u;
@@ -583,7 +628,7 @@ static float bow(const le_tension_voice* v, float u) {
   if (a >= outer) return u;
   const float stick = vb + (du > 0.0f ? vc : -vc);
   const float t = (a - edge) / (outer - edge);
-  return stick + t * (u - stick);
+  return stick + (du > 0.0f ? t : -t) * (outer - vc); /* a straight line [code] */
 }
 
 /* rail B at delay `dl` samples: a 5-tap Lagrange read */
@@ -624,6 +669,7 @@ static float string_tick(le_tension* d, le_tension_voice* v, int held) {
   float* eb = &v->b[(w - (len - v->exc_tap)) & TV_MASK];
   const float u = *ea + *eb;
   if (v->exc_type == EXC_BOW) {
+    if (v->bow_hold > 0 && --v->bow_hold == 0) v->bow_vb = v->bow_vb_late;
     const float u2 = held ? bow(v, u) : u;
     const float ain = *ea, bin = *eb;
     *ea = u2 - bin;
@@ -645,7 +691,11 @@ static float string_tick(le_tension* d, le_tension_voice* v, int held) {
     *ea += 0.5f * f;
     *eb += 0.5f * f;
     v->ys_exc += (u + 0.5f * f) / rate;
-    if (fabsf(c->y - v->ys_exc) > 1.0f) c->on = 0; /* parked */
+    /* parked 1 m behind its start (a hammer, once gravity takes it away:
+     * a bouncing hammer still held falls back from any height), or 1 m
+     * past it (the plectrum); a hammer driven on into the string stays on
+     * it [code] (Slap Bass's hard C5; Moving String Pad's chord) */
+    if (moving ? c->grav < 0.0f && c->y - c->y0 < -1.0 : c->y - c->y0 > 1.0) c->on = 0;
   } else {
     v->ys_exc += u / rate;
   }
@@ -660,7 +710,7 @@ static float string_tick(le_tension* d, le_tension_voice* v, int held) {
     *da += 0.5f * f;
     *db += 0.5f * f;
     v->ys_damp += (ud + 0.5f * f) / rate;
-    if (fabsf(c->y - v->ys_damp) > 1.0f) {
+    if (fabs(c->y - v->ys_damp) > 1.0) {
       /* parked away; at the key's release it returns */
       c->v = 0.0f;
       c->grav = 0.0f;
@@ -698,8 +748,10 @@ static float string_tick(le_tension* d, le_tension_voice* v, int held) {
     }
   }
   v->e += v->e_step;
-  /* the reading's gain of 2. fit: 1.5, 2.4 dB under it (the renders) */
-  return 1.5f * v->hp_y;
+  /* the reading's gain of 2. measured: 1.4373, 2.9 dB under it (the
+   * median level of the 95 hammer, plectrum and bow fit renders that pass,
+   * at the default Body Level, which is unity) */
+  return 1.4373f * v->hp_y;
 }
 
 /* The shifter for pitch above the strike: a two-tap delay read rotating
@@ -735,10 +787,15 @@ static void start_voice(le_tension* d, le_tension_voice* v, uint32_t origin, int
   v->copies = copies;
   static const float kSteps[4] = {0.0f, 1.0f, -1.0f, 2.0f};
   v->detune = unison_expz(0.001f, 1.0f, vf(d, LE_TENSION_UNISON_DETUNE)) * kSteps[copy];
-  v->delay = (int32_t)(unison_expz(0.002f, 0.1f, vf(d, LE_TENSION_UNISON_DELAY)) * rate * (float)copy /
-                       (float)(copies > 1 ? copies - 1 : 1));
+  /* each copy a whole delay behind the one before, the delay counted in
+   * whole milliseconds (the engine's 1 ms blocks). [measured] (round 5:
+   * the reference's second string at delays 0.25, 0.5, 0.75 and 1 and
+   * four strings at 0.5 land on Live's sample) */
+  v->delay = (int32_t)(floorf(unison_expz(0.002f, 0.1f, vf(d, LE_TENSION_UNISON_DELAY)) * 1000.0f) * rate /
+                       1000.0f) * copy;
   if (fresh) v->since = 0; /* a re-strike keeps the copies' delays behind them */
   v->quiet = 0;
+  v->flying = 0;
   v->fade_left = 0;
   v->fade_len = (int32_t)lroundf(0.001f * rate);
   v->tick_left = 0;
@@ -763,7 +820,7 @@ static void start_voice(le_tension* d, le_tension_voice* v, uint32_t origin, int
   le_aas_env_start(&v->fenv, &es, vel, rate, 0);
   v->lfo_ph = 0.0;
   v->lfo_sh = v->lfo_sh_prev = le_aas_bipolar(&v->rng);
-  v->lfo_wait = vf(d, LE_TENSION_LFO_DELAY) > 0.0f ? kexp(0.2f, 5.0f, vf(d, LE_TENSION_LFO_DELAY)) : 0.0f;
+  v->lfo_wait = vf(d, LE_TENSION_LFO_DELAY) > 0.0f ? le_aas_exp(0.2f, 5.0f, vf(d, LE_TENSION_LFO_DELAY)) : 0.0f;
   v->lfo_amp = vf(d, LE_TENSION_LFO_FADE) > 0.0f ? 0.0f : 1.0f;
   d->last_pitch = v->pitch_to - v->detune;
   d->played = 1;
@@ -779,6 +836,9 @@ static le_aas_env_set fenv_set(const le_tension* d) {
 static void release_voice(le_tension* d, le_tension_voice* v) {
   const float rate = (float)d->sample_rate;
   v->state = LE_TENSION_VOICE_RELEASED;
+  v->quiet = 0;
+  v->rel_n = 0;
+  v->blk_peak = 0.0f;
   /* the loss ramps over 8 ms to the release's: Ratio times faster, or none */
   const float ratio = expz(1.0f, 1000.0f, vf(d, LE_TENSION_STRING_RATIO));
   v->g_to = ratio <= 0.0f ? 1.0f : string_loss(d, v->pitch_to, ratio);
@@ -824,7 +884,9 @@ void le_tension_set_tempo(le_tension* d, float bpm) {
 
 int32_t le_tension_note_on(le_tension* d, uint32_t origin, int32_t note, int32_t velocity, int chord) {
   if (d == NULL || note < 0 || note > 127 || velocity < 1 || velocity > 127) return -1;
-  const float vel = (float)velocity / 127.0f;
+  /* velocity 1..127 to 0..1, as the engines' shared MIDI front end sends
+   * it [code] (the hammer references then match Live's to -100 dB) */
+  const float vel = (float)(velocity - 1) / 126.0f;
   if (!chord) {
     for (int32_t i = 0; i < LE_TENSION_VOICE_SLOTS; ++i) {
       le_tension_voice* v = &d->voices[i];
@@ -1023,7 +1085,7 @@ static void tick_voice(le_tension* d, le_tension_voice* v) {
   const float dt = (float)LE_TENSION_TICK / rate;
   /* glide and vibrato: the played pitch */
   if (vi(d, LE_TENSION_GLIDE_ON) && v->pitch != v->pitch_to) {
-    float T = kexp(0.003f, 9.0f, vf(d, LE_TENSION_GLIDE_TIME));
+    float T = le_aas_exp(0.003f, 9.0f, vf(d, LE_TENSION_GLIDE_TIME));
     if (vi(d, LE_TENSION_GLIDE_PROP)) T *= sqrtf(fabsf(v->pitch_to - v->pitch));
     const float a = fminf(2.0f * LE_AAS_PI / (fmaxf(T, 1e-4f) * rate), 1.0f);
     v->pitch = v->pitch_to + (v->pitch - v->pitch_to) * powf(1.0f - a, (float)LE_TENSION_TICK);
@@ -1034,11 +1096,11 @@ static void tick_voice(le_tension* d, le_tension_voice* v) {
   float vib = 0.0f;
   v->vib_t += dt;
   if (vi(d, LE_TENSION_VIBRATO_ON)) {
-    const float hz = lin_int(0.25f, 10.0f, vf(d, LE_TENSION_VIBRATO_SPEED));
-    float depth = expz(0.0002f, 1.0f / 6.0f, vf(d, LE_TENSION_VIBRATO_AMOUNT)) +
-                  d->mod * expz(0.0002f, 1.0f / 6.0f, vf(d, LE_TENSION_VIBRATO_WHEEL));
-    const float delay = expz(0.05f, 5.0f, vf(d, LE_TENSION_VIBRATO_DELAY));
-    const float fade = expz(0.05f, 5.0f, vf(d, LE_TENSION_VIBRATO_FADE));
+    const float hz = le_aas_lin(0.25f, 10.0f, vf(d, LE_TENSION_VIBRATO_SPEED));
+    float depth = mod_expz(0.0002f, 1.0f / 6.0f, vf(d, LE_TENSION_VIBRATO_AMOUNT)) +
+                  d->mod * mod_expz(0.0002f, 1.0f / 6.0f, vf(d, LE_TENSION_VIBRATO_WHEEL));
+    const float delay = mod_expz(0.05f, 5.0f, vf(d, LE_TENSION_VIBRATO_DELAY));
+    const float fade = mod_expz(0.05f, 5.0f, vf(d, LE_TENSION_VIBRATO_FADE));
     if (v->vib_t < delay) depth = 0.0f;
     else if (fade > 0.0f) depth *= fminf((v->vib_t - delay) / fade, 1.0f);
     v->vib_ph += (double)(hz * dt);
@@ -1053,7 +1115,7 @@ static void tick_voice(le_tension* d, le_tension_voice* v) {
   const float key = v->pitch_to + bend_oct(d);
   const float up = fmaxf(key - v->p0, 0.0f);
   const float ps = v->pitch + vib + (fminf(key, v->p0) - v->pitch_to);
-  const float h = 0.5f * (rate / (TV_C4 * exp2f(ps)) - v->c_tune);
+  const float h = 0.5f * (rate / (TV_C4 * exp2_engine(ps)) - v->c_tune);
   float e_to = 2.0f * (h - (float)v->len);
   e_to = fmaxf(e_to, -(float)v->exc_tap);
   e_to = fminf(e_to, (float)(LE_TENSION_RAIL - 8 - v->len));
@@ -1069,7 +1131,7 @@ static void tick_voice(le_tension* d, le_tension_voice* v) {
     if (vi(d, LE_TENSION_LFO_SYNC_ON)) {
       hz = d->bpm / 60.0f / le_aas_sync_beats(vi(d, LE_TENSION_LFO_SYNC));
     } else {
-      hz = kexp(3.0f, 1000.0f, vf(d, LE_TENSION_LFO_SPEED)) / 60.0f;
+      hz = le_aas_exp(3.0f, 1000.0f, vf(d, LE_TENSION_LFO_SPEED)) / 60.0f;
     }
     const double before = v->lfo_ph;
     v->lfo_ph += (double)(hz * dt);
@@ -1083,7 +1145,7 @@ static void tick_voice(le_tension* d, le_tension_voice* v) {
       v->lfo_wait -= dt;
       y = 0.0f;
     } else if (v->lfo_amp < 1.0f) {
-      v->lfo_amp = fminf(v->lfo_amp + dt / kexp(0.2f, 5.0f, vf(d, LE_TENSION_LFO_FADE)), 1.0f);
+      v->lfo_amp = fminf(v->lfo_amp + dt / le_aas_exp(0.2f, 5.0f, vf(d, LE_TENSION_LFO_FADE)), 1.0f);
     }
     lfo = y * v->lfo_amp;
   }
@@ -1110,16 +1172,15 @@ static void tick_voice(le_tension* d, le_tension_voice* v) {
 
 /* ---- the body ---- */
 
-/* The soundboard's lines in ms at size 1, one set per body type, and the
- * all-pass taps inside them, the same in every type. fit: each type's
- * wet-only render deconvolved against the dry string (Live's own renders,
- * the lengths found as whole samples at 48 kHz; type 0 also at sizes 0.3
- * and 2), each value the middle of the range every render allows. */
-static const float kBodyLong[4][4] = {{5.391f, 6.547f, 7.604f, 9.297f},
-                                      {2.5f, 2.875f, 5.417f, 10.062f},
-                                      {1.25f, 1.792f, 2.5f, 3.438f},
-                                      {6.5f, 7.833f, 8.75f, 11.5f}};
-static const float kBodyTap[4] = {0.995f, 1.089f, 1.38f, 1.616f};
+/* The soundboard's lines in samples at 44.1 kHz and size 1, one set per
+ * body type, and the all-pass taps inside them, the same in every type.
+ * fit: every type's wet-only render at all five sizes fitted sample by
+ * sample against the dry string (Live's own renders, the lengths found as
+ * whole samples at 48 kHz); each value the one, or the lowest of the few,
+ * that gives all twenty renders' lengths. */
+static const float kBodyLong[4][4] = {
+    {239.0f, 288.0f, 334.0f, 411.0f}, {105.0f, 126.0f, 238.0f, 441.0f}, {55.0f, 81.0f, 107.0f, 150.0f}, {286.0f, 345.0f, 386.0f, 507.0f}};
+static const float kBodyTap[4] = {44.0f, 48.0f, 61.0f, 71.0f};
 static const float kBodySize[5] = {0.3f, 0.7f, 1.0f, 1.3f, 2.0f};
 
 static int is_prime(int32_t n) {
@@ -1153,7 +1214,8 @@ static void body_build(le_tension* d) {
   if (type == b->type && size == b->size) return;
   b->type = type;
   b->size = size;
-  const float scale = (float)d->sample_rate / 1000.0f * kBodySize[size];
+  /* size x rate / 44.1 kHz, in single precision as the lengths were found */
+  const float scale = kBodySize[size] * (1.0f / 44100.0f) * (float)d->sample_rate;
   for (int32_t k = 0; k < 4; ++k) {
     b->len[k] = clampi(prime_below((int32_t)(kBodyLong[type][k] * scale)), 8, LE_TENSION_BODY_LINE - 2);
     b->tap[k] = clampi(prime_below((int32_t)(kBodyTap[k] * scale)), 1, b->len[k] < LE_TENSION_BODY_AP - 1 ? b->len[k] : LE_TENSION_BODY_AP - 1);
@@ -1165,7 +1227,13 @@ static void body_build(le_tension* d) {
 static void body_render(le_tension* d, float* x, int32_t n) {
   le_tension_body* b = &d->body;
   const float rate = (float)d->sample_rate;
-  const float level = ksq(0.0f, 2.0f, vf(d, LE_TENSION_BODY_LEVEL));
+  /* Body Level, the device's volume: Sq(0, 2) on the knob's 0..127 value
+   * as it stands, not its whole step (the default 0.7048 is unity).
+   * [measured] (the first milliseconds of every preset with the body on,
+   * which then match Live's within 0.03 %) */
+  const float lv = le_aas_clamp(vf(d, LE_TENSION_BODY_LEVEL), 0.0f, 1.0f);
+  const float lm = (lv <= 0.5f ? 128.0f * lv : 126.0f * lv + 1.0f) / 127.0f;
+  const float level = 2.0f * lm * lm;
   const int on = vi(d, LE_TENSION_BODY_ON);
   const float theta = lin_int(0.0f, 0.5f * LE_AAS_PI, vf(d, LE_TENSION_BODY_MIX));
   const float dry_to = on ? cosf(theta) : 1.0f, wet_to = on ? 0.35f * sinf(theta) : 0.0f;
@@ -1255,7 +1323,7 @@ static void render_voice(le_tension* d, le_tension_voice* v, float* out, int32_t
   const int32_t ftype = vi(d, LE_TENSION_FILTER_TYPE);
   const int filter_on = vi(d, LE_TENSION_FILTER_ON);
   const float fade_step = 1.0f / (float)(v->fade_len > 0 ? v->fade_len : 1);
-  const int32_t quiet_end = (int32_t)(0.05f * rate);
+  const int32_t block_len = (int32_t)lroundf(0.001f * rate);
   int32_t i = 0;
   while (i < frames && v->state != LE_TENSION_VOICE_FREE) {
     if (v->since < v->delay) {
@@ -1279,9 +1347,10 @@ static void render_voice(le_tension* d, le_tension_voice* v, float* out, int32_t
       return;
     }
     const int held = v->state == LE_TENSION_VOICE_HELD || v->state == LE_TENSION_VOICE_SUSTAINED;
-    const float period = rate / (TV_C4 * exp2f(fminf(v->pitch_to + bend_oct(d), v->p0)));
+    const float period = rate / (TV_C4 * exp2_engine(fminf(v->pitch_to + bend_oct(d), v->p0)));
     for (int32_t s = 0; s < n; ++s) {
       float y = string_tick(d, v, held);
+      const float y_string = y; /* the string's own sound, before the filter */
       if (v->sh_mix > 0.0f || v->sh_mix_step > 0.0f) {
         const float z = shift_tick(v, y, period);
         y = y + v->sh_mix * (z - y);
@@ -1296,13 +1365,31 @@ static void render_voice(le_tension* d, le_tension_voice* v, float* out, int32_t
         y *= fade_step * (float)(v->fade_left > s ? v->fade_left - s : 0);
       }
       out[i + s] += y;
-      /* fit: a released string ends after 50 ms below -100 dBFS, counted
-       * by the sample */
+      /* a released string ends after 84 one-millisecond blocks in a row,
+       * counted from the release, in which its own sound (not the
+       * filter's, which an LFO may close for a while) peaks below -101.1
+       * dBFS; and not while a gated damper is still in the air, for at most
+       * 2 s of flight. [measured] (rounds 6 and 7: Live cuts to silence on
+       * 1 ms boundaries, never sooner than 84 blocks after the release, at
+       * 84 for a still string; -101.1 dBFS from a string held at -88 dB
+       * with no release loss, cut 2094 blocks on; Wurli Mellow's low thump
+       * 190 ms after a release) [Segno] (Live cuts a resting damper's,
+       * a terminated string's and a landed gated damper's string sooner,
+       * by a condition the renders have not shown) */
       if (v->state == LE_TENSION_VOICE_RELEASED) {
-        v->quiet = fabsf(y) < 1e-5f ? v->quiet + 1 : 0;
-        if (v->quiet >= quiet_end) {
-          v->state = LE_TENSION_VOICE_FREE;
-          return;
+        const int flying = v->damper.on && v->damper.f <= 0.0 && v->damper.grav != 0.0f &&
+                           v->flying < (int32_t)(2.0f * rate);
+        v->flying += flying;
+        if (fabsf(y_string) > v->blk_peak) v->blk_peak = fabsf(y_string);
+        if (flying) v->blk_peak = 1.0f;
+        if (++v->rel_n >= block_len) {
+          v->quiet = v->blk_peak < 8.84e-6f ? v->quiet + 1 : 0;
+          v->rel_n = 0;
+          v->blk_peak = 0.0f;
+          if (v->quiet >= 84) {
+            v->state = LE_TENSION_VOICE_FREE;
+            return;
+          }
         }
       }
     }

@@ -234,18 +234,22 @@ static float filther_diode(le_meld_filter* f, float xin) {
 
 /* ---- Vowel ---- */
 
-/* Segno's vowels, A E I O U: the first four formants of a bass voice
- * (Hz) and the levels of formants 2..5 relative to the first (dB), from
- * the published averages Csound documents; the fifth formant sits at
- * 4950 Hz for every vowel. */
+/* The five vowels Macro 2 crosses (0, 0.25, 0.5, 0.75, 1): four formants
+ * each (Hz at Frequency 640 Hz) and their levels relative to the first
+ * (dB). [measured] from round 11's vowel-m2-* renders (a C1 saw through
+ * the filter, its response at the saw's harmonics), fitted as parallel
+ * band-passes of one resonance by the scratchpad's
+ * meldfit/meas/vowel_fit.py, within 0.54 to 0.58 dB rms of Live's from 60
+ * Hz to 9 kHz (U 0.6 dB down on the fit, as vowel-m2-100's level is). */
 static const float kVowelHz[5][4] = {
-    {600, 1040, 2250, 2450}, {400, 1620, 2400, 2800}, {250, 1750, 2600, 3050},
-    {400, 750, 2400, 2600},  {350, 600, 2400, 2675},
+    {800, 1148, 2791, 3481}, {400, 1595, 2692, 3287}, {350, 1695, 2691, 3686},
+    {450, 799, 2819, 3487},  {325, 699, 2521, 3487},
 };
 static const float kVowelDb[5][4] = {
-    {-7, -9, -9, -20}, {-12, -9, -12, -18}, {-30, -16, -22, -28},
-    {-11, -21, -20, -40}, {-20, -32, -28, -36},
+    {0.0f, -4.3f, -20.9f, -41.5f}, {0.0f, -24.4f, -30.7f, -38.7f}, {0.0f, -20.2f, -31.0f, -38.1f},
+    {0.0f, -9.2f, -16.2f, -30.0f}, {-0.6f, -12.8f, -31.5f, -43.3f},
 };
+
 
 /* ---- the modal banks ---- */
 
@@ -341,6 +345,10 @@ void le_meld_filter_reset(le_meld_filter* f) {
   memset(&f->s, 0, sizeof(f->s));
   if (f->type == LE_MELD_FILTER_LOWPASS) f->s.ms2.s[6] = 1.0f; /* the second OTA's gain */
   if (f->type == LE_MELD_FILTER_HIGHPASS) f->s.ms2.s[3] = f->s.ms2.s[4] = 1.0f;
+  /* the Filther's DC blocker starts settled on its bias: a note's first
+   * samples rise from silence (woozy-a: Live's Square 5th through it rises
+   * over its attack, where an unsettled blocker steps to 0.08) [measured] */
+  if (f->type == LE_MELD_FILTER_FILTHER) f->s.filther.dc_x = 0.25f * sinf(0.05f * MF_PI);
   f->gin = f->gin_to;
   f->gout = f->gout_to;
   for (int i = 0; i < 3; ++i) f->w[i] = f->w_to[i];
@@ -404,7 +412,10 @@ void le_meld_filter_set(le_meld_filter* f, float hz, float m1, float m2) {
     }
     case LE_MELD_FILTER_BANDPASS: {
       /* osr_section.h's circuit at its band tap */
-      f->gin_to = mf_db(24.0f * m2);
+      /* fit: 5.3 dB in at Drive 0, 19.3 at 1 (the Bandpass renders at Drive
+       * 0 sit 5.3 dB under a 0..24 dB law in every band; at 1 a 24 dB
+       * range is 5 dB loud) */
+      f->gin_to = mf_db(5.3f + 14.0f * m2);
       const float q = le_ms2_q(0.99f * m1, hz, rate);
       f->s.osr.g = LE_OSR_G * tanf(fminf(MF_PI * fmaxf(hz, 1.0f) / rate, 1.54f));
       f->s.osr.k = 2.0f * (1.0f - q) - 0.01f;
@@ -485,12 +496,15 @@ void le_meld_filter_set(le_meld_filter* f, float hz, float m1, float m2) {
       int a = (int)p;
       if (a > 3) a = 3;
       const float fr = p - (float)a;
-      f->s.vowel.k = 1.0f / (5.0f + 15.0f * m1);
+      /* [measured] the resonance: 1/k 5.5, 13.5 and 22 at Macro 1 0, 0.5 and
+       * 1 (vowel-q0, the vowel-m2-* renders, vowel-q1) */
+      f->s.vowel.k = 1.0f / (5.5f + 16.5f * m1);
+      /* [measured] between vowels the formants move linearly in hertz
+       * (vowel-m2-012: 589, 1374 Hz, halfway between A's and E's) */
       for (int i = 0; i < LE_MELD_FORMANTS; ++i) {
-        const float fz = i < 4 ? (1.0f - fr) * kVowelHz[a][i] + fr * kVowelHz[a + 1][i] : 4950.0f;
+        const float fz = (1.0f - fr) * kVowelHz[a][i] + fr * kVowelHz[a + 1][i];
         f->s.vowel.g[i] = mf_tan(fminf(fz * shift, 0.49f * rate), rate);
-        /* the first formant at -10 dB, the others their level - 10 */
-        const float db = i == 0 ? 0.0f : (1.0f - fr) * kVowelDb[a][i - 1] + fr * kVowelDb[a + 1][i - 1];
+        const float db = (1.0f - fr) * kVowelDb[a][i] + fr * kVowelDb[a + 1][i];
         f->s.vowel.amp_to[i] = mf_db(db - 10.0f);
       }
       break;

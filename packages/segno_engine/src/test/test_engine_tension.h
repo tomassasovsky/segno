@@ -145,6 +145,41 @@ static void test_tension_stretch_clip_body(void) {
   CHECK(b - a >= 209 && b - a <= 214);
 }
 
+/* A hammer driven on into the string stays on it and damps it, as Live's
+ * does (Slap Bass's hard C5): 100 ms after the strike the string is 15 dB
+ * under its first 10 ms (a hammer let go while it pressed left the string
+ * ringing at full). A light finger on a stiff fret keeps the string
+ * ringing at its pitch. */
+static void test_tension_hammer_on_string(void) {
+  printf("test_tension_hammer_on_string\n");
+  enum { N = 9600 };
+  static float l[N], r[N];
+  tension_reference(&g_tension);
+  tension_set(&g_tension, LE_TENSION_BODY_ON, 0.0f);
+  tension_set(&g_tension, LE_TENSION_EXC_X, 1.0f);
+  tension_set(&g_tension, LE_TENSION_EXC_VEL, 0.703125f);
+  tension_set(&g_tension, LE_TENSION_EXC_VEL_VEL, 0.7619048f);
+  tension_set(&g_tension, LE_TENSION_EXC_STIFF, 0.5317460f);
+  tension_set(&g_tension, LE_TENSION_EXC_STIFF_KEY, 0.46875f);
+  tension_set(&g_tension, LE_TENSION_EXC_STIFF_VEL, 0.46875f);
+  tension_set(&g_tension, LE_TENSION_EXC_DAMPING, 0.40625f);
+  CHECK(le_tension_note_on(&g_tension, 1, 72, 127, 0) == 0);
+  le_tension_render(&g_tension, l, r, N);
+  CHECK(opr_finite(l, N));
+  CHECK(opr_peak(l + 4800, 480) < 0.18f * opr_peak(l, 480));
+  tension_reference(&g_tension);
+  tension_set(&g_tension, LE_TENSION_BODY_ON, 0.0f);
+  tension_set(&g_tension, LE_TENSION_TERM_ON, 1.0f);
+  tension_set(&g_tension, LE_TENSION_TERM_FINGER_STIFF, 0.0f);
+  tension_set(&g_tension, LE_TENSION_TERM_FINGER_FORCE, 0.1953125f);
+  tension_set(&g_tension, LE_TENSION_TERM_FRET_STIFF, 1.0f);
+  CHECK(le_tension_note_on(&g_tension, 1, 60, 100, 0) == 0);
+  le_tension_render(&g_tension, l, r, N);
+  CHECK(opr_finite(l, N));
+  const double f = opr_note_hz(60);
+  CHECK(opr_component(l + 2400, 7200, f) > 3.0 * opr_component(l + 2400, 7200, 1.5 * f));
+}
+
 /* The body rings on after the last string and is reported fading while it
  * does; then it ends, and the device is silent. */
 static void test_tension_body_tail(void) {
@@ -353,6 +388,7 @@ static void run_tension_tests(void) {
   test_tension_extremes();
   test_tension_stretch_clip_body();
   test_tension_body_tail();
+  test_tension_hammer_on_string();
   test_tension_voices();
   test_tension_block_size();
   test_engine_tension_slot_matches_offline();

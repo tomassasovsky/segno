@@ -84,6 +84,8 @@ typedef struct le_drift_voice {
   float pitch;
   float pitch_target;
   float ratio;
+  float ref_ratio; /* the lane's ratio the Ratio rate modes follow */
+  float osc2_drift; /* Osc 2's extra drift ratio */
   /* the voice mode's gains */
   float gain_l, gain_r;
   /* oscillators and noise; the phase increments last used, which a silent
@@ -168,10 +170,13 @@ typedef struct le_drift {
   uint32_t mono_origin[LE_DRIFT_MONO_STACK];
   float mono_velocity[LE_DRIFT_MONO_STACK];
   /* per note: the loudness compensation and the per-key tuning in cents;
-   * per voice: its own tuning in cents (Drift Depth), filled at init */
+   * per voice: its own tuning in cents and Osc 2's extra (Drift Depth),
+   * filled at init */
   float note_gain[128];
   float key_cents[128];
   float voice_cents[LE_DRIFT_VOICES];
+  float osc2_cents[LE_DRIFT_VOICES];
+  int32_t tuning_set; /* which serial's per-voice tables are loaded */
   /* filter II's state at rest, where a voice's filter starts */
   float f2_rest[12];
   /* the voice mode the blocks were last reset for (-1: not yet) */

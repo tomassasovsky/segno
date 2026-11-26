@@ -405,11 +405,15 @@ static void chord_retune(le_meld_osc* o) {
   if (io > 7) io = 7;
   const float top = 0.45f * o->rate;
   const int n = chord_tones(type);
-  /* fit: a three-tone chord's fourth voice doubles its lowest tone two
-   * octaves up, at 0.8 (the triad renders at all eight inversions) */
+  /* a three-tone chord's fourth voice doubles its lowest tone an octave
+   * up, at the others' level. [measured] from the triad renders, each line
+   * as the saws' harmonics sum: at inversion 0 C4 -29, C5 -26 and C6 -32
+   * dB in Live (a doubling two octaves up gives -29, -28 and -29), and
+   * halfway to inversion 1 E4 cancels (E3's second harmonic against the
+   * doubled E4), -64 dB in Live (scratchpad meldfit/meas/chord_lines.py) */
   for (int t = 0; t < 4; ++t) {
-    const float sa = t < n ? chord_tone(type, ie, t) : chord_tone(type, ie, 0) + 24.0f;
-    const float sb = t < n ? chord_tone(type, io, t) : chord_tone(type, io, 0) + 24.0f;
+    const float sa = t < n ? chord_tone(type, ie, t) : chord_tone(type, ie, 0) + 12.0f;
+    const float sb = t < n ? chord_tone(type, io, t) : chord_tone(type, io, 0) + 12.0f;
     o->s.chord.inc[t] = fminf(o->hz * exp2f(sa / 12.0f), top) / o->rate;
     o->s.chord.inc[4 + t] = fminf(o->hz * exp2f(sb / 12.0f), top) / o->rate;
   }
@@ -425,14 +429,11 @@ static float chord_tick(le_meld_osc* o) {
   const float tw = fminf(fabsf(p - 2.0f * floorf(p / 2.0f + 0.5f)), 1.0f);
   const float wa = cosf(tw * (float)(MO_PI / 2.0));
   const float wb = sinf(tw * (float)(MO_PI / 2.0));
-  int type = (int)(12.0f * o->m1);
-  if (type > MO_CHORDS - 1) type = MO_CHORDS - 1;
-  const float fourth = chord_tones(type) == 3 ? 0.8f : 1.0f;
   float y = 0.0f;
   for (int t = 0; t < LE_MELD_CHORD_TONES; ++t) {
     const float dt = o->s.chord.inc[t];
     if (dt <= 0.0f) continue;
-    y += (t < 4 ? wa : wb) * ((t & 3) == 3 ? fourth : 1.0f) * mo_saw(o->s.chord.ph[t], dt);
+    y += (t < 4 ? wa : wb) * mo_saw(o->s.chord.ph[t], dt);
     o->s.chord.ph[t] = mo_wrap(o->s.chord.ph[t] + dt);
   }
   return 0.3f * y;
@@ -569,26 +570,39 @@ static float extratone_internal(le_meld_osc* o) {
 /* ---- the FM types (44.1 kHz) ---- */
 
 /* Harmonic FM's modulator ratios, Segno's set: simple fractions, unity,
- * the ratios between 1 and 2, then the integers to 10. Fold FM uses the
- * same set. */
+ * the ratios between 1 and 2, then the integers to 10. */
 #define MO_HFM_RATIOS 18
 static const float kHfmRatios[MO_HFM_RATIOS] = {
     0.25f, 1.0f / 3.0f, 0.5f, 2.0f / 3.0f, 0.75f, 1.0f, 1.25f, 4.0f / 3.0f, 1.5f,
     2.0f,  3.0f,        4.0f, 5.0f,        6.0f,  7.0f, 8.0f,  9.0f,        10.0f,
 };
 
-/* Two FM pairs at the neighbouring ratios of position `pos` (0..1),
- * crossfaded; `amount` in cycles, each pair's index capped so that the
- * carrier, the modulator and the deviation stay below 0.4 of the rate. */
-static float fm_pairs(le_meld_osc* o, float pos, float amount) {
+/* Fold FM's modulator ratios: the intervals 2, 3, 5, 7, 11, 12, 15 and
+ * 19 semitones, Macro 1 squared crossing them evenly with neighbours
+ * crossfaded. [measured] from the fold128-000..127 renders (Macro 1 at
+ * each of its 128 steps), scratchpad meldfit/meas/fold_law.py: the lines
+ * sit at the equal-tempered ratios (5 semitones' third sideband at 4.005
+ * f0), and this law gives every step's spectrum within 0.05 to 1.1 dB
+ * mean over its lines, the best crossfade at each step within 0.05 of
+ * it. */
+#define MO_FOLD_RATIOS 8
+static const float kFoldRatios[MO_FOLD_RATIOS] = {
+    1.1224620f, 1.1892071f, 1.3348399f, 1.4983071f, 1.8877486f, 2.0f, 2.3784142f, 2.9966142f,
+};
+
+/* Two FM pairs at the neighbouring ratios of `ratios` at position `pos`
+ * (0..1), crossfaded; `amount` in cycles, each pair's index capped so that
+ * the carrier, the modulator and the deviation stay below 0.4 of the
+ * rate. */
+static float fm_pairs(le_meld_osc* o, const float* ratios, int n, float pos, float amount) {
   const double dc = o->hz / o->irate;
-  const float p = mo_clamp(pos, 0.0f, 1.0f) * (float)(MO_HFM_RATIOS - 1);
+  const float p = mo_clamp(pos, 0.0f, 1.0f) * (float)(n - 1);
   int a = (int)p;
-  if (a > MO_HFM_RATIOS - 2) a = MO_HFM_RATIOS - 2;
+  if (a > n - 2) a = n - 2;
   const float fr = p - (float)a;
   float y = 0.0f;
   for (int k = 0; k < 2; ++k) {
-    const float r = kHfmRatios[a + k];
+    const float r = ratios[a + k];
     const float cap = fmaxf(0.0f, (0.4f - (float)dc - (float)dc * r) / (float)fmax(dc, 1e-9));
     const float index = fminf(amount, cap);
     const float yk = sinf((float)(MO_TWO_PI * (o->s.fm.c + index * mo_sine(o->s.fm.m[k]))));
@@ -610,10 +624,12 @@ static float simple_fm_internal(le_meld_osc* o) {
   return y;
 }
 
-static float harmonic_fm_internal(le_meld_osc* o) { return fm_pairs(o, o->m2, o->m1); }
+static float harmonic_fm_internal(le_meld_osc* o) {
+  return fm_pairs(o, kHfmRatios, MO_HFM_RATIOS, o->m2, o->m1);
+}
 
 static float fold_fm_internal(le_meld_osc* o) {
-  const float x = fm_pairs(o, o->m1 * o->m1, 4.0f * o->m1);
+  const float x = fm_pairs(o, kFoldRatios, MO_FOLD_RATIOS, o->m1 * o->m1, 4.0f * o->m1);
   const float G = 1.0f + 7.7f * o->m2;
   const float u = tanhf(G * x + 0.4f) - 0.37994896f;
   const float d = 0.08f * o->m1 / G;
@@ -971,6 +987,18 @@ static float shepard_tick(le_meld_osc* o) {
 
 /* ---- Bitgrunge ---- */
 
+/* Macro 2 above 0.5 makes the counter skip: Live's skips come at the same
+ * counts on every note and in every instance, at C3 as at C4. [measured]
+ * The counts that come twice at Macro 2 1, from the 3 s of osc-20-1010
+ * (and grunge-notes, five notes alike), scratchpad meldfit/meas/grunge.py;
+ * past the measured span the pattern starts over, and below Macro 2 1 a
+ * share 2 M2 - 1 of them is kept, picked by a golden-ratio sequence.
+ * [Segno] */
+#define MO_GRUNGE_SPAN 12550
+static const uint16_t kGrungeGlitch[161] = {1, 3, 194, 374, 460, 499, 517, 521, 552, 585, 636, 683, 747, 756, 896, 943, 951, 961, 1039, 1104, 1249, 1268, 1562, 1575, 1683, 1775, 1851, 1855, 2173, 2236, 2474, 2485, 2799, 2857, 2947, 3064, 3181, 3270, 3484, 3569, 3820, 3846, 3877, 3913, 3998, 4087, 4153, 4278, 4302, 4414, 4446, 4477, 4481, 4520, 4627, 4649, 4757, 4853, 4923, 4990, 5045, 5230, 5236, 5364, 5414, 5479, 5829, 5951, 5991, 6134, 6181, 6205, 6208, 6250, 6343, 6348, 6384, 6525, 6573, 6646, 6650, 6743, 6815, 6881, 6889, 6897, 6938, 6964, 6992, 7012, 7109, 7345, 7383, 7392, 7414, 7593, 7607, 7610, 7654, 7669, 7695, 7838, 7883, 7888, 7954, 7989, 8357, 8523, 8573, 8676, 8774, 8852, 9022, 9046, 9059, 9219, 9260, 9336, 9369, 9394, 9438, 9600, 9636, 9708, 9727, 9908, 9918, 10036, 10187, 10455, 10671, 10783, 10789, 10814, 10837, 10931, 11106, 11116, 11168, 11248, 11290, 11362, 11399, 11403, 11418, 11449, 11472, 11572, 11621, 11629, 11680, 11690, 11694, 11919, 11926, 12067, 12179, 12324, 12352, 12442, 12513};
+
+#define MO_GRUNGE_N ((int32_t)(sizeof(kGrungeGlitch) / sizeof(kGrungeGlitch[0])))
+
 static float grunge_tick(le_meld_osc* o) {
   const int a = (int)(9.0f * (1.0f - o->m1));
   int b = (int)(o->m2 * (float)(a + 1) + 16.0f * (1.0f - o->m2));
@@ -981,7 +1009,13 @@ static float grunge_tick(le_meld_osc* o) {
   while (o->s.grunge.frac >= 1.0) {
     o->s.grunge.frac -= 1.0;
     o->s.grunge.count++;
-    if (o->m2 > 0.5f && mo_uniform(&o->rng) < 0.01f * (2.0f * o->m2 - 1.0f)) o->s.grunge.count++;
+    const int32_t s = (int32_t)(o->s.grunge.step++ % MO_GRUNGE_SPAN);
+    if (s == 0) o->s.grunge.gi = 0;
+    while (o->s.grunge.gi < MO_GRUNGE_N && kGrungeGlitch[o->s.grunge.gi] < s) o->s.grunge.gi++;
+    if (o->m2 > 0.5f && o->s.grunge.gi < MO_GRUNGE_N && kGrungeGlitch[o->s.grunge.gi] == s) {
+      const double g = 0.6180339887498949 * (double)o->s.grunge.gi;
+      if (o->m2 >= 1.0f || g - floor(g) < 2.0 * o->m2 - 1.0) o->s.grunge.count++;
+    }
   }
   if (o->s.grunge.count != before || o->s.grunge.out == 0.0f) {
     /* the parity of counter bits a .. b - 1 */
@@ -1192,7 +1226,8 @@ void le_meld_osc_reset(le_meld_osc* o, float phase) {
       o->s.grunge.count = 0;
       o->s.grunge.frac = phase;
       o->s.grunge.out = 0.0f;
-      o->rng = 0x6d2b79f5u; /* the same glitches on every note */
+      o->s.grunge.step = 0;
+      o->s.grunge.gi = 0;
       break;
     case LE_MELD_OSC_BUBBLE:
       memset(o->s.bubble.amp, 0, sizeof(o->s.bubble.amp));

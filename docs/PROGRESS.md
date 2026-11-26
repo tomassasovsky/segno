@@ -1,4 +1,4 @@
-<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Metalic Wurli MKII Schroeder Fretless Balafon Glockenspiel Perc halvings Inharmonicity travelled Inharmonics atan Freq bilinearly penv mvol retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations -->
+<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Metalic Wurli MKII Schroeder Fretless Balafon Glockenspiel Perc halvings Inharmonicity travelled Inharmonics atan Freq bilinearly penv mvol retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations filt voicecut Unisono pul meldfit Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penvd rndpan -->
 # Segno — Progress & Roadmap
 
 <!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs multicore smarttune -->
@@ -103,16 +103,26 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
 - Analog's envelope, LFO waves, filter (with the formants) and drive move
   into `aas_parts.h`, which both devices use; Analog's 201 fit renders are
   bit-identical across the move.
-- Fitted against 75 Live renders. Strict score: 57 of 75 pass, 6 of the
-  20 factory presets (from 25 and 0); the held-out round of every factory
-  preset 21 of 107 (from 8). Measured: the keyboard's Stretch and Fine
-  Tune, the key amounts' resting 0.1, the bridge read's 1.5 samples, the
-  termination's loss, the output stage, the body's line lengths (each
-  wet-only render fitted sample by sample against the dry reference) and
-  its diffusion's growth with size, the damper's side and the string
-  starting bent under it, the straight filter envelope, vibrato kept off
-  the pitch shifter. Open: the bouncing hammer, the bow, the hammer's
-  comb in the terminated basses.
+- Fitted against 285 Live renders in seven rounds. Strict score: 233 of
+  285 pass, 41 of the 67 factory-preset renders; the held-out round of
+  every factory preset 62 of 107 (from 8); the chaotic bowed and bouncing
+  renders are scored against Segno's own spread. Measured: the keyboard's
+  Stretch and Fine Tune, the key amounts' resting 0.1, the bridge read's
+  1.5 samples, the termination's loss, the output stage, the body's line
+  lengths (each wet-only render fitted sample by sample against the dry
+  reference) and its diffusion's growth with size, the damper's side and
+  the string starting bent under it, the straight filter envelope, vibrato
+  kept off the pitch shifter, the body at every size, the output gain, the
+  bow's first block. Read and confirmed: the felt following the hammer
+  only through itself, the fret on the exciters' side, the engine's 2^x
+  and C4 of 261.62 Hz, the gated damper thrown off from rest, no ranges on
+  the exciters' values, the finger and contacts in double precision.
+  Measured: Body Level on the knob's value as it stands, a released
+  voice's 84 one-millisecond blocks of silence; in round 5: unison strings
+  counting as voices, the unison delay in whole milliseconds; read:
+  velocity as (v - 1) / 126. Open: Live's cut of released voices
+  (measured, rule not found), Soft Buzz Bass's chord, Live's random
+  Keyboard Error.
 - A voice costs 1.8 us per millisecond with the hammer, 0.6 with the bow,
   the body 0.4 more. A device holds 32 strings (1.7 MB).
 
@@ -173,12 +183,35 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   13 samples late, the rectangle without its DC offset (most of the
   presets' 2 to 6 dB excess), the amp envelope per sample with a start
   ramp, the tempo divisions and LFO depths on the amp, the mono
-  retrigger. Left: Live's early note events, its random sources (S&H and
-  noise LFOs, Keyboard Error), and the LFO and unison-delay laws the Live
-  round segno-analog-fit4 measures.
+  retrigger. Round 4 added Keyboard Stretch and Error, the pan's knob law
+  and free LFO starts: 206 of 266 fit renders, 14 of 41 presets, 10 of 58
+  on the held-out round (from 8). Left: Live's early note-ons (most of the
+  held-out failures), the unison delay, the pitch envelope at full depth;
+  segno-analog-fit5 isolates event timing, velocity, chords, range and
+  Live's own spread on the random sources. Round 5: the amps' start ramp
+  is the device's, the free LFO runs from the device's start, Keyboard
+  Error is uniform: 240 of 307 fit renders, 13 of 58 held out. Live's
+  later note events land 8 to 68 samples early, beyond any in-block snap.
+  After round 6 (scored with per-note alignment, from 239 of 345 and 10 of
+  58 held out): the oscillator's 40-sample pitch tick with its period
+  ramp and the pitch envelope 3.5 % longer (Kick Complex Perc from 26 to
+  0.4 dB), the cubic 2^x on the keyboard pitch, Free Run ignoring the
+  release (Zap 25 to 9), a free LFO and a Legato filter envelope kept per
+  device voice (Rhythmic Octaves Bass 17 to 10), no glide between a
+  chord's keys in Const mode: 246 of 345 fit renders, 17 of 79 factory
+  presets, 10 of 58 held out (median 3.89 dB). Left: Live's onset hump on
+  fast upward sweeps, the LFO rate's dips, the random sources;
+  segno-analog-fit7 (39 renders) isolates the first two and the per-voice
+  state.
+  Round 7 (segno-analog-fit7): the pitch envelope's length per time knob
+  and a 0.1 s run-on of a Legato filter envelope after its voice goes
+  quiet: 248 of the 345 earlier fit renders (281 of 384 with round 7), 18 of 79 factory presets; round 7 itself 33 of 39 (the free LFO's run-on between
+  notes is left), 10 of 58 (median 3.89 dB) held out. Analog keeps velocity / 127 (its
+  renders fit it better than the other AAS devices' (velocity - 1) / 126),
+  and its release tails end at the release's end, with no early cut.
 - A voice of two saw chains through LP24 costs 0.9 us per millisecond on
   the dev machine, four unison copies 3.7, the formant filter 1.0. A
-  device holds 40 copies (88 KB).
+  device holds 40 copies (229 KB).
 
 ## November 2026 The Meld device plays on an instrument slot (SEG-109 P8)
 
@@ -213,9 +246,28 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   and 8): linked envelopes carry the matrix, Chord's tones start in phase,
   the Mod envelope's tick timing, Note into Tone, the free rate curve, the
   Quantizer, Tarp's sweep and the membrane's modes. Most of the rest is
-  random (Pulsate, Swarm, Rand, S&H); a fourth round of renders is
-  requested for Fold FM, Chord's crossfade, Spread in Mono and the
-  membrane's damping.
+  random (Pulsate, Swarm, Rand, S&H). With the scoring's three seeds and
+  the random sources reaching LE_SEED: 309 of 385 renders and 16 of 21
+  presets after a fourth round (the Bandpass's drive ends) and the
+  held-out round's lesson (stealing counts fading voices and drops a note
+  with no victim): 13 of 84 held-out presets, from 8. A fifth round
+  confirmed the stealing on five fit renders and showed the LFOs' random
+  draws repeat on every note and instance. Measured from Live's renders
+  (rounds 7 and 8, allowed by the owner): the Pulsate, Wander and S&H
+  sequences, Fold FM's eight intervals at position 7 M1^2, the times'
+  fourth-power law, the triad's octave doubling, a 4.8 ms gain smoothing
+  and the Mod envelope's legato restart: 484 of 559 fit renders and 13 of
+  21 presets (from 333 of the same 559). Round 9 settled the Filther's
+  settled start and, with the training phrase, Mono's LFO hand-over: 493
+  of 573 fit renders, 13 of 21 presets, 15 of 84 held-out (tf mean 5.07
+  to 4.32 dB). Round 10 measured free LFOs running from their voice's
+  first note through silences, a silent voice's oscillator starting as
+  Reset does, and Bitgrunge's skips (now a table): 503 of 594 fit
+  renders, 13 of 21 presets, 17 of 84 held-out (tf mean 4.2 dB). Live's
+  Noise Loop is a fixed noise sequence, not yet measured. With Live's
+  spread from five instances: 19 of 84 held-out. Round 11 measured the
+  Vowel filter's formants and resonance: 522 of 618 fit renders, 13 of 21
+  presets, 24 of 84 held-out (tf mean 4.05 dB).
 - A voice with both engines on a Basic Shapes saw and SVF 12 costs 1.8 us
   per millisecond on the dev machine; MS2 6.8, a Swarm 3.7, three unison
   copies 5.6.
@@ -246,7 +298,8 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   PRD (a four-stage ladder) and OSR (a state-variable loop with a diode
   bounding its resonance), each fitted to Live's renders; SMP runs on
   MS2's section with its own constants. MS2's and SMP's high-passes are
-  fitted shapes; PRD's is not read yet: Clean's high-pass stands in.
+  fitted shapes (damping fitted at resonance 0 to 1); PRD's is not read
+  yet: Clean's high-pass stands in.
 - The routes, measured in a fifth and sixth round: sources bipolar or
   resting at 0, gain destinations attenuating by 1 - a+ + a u, the LFO's
   and pitch envelope's routes scaled by their own amounts, the pitch
@@ -263,6 +316,26 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   glide into a stolen voice, the MS2 and SMP high-passes, SMP's and PRD's
   resonance. Celesta, Bells Brushed Hits and Metallic FM are held by
   Live's random pan and phases; round 7 (52 renders) isolates the rest.
+- Round 7 and the held-out round (scorer round 2): Sync on the song's
+  sixteenths, LFO Rate and the crossfades taking controllers as bipolar
+  (Analog Bouquet Brass now passes), the MS2 high-pass's damping, legato
+  keeping the first note's key scaling. 324 of 349 fit renders, 9 of 10
+  presets; held out 32 of 67 (from 29). Live's random pan and phases
+  differ between instances, so Segno draws its own. Round 8 (81 renders)
+  plays the failing held-out kinds with another phrase.
+- Round 8: the pitch envelope moves the LFO rate in ratio, the Volume
+  route scales the voice's output (not the modulators, after the
+  shaper), Res takes controllers as bipolar, a loop's restart runs a
+  minimal attack. 335 of 390 fit renders (round 8 13 of 41, from 9), 8 of
+  10 presets; held out 35 of 67 (from 32).
+- Round 9: the pitch envelope's one-pole keeps one shape whatever its
+  span, Res, Filter Drive and Aux Env are gain destinations, OSR's
+  self-oscillation refitted, envelope segments last whole samples. 363 of
+  419 fit renders (round 9 23 of 29), 8 of 10 presets; held out 36 of 67.
+- Held-out pass: Beat and Sync retrigger a whole period after their start,
+  a releasing envelope ends at 10^-3 and its voice a block later, a chord
+  joining a voice that took a sounding one's place does not glide. 365 of
+  419 fit renders, 8 of 10 presets; held out 38 of 67.
 - A voice costs 2.7 us per period at 48 kHz on the dev machine, 4.5 with
   Antialias (a Drift voice 7.1).
 
@@ -283,7 +356,48 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
 - What still fails is Drift Depth (Segno's tuning values are its own by
   rule; with Live's table in a scratch check the drift renders passed) and
   random sources (noise, Sample & Hold) that no render can match draw for
-  draw. Bloom Pad's filter peak (37 cents low) waits on round 16.
+  draw. Round 16: key tracking is a blend in hertz ((1 - t) + t f / 440,
+  which fixed Bloom Pad's filter peak), and Live's drift is the same in
+  every instance. Strict score 207 of 244 with round 16; held-out 8 of 89.
+- Round 17: Drift Depth now uses Segno's own tables with the statistics
+  measured on Live (per key: mean +1.18, spread 3.63 cents per unit,
+  neighbours correlated 0.53; per voice: mean +2.26, spread 7.2,
+  independent), and Unison's lanes run sharpest first as the code orders
+  them. Strict score 204 of 263 (presets 0 of 5); with measured values in
+  a scratch build 245 of 263: 41 renders fail only on the exact drift
+  values, pending the owner's decision on measured per-key values.
+  Held-out: 8 of 89 (14 of 89 with the measured values).
+- The owner allowed values measured from Live's rendered audio: Drift
+  Depth uses the measured per-key and per-voice tables (round 17). Strict
+  score 247 of 263, factory presets 3 of 5 (Bloom Pad, Euphoria Lead,
+  80s Tape).
+- Round 18 (51 renders): keys outside C1..B5 carry no drift offset, the
+  per-voice offset does not depend on the key, the per-key offset follows
+  the key played, and C1..F#1 are remeasured (round 17's windows were too
+  short there). A Ratio-mode LFO follows a Mono lane's octave (Crunch
+  Arcade: pitch an octave off before, tf 11.8 to 3.1), and the cycling
+  envelope in Ratio mode on a pitch slot is phase modulation (Bellatine:
+  336 cents sharp before, tf 15.7 to 2.9). Strict score 252 of 296 before
+  and after with round 18 included, factory presets 3 of 5; held-out 14 of
+  89 (Bellatine and Crunch Arcade much closer, still failing).
+- Round 19 (39 renders): Osc 2 has its own per-voice drift offset on top
+  of Osc 1's (tape-chord's stereo 1.87 to 0.04 dB); the voice's output
+  clip is 0.35 and the filter input's negative side runs on to -1.6 (hot
+  inputs into either filter within 1.7 dB rms, from up to 8.4); the
+  cycling envelope's phase modulation is centred on its middle; the Ratio
+  rates follow the per-key drift. The Key source, Pulse's shape clamp and
+  when a releasing voice is free already matched. Strict score 300 of 335
+  (round 19 included; 264 of the 296 scored before, from 252), factory
+  presets 3 of 5; held-out 45 of 89, from 14.
+- Round 20 (16 renders): Drift Depth's per-voice tables follow the
+  preset's SerialNumber (clamped to 0..8388607; each serial its own
+  values, the per-key table shared). Segno carries the measured tables of
+  the factory presets' serials (0, 2217915, 8388607) and serial 0's for
+  any other; SerialNumber is a new device parameter
+  (`LE_DRIFT_SERIAL_NUMBER`), which the preset reader must pass. Monday
+  Morning, Synth on Screen, Grimer Bass and Game Console now pass. Strict
+  score 318 of 351 (rounds 19 and 20 included), factory presets 3 of 5;
+  held-out 47 of 89.
 
 ## November 2026 Drift's filter II as an MS-20 circuit model (SEG-109 P4, round 4)
 

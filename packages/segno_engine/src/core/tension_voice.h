@@ -40,15 +40,18 @@ extern "C" {
 #define LE_TENSION_BODY_LINE 8192 /* samples per body line */
 #define LE_TENSION_BODY_AP 1024   /* samples per body all-pass */
 
-/* A body of mass m on a felt contact (hammer, plectrum, damper). */
+/* A body of mass m on a felt contact (hammer, plectrum, damper). Its
+ * motion is in double, as the engine's: a heavy damper's felt holds
+ * centimetres where the contact holds microns. */
 typedef struct le_tension_contact {
   int32_t on;    /* 0 parked */
-  float y, v;    /* position and velocity, toward the string positive */
-  float z;       /* the felt's give */
-  float f;       /* the last force */
+  double y, v;   /* position and velocity, toward the string positive */
+  double z;      /* the felt's give */
+  double f;      /* the last force */
   float m, k, r; /* mass, stiffness, felt damping */
   float grav;    /* gravity along y */
   float reach;   /* the plectrum's protrusion (0 otherwise) */
+  double y0;     /* the string's displacement at the strike, where the exciter's frame starts */
 } le_tension_contact;
 
 typedef struct le_tension_voice {
@@ -63,7 +66,10 @@ typedef struct le_tension_voice {
   int32_t delay;  /* samples before it starts */
   int32_t since;  /* samples since the note, saturating */
   int32_t fade_left, fade_len;
-  int32_t quiet;  /* released samples below the silence floor */
+  int32_t quiet;  /* released 1 ms blocks in a row that were quiet */
+  int32_t flying; /* released samples with the damper off the string */
+  int32_t rel_n;  /* released samples into the current 1 ms block */
+  float blk_peak; /* the string's peak in that block */
   int32_t tick_left;
   float pitch, pitch_to; /* the played pitch, octaves from C4, glided */
   float kerr;            /* octaves: Keyboard Error's draw for this strike */
@@ -84,10 +90,13 @@ typedef struct le_tension_voice {
   int32_t exc_type; /* engine type: 1 plectrum, 2 hammer, 3 bouncing, 4 bow, 0 off */
   le_tension_contact exc, damper;
   float bow_f, bow_vc, bow_vb; /* the bow */
-  float ys_exc, ys_damp; /* the string's displacement at the contacts */
+  float bow_vb_late, bow_vscale; /* the bow's speed after its first block; the speed scaling it last took */
+  int32_t bow_hold;              /* samples left on the last strike's speed scaling */
+  double ys_exc, ys_damp; /* the string's displacement at the contacts */
   /* the finger on the fret */
   int32_t term, term_was; /* the finger is on; it was at the last strike */
-  float te_y, tf_y, tf_v, tf_m, tf_k, ta_k, t_ff, t_fa;
+  float tf_m, tf_k, ta_k;
+  double te_y, tf_y, tf_v, t_ff, t_fa; /* in double: see finger_fret */
   /* pitches above the strike: the shifter and its crossfade */
   float sh[LE_TENSION_SHIFT];
   int32_t sh_w;
