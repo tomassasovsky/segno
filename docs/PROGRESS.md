@@ -123,6 +123,12 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   notes is left), 10 of 58 (median 3.89 dB) held out. Analog keeps velocity / 127 (its
   renders fit it better than the other AAS devices' (velocity - 1) / 126),
   and its release tails end at the release's end, with no early cut.
+  Judged against Live's own copies (segno-analog-val3, val4): 11 of 58
+  held out; the unison delay is behind four of the deterministic failures.
+  Copy k of a unison voice now starts k delays in, as uni4-dly-100 shows
+  (fit 286 of 384 before and after); segno-analog-fit8 (40 renders) reads
+  the delay itself, the free LFO's run-on, the steal order and the Kick's
+  and Saw Pure Muted Bass's higher notes.
 - A voice of two saw chains through LP24 costs 0.9 us per millisecond on
   the dev machine, four unison copies 3.7, the formant filter 1.0. A
   device holds 40 copies (229 KB).
