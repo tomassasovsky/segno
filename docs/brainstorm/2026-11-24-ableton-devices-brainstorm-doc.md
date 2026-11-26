@@ -2056,8 +2056,17 @@ renders show and is still open:
   a DC offset in Live (-0.39 at the triad, -0.24 at the C5, in all five
   copies), from the first sample and decaying with the amp; the first
   note has none. Its chain 2 is a synced rectangle with its pulse width on
-  an LFO into Asym 3 drive. Keeping a reused voice's integrator value
-  gives a DC of the wrong sign. segno-analog-fit9 isolates it.
+  an LFO into Asym 3 drive. The offset decays with the rectangle
+  integrator's 4 s leak, so it sits in that integrator, about two pulse
+  heights deep. Round 6's fresh A5 (2.3 s, after the triad's release) has
+  none beyond the slow swing the pulse-width LFO gives, which Segno
+  already matches (+0.05 to -0.05 in both); carrying a reused voice's
+  integrator value or its leak state into the new note gives at most
+  +-0.16 at the held-out triad, and breaks the round-6 A5 when it carries
+  the output's value with either sign. What sets the offset (the chord's
+  three keys gliding on a fresh mono voice is the held-out triad's
+  difference from round 6's) needs segno-analog-fit9's p9-buzz and its
+  reused-voice rectangle renders.
 - The oscillators' start phase: on single notes at the song's start,
   after Live's 15-sample first-note offset, Live's sine and saw lead
   Segno's by about 16 log2(P / 109) samples (P the period; C1 69, C2 46,
@@ -2068,9 +2077,16 @@ renders show and is still open:
   Bass's C5 fundamental is 13 dB low in Segno, its rectangle and sine
   cancelling where Live's add.
 - Square Percussive Bass (mono, Stretch 0.825) sits 5.8 cents flat of
-  Live, as if its mono voice took half the poly stretch law, which the
-  stretch renders confirm for poly voices; segno-analog-fit9 plays mono
-  and poly stretch.
+  Live on the held-out C3. It is not the stretch law: round 6's D2 at the
+  full law fits to 0.1 cent, and its C5 and A5 sit within Keyboard
+  Error's 0 to 3.6 cents above Segno's chain 1 alone. Its chains are
+  detuned +11.6 and -12.0 cents and Segno's mix pulls the tracked pitch
+  about 2 cents below chain 1's at every note, where Live's stays at or
+  above it; the held-out C3 sits 3.6 to 4.5 cents above chain 1's in all
+  three Live copies, more than Keyboard Error gives. Either the chains'
+  balance or the detune law near the centre (fitted only at 0 and 0.75)
+  differs; segno-analog-fit9's p9-sqperc (with a copy) and its stretch
+  renders separate them.
 - Live's later note events land early (16 to 64 samples at the phrases'
   times); a fixed lead in the harness moves Muted Dark Bass by up to 2
   dB but no single lead fits, and its tf is in the onset cells.
