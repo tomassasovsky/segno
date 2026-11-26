@@ -106,7 +106,10 @@ typedef struct le_drift_voice {
   float lfo_ph;
   float lfo_inc;                    /* the LFO's last increment (Ratio) */
   float lfo_mod;                    /* its last rate modulation factor */
-  float lfo_hold, lfo_from, lfo_to; /* S&H and Wander */
+  /* Sample & Hold and Wander: the lane's generator (two words), its held
+   * value or Wander base, Wander's delta, and the last half-cycle phase */
+  uint32_t lfo_gx, lfo_gy;
+  float lfo_b, lfo_d, lfo_qprev;
   int32_t lfo_done;                 /* a one-shot LFO shape ended */
   /* filters: the low-pass (type I three states, type II twelve: two
    * sections of four capacitor states and two secant gains), the high-pass */
