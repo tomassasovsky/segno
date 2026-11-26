@@ -361,7 +361,22 @@ static le_collision_voice* oldest(le_collision* d, int32_t state) {
   return old;
 }
 
+/* A free slot for a new note: of the device's own 2p slots, the one whose
+ * last note is the oldest, a slot never played first (the engine's
+ * allocator cycles through its voices; Bells Attack's held-out renders: the
+ * hard C5 starts centred in all five, on a slot never played, not on the
+ * ended C3's, whose pan its LFO had moved hard left); past them, or when
+ * none is free, as before. */
 static le_collision_voice* free_slot(le_collision* d) {
+  {
+    le_collision_voice* o = NULL;
+    const int32_t count = voice_count(d);
+    for (int32_t i = 0; i < count; ++i) {
+      le_collision_voice* v = &d->voices[i];
+      if (v->state == LE_COLLISION_VOICE_FREE && (o == NULL || v->serial < o->serial)) o = v;
+    }
+    if (o != NULL) return o;
+  }
   for (int32_t i = 0; i < LE_COLLISION_VOICE_SLOTS; ++i) {
     if (d->voices[i].state == LE_COLLISION_VOICE_FREE) return &d->voices[i];
   }
@@ -673,14 +688,25 @@ static void start_voice(le_collision* d, le_collision_voice* v, uint32_t origin,
     memset(&v->nf2, 0, sizeof(v->nf2));
     v->nf_left = -1;
     v->env = 0.0f;
-    for (int32_t l = 0; l < 2; ++l) v->lfo[l].out = v->lfo[l].rnd = v->lfo[l].rnd_prev = 0.0f;
+    /* a fresh voice's LFOs hold a random value already (the engine's draw
+     * two when it sets a voice up), so the first strike's Random ramp starts
+     * from it, not from 0 (Vibes Modulated's held-out renders start at a
+     * different pan each); drawn from a stream of its own, so the strike's
+     * other draws stay as they were */
+    uint32_t q = v->rng ^ 0x68e31da4u;
+    for (int32_t l = 0; l < 2; ++l) {
+      v->lfo[l].out = v->lfo[l].rnd_prev = 0.0f;
+      q = q * 1664525u + 1013904223u;
+      q = q * 1664525u + 1013904223u;
+      v->lfo[l].rnd = 2.0f * (float)(q >> 8) / 16777216.0f - 1.0f;
+    }
   }
   /* the LFOs at their start: their phases, then their values from the
    * knob routes (the matrix without them), then the matrix */
   for (int32_t l = 0; l < 2; ++l) {
     if (li(d, l, LE_COLLISION_L_RETRIGGER) || fresh) {
       v->lfo[l].ph = (double)(lf(d, l, LE_COLLISION_L_PHASE) / 360.0f);
-      v->lfo[l].rnd_prev = v->lfo[l].rnd; /* 0 on a fresh strike */
+      v->lfo[l].rnd_prev = v->lfo[l].rnd;
       v->lfo[l].rnd = 2.0f * (float)((v->rng = v->rng * 1664525u + 1013904223u) >> 8) / 16777216.0f - 1.0f;
     }
   }

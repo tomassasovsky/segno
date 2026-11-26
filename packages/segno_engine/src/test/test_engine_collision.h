@@ -274,6 +274,30 @@ static void test_collision_voices(void) {
   le_collision_note_off(&g_collision, 1);
   for (int k = 0; k < 20 && le_collision_active(&g_collision) > 0; ++k) le_collision_render(&g_collision, l, r, N);
   CHECK(le_collision_active(&g_collision) == 0);
+  /* a new note takes a slot never played before an ended one */
+  collision_reference(&g_collision);
+  collision_set(&g_collision, LE_COLLISION_RES(0, LE_COLLISION_R_DECAY), 0.0f);
+  CHECK(le_collision_note_on(&g_collision, 1, 60, 100, 0) == 0);
+  le_collision_note_off(&g_collision, 1);
+  for (int k = 0; k < 10; ++k) le_collision_render(&g_collision, l, r, N);
+  CHECK(le_collision_active(&g_collision) == 0);
+  CHECK(le_collision_note_on(&g_collision, 2, 60, 100, 0) == 0);
+  CHECK(g_collision.voices[0].state == 0 && g_collision.voices[1].state != 0);
+  /* a Random LFO on Res 1 Pan starts a fresh voice off centre: its ramp
+   * begins at a value the voice already holds, not at 0 */
+  collision_reference(&g_collision);
+  collision_set(&g_collision, LE_COLLISION_LFO(0, LE_COLLISION_L_ON), 1.0f);
+  collision_set(&g_collision, LE_COLLISION_LFO(0, LE_COLLISION_L_SHAPE), 6.0f);
+  collision_set(&g_collision, LE_COLLISION_LFO(0, LE_COLLISION_L_RATE), 0.0f);
+  collision_set(&g_collision, LE_COLLISION_LFO(0, LE_COLLISION_L_DEPTH), 1.0f);
+  collision_set(&g_collision, LE_COLLISION_LFO(0, LE_COLLISION_L_TARGET1), (float)LE_COLLISION_D_R1_PAN);
+  collision_set(&g_collision, LE_COLLISION_LFO(0, LE_COLLISION_L_AMOUNT1), 1.0f);
+  CHECK(le_collision_note_on(&g_collision, 1, 60, 100, 0) == 0);
+  le_collision_render(&g_collision, l, r, N);
+  {
+    const double pl = opr_peak(l + 2400, 2400), pr = opr_peak(r + 2400, 2400);
+    CHECK(pl > 1.05 * pr || pr > 1.05 * pl);
+  }
   /* sustain holds it; Cut fades everything */
   collision_reference(&g_collision);
   CHECK(le_collision_sustain(&g_collision, 9, 1) == 0);
