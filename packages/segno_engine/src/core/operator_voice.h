@@ -73,7 +73,7 @@ typedef struct le_operator_env {
   float y;       /* output, before the level scale */
   double repeat; /* Beat/Sync: samples to the next retrigger */
   float scale;   /* the level scale the one-pole's span is measured in */
-  float ratio;   /* pitch envelope: its amount in octaves per semitone, or 0 */
+  int32_t pitch; /* the pitch envelope: its one-pole keeps one shape whatever its span */
 } le_operator_env;
 
 typedef struct le_operator_voice {

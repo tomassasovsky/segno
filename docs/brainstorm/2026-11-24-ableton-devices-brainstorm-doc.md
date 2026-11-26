@@ -553,9 +553,15 @@ where the reading was silent or disagreed. Segno's implementation is
   envelope runs on its level times the operator's amplitude (Volume,
   velocity and key scaling), so a quiet operator's one-pole is slower
   (Buzz Release Keys: a 4.5 s release at 0.1 volume, 8 dB apart after two
-  seconds without it). The pitch envelope's runs on its frequency ratios
-  (a 12-semitone fall spans a ratio of 1, not 12). **[code]**
-  **[measured]**
+  seconds without it). A release that starts before its attack or decay
+  arrives runs from where it is. **[measured: round 9 rel-in-attack,
+  rel-in-decay, within 0.34 dB]** The pitch envelope's one-pole keeps one
+  shape whatever its span: it reaches 10^−3.95 of the span as the time
+  runs out (the curve's constant). Falls and rises of 2 to 24 semitones
+  at amounts 0.5 to 1 each want that one rate (the span-based rule needs
+  0.44 to 0.66 of a ratio unit on every one of them); with it all ten
+  pitch envelope renders score 0.01 to 0.04 dB and Chorus Strings Sweep
+  Pad 5.7 to 1.4. **[measured: round 9's penvd renders]**
 - Every other slope (−1, −0.95 .. 0.5 measured) holds the segment's start
   and jumps to its target at the end on an operator's envelope: that is
   what Live 12.2.7 renders, whatever the reading suggests, so Segno does
@@ -577,9 +583,11 @@ where the reading was silent or disagreed. Segno's implementation is
   sync and beat renders]** A Beat retrigger due after the note-off does
   not restart the release. **[measured: round 8's beat-noteoff]** A
   Loop's restart runs even a minimal attack (the note's own start skips
-  it): Geigerzaehler Bleep's loops come 3 samples later each cycle in
-  Live's render, which shifts its 13 ms bleeps against the waveform
-  (3.0 dB to 1.3). **[measured: round 8]**
+  it), and each segment lasts its time rounded up to whole samples: a
+  0.1 + 13 + 50 ms loop repeats every 3029 samples, the first 3024
+  (Segno lost a sample to rounding in two segments). **[measured: round 8
+  Geigerzaehler Bleep, 3.0 dB to 1.3; round 9 loop-minatt, 7.6 to
+  0.8]**
 - Times scale by 2^(−8 TimeVel (vel − 70)/127) per envelope and by
   2^(3 EnvTime − 6 EnvTimeKey (key − 70)/127) for all, attack included
   whatever EnvTimeIncludeAttack says (Live scales the attack either way).
@@ -636,9 +644,7 @@ where the reading was silent or disagreed. Segno's implementation is
   at rest slows the LFO 1.6 octaves (OP Bass, 1.3 to 0.43 Hz), −20 %
   speeds it 1.6; the mod wheel's +58 % on the A/C crossfade gives C 0.42
   and A 1.58 at rest (Analog Bouquet Brass, its C and D alone 7.5 dB too
-  loud without it). **[measured]** Filter Res does the same: the mod
-  wheel at rest with +100 % opens no resonance (Harsh FM Bass, 4.7 dB to
-  2.1). **[measured: one render]**
+  loud without it). **[measured]**
 - A gain destination only attenuates, by 1 − a⁺ + a u (a⁺ the amount's
   positive part): the operators' volumes, FM Drive, LFO Amount, the
   filter envelope's amount (velocity +50 % leaves it whole at 127), Volume
@@ -650,10 +656,18 @@ where the reading was silent or disagreed. Segno's implementation is
   shaper as hard at velocity 64 as at 127 and keeps its FM sidebands
   (4.4 dB to 1.4), Bells Classic Basic 2.1 to 0.05, Smack Kick 2.4 to
   2.0 (FM Piano Classic, its LFO on Volume, 2.4 to 1.1). **[measured:
-  round 8]**
-- Not built: Shaper Drive, Feedback, Filter Morph, Aux Envelope Amount
-  and Filter Q (legacy) as route destinations; round 9 renders each at
-  rest. **[open]**
+  round 8; round 9's vel-vol-shaper and vel-vol-fm, 0.39 and 0.06 dB]**
+  Filter Res, Filter Drive and Aux Env (the pitch envelope's amount) are
+  gain destinations too: the mod wheel at rest with +50 % halves the
+  resonance, −50 % leaves it, +100 % opens none (Harsh FM Bass 4.7 to
+  1.9), takes all of a 6 dB drive and silences the pitch envelope.
+  **[measured: round 9 mw-res-p50, -m50, mw-fdrive (5.1 to 0.1),
+  mw-auxenv (0.8, attack 19.6, to 0.02); Wobbly Flag Bass, its pitch
+  envelope on Drive, 5.4 to 4.3]**
+- Feedback, Filter Morph and Shaper Drive move nothing with the mod wheel
+  at rest at +100 %, nor Shaper Drive with velocity 64 at +100 %, as
+  adding destinations would not; Segno does not route them (their units
+  are unmeasured), nor Filter Q (legacy). **[measured: round 9]**
 - The LFO's route is scaled by LFO Amount (linear: 0.5 gives half the
   depth) and the pitch envelope's by its Amount; both are silent while
   their LFO or envelope is off. The LFO Amount route scales both of the
@@ -689,8 +703,12 @@ where the reading was silent or disagreed. Segno's implementation is
   the fourth. **[code]** **[fit]**
 - OSR: Segno's model of a state-variable loop with both transconductances
   saturating, damping 2 (1 − q) − 0.01 and a diode across the band node
-  (a 0.5 V knee, unit conductance), so it rings at a bounded level from
-  resonance 1; the input stage barely saturates. **[code]** **[fit]**
+  (a 0.5 V knee, conductance 0.85 above it), so it rings at a bounded
+  level from resonance 1; the input stage barely saturates. The
+  transconductances' curve takes the node voltages at 0.145 per volt.
+  **[code]** **[fit: round 9's self-oscillation at resonance 1.25, 30 Hz
+  to 1 kHz, within 0.6 dB in level and 6 cents at 100 Hz and 1 kHz
+  (17 at 300 Hz, where the 262 Hz input pulls it); Tesseract 4.7 to 3.6]**
 - SMP: MS2's section with SMP's input constant and a feedback of 0.85 per
   unit of q (the reading's 0.904 rings 1 to 2 dB too loud at resonance 0.5
   to 1) (no factory preset uses it). **[fit]** PRD's high-pass is a core
@@ -725,8 +743,11 @@ where the reading was silent or disagreed. Segno's implementation is
 - Random pan and the random start phases do not repeat from one Live
   instance to the next: two identical tracks draw different pans, and
   every held-out preset's Live copies differ (Live against itself 0.8 to
-  13 dB over time). Segno draws its own. **[measured: rndpan-a, -b; the
-  held-out copies]**
+  13 dB over time). Segno draws its own: uniform over ±2 × Rnd, clipped
+  to the sides, as Live's draws are (48 at small amounts, standard
+  deviation 1.12 of Rnd; at 100 %, 56 % of 36 hard to a side, 50 %
+  expected). **[measured: rndpan-a, -b; the held-out copies; round 9
+  rndpan-100 and its copies]**
 - Pan is equal-power, unity at the centre (√2 cos and √2 sin); key and
   random pan are latched at the note. **[code]** **[measured]**
 
@@ -788,39 +809,38 @@ the Beat note-off and a constant pitch envelope on the LFO rate, showed
 the free LFO's first-block offset to be Live's own per-instance draw,
 and through the presets: the pitch envelope's ratio on the LFO rate, the
 Volume route on the voice's output, Res taking controllers as bipolar and
-a loop's restart through a minimal attack. Round 8 now passes 13 of its
+a loop's restart through a minimal attack. Round 8 then passed 13 of its
 41 renders (from 9), the fit rounds 335 of 390 with 8 of 10 presets, the
 held-out round 35 of 67 (from 32).
 
-Still open after round 8, with what round 9 (`segno-op-fit9`, 31
-renders) isolates:
+Round 9 (31 renders, `segno-op-fit9`) settled what round 8 left: the
+pitch envelope's one-pole keeps one shape (all ten pitch envelope
+renders 0.01 to 0.04 dB, Chorus Strings Sweep Pad 5.7 to 1.4), Res,
+Filter Drive and Aux Env are gain destinations, Feedback, Morph and
+Shaper Drive do not move at rest, OSR's self-oscillation level and pitch
+(Tesseract 4.7 to 3.6), envelope segments in whole samples (loop-minatt
+7.6 to 0.8), and it confirmed the Volume route's place, releases that
+start inside an attack or decay, and Segno's random pan distribution.
+The fit rounds pass 363 of 419 (round 8 16 of 41, round 9 23 of 29), 8
+of 10 presets; the held-out round 36 of 67.
 
-- The pitch envelope's one-pole on small and rising spans: Chorus Strings
-  Sweep Pad (−2 semitones × 0.669 rising to 0) matches Live within 1.1 dB
-  only with its decay 1.29 times faster than the ratio-span rule gives,
-  while the 12- and 6-semitone falls fit it. Round 9: falls and rises of
-  2, 12 and 24 semitones at amounts 1, 0.669 and 0.5.
-- OSR's self-oscillation runs 7 % flat (Tesseract: Live rings at 30.4 Hz
-  for a 31.8 Hz cutoff, Segno at 28.2). Round 9: OSR at resonance 1.25
-  from 30 Hz to 1 kHz, and the band-pass at 100 Hz.
-- The route destinations Segno does not build (Shaper Drive, Feedback,
-  Morph, Aux Envelope) and Res at ±50 %; where the Volume route sits
-  (after a shaper, off a modulator), checked in isolation.
-- A release that starts before its attack or decay has arrived: Pure
-  Bell 8ths (held out) keeps its triad's second harmonics 22 dB louder
-  than Live after the release, its attacks 4.3 and 5 s long. Round 9
-  releases at 0.5 s into a 2 s attack and a 2 s decay.
-- Random pan: Live's draws at small amounts spread uniformly over ±2 ×
-  Rnd (48 draws, standard deviation 1.12 of Rnd against 1.15), but at 40
-  to 60 % none of 36 reached a hard side (largest 0.96). Round 9 draws 36
-  more at 100 % and 12 at 60 %. Segno's own seeds put Pitchy Release
-  Pluck's first notes at the sides, so its spread (14.5 dB) is more than
-  1.5 times Live's (5.8).
-- The scorer's per-note alignment shifts legato notes that have no onset
-  of their own: env-legato, glide-mono-gap, Sub Sine Bass, bq-cd and
-  Electric FM Wow Bass pass unaligned (0.14 to 0.56 dB) and fail aligned
-  (1.6 to 4.4).
+Still open:
 
+- OSR self-oscillating near its input's pitch (17 cents at a 300 Hz
+  cutoff on a 262 Hz sine) and the click as a ringing voice ends: Live's
+  voice ends 2 ms before its 50 ms release runs out (the level about
+  10^−4), Segno's at its end.
+- Harsh FM Bass passes only with its 12 ms glide near zero, while other
+  mono presets glide as Segno does.
+- Beat and Sync retrigger detail (Rhythmic Pong, Sweep Wobble, Noisy
+  Triple Beat, Full Perc Pluck), the free LFO's first-block chords, the
+  circuit drive renders, PRD's and MS2's high-passes.
+- Random renders whose seeds Segno draws differently: Pitchy Release
+  Pluck and Fizzling Pad put their first notes at the sides, so Segno's
+  spread exceeds 1.5 times Live's; rndpan-100's first note is hard right
+  in all three Live copies.
+- glide-mono-gap: its second note's onset in the first note's release is
+  aligned by 0.9 ms, which costs 4.0 dB (0.20 unaligned).
 
 ## Decisions
 

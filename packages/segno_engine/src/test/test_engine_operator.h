@@ -462,6 +462,20 @@ static void test_operator_round8_fits(void) {
   }
   CHECK(fabs(ratio[1] / ratio[0] - 1.0) < 0.01);
   CHECK(fabs(level[1] / level[0] - 64.0 / 127.0) < 0.01);
+  /* round 9: the mod wheel at rest with +100 % on Aux Env silences the
+   * pitch envelope (a gain destination); a +12 semitone level then plays
+   * the note's own pitch */
+  opr_reference(&g_opr);
+  opr_op(&g_opr, 0, LE_OPERATOR_OP_PITCH_ENV_ON, 1.0f);
+  opr_set(&g_opr, LE_OPERATOR_PITCH_ENV_ON, 1.0f);
+  opr_set(&g_opr, LE_OPERATOR_PITCH_ENV + LE_OPERATOR_ENV_ATTACK_LEVEL, 12.0f);
+  opr_set(&g_opr, LE_OPERATOR_PITCH_ENV + LE_OPERATOR_ENV_DECAY_LEVEL, 12.0f);
+  opr_set(&g_opr, LE_OPERATOR_PITCH_ENV + LE_OPERATOR_ENV_SUSTAIN, 12.0f);
+  opr_set(&g_opr, LE_OPERATOR_ROUTE + 16, 19.0f); /* mod wheel, route 0: Aux Env */
+  opr_set(&g_opr, LE_OPERATOR_ROUTE + 17, 100.0f);
+  CHECK(le_operator_note_on(&g_opr, 1, 60, 127, 0) == 0);
+  le_operator_render(&g_opr, l, r, N);
+  CHECK(opr_component(l + N / 2, N / 2, opr_note_hz(60)) > 0.9);
 }
 
 /* Voice bookkeeping: a mono legato note whose held voice was taken still

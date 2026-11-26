@@ -515,11 +515,16 @@ static void env_segment(le_operator_env* e, int32_t state, float y1, float ms, f
   e->t = 0.0;
   e->dt = 1.0 / n;
   /* slope 1: a one-pole that comes within ENV_EPS of the target as its time
-   * runs out */
-  /* the pitch envelope's runs on its frequency ratios */
-  const double d0 = e->ratio != 0.0f
-                        ? exp2((double)e->y0 * (double)e->ratio) - exp2((double)y1 * (double)e->ratio)
-                        : ((double)e->y0 - (double)y1) * (double)e->scale;
+   * runs out, its span measured in the scaled level. The pitch envelope's
+   * keeps one shape whatever its span, reaching 10^-3.95 of it (the curve's
+   * constant): falls and rises of 2 to 24 semitones at amounts 0.5 to 1
+   * all want the same rate (measured: round 9's penvd renders, the span
+   * the old rule would need 0.44 to 0.66 of a ratio unit every time) */
+  if (e->pitch) {
+    e->c = 9.0949 / fmax(n, 10.0);
+    return;
+  }
+  const double d0 = ((double)e->y0 - (double)y1) * (double)e->scale;
   const double span = fmax(fabs(d0), 2.0 * ENV_EPS);
   e->c = log(span / ENV_EPS) / fmax(n, 10.0);
 }
@@ -537,8 +542,8 @@ typedef struct env_ctx {
 } env_ctx;
 
 /* from_initial: 1 at a note (a minimal attack starts at the peak), 2 at a
- * loop's restart (it runs even a minimal attack: Geigerzaehler Bleep's
- * loops come 3 samples later each cycle in Live's render, measured), 0
+ * loop's restart (it runs even a minimal attack: measured, Geigerzaehler
+ * Bleep and round 9 loop-minatt), 0
  * from the current value (Beat and Sync). */
 static void env_attack(le_operator_env* e, const env_def* p, float fv, const env_ctx* c,
                        int from_initial) {
@@ -605,7 +610,10 @@ static float env_tick(le_operator_env* e, const env_def* p, float fv, const env_
   }
   if (e->state == ENV_OFF) return e->y;
   e->t += e->dt;
-  if (e->t >= 1.0) {
+  /* a segment lasts its time rounded up to whole samples, with no sample
+   * lost to rounding (measured: round 9 loop-minatt, 3029 samples a cycle
+   * for 0.1 + 13 + 50 ms, the first 3024) */
+  if (e->t >= 1.0 - 1e-9) {
     e->y = e->y1;
     switch (e->state) {
       case ENV_ATTACK:
@@ -911,7 +919,7 @@ static void start_voice(le_operator* d, le_operator_voice* v, uint32_t origin, i
    * amplitude, 1 for the others */
   for (int32_t op = 0; op < LE_OPERATOR_OPS; ++op) v->env[op].scale = op_amp(d, v, op);
   v->fenv.scale = v->penv.scale = v->lenv.scale = 1.0f;
-  v->penv.ratio = penv_amount(d) / 12.0f;
+  v->penv.pitch = 1;
   start_envelopes(d, v);
   v->gl = v->gr = -1.0f; /* set at the first chunk without a ramp */
 }
@@ -1351,7 +1359,7 @@ static float clean_pick(int32_t type, const float* w, float l, float b, float h)
 #endif
 /* OSR: Segno's model of Ableton's state-variable circuit. A two-integrator
  * loop whose transconductances both saturate (the curve PRD's stages use,
- * on the node voltages scaled by 0.19 per volt), damped by 2 (1 - q) -
+ * on the node voltages scaled by 0.145 per volt), damped by 2 (1 - q) -
  * 0.01 and by a diode across the band node that conducts above a knee: so
  * from about resonance 1 the loop rings at the level where the diode's
  * damping makes up the negative linear damping. The input passes an op-amp
@@ -1371,9 +1379,11 @@ static float clean_pick(int32_t type, const float* w, float l, float b, float h)
 #define OP_OSR_VK 0.5f /* fit: the diode's knee, volts */
 #endif
 #ifndef OP_OSR_DK
-#define OP_OSR_DK 1.0f /* fit: its conductance above the knee */
+#define OP_OSR_DK 0.85f /* fit: its conductance above the knee (round 9's self-oscillation levels) */
 #endif
-#define OP_OSR_KAPPA 0.1915f
+/* fit: the transconductances' scale, volts to the curve (round 9: the
+ * self-oscillation at 100 Hz to 1 kHz within 6 cents of Live's) */
+#define OP_OSR_KAPPA 0.145f
 
 #ifndef OP_OSR_RAIL
 #define OP_OSR_RAIL 20.0f /* fit: the input stage saturates far above the 5 V rails the reading names */
@@ -1548,7 +1558,8 @@ typedef struct chunk_ctx {
 /* Sets the voice's per-chunk operator increments, levels, filter, gains;
  * returns the filter target and LFO coefficients through the pointers. */
 static void voice_chunk(le_operator* d, le_operator_voice* v, const chunk_ctx* c,
-                        filter_target* ft, lfo_coef* lc, float* lfo_a, int32_t frames) {
+                        filter_target* ft, lfo_coef* lc, float* lfo_a, float* penv_a,
+                        int32_t frames) {
   const float rate = (float)d->sample_rate;
   /* glide */
   if (v->glide_chunks > 0) {
@@ -1563,10 +1574,13 @@ static void voice_chunk(le_operator* d, le_operator_voice* v, const chunk_ctx* c
   const float lfo_gain = route_gain(&rm, DST_LFO_AMOUNT);
   route_mods(d, v, v->lfo_out * lfo_gain, penv_st, 1, &rm);
   const float* mod = rm.m;
+  /* Aux Env (the pitch envelope's amount) is a gain destination: the mod
+   * wheel at rest with +100 % silences it (measured: round 9 mw-auxenv) */
+  *penv_a = c->penv_amount * route_gain(&rm, DST_PITCH_ENV);
   /* LFO */
   float fl = lfo_hz(d, VKEY(v), 1) * exp2f(rm.lfo_rate);
   if (vi(d, LE_OPERATOR_LFO_PITCH_ENV_ON) && c->penv_active) {
-    fl *= penv_ratio(v->penv.y, &v->penv, c->penv_amount);
+    fl *= penv_ratio(v->penv.y, &v->penv, *penv_a);
   }
   *lc = lfo_coefs(fl, rate);
   const float amount = vf(d, LE_OPERATOR_LFO_AMOUNT);
@@ -1648,16 +1662,18 @@ static void voice_chunk(le_operator* d, le_operator_voice* v, const chunk_ctx* c
                     OP_FILTER_K * mod[DST_FILTER_FREQ];
     float fc = vf(d, LE_OPERATOR_FILTER_FREQ) * exp2f(clampf(s / 12.0f, -31.0f, 31.0f));
     fc = clampf(fc, 30.0f, fminf(0.48f * rate, 18500.0f));
-    /* Res takes amount x (2u - 1), as LFO Rate does: the mod wheel at rest
-     * with +100 % opens no resonance (measured: Harsh FM Bass) */
-    const float res = vf(d, LE_OPERATOR_FILTER_RES) + rm.bi[DST_FILTER_RES];
+    /* Res and Drive are gain destinations: the mod wheel at rest with +50 %
+     * halves the resonance, -50 % leaves it, +100 % opens none and takes
+     * all the drive (measured: round 9 mw-res-p50, -m50, mw-fdrive; Harsh
+     * FM Bass) */
+    const float res = vf(d, LE_OPERATOR_FILTER_RES) * route_gain(&rm, DST_FILTER_RES);
     /* Clean holds resonance at 0.9; the analog circuits take up to 2 */
     const float r = clampf(res, 0.0f, 0.9f);
     ft->q = 4.0f * r / (3.0f * r + 1.0f);
     ft->g = tanf((float)OP_PI * fc / rate);
     ft->fc = fc;
     ft->r = clampf(res, 0.0f, 2.0f);
-    ft->drive = powf(10.0f, clampf(vf(d, LE_OPERATOR_FILTER_DRIVE) + 24.0f * mod[DST_FILTER_DRIVE],
+    ft->drive = powf(10.0f, clampf(vf(d, LE_OPERATOR_FILTER_DRIVE) * route_gain(&rm, DST_FILTER_DRIVE),
                                    0.0f, 24.0f) / 20.0f);
     morph_weights(vf(d, LE_OPERATOR_FILTER_MORPH) + mod[DST_FILTER_MORPH], ft->w);
   }
@@ -1757,8 +1773,8 @@ static void render_voice(le_operator* d, le_operator_voice* v, const chunk_ctx* 
                          float* right, int32_t frames) {
   filter_target ft = {0};
   lfo_coef lc;
-  float lfo_a;
-  voice_chunk(d, v, c, &ft, &lc, &lfo_a, frames);
+  float lfo_a, penv_a;
+  voice_chunk(d, v, c, &ft, &lc, &lfo_a, &penv_a, frames);
   if (c->filter_on) {
     if (v->f_g <= 0.0f) {
       v->f_g = ft.g;
@@ -1851,7 +1867,7 @@ static void render_voice(le_operator* d, le_operator_voice* v, const chunk_ctx* 
     const float fenv = c->filter_on ? env_tick(&v->fenv, &c->fenv, fvf, &ec) : 0.0f;
     (void)fenv;
     const float pmul = c->penv_active ? penv_ratio(env_tick(&v->penv, &c->penv, fvp, &ec),
-                                                   &v->penv, c->penv_amount)
+                                                   &v->penv, penv_a)
                                       : 1.0f;
     float la = 0.0f;
     if (c->lfo_active) {

@@ -120,9 +120,11 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   route scales the voice's output (not the modulators, after the
   shaper), Res takes controllers as bipolar, a loop's restart runs a
   minimal attack. 335 of 390 fit renders (round 8 13 of 41, from 9), 8 of
-  10 presets; held out 35 of 67 (from 32). Round 9 (31 renders) isolates
-  the pitch envelope's small spans, OSR's self-oscillation, the unbuilt
-  route destinations, releases during an attack and random pan.
+  10 presets; held out 35 of 67 (from 32).
+- Round 9: the pitch envelope's one-pole keeps one shape whatever its
+  span, Res, Filter Drive and Aux Env are gain destinations, OSR's
+  self-oscillation refitted, envelope segments last whole samples. 363 of
+  419 fit renders (round 9 23 of 29), 8 of 10 presets; held out 36 of 67.
 - A voice costs 2.7 us per period at 48 kHz on the dev machine, 4.5 with
   Antialias (a Drift voice 7.1).
 
