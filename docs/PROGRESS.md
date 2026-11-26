@@ -1,4 +1,4 @@
-<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Metalic Wurli MKII Schroeder Fretless Balafon Glockenspiel Perc halvings Inharmonicity travelled Inharmonics atan Freq bilinearly penv mvol retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations filt voicecut Unisono pul meldfit Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penvd rndpan Bassic Bitgrunge's Catchem Filther's Kaneda Werkstuecktraeger Whley Whley's filt nloop avel fleg unmodulated retunes Basscycle rvol mnoise lr spr ccg Clav restruck restrikes restrike prewarping prewarp Floot Halfstep Gametal Plucks Neurotimbre sqperc unstepped fenv scalings fmdrive oscvol unsmoothed relc colfm -->
+<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Metalic Wurli MKII Schroeder Fretless Balafon Glockenspiel Perc halvings Inharmonicity travelled Inharmonics atan Freq bilinearly penv mvol retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations filt voicecut Unisono pul meldfit Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penvd rndpan Bassic Bitgrunge's Catchem Filther's Kaneda Werkstuecktraeger Whley Whley's filt nloop avel fleg unmodulated retunes Basscycle rvol mnoise lr spr ccg Clav restruck restrikes restrike prewarping prewarp Floot Halfstep Gametal Plucks Neurotimbre sqperc unstepped fenv scalings fmdrive oscvol unsmoothed relc colfm rand -->
 # Segno — Progress & Roadmap
 
 <!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs multicore smarttune -->
@@ -170,6 +170,13 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   of the neutral-centred controls, and the fit harness releasing on
   Live's block. Still failing: four renders where the damper's noise
   rings a resonance by a random amount per strike.
+- With five noise seeds and Live's spread taken across Live Sets: 82 of
+  86 fit renders (the four noise-only renders fail) and 15 of 17
+  held-out presets. The two held-out failures, Vibes Soft and E-Piano
+  MKII Hard, are random presets the scorer's five seeds happen to fail:
+  over 40 to 80 seeds Segno's spread is Live's or within the limit, and
+  no random draw is wider than Live's (the doc's fit notes). Rounds 3
+  and 4 wait in Live: cross-Set copies of the noise renders.
 - A voice costs 1.4 us per millisecond on the dev machine with the R
   pickup, 0.9 with W. A device holds 40 voices (10 KB).
 
