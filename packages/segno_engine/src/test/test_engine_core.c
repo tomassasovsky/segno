@@ -19998,6 +19998,25 @@ static void test_meter_rises_at_once_and_falls_at_its_rate(void) {
   le_engine_destroy(e);
 }
 
+/* A non-finite block does not stick on a meter (SEG-114): NaN or Inf times
+ * the fall stays non-finite, so le_meter_publish drops it. */
+static void test_meter_drops_a_non_finite_block(void) {
+  printf("test_meter_drops_a_non_finite_block\n");
+  _Atomic uint32_t slot;
+  store_f32(&slot, 0.5f);
+  const float fall = le_meter_fall_gain(480, 48000);
+  le_meter_publish(&slot, NAN, fall);
+  CHECK(fabsf(load_f32(&slot) - 0.5f * fall) < 1e-6f); /* keeps falling */
+  le_meter_publish(&slot, INFINITY, fall);
+  CHECK(isfinite(load_f32(&slot)));
+  store_f32(&slot, NAN); /* a value left from before */
+  le_meter_publish(&slot, 0.25f, fall);
+  CHECK(load_f32(&slot) == 0.25f);
+  store_f32(&slot, INFINITY);
+  le_meter_publish(&slot, 0.0f, fall);
+  CHECK(load_f32(&slot) == 0.0f);
+}
+
 /* Dart submits pow(10, dB / 20) as a double; FFI rounds once into this float
  * payload. Both endpoints are legal and the next Float32 above +12 dB is not. */
 static void test_mix_trim_boundaries(void) {
@@ -40340,6 +40359,7 @@ int main(void) {
   SHARD(test_track_stereo_peaks_follow_fader);
   SHARD(test_meters_read_only_what_routes);
   SHARD(test_meter_rises_at_once_and_falls_at_its_rate);
+  SHARD(test_meter_drops_a_non_finite_block);
   SHARD(test_undo_across_lanes);
   SHARD(test_lazy_lane_allocation);
   SHARD(test_lane_phase_lock_matches_baseline);
