@@ -664,7 +664,9 @@ What the strict score still fails, and why **[measured]**:
   type (filter I presets mostly 0.1 to 0.6 dB loud, filter II ones 0 to
   0.8 dB quiet), which led to filter I's output saturation (Filters):
   66 of 89 held-out, 364 of 390 fit (`lfo-ratio-shape`'s attack 1.93 to
-  2.22 the one fit render lost). Settled from existing renders: a voice
+  2.22 the one fit render lost); with the scorer's five seeds 67 of 89
+  and 366 of 390. Sweet Tooth still fails on onset at five seeds (2.2
+  ms). Settled from existing renders: a voice
   never played runs at A4 with velocity 0 and Envelope 2 at 0 (velocity
   1 or 0.5, C4, Envelope 2 at 1 all made Floot Bass, Transistor Reeds and
   Wave Pad worse). Candidates held for round 24, not in the product:
