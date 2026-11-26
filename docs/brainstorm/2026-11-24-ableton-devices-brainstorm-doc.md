@@ -1134,7 +1134,10 @@ Chip at min(rate, 10.05 kHz), all read back through a 4-point Hermite.
   Live at the first refresh (nloop-55-notes), because the generator's
   position at a note depends on how many samples the previous note
   ticked; Live's voice stops about two samples earlier than Segno's, and
-  the rule was not found.
+  the rule was not found. With it the strict score passes 528 of 618 fit renders (13 of
+  21 presets) and 27 of 84 held-out; the four Noise Loop presets are now
+  as deterministic as Live's (Elizabethan Gloom tf 4.12 to 2.15, The
+  Rhythm 3.97 to 3.44, PolyPlucks 2.43 to 1.90 dB).
 - The Filther's DC blocker starts settled on its saturator's bias, so a
   note through it rises from silence (woozy-a: Live's Square 5th through
   the Filther rises over its attack; unsettled, the blocker stepped to

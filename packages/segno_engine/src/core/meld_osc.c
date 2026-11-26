@@ -851,7 +851,16 @@ static float nl_cube(float m) {
   return ldexpf(p, (int)zi - 127);
 }
 
-static void nl_build(le_meld_nloop* l, float rate) {
+/* The construction fill is the same for every oscillator at a rate: it is
+ * made once and copied into an oscillator's buffers the first time it
+ * plays Noise Loop. */
+static float g_nl_fill[3][LE_MELD_LOOP_MAX];
+static le_meld_nloop g_nl_after; /* the generator after the fill */
+static float g_nl_rate = -1.0f;
+
+static void nl_tables(float rate) {
+  if (rate == g_nl_rate) return;
+  le_meld_nloop* l = &g_nl_after;
   l->n = (int32_t)floorf(2.0f * rate / 20.0f);
   if (l->n > LE_MELD_LOOP_MAX) l->n = LE_MELD_LOOP_MAX;
   l->gx = 0xFFFFFFFFu;
@@ -861,10 +870,25 @@ static void nl_build(le_meld_nloop* l, float rate) {
     for (int32_t i = 0; i < l->n; ++i) {
       if (w == 0) w = l->n;
       w--;
-      l->buf[k][w] = nl_unit(nl_step(l));
+      g_nl_fill[k][w] = nl_unit(nl_step(l));
     }
-    l->w[k] = w;
   }
+  g_nl_rate = rate;
+}
+
+static void nl_ensure(le_meld_nloop* l) {
+  if (l->built) return;
+  memcpy(l->buf, g_nl_fill, sizeof(l->buf));
+  l->gx = g_nl_after.gx;
+  l->gy = g_nl_after.gy;
+  l->w[0] = l->w[1] = l->w[2] = 0;
+  l->built = 1;
+}
+
+static void nl_build(le_meld_nloop* l, float rate) {
+  nl_tables(rate);
+  l->n = g_nl_after.n;
+  l->built = 0;
   l->ra = 1;
   l->rb = 0;
   l->wr = 2;
@@ -877,6 +901,7 @@ static void nl_build(le_meld_nloop* l, float rate) {
 }
 
 static void nl_note(le_meld_nloop* l, float phase) {
+  nl_ensure(l);
   l->psi = 0.0f;
   l->a_prev = l->b_prev = 0.0f;
   l->theta = phase;
@@ -900,6 +925,7 @@ static float nl_read(const le_meld_nloop* l, int32_t k, float pos) {
 
 static float noise_loop_tick(le_meld_osc* o) {
   le_meld_nloop* l = &o->nloop;
+  nl_ensure(l);
   const float rate = o->rate, m2 = o->m2;
   const float h = fminf(0.5f * o->hz, 0.5f * rate);
   /* the output high-pass's coefficient, every 32 samples */

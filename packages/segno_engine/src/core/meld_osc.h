@@ -103,6 +103,7 @@ typedef struct le_meld_nloop {
   float psi, theta, a_prev, b_prev, ga, gb;
   float ic1, ic2, g;
   int32_t countdown;
+  int32_t built; /* the buffers hold the construction fill (copied on first use) */
 } le_meld_nloop;
 
 typedef struct le_meld_osc {
