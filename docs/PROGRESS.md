@@ -157,6 +157,13 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   390, factory presets 4 of 5; held-out 66 of 89 (with the scorer's five
   seeds: 366 of 390 and 67 of 89, Star Talk Pad passing). Round 24 grew to 50
   renders (Mono glide in a chord, two rectangles hot into filter II).
+- Round 24 (50 renders) confirmed the silent-voice model and two more
+  changes: in Mono a voice glides from its last note even after it ended,
+  and the filter input's negative side stays linear to -1.6 (no knee).
+  Strict score with five seeds 408 of 440 (round 24 included), factory
+  presets 4 of 5; held-out 69 of 89. Open: filter I at resonance 1 with a
+  loud saw, a Square LFO on the cutoff at audio rate, a stopped block's
+  high-pass state.
 
 ## November 2026 Drift's filter II as an MS-20 circuit model (SEG-109 P4, round 4)
 

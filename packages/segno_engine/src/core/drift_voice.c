@@ -931,6 +931,7 @@ static void start_voice(le_drift* d, le_drift_voice* v, int32_t lane,
                         uint32_t origin, int32_t note, float velocity,
                         int retrigger) {
   const int was_silent = !sounding(v) || v->env1 < LE_DRIFT_SILENT;
+  const int held = sounding(v), played = v->played;
   v->origin = origin;
   v->note = note;
   v->lane = lane;
@@ -938,10 +939,16 @@ static void start_voice(le_drift* d, le_drift_voice* v, int32_t lane,
   v->velocity = velocity;
   v->key = ((float)lane_note(d, lane, note) - 69.0f) / 120.0f;
   v->serial = ++d->serial;
-  /* A voice glides only from a pitch it is sounding (Mono, legato, a voice
-   * struck again): fitted, a new Poly voice starts on its note. */
+  /* A voice glides from the pitch it holds: a sounding voice (legato, a
+   * voice struck again, notes struck in one sample), and in Mono also a
+   * voice whose last note has ended; a free Poly voice and one never
+   * played start on their note. Fitted: a new Poly voice; measured, round
+   * 24's Mono chord after a note that ended 0.5 s before (gl-mono-chord
+   * tf 3.0 to 0.2; gliding from the chord's first note only, 1.8). */
   v->pitch_target = note_hz(note);
-  if (vf(d, LE_DRIFT_GLIDE) <= 0.0f || was_silent) v->pitch = v->pitch_target;
+  if (vf(d, LE_DRIFT_GLIDE) <= 0.0f ||
+      !(held || (voice_mode(d) == MODE_MONO && played)))
+    v->pitch = v->pitch_target;
   lane_setup(d, v, lane, note);
   v->state = LE_DRIFT_VOICE_HELD;
   /* With Reset Oscillator Phase on, a note on a sounding voice (legato
@@ -1368,14 +1375,12 @@ static float knee(float a, float t) {
 
 static float filter_input(float x) {
   if (x >= 0.0f) return fminf(knee(x, 0.70f), 0.79f);
-  /* past the knee the negative side rises again, to the hard edge at -1.6:
-   * measured, a saw at Gain 2 and two saws at Gain 2 into either filter
-   * (round 19, harmonics 1 to 24 within 1 dB rms; held at the knee they
-   * were 2 to 5 dB low on harmonics 2 to 5) */
-  const float a = -x;
-  float y = knee(a, 0.98f);
-  if (a > 0.98f + 0.45f) y += a - (0.98f + 0.45f);
-  return -fminf(y, 1.6f);
+  /* the negative side stays linear to the hard edge at -1.6: measured,
+   * rectangles at Gain 1.5 and two summed to 1.5 into filter II (round
+   * 24's sq2 and sq1 renders: 0.8 dB quiet with a knee at -0.98, within
+   * 0.05 dB without), and saws at Gain 2 and two at Gain 2 (round 19,
+   * tf 0.7 to 0.05) */
+  return -fminf(-x, 1.6f);
 }
 
 /* Filter I's feedback shaper: the cubic v - 2 (0.55032 v)^3, held flat past
