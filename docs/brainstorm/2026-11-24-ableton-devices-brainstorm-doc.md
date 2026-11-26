@@ -206,7 +206,10 @@ written from it.
   feedback, r × (1 + 1/3.3), cancels it at resonance 1, so the section is
   a state-variable low-pass with damping 1.12 (1 − r) plus the cubic in
   the resonance path; sixth-octave levels within 1.4 dB rms on Live's
-  filter I renders.
+  filter I renders. The cubic's input is the band state × 1.7
+  **[measured]**: self-oscillation on noise at resonance 1 within 0.2 dB
+  of Live's level (× 1.4 gave 0.64 dB loud), and two saws at Gain 2 into
+  resonance 0.7 (round 19) tf 2.0 to 1.8.
 - Type II: two nonlinear sections in series with a diode-style shaper in
   each feedback path, two fixed iterations per sample, input gain × 3,
   resonance curve q = 4r/(3r + 1) + 4·max(r − 1, 0)² with a limiter at high
@@ -348,7 +351,14 @@ written from it.
   - Poly: one voice per note. PolyVoiceDepth has no effect.
   - Mono: four voices on one note at 0, −12, −12 and −24 semitones; Thickness
     fades the three lower voices in one after another across the knob's
-    thirds; mode gain about −1 dB.
+    thirds; mode gain about −1 dB. Each lower voice plays as the note it
+    sounds (12 or 24 below) for key tracking, the Key source and the
+    per-key drift **[measured]**: Live's Mono presets (Rogue tf 3.0 to
+    1.7, Seventy Two Bass 3.9 to 3.2, Sol Bass's level 0.9 to 0.1 dB:
+    its noise through filter II peaks where the sub lanes' key tracking
+    puts it). Round 21's Mono handoffs (releases of 0.1 to 2 s, gaps of 0
+    and 0.3 s, Thickness 0 to 1, chords, held notes, Legato) all match
+    already, so the handoff itself is right.
   - Stereo: two voices per note (16 notes at most); Spread's law is
     **[open]**.
   - Unison: four voices per note (8 notes at most), the left side sharp:
@@ -552,6 +562,33 @@ What the strict score still fails, and why **[measured]**:
   failing: Chirp Pluck and Clob Bass, the Mono presets Sol Bass, Seventy Two Bass, Rogue
   and Crunch Arcade (tf 3 to 4.5), Metallic Strings (random Sample & Hold),
   and filter I at a hot input with resonance (`drv-f1-g4-r07`, 2.0).
+- Held-out breakdown (2026-11-26, 49 of 89 passing, five Live copies of
+  each random preset): of the 40 failures 17 are random (noise or Sample
+  & Hold) and 23 deterministic; 21 are Stereo, 7 Mono, 7 Unison, 5 Poly.
+  The worst third-octave segment is the C3 in 12, the triad in 15 and
+  the C5 in 13; averaged over a segment the spectra mostly agree within
+  2 dB, so most failures sit in the time structure: beating between
+  lanes and oscillators (Echo Bells, Transistor Reeds), low-frequency
+  side signal in Stereo (Toy Helicopter's triad), release tails (Darkened
+  and Slow Roll Strings: a 100 Hz component in Live's tails that Segno
+  lacks, 30 dB down) and the Mono presets (Seventy Two Bass, Rogue,
+  Crunch Arcade, Gear Shift, Sol Bass, AG Bass). Round 21 isolates Mono
+  note handoff.
+- Round 22 (2026-11-26): the oscillators' starting phases match Live's
+  within 0.01 cycle on every note **[measured]**: sines around the
+  filters, Osc 1, Osc 2 and both, a fresh voice, the same voice after 0.5
+  and 2 s, Reset Oscillator Phase on and off, Poly and Stereo, with the
+  voice's block idle or running, at Drift Depth 0 and 1. So the beating
+  differences in Echo Bells and Transistor Reeds do not come from the
+  start phases. Toy Helicopter's triad alone (and with each oscillator
+  alone) matches; its failure appears only after the D2, and is not the
+  idle voices turning nor the synced LFO's restart. Clob Bass's stereo
+  error is the noise in quiet bands (its noise-only isolation fails only
+  in bands 15 to 35 dB down, where the noise's own fluctuation rules).
+  Live's Sample & Hold is the same in every instance (Metallic Strings'
+  and Numan Keystrike's Live copies differ by tf 0.06 and 0.00), so those
+  draws are deterministic in Live; matching them would take Live's own
+  random sequence, which only the code shows: a decision for the owner.
 - Round 16 settled two questions. Live's drift is the same in every
   instance: three Live renders of one Drift Depth patch, each a fresh
   device, correlate 1.0000. And Bloom Pad's filter peak came from key

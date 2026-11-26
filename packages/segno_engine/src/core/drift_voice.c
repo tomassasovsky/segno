@@ -804,6 +804,17 @@ static int32_t pool_size(const le_drift* d) {
   return n < lanes ? lanes : n;
 }
 
+/* The key a lane plays: a Mono lane an octave or two below sounds as that
+ * lower note for key tracking, the Key source and the per-key drift.
+ * Measured: Live's Mono presets (Rogue tf 3.0 to 1.7, Seventy Two Bass 3.9
+ * to 3.2, Sol Bass's noise peak through filter II at its sub lanes' key
+ * tracking); a sine in Mono passes either way (round 21). */
+static int32_t lane_note(const le_drift* d, int32_t lane, int32_t note) {
+  if (voice_mode(d) != MODE_MONO || lane == 0) return note;
+  const int32_t n = note - (lane == 3 ? 24 : 12);
+  return n < 0 ? 0 : n;
+}
+
 /* The fixed pitch ratio and gains of lane `lane` in the current mode, for
  * `note` (per-key tuning included). */
 static void lane_setup(const le_drift* d, le_drift_voice* v, int32_t lane,
@@ -841,7 +852,8 @@ static void lane_setup(const le_drift* d, le_drift_voice* v, int32_t lane,
     gr = LE_DRIFT_STEREO_GAIN * (1.0f + p);
   }
   const float w = vf(d, LE_DRIFT_DRIFT_DEPTH) / 0.58f;
-  const float cents = d->key_cents[note] + d->voice_cents[v - d->voices];
+  const int32_t kn = lane_note(d, lane, note);
+  const float cents = d->key_cents[kn] + d->voice_cents[v - d->voices];
   v->ratio = ratio * exp2f(w * cents / 1200.0f);
   v->osc2_drift = exp2f(w * d->osc2_cents[v - d->voices] / 1200.0f);
   /* the Ratio rate modes follow a Mono lane's octave and the per-key
@@ -849,7 +861,7 @@ static void lane_setup(const le_drift* d, le_drift_voice* v, int32_t lane,
    * 19's Ratio LFO on a pitch slot in Mono, Unison and Stereo at Drift
    * Depth 1; Crunch Arcade's Mono LFO at Ratio 12) */
   v->ref_ratio = (mode == MODE_MONO ? ratio : 1.0f) *
-                 exp2f(w * d->key_cents[note] / 1200.0f);
+                 exp2f(w * d->key_cents[kn] / 1200.0f);
   const float ng = d->note_gain[note];
   v->gain_l = gl * ng;
   v->gain_r = gr * ng;
@@ -869,7 +881,7 @@ static void start_voice(le_drift* d, le_drift_voice* v, int32_t lane,
   v->lane = lane;
   v->played = 1;
   v->velocity = velocity;
-  v->key = ((float)note - 69.0f) / 120.0f;
+  v->key = ((float)lane_note(d, lane, note) - 69.0f) / 120.0f;
   v->serial = ++d->serial;
   /* A voice glides only from a pitch it is sounding (Mono, legato, a voice
    * struck again): fitted, a new Poly voice starts on its note. */
@@ -1314,9 +1326,10 @@ static float cubic_clip(float v) {
  * bounds the ringing and self-oscillation past 1. Above resonance 1 the
  * resonance is pulled back as the cutoff rises past 0.075 of the rate.
  * Fitted on Live's filter I renders: base damping 1.12, the shaper's
- * input x1.4, output gain 2.90 (a sine within 0.1 dB); sixth-octave
- * levels within 2.6 dB rms on average (the fitted state-variable filter it
- * replaces: 3.0). */
+ * input x1.7 (self-oscillation on noise at resonance 1 within 0.1 dB of
+ * Live's level; it was x1.4, 0.64 dB loud), output gain 2.90 (a sine
+ * within 0.1 dB); sixth-octave levels within 2.6 dB rms on average (the
+ * fitted state-variable filter it replaces: 3.0). */
 static float filter1(float* s, float x, float fc, float r, float rate,
                      uint32_t* rng) {
   const float g = prewarp(PI_F * fc / rate);
@@ -1325,7 +1338,7 @@ static float filter1(float* s, float x, float fc, float r, float rate,
       0.001f, r / (1.0f + 3.0f * fmaxf(f - 0.075f, 0.0f) * fmaxf(r - 1.0f, 0.0f)));
   const float k0 = 2.0f * 1.12f;
   const float kr = k0 * rp; /* the resonance's share of the damping */
-  const float d = 1.4f;     /* into the shaper */
+  const float d = 1.7f;     /* into the shaper */
   const float b = s[2];
   x += 2e-5f * rnd_bipolar(rng);
   x += kr * (cubic_clip(b * d) / d - b);
