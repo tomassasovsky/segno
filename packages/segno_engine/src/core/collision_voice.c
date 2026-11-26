@@ -515,19 +515,27 @@ static void strike_res(le_collision* d, le_collision_voice* v, int32_t r, int fr
   if (ru > 0.0f) {
     const float u1 = fmaxf((float)((v->rng = v->rng * 1664525u + 1013904223u) >> 8) / 16777216.0f, 1e-7f);
     const float u2 = (float)((v->rng = v->rng * 1664525u + 1013904223u) >> 8) / 16777216.0f;
-    rs->hit_rand = 0.2f * ru * ru * sqrtf(-2.0f * logf(u1)) * cosf(2.0f * CV_PI * u2);
+    rs->hit_rand = sqrtf(-2.0f * logf(u1)) * cosf(2.0f * CV_PI * u2);
   }
   rs->released = -1; /* the next tick sets the coefficients for this hit */
 }
 
 /* The hit position: the knob plus the Hit destination, held to the knob's
- * window, then the strike's random offset within the nearest edge. */
+ * window, then the strike's random offset: a normal draw times 0.2 u^2 (u
+ * the Hit < Random knob), its scale cut to the distance to the edge it heads
+ * for, reflected back off that edge, then held within 0.02 of the ends. */
 static float hit_at(const le_collision* d, const le_collision_voice* v, int32_t r) {
   const float hit_m = floorf(64.0f + 31.5f * clampf(rf(d, r, LE_COLLISION_R_HIT), 0.0f, 1.0f));
   const int32_t po = r * (LE_COLLISION_D_R2_PITCH - LE_COLLISION_D_R1_PITCH);
   const float hit = clampf(0.05f + 0.9f * (hit_m == 64.0f ? 0.5f : hit_m / 127.0f) + v->dest[LE_COLLISION_D_R1_HIT + po], 0.5f, 0.72323f);
-  const float edge = fminf(hit, 1.0f - hit);
-  return clampf(hit + clampf(v->r[r].hit_rand, -edge, edge), 0.02f, 0.98f);
+  const float z = v->r[r].hit_rand;
+  if (z == 0.0f) return hit;
+  const float ru = u_mid(LE_COLLISION_RES(r, LE_COLLISION_R_HIT_RANDOM), rf(d, r, LE_COLLISION_R_HIT_RANDOM));
+  const float s = 0.2f * ru * ru;
+  float x = hit + fminf(s, z > 0.0f ? 1.0f - hit : hit) * z;
+  if (x > 1.0f) x = 2.0f - x;
+  if (x < 0.0f) x = -x;
+  return clampf(x, 0.02f, 0.98f);
 }
 
 /* The resonator's coefficients at pitch `pitch` (octaves). */

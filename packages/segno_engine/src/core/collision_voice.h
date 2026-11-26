@@ -87,7 +87,7 @@ typedef struct le_collision_res {
   float om[LE_COLLISION_MODES];            /* the frequencies the states ring at, rad/s */
   le_collision_bq bleed;
   float bleed_g;
-  float hit_rand; /* the strike's random offset to the hit position */
+  float hit_rand; /* the strike's normal draw for the hit position's offset */
   /* the waveguide */
   float fw[LE_COLLISION_PIPE], bw[LE_COLLISION_PIPE];
   int32_t w;

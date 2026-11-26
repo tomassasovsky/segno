@@ -1527,7 +1527,12 @@ Meld. Segno's implementation is `collision_voice.c`.
   volume Sq(0, 2). In series resonator 2 hears resonator 1's outputs
   summed, the bleed's included; in parallel the exciter. The hit position
   is the knob plus the Hit destination, held to the knob's window, plus
-  the strike's random offset. **[code]**
+  the strike's random offset: a normal draw times 0.2 u^2 (u the Hit <
+  Random knob), its scale cut to the distance to the edge it heads for,
+  reflected back off that edge, then held within 0.02 of the ends.
+  **[code]** (Marimba Sustain's eight Live strikes, its only random
+  source: offsets read from their mode levels spread 0.036 against the
+  formula's 0.039 at u 0.44)
 
 ### Voices and level
 
@@ -1624,6 +1629,18 @@ render, 0.8 s on time); it moves no score by more than 0.02. The
 held-out stereo failures sit in bands 25 to 40 dB below the loudest
 (Bell Plate Long's 2 kHz side 4 dB high, Marimba Glassy's 5 and 13 kHz
 2 dB off).
+
+Where Segno's seeds spread wider than Live's copies: the hit offset is
+not the cause (above); the mallet's noise is. The difference between two
+Live copies is the random part alone, and on the plain beam (cp-mnoise-05,
+Noise Color 0.5) it matches Segno's above 5 kHz but is 2 to 10 dB weaker
+from 300 Hz to 4 kHz, as if Live's noise high-pass sat 1.35 times higher
+(1.2 times at colour 0.63, Marimba Glassy; more than 2 at 0.29, Bells
+Glass, where no cutoff alone fits). Those three do not give one curve, so
+the knob's range is unchanged. **[measured]** Neither a leak through the
+low-pass nor one through the band-pass output fits the noise source's
+high-pass floor: the leak would have to fall from 0.16 at a 970 Hz cutoff
+to 0.028 at 3.1 kHz and to 0.07 at Q 0.2.
 
 ## Decisions
 
