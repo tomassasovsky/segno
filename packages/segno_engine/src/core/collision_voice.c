@@ -1024,8 +1024,10 @@ static void noise_raw(const le_collision* d, const le_collision_voice* v, float*
                   exp2f(vf(d, LE_COLLISION_NOISE_FREQ_ENV) * v->env);
   if (type == 3) {
     const float w = k_lin(d, LE_COLLISION_NOISE_Q, 0.5f, 9.0f);
-    bq_raw(q1, 1, clampf(f / exp2f(0.5f * w), 50.0f, 18000.0f), 0.707f, rate);
-    bq_raw(q2, 0, clampf(f * exp2f(0.5f * w), 50.0f, 18000.0f), 0.707f, rate);
+    /* the low-pass first, then the high-pass, as the engine runs them (the
+     * order matters to the filters' restarts below) */
+    bq_raw(q2, 1, clampf(f / exp2f(0.5f * w), 50.0f, 18000.0f), 0.707f, rate);
+    bq_raw(q1, 0, clampf(f * exp2f(0.5f * w), 50.0f, 18000.0f), 0.707f, rate);
   } else {
     bq_raw(q1, type, f, k_exp(d, LE_COLLISION_NOISE_Q, 0.2f, 3.0f), rate);
     memcpy(q2, q1, sizeof(float) * 6);
@@ -1163,6 +1165,19 @@ static void render_voice(le_collision* d, le_collision_voice* v, float* left, fl
     if (v->tick_left <= 0) {
       tick_voice(d, v);
       v->tick_left = LE_COLLISION_TICK;
+      /* the Volume and Res 2 Input destinations ramp linearly across the
+       * tick from where the last one left them (a slot's first tick takes
+       * them at once), as the engine's mixer and input gain do per block;
+       * stepping them made a tremolo's 1.5 kHz zipper (Vibes Mellow) */
+      const float vg = exp2f(v->dest[LE_COLLISION_D_VOLUME]);
+      const float in2 = exp2f(v->dest[LE_COLLISION_D_R2_INPUT]);
+      if (!v->ramp_set) {
+        v->vg = vg;
+        v->in2 = in2;
+        v->ramp_set = 1;
+      }
+      v->vg_step = (vg - v->vg) / (float)LE_COLLISION_TICK;
+      v->in2_step = (in2 - v->in2) / (float)LE_COLLISION_TICK;
     }
     const int32_t n = v->tick_left < frames - i ? v->tick_left : frames - i;
     const float w_noise = mallet ? powf(atanf(k_lin(d, LE_COLLISION_MALLET_NOISE, -4.0f, 4.0f) +
@@ -1170,8 +1185,6 @@ static void render_voice(le_collision* d, le_collision_voice* v, float* left, fl
                                         3.0f)
                                  : 0.0f;
     const float ng = nvol * exp2f(v->dest[LE_COLLISION_D_NOISE_VOLUME]);
-    const float in2 = exp2f(v->dest[LE_COLLISION_D_R2_INPUT]);
-    const float vg = exp2f(v->dest[LE_COLLISION_D_VOLUME]);
     const int held = v->state == LE_COLLISION_VOICE_HELD || v->state == LE_COLLISION_VOICE_SUSTAINED;
     for (int32_t s = 0; s < n; ++s) {
       float x = 0.0f;
@@ -1199,18 +1212,25 @@ static void render_voice(le_collision* d, le_collision_voice* v, float* left, fl
           v->env_seg = ENV_IDLE;
           v->env_step = 0.0f;
         }
-        /* the filters: set at the strike and when a knob moves; then, if the
-         * envelope or a route moves the cutoff, stepped to the new values
-         * every 10 ms (as the engine's own update; fit: Toy Piano Bells,
-         * noise-env) */
-        if (v->nf_left < 0 || v->nf_serial != d->serial_values ||
-            (--v->nf_left <= 0 && (vf(d, LE_COLLISION_NOISE_FREQ_ENV) != 0.0f ||
-                                   v->dest[LE_COLLISION_D_NOISE_FREQ] != 0.0f))) {
+        /* the filters: set at the strike, when a knob moves and every 10 ms
+         * from the strike at the cutoff the envelope and the routes give
+         * then, held between (fit: Toy Piano Bells, noise-env); each 10 ms
+         * update restarts the filters from rest, their inputs and outputs
+         * cleared, as the engine's does, which leaves a floor of restarts
+         * far into the stopband (fit: the dense membrane's high-pass at
+         * every cutoff and Q, dn-hp*, 6 of 7 failing to all passing; the
+         * low-pass's floor, nf8-v50, nv8-v127) */
+        const int grid = v->nf_left < 0 || --v->nf_left <= 0;
+        if (grid || v->nf_serial != d->serial_values) {
           v->nf_serial = d->serial_values;
           float q[12];
           noise_raw(d, v, q, q + 6);
           bq_set(&v->nf1, q[0], q[1], q[2], q[3], q[4], q[5]);
           bq_set(&v->nf2, q[6], q[7], q[8], q[9], q[10], q[11]);
+          if (grid) {
+            v->nf1.x1 = v->nf1.x2 = v->nf1.y1 = v->nf1.y2 = 0.0f;
+            v->nf2.x1 = v->nf2.x2 = v->nf2.y1 = v->nf2.y2 = 0.0f;
+          }
         }
         if (v->nf_left <= 0) v->nf_left = d->sample_rate / 100;
         float z = 2.0f * (float)((v->rng = v->rng * 1664525u + 1013904223u) >> 8) / 16777216.0f - 1.0f;
@@ -1219,14 +1239,16 @@ static void render_voice(le_collision* d, le_collision_voice* v, float* left, fl
         if (vi(d, LE_COLLISION_NOISE_FILTER) == 3) z = bq_tick(&v->nf2, z);
         x += z * v->env * ng;
       }
+      v->vg += v->vg_step;
+      v->in2 += v->in2_step;
       float l1 = 0.0f, r1 = 0.0f, l2 = 0.0f, r2 = 0.0f, t1 = 0.0f, t2 = 0.0f;
       if (v->r[0].kind) res_tick(&v->r[0], x, rate, &l1, &r1, &t1);
       if (v->r[1].kind) {
         /* 1 > 2: resonator 1's own output (L + R, before its amp); 1 + 2:
          * the exciter */
-        res_tick(&v->r[1], (serial ? t1 : x) * in2, rate, &l2, &r2, &t2);
+        res_tick(&v->r[1], (serial ? t1 : x) * v->in2, rate, &l2, &r2, &t2);
       }
-      float g = vg;
+      float g = v->vg;
       if (v->state == LE_COLLISION_VOICE_FADING) g *= fade_step * (float)(v->fade_left > s ? v->fade_left - s : 0);
       /* each resonator's volume and pan ramp to their values over 2 ms, from
        * where the slot's last note left them (a slot never played starts

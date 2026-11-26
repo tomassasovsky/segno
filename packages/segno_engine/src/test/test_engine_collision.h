@@ -522,7 +522,51 @@ static void test_collision_fits(void) {
   }
 }
 
+/* Live's per-block behavior: the voice gain ramps across each tick, so a
+ * tremolo leaves no 1.5 kHz zipper on a dull note; the noise source's
+ * filters restart every 10 ms, which leaks the noise below a high-pass's
+ * cutoff (without the restarts the low band sits 9 dB lower). */
+static void test_collision_ticks(void) {
+  printf("test_collision_ticks\n");
+  enum { N = 28800 };
+  static float l[N], r[N];
+  collision_reference(&g_collision);
+  collision_set(&g_collision, LE_COLLISION_RES(0, LE_COLLISION_R_MATERIAL), -1.0f);
+  collision_set(&g_collision, LE_COLLISION_RES(0, LE_COLLISION_R_DECAY), 0.8f);
+  collision_set(&g_collision, LE_COLLISION_LFO(0, LE_COLLISION_L_ON), 1.0f);
+  collision_set(&g_collision, LE_COLLISION_LFO(0, LE_COLLISION_L_RATE), 0.9f);
+  collision_set(&g_collision, LE_COLLISION_LFO(0, LE_COLLISION_L_DEPTH), 1.0f);
+  collision_set(&g_collision, LE_COLLISION_LFO(0, LE_COLLISION_L_TARGET1), (float)LE_COLLISION_D_VOLUME);
+  collision_set(&g_collision, LE_COLLISION_LFO(0, LE_COLLISION_L_AMOUNT1), 1.0f);
+  CHECK(le_collision_note_on(&g_collision, 1, 36, 100, 0) == 0);
+  le_collision_render(&g_collision, l, r, N);
+  double e = 0.0, h = 0.0;
+  for (int32_t i = N / 2; i < N; ++i) {
+    const double t = l[i] - 3.0 * l[i - 1] + 3.0 * l[i - 2] - l[i - 3];
+    h += t * t;
+    e += (double)l[i] * l[i];
+  }
+  CHECK(10.0 * log10(h / e) < -80.0); /* -47.5 dB stepped per tick */
+  collision_reference(&g_collision);
+  collision_set(&g_collision, LE_COLLISION_MALLET_ON, 0.0f);
+  collision_set(&g_collision, LE_COLLISION_NOISE_ON, 1.0f);
+  collision_set(&g_collision, LE_COLLISION_NOISE_FILTER, 1.0f);
+  collision_set(&g_collision, LE_COLLISION_NOISE_FREQ, 0.8f);
+  collision_set(&g_collision, LE_COLLISION_NOISE_SUSTAIN, 1.0f);
+  collision_set(&g_collision, LE_COLLISION_RES(0, LE_COLLISION_R_TYPE), 2.0f);
+  CHECK(le_collision_note_on(&g_collision, 1, 36, 100, 0) == 0);
+  le_collision_render(&g_collision, l, r, N);
+  double lo = 0.0, all = 0.0, y = 0.0;
+  for (int32_t i = 4800; i < N; ++i) {
+    y += 0.02 * (l[i] - y);
+    lo += y * y;
+    all += (double)l[i] * l[i];
+  }
+  CHECK(10.0 * log10(lo / all) > -18.0); /* -23.2 dB without the restarts */
+}
+
 static void run_collision_tests(void) {
+  test_collision_ticks();
   test_collision_types();
   test_collision_extremes();
   test_collision_voices_end();

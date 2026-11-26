@@ -136,6 +136,10 @@ typedef struct le_collision_voice {
   uint32_t nf_serial; /* the values they were set from */
   int32_t env_seg;
   float env, env_step;
+  /* the voice gain and resonator 2's input gain, ramped across each tick
+   * from the last tick's value; ramp_set 0 until the slot's first tick */
+  float vg, vg_step, in2, in2_step;
+  int32_t ramp_set;
   uint32_t rng;
   le_collision_res r[2];
   le_collision_lfo lfo[2];
