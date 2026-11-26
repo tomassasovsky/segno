@@ -889,10 +889,17 @@ third-octave band, the MS2 pair within 2.6 short of full drive. **[measured]**
   output trim. Phaser: six all-pass stages at one frequency with negative
   feedback to 0.98 solved without delay. Redux: resampling at the
   Frequency in Hz, 8..1 bits, cubic to held by Lofi. **[code]**
-- Vowel: five band-passes A, E, I, O, U; Segno's formants are the published
-  bass-voice averages Csound documents (the reading gave the table's shape
-  only: four formants, a fifth at 4950 Hz, levels relative to the first, -10
-  dB). **[Segno]**
+- Vowel: four parallel band-passes of one resonance, 1/k = 5.5 + 16.5 M1,
+  at five vowels Macro 2 crosses (0, 0.25, 0.5, 0.75, 1), formants moving
+  linearly in hertz between them and 0.4 octave per octave of Frequency
+  (640 Hz plays the table as it is). The table (Hz, dB re the first): 800,
+  1148 -4.3, 2791 -20.9, 3481 -41.5; 400, 1595 -24.4, 2692 -30.7, 3287
+  -38.7; 350, 1695 -20.2, 2691 -31.0, 3686 -38.1; 450, 799 -9.2, 2819 -16.2,
+  3487 -30.0; 325 (-0.6), 699 -12.8, 2521 -31.5, 3487 -43.3. **[measured]**
+  (round 11's vowel-* renders, a C1 saw's harmonics through the filter,
+  fitted within 0.54 to 0.58 dB rms from 60 Hz to 9 kHz; scratchpad
+  `meldfit/meas/vowel_fit.py`; filt-12 strict tf 7.47 to 0.26 dB, every
+  vowel render passes)
 - Comb and Comb Inverted: a feedback delay of c rate/f samples (c = 1, 0.5),
   decaying 60 dB in 0.001 + 15 M1^4 s, with a tilt filter in the loop.
   **[code]** **[measured]** (the loop length)
@@ -1122,6 +1129,23 @@ Happy Chords' engine B at velocity 100 and 127 with and without its
 Filther, and the Vowel filter at each vowel, three frequencies and two
 Macro 1 values. With Live's spread from five instances the held-out
 round passes 19 of 84.
+
+Round 11: the Vowel filter is measured (above); Chord switches its type
+at each twelfth of Macro 1 as Segno does (the four halfway renders pass);
+Happy Chords' engine B is 0.54 dB loud at velocity 100 and 127 alike and
+0.59 without its Filther, so neither velocity nor the Filther; its
+envelopes are linked to engine A's (sustain 0.546, gain-modulated by both
+LFO 1s), where the level parts from Live after the first 0.1 s (Segno
+0.4 to 0.7 dB above). Noise Loop: Live's output at every note is
+periodic at the note's period within 0.92 to 0.99 correlation, its level
+steady for 4 s at Macro 1 0; least squares under Segno's read-head
+model (two heads half a loop apart, triangular weights, linear
+interpolation, its high-pass) leaves 8.5 % (C4) to 20 % (C2) of the
+signal unexplained, so the read-head law is not Segno's and the buffer
+is not recovered yet (scratchpad `meldfit/meas/nloop_fit*.py`). With the Vowel
+table the strict score passes 522 of 618 fit renders (13 of 21 presets) and
+24 of 84 held-out (Comb Bass, Whley, Kaneda Sunrise, Exquisite
+Wasteland, Stellar Saws join; tf mean 4.05 dB).
 
 ## Decisions
 
