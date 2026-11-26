@@ -2775,6 +2775,17 @@ struct le_engine {
    * allocation, like `synth` (a slot renders its own only while it plays
    * the device) */
   struct le_drift* drift;
+  /* Whether slot k's Drift may differ from a freshly initialised one: set
+   * on the audio thread when the slot is given the device (a plain store;
+   * nothing reaches an instance's state before that), cleared by the reset
+   * that re-initialises it. Only an instance used since its last init, or
+   * every one when the rate changes, is re-initialised by a configure
+   * (le_drift_init is costly), and the callback's per-block scans (voice
+   * budget, render, counters) skip an unused one: it holds no voice.
+   * `drift_rate` is the rate they were last initialised at. Cleared only
+   * with no callback (create, configure, reopen). */
+  uint8_t drift_used[LE_MAX_INSTRUMENTS];
+  int32_t drift_rate;
   /* audio thread: the device each slot plays (LE_INST_DEVICE_*) */
   int32_t inst_device[LE_MAX_INSTRUMENTS];
   /* audio thread: whether this block's buses hold this block's audio (0 for
