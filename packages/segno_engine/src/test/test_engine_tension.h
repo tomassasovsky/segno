@@ -283,6 +283,59 @@ static void test_tension_voices(void) {
   CHECK(tension_until_silent(&g_tension, l, r, N, 100) < 100);
 }
 
+/* Live's voice loop: a voice without a note runs one 1 ms block in 32
+ * for its 2048 samples, so a note finds its voice's vibrato that far on;
+ * the vibrato's phase is never reset; a new note takes the free voice that
+ * played longest ago; a released voice ends at a block's end once its
+ * sound has stayed under the threshold for 4000 samples. */
+static void test_tension_idle_round_and_end(void) {
+  printf("test_tension_idle_round_and_end\n");
+  enum { N = 48000 };
+  static float l[N], r[N];
+  tension_reference(&g_tension);
+  tension_set(&g_tension, LE_TENSION_VIBRATO_ON, 1.0f);
+  tension_set(&g_tension, LE_TENSION_VIBRATO_AMOUNT, 0.5f);
+  tension_set(&g_tension, LE_TENSION_VIBRATO_SPEED, 0.5f);
+  const double hz = le_aas_lin(0.25f, 10.0f, 0.5f);
+  const double turn = hz * 48.0 / OPR_SR;                 /* one idle block */
+  le_tension_render(&g_tension, l, r, 480); /* ten blocks: voices 0 to 9 had a turn */
+  CHECK(fabs(g_tension.voices[0].vib_ph - turn) < 1e-4);
+  CHECK(fabs(g_tension.voices[9].vib_ph - turn) < 1e-4);
+  CHECK(g_tension.voices[10].vib_ph == 0.0);
+  le_tension_render(&g_tension, l, r, N);
+  le_tension_render(&g_tension, l, r, N); /* 2.01 s: 43 turns each, then none */
+  for (int32_t i = 0; i < LE_TENSION_VOICE_SLOTS; ++i) {
+    const double want = fmod(43.0 * turn, 1.0);
+    CHECK(fabs(g_tension.voices[i].vib_ph - want) < 1e-3);
+    CHECK(g_tension.voices[i].idle_left == 0);
+  }
+  /* a parameter change gives each voice its 2048 samples again */
+  tension_set(&g_tension, LE_TENSION_VIBRATO_AMOUNT, 0.6f);
+  CHECK(g_tension.voices[5].idle_left == 2048);
+  /* the note starts where the idle round left the phase */
+  const double at = g_tension.voices[0].vib_ph;
+  CHECK(le_tension_note_on(&g_tension, 1, 60, 100, 0) == 0);
+  CHECK(g_tension.voices[0].state == 1 && g_tension.voices[0].vib_ph == at);
+  le_tension_note_off(&g_tension, 1);
+  /* the next note takes a voice never played, not the one let go */
+  CHECK(le_tension_note_on(&g_tension, 2, 64, 100, 0) == 0);
+  CHECK(g_tension.voices[1].state == 1 && g_tension.voices[1].note == 64);
+  /* a resting damper stills the string at once: the voice ends on the
+   * 84th block after the release (4000 samples, to the block's end) */
+  tension_reference(&g_tension);
+  tension_set(&g_tension, LE_TENSION_DAMPER_ON, 1.0f);
+  tension_set(&g_tension, LE_TENSION_DAMPER_GATED, 0.0f);
+  CHECK(le_tension_note_on(&g_tension, 1, 60, 100, 0) == 0);
+  le_tension_render(&g_tension, l, r, 4800);
+  le_tension_note_off(&g_tension, 1);
+  int32_t blocks = 0;
+  while (le_tension_active(&g_tension) > 0 && blocks < 1000) {
+    le_tension_render(&g_tension, l, r, 48);
+    blocks++;
+  }
+  CHECK(blocks == 84);
+}
+
 /* Rendering in any block size gives the same samples: a strike, a
  * release inside a block, a stolen note, bend, vibrato, glide and a knob
  * moved while sounding. */
@@ -427,6 +480,7 @@ static void run_tension_tests(void) {
   test_tension_body_tail();
   test_tension_hammer_on_string();
   test_tension_voices();
+  test_tension_idle_round_and_end();
   test_tension_block_size();
   test_engine_tension_slot_matches_offline();
   test_engine_tension_params_and_switching();

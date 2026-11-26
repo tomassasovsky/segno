@@ -1,4 +1,4 @@
-<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Metalic Wurli MKII Schroeder Fretless Perc halvings Inharmonicity travelled retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations atan filt voicecut penv Unisono pul meldfit Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penvd rndpan Bassic Bitgrunge's Catchem Filther's Kaneda Werkstuecktraeger Whley Whley's filt nloop avel fleg unmodulated Basscycle spr ccg Clav restruck restrikes restrike prewarping prewarp Floot Halfstep Gametal Plucks Neurotimbre sqperc fenv scalings fmdrive oscvol unsmoothed -->
+<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Metalic Wurli MKII Schroeder Fretless Perc halvings Inharmonicity travelled retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations atan filt voicecut penv Unisono pul meldfit Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penvd rndpan Bassic Bitgrunge's Catchem Filther's Kaneda Werkstuecktraeger Whley Whley's filt nloop avel fleg unmodulated Basscycle spr ccg Clav restruck restrikes restrike prewarping prewarp Floot Halfstep Gametal Plucks Neurotimbre sqperc fenv scalings fmdrive oscvol unsmoothed relc -->
 # Segno — Progress & Roadmap
 
 <!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs multicore smarttune -->
@@ -80,8 +80,8 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   into `aas_parts.h`, which both devices use; Analog's 201 fit renders are
   bit-identical across the move.
 - Fitted against 379 Live renders in nine rounds. Strict score (five
-  noise seeds): 294 of 379 pass, 38 of the 67 factory-preset renders; the
-  held-out round of every factory preset 81 of 107 (from 8); the chaotic bowed and bouncing
+  noise seeds): 330 of 379 pass, 47 of the 67 factory-preset renders; the
+  held-out round of every factory preset 89 of 107 (from 8); the chaotic bowed and bouncing
   renders are scored against Segno's own spread. Measured: the keyboard's
   Stretch and Fine Tune, the key amounts' resting 0.1, the bridge read's
   1.5 samples, the termination's loss, the output stage, the body's line
@@ -102,11 +102,16 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   restruck string's envelope dropping first, a unison copy letting go its
   delay after the key; in round 8: a chord's keys arriving with a key
   that did not glide do not glide; read and confirmed: vibrato's random
-  rate Error. Open (round 9 built): a mono string struck by a chord
-  while it rings, Strings Quartet's bow after its first block, the unison
-  copies' host timing on later notes (the harness cannot place it), Live's
-  cut of released voices (measured, rule not found) and its random
-  Keyboard Error.
+  rate Error. Then read in the engine's voice loop and confirmed: a voice
+  without a note processed one 1 ms block in 32 for 2048 samples, which
+  leaves its vibrato's phase on (never reset; the error drawn per note),
+  the voices taken in turn, the bow's new speed on the next block's
+  first sample, the filter worked out per 1 ms block, and the voice's
+  end (after the filter, 4000 samples under 0.005 with the damper,
+  1e-4 with the finger, 1e-5 otherwise). Open (round 10 built): Strings
+  Quartet's light gated damper under the bow, a mono string falling back
+  to a held key or struck again on its key, Soft Buzz Bass with its
+  filter envelope off, and Live's random Keyboard Error.
 - A voice costs 1.8 us per millisecond with the hammer, 0.6 with the bow,
   the body 0.4 more. A device holds 32 strings (1.7 MB).
 

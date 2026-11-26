@@ -16,7 +16,9 @@
 /* the filter envelope's segments are straight lines (its Exp switch, which
  * nothing in Live reaches, stays off) */
 #define TV_FENV_EXP 0.0f
-#define TV_BOW_HOLD 48 /* samples the bow's speed keeps its last scaling for, at a strike */
+/* Live's own scale for the voice's sound: its string's gain of 2 where
+ * Segno's measured output gain is 1.4373 (see string_tick) */
+#define TV_LIVE_UNIT (2.0f / 1.4373f)
 #define TV_BRIDGE_READ 1.5f /* samples: rail B's read at the bridge sits this much past L + e */
 
 enum {
@@ -274,11 +276,22 @@ static int32_t free_count(const le_tension* d) {
   return n;
 }
 
+/* A new note takes the free voice that played longest ago (one never
+ * played first, in order), so the voices take turns. [measured]
+ * (vib9-later: each note finds its vibrato where a voice never played
+ * holds it, not where the first note's voice left it) */
 static le_tension_voice* free_slot(le_tension* d) {
-  for (int32_t i = 0; i < LE_TENSION_VOICE_SLOTS; ++i) {
-    if (d->voices[i].state == LE_TENSION_VOICE_FREE) return &d->voices[i];
-  }
   le_tension_voice* old = NULL;
+  if (mono(d)) { /* the mono voice is always the same strings */
+    for (int32_t i = 0; i < LE_TENSION_VOICE_SLOTS; ++i) {
+      if (d->voices[i].state == LE_TENSION_VOICE_FREE) return &d->voices[i];
+    }
+  }
+  for (int32_t i = 0; i < LE_TENSION_VOICE_SLOTS; ++i) {
+    le_tension_voice* v = &d->voices[i];
+    if (v->state == LE_TENSION_VOICE_FREE && (old == NULL || v->serial < old->serial)) old = v;
+  }
+  if (old != NULL) return old;
   for (int32_t i = 0; i < LE_TENSION_VOICE_SLOTS; ++i) {
     le_tension_voice* v = &d->voices[i];
     if (v->state == LE_TENSION_VOICE_FADING && (old == NULL || v->serial < old->serial)) old = v;
@@ -427,7 +440,14 @@ static void string_strike(le_tension* d, le_tension_voice* v, float p, float pk,
   if (pick_tap == damp_tap) pick_tap += pick_tap + 1 != len / 2 ? 1 : -1; /* never on the damper */
   if (pick_tap > len / 2) pick_tap = len / 2;
   if (pick_tap < 2) pick_tap = 1;
-  const int reinit = fresh || len != v->len || damp_tap != v->damp_tap;
+  /* the rails start again only if a parameter changed since the string's
+   * last strike or the length or the damper's tap moved: a voice let go
+   * and struck again on its key keeps what its string held at its end
+   * [code] (ts-01, note-on and the string's state) [measured] (sbb9-relc4-tri
+   * and sbb9-rel-tri-pri1, Soft Buzz Bass's mono string struck again on
+   * its C4 by a chord: 16 and 11 dB rms off with the rails cleared) */
+  const int reinit = v->dirty || len != v->len || damp_tap != v->damp_tap;
+  v->dirty = 0;
   if (reinit) {
     memset(v->a, 0, sizeof(v->a));
     memset(v->b, 0, sizeof(v->b));
@@ -484,16 +504,16 @@ static void string_strike(le_tension* d, le_tension_voice* v, float p, float pk,
       v->bow_f = X * kexp(0.01f, 5.0f, xk);
       v->bow_vc = S * kexp(0.001f, 0.1f, sk);
       /* the bow's speed takes the strike's key and velocity scaling only
-       * from the engine's next block: until then it keeps the one it took
-       * last (none on a string never bowed). [code] Live's block falls
-       * anywhere against a note; Segno holds the old speed a fixed 48
-       * samples, so its output keeps to any block size [Segno]
-       * [measured] (a note at the start of a Live render: the C2 bow
-       * renders' first 100 samples then match Live's to -57 dB) */
+       * from the engine's next 1 ms block: until then it keeps the one it
+       * took last (none on a string never bowed). [code] A note starts on
+       * a block, so the new speed comes in on the note's sample 1 ms + 1
+       * (49 at 48 kHz). [measured] (bow9-sqx, Strings Quartet's exciter on
+       * the reference string: Live's to -80 dB with it, 1 sample earlier
+       * -15 dB from the switch on; the bowed fit renders 35 to 56 of 93) */
       v->bow_vb_late = V * kexp(0.001f, 10.0f, vk);
       v->bow_vb = (v->bow_vscale > 0.0f ? v->bow_vscale : 1.0f) * kexp(0.001f, 10.0f, vk);
       v->bow_vscale = V;
-      v->bow_hold = TV_BOW_HOLD;
+      v->bow_hold = (int32_t)lroundf(0.001f * (float)d->sample_rate) + 1;
       break;
     default:
       break;
@@ -803,19 +823,18 @@ static void start_voice(le_tension* d, le_tension_voice* v, uint32_t origin, int
   v->delay = (int32_t)(floorf(unison_expz(0.002f, 0.1f, vf(d, LE_TENSION_UNISON_DELAY)) * 1000.0f) * rate /
                        1000.0f) * copy;
   if (fresh) v->since = 0; /* a re-strike keeps the copies' delays behind them */
-  v->quiet = 0;
-  v->flying = 0;
   v->off_wait = 0;
   v->fade_left = 0;
   v->fade_len = (int32_t)lroundf(0.001f * rate);
   v->tick_left = 0;
+  v->filt_left = 0;
   v->rng = 0x9e3779b9u ^ (uint32_t)(serial * 2654435761u + (uint32_t)copy * 40503u);
   /* Keyboard Error: a random rise of up to 0.02 octave, drawn at each strike */
   v->kerr = lin_int(0.0f, 0.02f, vf(d, LE_TENSION_ERROR)) * le_aas_unit(&v->rng);
   v->pitch_to = key_pitch(d, note) + v->kerr + v->detune;
   v->pitch = glide ? d->last_pitch + v->detune : v->pitch_to;
   v->vib_t = 0.0f;
-  if (fresh) v->vib_ph = 0.0, v->vib_dev = 0.0f;
+  v->vib_drawn = 0;
   string_strike(d, v, v->pitch, v->pitch_to, fresh);
   v->sh_ratio = 1.0f;
   v->sh_mix = 0.0f;
@@ -853,9 +872,8 @@ static le_aas_env_set fenv_set(const le_tension* d) {
 static void release_voice(le_tension* d, le_tension_voice* v) {
   const float rate = (float)d->sample_rate;
   v->state = LE_TENSION_VOICE_RELEASED;
-  v->quiet = 0;
-  v->rel_n = 0;
-  v->blk_peak = 0.0f;
+  v->cut_left = 4000;
+  v->cut_on = 1;
   /* the loss ramps over 8 ms to the release's: Ratio times faster, or none */
   const float ratio = expz(1.0f, 1000.0f, vf(d, LE_TENSION_STRING_RATIO));
   v->g_to = ratio <= 0.0f ? 1.0f : string_loss(d, v->pitch_to, ratio);
@@ -891,6 +909,60 @@ static void let_go(le_tension* d, le_tension_voice* v) {
   else release_copy(d, v);
 }
 
+/* The idle round. A voice without a note is still processed, one 1 ms
+ * block in 32 (the voices take turns, one per block), for 2048 samples
+ * from the device's start or the last parameter change, which give each
+ * voice those 2048 again (at least); a playing voice spends them too,
+ * every block. Of what it runs only the
+ * vibrato's phase outlasts the voice's silence, so a note finds its
+ * voice's vibrato where the idle round left it. [code] (ts-01, the voice
+ * loop) [measured] (vib9-late-first, vib9-chord, vib9-later, Wood Bass's
+ * phrase: a note on a fresh voice finds Live's vibrato up to 0.19 of a
+ * cycle on, 43 blocks of it, by 1.4 s after the start) */
+static void idle_arm(le_tension* d) {
+  for (int32_t i = 0; i < LE_TENSION_VOICE_SLOTS; ++i) {
+    if (d->voices[i].idle_left < 2048) d->voices[i].idle_left = 2048;
+    d->voices[i].dirty = 1;
+  }
+}
+
+static float vib_hz(const le_tension* d, const le_tension_voice* v) {
+  return le_aas_clamp(le_aas_lin(0.25f, 10.0f, vf(d, LE_TENSION_VIBRATO_SPEED)) * (1.0f + v->vib_dev), 0.1f, 15.0f);
+}
+
+/* The voice's end. A voice whose key is up at a 1 ms block's start
+ * watches its sound through the block (after the filter, in Live's scale,
+ * smoothed by a one-pole of 0.05): each time it reaches the threshold the
+ * voice gets 4000 samples more, and the scan stops for the rest of the
+ * block; else the samples run down, and a voice out of them by the
+ * block's end is cut there. The threshold is 0.005 with the damper on,
+ * 1e-4 with the finger on the string, 1e-5 otherwise. [code] (ts-01, the
+ * voice loop and its silence check) [measured] (round 6: the resting and
+ * the gated damper's references and the terminated string cut on Live's
+ * sample, 84 blocks after the release for a still string; round 7's string
+ * held at -88 dBFS 30 blocks early, from 57) */
+static void voice_end_block(le_tension* d) {
+  for (int32_t i = 0; i < LE_TENSION_VOICE_SLOTS; ++i) {
+    le_tension_voice* v = &d->voices[i];
+    if (v->cut_watch && !v->cut_on && v->state == LE_TENSION_VOICE_RELEASED) v->state = LE_TENSION_VOICE_FREE;
+    v->cut_watch = 0;
+  }
+}
+
+static void idle_turn(le_tension* d, int32_t block_len) {
+  const int32_t turn = (int32_t)(d->blocks % LE_TENSION_VOICE_SLOTS);
+  d->blocks++;
+  for (int32_t i = 0; i < LE_TENSION_VOICE_SLOTS; ++i) {
+    le_tension_voice* v = &d->voices[i];
+    if (v->idle_left <= 0 || (v->state == LE_TENSION_VOICE_FREE && i != turn)) continue;
+    if (v->state == LE_TENSION_VOICE_FREE && vi(d, LE_TENSION_VIBRATO_ON)) {
+      v->vib_ph += (double)(vib_hz(d, v) * (float)block_len / (float)d->sample_rate);
+      v->vib_ph -= floor(v->vib_ph);
+    }
+    v->idle_left = v->idle_left > block_len ? v->idle_left - block_len : 0;
+  }
+}
+
 int32_t le_tension_init(le_tension* d, int32_t sample_rate) {
   if (d == NULL || sample_rate <= 0) return -1;
   memset(d, 0, sizeof(*d));
@@ -900,12 +972,19 @@ int32_t le_tension_init(le_tension* d, int32_t sample_rate) {
   for (int32_t p = 0; p < LE_TENSION_PARAMS; ++p) d->values[p] = le_tension_default(p);
   d->body.type = d->body.size = -1;
   d->body.level = -1.0f;
+  idle_arm(d);
   return 0;
 }
 
 void le_tension_set_values(le_tension* d, const float* values) {
   if (d == NULL || values == NULL) return;
-  for (int32_t p = 0; p < LE_TENSION_PARAMS; ++p) d->values[p] = le_tension_clamp(p, values[p]);
+  int changed = 0;
+  for (int32_t p = 0; p < LE_TENSION_PARAMS; ++p) {
+    const float x = le_tension_clamp(p, values[p]);
+    changed |= x != d->values[p];
+    d->values[p] = x;
+  }
+  if (changed) idle_arm(d);
 }
 
 void le_tension_set_tempo(le_tension* d, float bpm) {
@@ -1132,24 +1211,29 @@ static void tick_voice(le_tension* d, le_tension_voice* v) {
   float vib = 0.0f;
   v->vib_t += dt;
   if (vi(d, LE_TENSION_VIBRATO_ON)) {
-    /* the rate, off by up to Error = Lin(0, 0.2) of it, a new draw each
-     * cycle, as Analog's [code] (Live's own copies of the presets with
-     * Error up differ from each other: Strings Quartet, Ensemble Strings,
-     * Wire Noise and Steel Direct Guitar on the held-out round) */
-    const float hz =
-        le_aas_clamp(le_aas_lin(0.25f, 10.0f, vf(d, LE_TENSION_VIBRATO_SPEED)) * (1.0f + v->vib_dev), 0.1f, 15.0f);
-    float depth = mod_expz(0.0002f, 1.0f / 6.0f, vf(d, LE_TENSION_VIBRATO_AMOUNT)) +
-                  d->mod * mod_expz(0.0002f, 1.0f / 6.0f, vf(d, LE_TENSION_VIBRATO_WHEEL));
+    /* the phase runs on from the voice's last note (never reset); after
+     * the delay the note draws its rate error, off by up to Error =
+     * Lin(0, 0.2) of the rate, which also takes the same share off the
+     * amount's depth, and the amount fades in; the mod wheel's share is
+     * neither delayed nor faded. [code] (ts-01) (Live's own copies of the
+     * presets with Error up differ from each other: Strings Quartet,
+     * Ensemble Strings, Wire Noise and Steel Direct Guitar on the held-out
+     * round) */
     const float delay = mod_expz(0.05f, 5.0f, vf(d, LE_TENSION_VIBRATO_DELAY));
     const float fade = mod_expz(0.05f, 5.0f, vf(d, LE_TENSION_VIBRATO_FADE));
-    if (v->vib_t < delay) depth = 0.0f;
-    else if (fade > 0.0f) depth *= fminf((v->vib_t - delay) / fade, 1.0f);
-    v->vib_ph += (double)(hz * dt);
-    if (v->vib_ph >= 1.0) {
-      v->vib_ph -= floor(v->vib_ph);
+    if (!v->vib_drawn && v->vib_t >= delay) {
       const float err = le_aas_lin(0.0f, 0.2f, vf(d, LE_TENSION_VIBRATO_ERROR));
-      if (err > 0.0f) v->vib_dev = err * le_aas_bipolar(&v->rng);
+      v->vib_dev = err > 0.0f ? err * le_aas_bipolar(&v->rng) : 0.0f;
+      v->vib_drawn = 1;
     }
+    float depth = 0.0f;
+    if (v->vib_t >= delay) {
+      depth = mod_expz(0.0002f, 1.0f / 6.0f, vf(d, LE_TENSION_VIBRATO_AMOUNT)) * (1.0f - v->vib_dev);
+      if (fade > 0.0f) depth *= fminf((v->vib_t - delay) / fade, 1.0f);
+    }
+    depth += d->mod * mod_expz(0.0002f, 1.0f / 6.0f, vf(d, LE_TENSION_VIBRATO_WHEEL));
+    v->vib_ph += (double)(vib_hz(d, v) * dt);
+    v->vib_ph -= floor(v->vib_ph);
     vib = depth * sinf(2.0f * LE_AAS_PI * (float)v->vib_ph);
   }
   /* the pitch handler: the key with bend follows on the string at or below
@@ -1194,25 +1278,7 @@ static void tick_voice(le_tension* d, le_tension_voice* v) {
     }
     lfo = y * v->lfo_amp;
   }
-  /* the filter: the key with bend, not glide or vibrato */
-  if (vi(d, LE_TENSION_FILTER_ON)) {
-    const float key = key_pitch(d, v->note) + v->kerr + v->detune + bend_oct(d);
-    const float fenv = vi(d, LE_TENSION_FENV_ON) ? v->fenv.y : 0.0f;
-    const float e_cut = le_aas_bsq(4.0f, vf(d, LE_TENSION_FILTER_KEY_CUTOFF)) * key +
-                        le_aas_bsq(4.0f, vf(d, LE_TENSION_FILTER_LFO_CUTOFF)) * lfo +
-                        le_aas_bq4(16.0f, vf(d, LE_TENSION_FILTER_ENV_CUTOFF)) * fenv;
-    const float e_q = le_aas_bsq(4.0f, vf(d, LE_TENSION_FILTER_KEY_Q)) * key +
-                      le_aas_bsq(4.0f, vf(d, LE_TENSION_FILTER_LFO_Q)) * lfo +
-                      le_aas_bsq(4.0f, vf(d, LE_TENSION_FILTER_ENV_Q)) * fenv;
-    const int32_t type = vi(d, LE_TENSION_FILTER_TYPE);
-    const float fc = fmaxf(kexp(30.0f, 22000.0f, vf(d, LE_TENSION_FILTER_CUTOFF)) * exp2f(e_cut), 20.0f);
-    const float q = kexp(0.1f, 120.0f, vf(d, LE_TENSION_FILTER_Q)) * exp2f(e_q); /* each stage clamps its own */
-    if (type >= 8) {
-      le_aas_formant_set(&v->f, type, vf(d, LE_TENSION_FILTER_CUTOFF), vf(d, LE_TENSION_FILTER_Q), e_cut, e_q, rate);
-    } else {
-      le_aas_filter_set(&v->f, type, le_aas_clamp(fc, 10.0f, 0.49f * rate), q, rate);
-    }
-  }
+  v->lfo_out = lfo;
 }
 
 /* ---- the body ---- */
@@ -1362,6 +1428,35 @@ static void body_render(le_tension* d, float* x, int32_t n) {
 
 /* ---- rendering ---- */
 
+/* The filter's cutoff and Q, once per 1 ms block from the note on, from
+ * the envelope and LFO as they stand at the block's start. [code] (an-01,
+ * the filter's 1 ms sub-blocks) [measured] (uab9-48: Upright Ambient
+ * Bass's closed filter opened by an envelope without attack, its first
+ * 100 samples) */
+static void filter_update(const le_tension* d, le_tension_voice* v) {
+  const float rate = (float)d->sample_rate;
+  const float lfo = v->lfo_out;
+  /* the key with bend, not glide or vibrato */
+  if (vi(d, LE_TENSION_FILTER_ON)) {
+    const float key = key_pitch(d, v->note) + v->kerr + v->detune + bend_oct(d);
+    const float fenv = vi(d, LE_TENSION_FENV_ON) ? v->fenv.y : 0.0f;
+    const float e_cut = le_aas_bsq(4.0f, vf(d, LE_TENSION_FILTER_KEY_CUTOFF)) * key +
+                        le_aas_bsq(4.0f, vf(d, LE_TENSION_FILTER_LFO_CUTOFF)) * lfo +
+                        le_aas_bq4(16.0f, vf(d, LE_TENSION_FILTER_ENV_CUTOFF)) * fenv;
+    const float e_q = le_aas_bsq(4.0f, vf(d, LE_TENSION_FILTER_KEY_Q)) * key +
+                      le_aas_bsq(4.0f, vf(d, LE_TENSION_FILTER_LFO_Q)) * lfo +
+                      le_aas_bsq(4.0f, vf(d, LE_TENSION_FILTER_ENV_Q)) * fenv;
+    const int32_t type = vi(d, LE_TENSION_FILTER_TYPE);
+    const float fc = fmaxf(kexp(30.0f, 22000.0f, vf(d, LE_TENSION_FILTER_CUTOFF)) * exp2f(e_cut), 20.0f);
+    const float q = kexp(0.1f, 120.0f, vf(d, LE_TENSION_FILTER_Q)) * exp2f(e_q); /* each stage clamps its own */
+    if (type >= 8) {
+      le_aas_formant_set(&v->f, type, vf(d, LE_TENSION_FILTER_CUTOFF), vf(d, LE_TENSION_FILTER_Q), e_cut, e_q, rate);
+    } else {
+      le_aas_filter_set(&v->f, type, le_aas_clamp(fc, 10.0f, 0.49f * rate), q, rate);
+    }
+  }
+}
+
 static void render_voice(le_tension* d, le_tension_voice* v, float* out, int32_t frames) {
   const float rate = (float)d->sample_rate;
   const le_aas_env_set es = fenv_set(d);
@@ -1369,6 +1464,7 @@ static void render_voice(le_tension* d, le_tension_voice* v, float* out, int32_t
   const int filter_on = vi(d, LE_TENSION_FILTER_ON);
   const float fade_step = 1.0f / (float)(v->fade_len > 0 ? v->fade_len : 1);
   const int32_t block_len = (int32_t)lroundf(0.001f * rate);
+  const float cut_thr = vi(d, LE_TENSION_DAMPER_ON) ? 0.005f : vi(d, LE_TENSION_TERM_ON) ? 1e-4f : 1e-5f;
   int32_t i = 0;
   while (i < frames && v->state != LE_TENSION_VOICE_FREE) {
     if (v->since < v->delay) {
@@ -1386,7 +1482,12 @@ static void render_voice(le_tension* d, le_tension_voice* v, float* out, int32_t
       tick_voice(d, v);
       v->tick_left = LE_TENSION_TICK;
     }
+    if (v->filt_left == 0) {
+      if (filter_on) filter_update(d, v);
+      v->filt_left = block_len;
+    }
     int32_t n = v->tick_left < frames - i ? v->tick_left : frames - i;
+    if (v->filt_left < n) n = v->filt_left;
     if (v->state == LE_TENSION_VOICE_FADING && v->fade_left < n) n = v->fade_left > 0 ? v->fade_left : 0;
     if (n == 0) {
       v->state = LE_TENSION_VOICE_FREE;
@@ -1397,7 +1498,6 @@ static void render_voice(le_tension* d, le_tension_voice* v, float* out, int32_t
     const float period = rate / (TV_C4 * exp2_engine(fminf(v->pitch_to + bend_oct(d), v->p0)));
     for (int32_t s = 0; s < n; ++s) {
       float y = string_tick(d, v, held);
-      const float y_string = y; /* the string's own sound, before the filter */
       if (v->sh_mix > 0.0f || v->sh_mix_step > 0.0f) {
         const float z = shift_tick(v, y, period);
         y = y + v->sh_mix * (z - y);
@@ -1412,35 +1512,22 @@ static void render_voice(le_tension* d, le_tension_voice* v, float* out, int32_t
         y *= fade_step * (float)(v->fade_left > s ? v->fade_left - s : 0);
       }
       out[i + s] += y;
-      /* a released string ends after 84 one-millisecond blocks in a row,
-       * counted from the release, in which its own sound (not the
-       * filter's, which an LFO may close for a while) peaks below -101.1
-       * dBFS; and not while a gated damper is still in the air, for at most
-       * 2 s of flight. [measured] (rounds 6 and 7: Live cuts to silence on
-       * 1 ms boundaries, never sooner than 84 blocks after the release, at
-       * 84 for a still string; -101.1 dBFS from a string held at -88 dB
-       * with no release loss, cut 2094 blocks on; Wurli Mellow's low thump
-       * 190 ms after a release) [Segno] (Live cuts a resting damper's,
-       * a terminated string's and a landed gated damper's string sooner,
-       * by a condition the renders have not shown) */
-      if (v->state == LE_TENSION_VOICE_RELEASED && v->off_wait == 0) {
-        const int flying = v->damper.on && v->damper.f <= 0.0 && v->damper.grav != 0.0f &&
-                           v->flying < (int32_t)(2.0f * rate);
-        v->flying += flying;
-        if (fabsf(y_string) > v->blk_peak) v->blk_peak = fabsf(y_string);
-        if (flying) v->blk_peak = 1.0f;
-        if (++v->rel_n >= block_len) {
-          v->quiet = v->blk_peak < 8.84e-6f ? v->quiet + 1 : 0;
-          v->rel_n = 0;
-          v->blk_peak = 0.0f;
-          if (v->quiet >= 84) {
-            v->state = LE_TENSION_VOICE_FREE;
-            return;
-          }
+      /* the voice's end: see voice_end_block */
+      if (v->cut_watch && !v->cut_hit) {
+        v->cut_env = 0.05f * (y * TV_LIVE_UNIT) + 0.95f * v->cut_env;
+        if (fabsf(v->cut_env) >= cut_thr) {
+          v->cut_left = 4000;
+          v->cut_on = 1;
+          v->cut_hit = 1;
+        } else if (v->cut_left < 1) {
+          v->cut_on = 0;
+        } else {
+          v->cut_left--;
         }
       }
     }
     v->tick_left -= n;
+    v->filt_left -= n;
     if (v->off_wait > 0 && (v->off_wait -= n) == 0 && v->state == LE_TENSION_VOICE_RELEASED) release_voice(d, v);
     if (v->since < (1 << 30)) v->since += n;
     i += n;
@@ -1455,9 +1542,26 @@ void le_tension_render(le_tension* d, float* left, float* right, int32_t frames)
   if (d == NULL || left == NULL || right == NULL || frames <= 0) return;
   d->age = frames < (1 << 30) - d->age ? d->age + frames : (1 << 30);
   memset(left, 0, sizeof(float) * (size_t)frames);
-  for (int32_t i = 0; i < LE_TENSION_VOICE_SLOTS; ++i) {
-    le_tension_voice* v = &d->voices[i];
-    if (v->state != LE_TENSION_VOICE_FREE) render_voice(d, v, left, frames);
+  /* the voices on the device's 1 ms blocks, the idle round taking its
+   * turn at each block's start */
+  const int32_t block_len = (int32_t)lroundf(0.001f * (float)d->sample_rate);
+  for (int32_t s = 0; s < frames;) {
+    if (d->blk_pos == 0) {
+      idle_turn(d, block_len);
+      for (int32_t i = 0; i < LE_TENSION_VOICE_SLOTS; ++i) {
+        le_tension_voice* v = &d->voices[i];
+        v->cut_watch = v->state == LE_TENSION_VOICE_RELEASED && v->off_wait == 0;
+        v->cut_hit = 0;
+      }
+    }
+    const int32_t n = block_len - d->blk_pos < frames - s ? block_len - d->blk_pos : frames - s;
+    for (int32_t i = 0; i < LE_TENSION_VOICE_SLOTS; ++i) {
+      le_tension_voice* v = &d->voices[i];
+      if (v->state != LE_TENSION_VOICE_FREE) render_voice(d, v, left + s, n);
+    }
+    d->blk_pos = (d->blk_pos + n) % block_len;
+    if (d->blk_pos == 0) voice_end_block(d);
+    s += n;
   }
   body_render(d, left, frames);
   /* the output stage: linear to 0.7 of full scale (4), then bending toward
