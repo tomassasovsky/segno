@@ -201,6 +201,11 @@ static int smooth_param(int32_t p) {
   /* fit: and the pitch envelope's time (penv-t75's sweep) */
   if (p >= LE_COLLISION_RES1 && p < LE_COLLISION_STRUCTURE &&
       (p - LE_COLLISION_RES1) % LE_COLLISION_R_FIELDS == LE_COLLISION_R_PITCH_ENV_TIME) return 1;
+  /* fit: and each resonator's volume (the presets that store k / 126 below
+   * 0.5 sat 0.2 to 0.33 dB under Live on step k, Digital String, Bells
+   * Mellow, Tube Harp, Bell Plate Long; within 0.1 dB unstepped) */
+  if (p >= LE_COLLISION_RES1 && p < LE_COLLISION_STRUCTURE &&
+      (p - LE_COLLISION_RES1) % LE_COLLISION_R_FIELDS == LE_COLLISION_R_VOLUME) return 1;
   return p == LE_COLLISION_VOLUME;
 }
 

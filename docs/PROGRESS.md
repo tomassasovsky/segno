@@ -76,9 +76,9 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   marimba, string, membrane, plate as banks of up to 70 modes; pipe and
   tube as waveguides) in series or parallel, with two LFOs and the
   per-voice modulation matrix.
-- Fitted against 206 Live renders in seven rounds: 149 pass the strict
-  score (32 of 92 at the start), 20 of the 33 factory presets (1); the
-  held-out round passes 11 of 33. Measured: the
+- Fitted against 206 Live renders in seven rounds: 148 pass the strict
+  score (32 of 92 at the start), 19 of the 33 factory presets (1); the
+  held-out round passes 12 of 33. Measured: the
   waveguides' read offset, the inverted Off Decay, the engine's grids for
   the mode shapes, the synced LFO lengths, an exponential pitch envelope,
   the chooser's pitch unit, a 1 ms look-ahead limiter at 1 after the
@@ -87,7 +87,8 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   filters stepping every 10 ms when modulated, the resonators' gains
   ramping from the voice's last note, stolen voices restarted in place,
   and held voices ending at about -94 dBFS. The limiter's 1 ms is the
-  device's only added latency. A new note takes the free slot whose last
+  device's only added latency. Each resonator's volume is not taken
+  down to its step. A new note takes the free slot whose last
   note is the oldest, and a voice's Random LFO starts from a value it
   already holds. Left: the mallet noise and the noise source through
   their velocity routes (round 8 requested), the noise high-pass's low

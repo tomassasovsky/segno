@@ -2661,9 +2661,14 @@ Meld. Segno's implementation is `collision_voice.c`.
   and 63.5 down; Radius inverted), a matrix amount as is. The linear,
   square and cube curves put step 64 at exactly their middle, the
   exponential curve does not. **[code]** The master Volume, the LFOs'
-  free Rate and the Pitch Env. Time are not taken down to their step.
-  **[measured]** (Vibes Basic's level; lfo-pitch's rate, 0.641 Hz against
-  0.624 for the step; penv-t75's sweep, 1.3 to 0.3 dB)
+  free Rate, the Pitch Env. Time and each resonator's Volume are not taken
+  down to their step. **[measured]** (Vibes Basic's level; lfo-pitch's
+  rate, 0.641 Hz against 0.624 for the step; penv-t75's sweep, 1.3 to 0.3
+  dB; the resonator volumes the presets store as k / 126 below 0.5, which
+  left Digital String, Bells Mellow, Tube Harp and Bell Plate Long 0.2 to
+  0.33 dB under Live on every note, fit and held-out alike, and within 0.1
+  dB unstepped; taking every knob off its step instead moves the plain
+  pipe, tube and bleed renders from 0.0 to 0.6 dB)
 - A per-voice matrix sums amount x source into each destination: key
   ((note - 60) / 12 with bend), velocity ((vel - 64) / 63), bend, mod
   wheel, pressure, both LFOs. The "< Vel" and "< Key" knobs are fixed
@@ -2827,10 +2832,12 @@ pitch envelope, Off Decay, pipes across the keyboard, Live copies of the
 random renders, the noise excitation through a dense 70-mode membrane,
 presets playing a held-out-like phrase with copies, the limiter's
 release, rounds 5 to 7 below), scored by the strict score with three Segno
-seeds and Live's own spread where copies exist: 149 of 206 pass, 20 of the
+seeds and Live's own spread where copies exist: 148 of 206 pass, 19 of the
 33 factory presets (104 of 152 before the measured limiter and bleed). The
 held-out round (every preset, a quiet C3, a loud C4 triad and a hard C5,
-with Live's copies) passes 11 of 33.
+with Live's copies) passes 12 of 33. The unstepped resonator volume
+costs p-bell-airy, a random preset with one Live render, its level (0.64
+against 0.5) and gains Balafon Bright's held-out attack.
 
 Left: the noise source's high-pass passes 7 to 18 dB less than Live's
 between 125 and 250 Hz on the dense membrane (below its lowest mode), and
@@ -2902,10 +2909,19 @@ Long's hard C5 ramps from the old voice's hard-left pan about 1/3 ms
 sooner in Live; starting the exciters 16 samples after the voice's
 controls, instead of delaying the whole output, passes it (stereo 1.27 to
 0.70) but fails ph-bell-plate-long and ph-marimba-glassy on stereo and
-moves the pitch-envelope renders both ways, so it is not taken. A Live
+moves the pitch-envelope renders both ways, so it is not taken. The two
+phrases differ in how the C5 gets its slot: in the fit round it steals the
+C3's sounding voice, where Segno's timing fits (8 samples of lead already
+take stereo from 0.85 to 1.13), and in the held-out round it takes the
+C3's slot after Segno has ended that voice, while Live's right channel
+still carries the C3 at about -120 dB. Whether a slot taken after its
+voice ended starts its pan sooner, or Live's voice had not ended, is left
+to round 8's slot renders. Tube Harp keeps more side than Live below its
+lowest mode at each strike (2 to 4 dB at 50 to 80 Hz) and 5 dB less mid
+there at the hard C5, where its mono tube adds to the string. A Live
 ramp that runs its 2 ms to the end before taking a new target, as read,
-made Bell Plate Long worse (1.27 to 1.57). Tube Harp sits 0.4 dB under
-Live at every note and velocity, which no other tube render shows. With
+made Bell Plate Long worse (1.27 to 1.57). Tube Harp sat 0.4 dB under
+Live at every note and velocity: the resonator volume's step (above). With
 three seeds the random renders' scores are a draw: taking the LFOs'
 start values from the strike's own stream moved p-xylophone-basic's tf
 from 1.17 to 6.11 and its floor from 2.1 to 6.3, so the start values come
