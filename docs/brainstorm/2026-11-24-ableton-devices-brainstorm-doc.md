@@ -715,6 +715,11 @@ where the reading was silent or disagreed. Segno's implementation is
   12 dB at 1.6 kHz with 32-sample chunks and matches with 16 (round 8 and
   11's copies 2.9 dB to 1.2; 8 samples 2.2, 4 samples 2.8, every sample
   or held steps worse). The voice end keeps a 32-sample grid (below).
+  Round 12 confirms it per destination: a 1.1 kHz sine LFO into Volume,
+  an operator's volume, Pan and FM Drive puts its images around 3 kHz and
+  6 kHz (one block of 16 samples), Live's and Segno's matching to the dB
+  (tf 0.01 to 0.35), and into the pitch it acts every sample (0.02).
+  **[measured: round 12 cr-vol, -oscvol, -pan, -fmdrive, -pitch]**
 
 ### Waveforms
 
@@ -867,7 +872,13 @@ where the reading was silent or disagreed. Segno's implementation is
 - Amount: 2 Amount² × A%, × 4(0.5 + VelScale (v − 0.5))², × the LFO
   envelope. Destination A multiplies an operator's phase increment by
   (1 + L) (linear pitch) and adds 24 semitones per unit to the cutoff
-  through a smoother. **[code]** **[measured: pitch within 0.003]**
+  through a smoother. **[code]** **[measured: pitch within 0.003]** The
+  LFO's route into Filter Freq passes the same smoother, so an audio-rate
+  LFO leaves the cutoff still (Live's 1.1 kHz LFO there makes no
+  sidebands: 9.8 dB to passing), and its route into Tone passes a 200 Hz
+  one-pole (Live's sidebands there 10 to 18 dB under an unsmoothed
+  route's: 12.8 dB to 5.9; 100 and 400 Hz give 6.9 and 7.3, so the rest is
+  still open). **[measured: round 12 cr-filter, cr-tone]**
 - Pitch envelope: its levels in semitones × Amount × A%, as frequency
   ratios, multiply the increments of the operators that take it. **[code]**
   **[measured]** With LFO PitchEnv on, the same ratio (linear in ratio
@@ -1010,7 +1021,9 @@ where the reading was silent or disagreed. Segno's implementation is
   Live's pending queue does; Sync's retriggers stay on the song's grid
   meanwhile. **[code]** (the queue, op-04) **[measured: Rhythmic Pong
   Bass's triad, held out, 47 samples late in Live; its waveform error
-  -3 dB to -19, the round 8 copy 2.6 dB to 0.4; Smack Kick 1.8 to 1.6]**
+  -3 dB to -19, the round 8 copy 2.6 dB to 0.4; Smack Kick 1.8 to 1.6;
+  round 12's mono and two-voice triads and a Retrigger Mode repeat match
+  Live to the sample, -80 dB waveform error]**
 - Random pan and the random start phases do not repeat from one Live
   instance to the next: two identical tracks draw different pans, and
   every held-out preset's Live copies differ (Live against itself 0.8 to
@@ -1219,6 +1232,26 @@ it at 2.5 holds the match, so Live limits it somewhere); a closed filter
 opened by its envelope at a note's start, with and without the Hard
 shaper; five copies of random pan at 100 % (in round 9 all three copies
 put the first note hard right).
+
+What round 12 settled: the control rate per destination, the steal wait
+and the two filter routes (above). The 509 Hz sample-and-hold into
+operator A's volume alone passes within Live's own spread. The filter
+envelope's first block does not explain Release Bass: a closed Clean
+low-pass opened by its envelope at a C5's onset, with and without the
+Hard shaper, passes at 16 samples (0.46 and 0.69 dB) and holding the
+filter's targets for 32 changes it by under 0.1 dB. The five copies of
+random pan at 100 % start at +0.02, +1.00, -1.00, -0.05 and +0.90, so the
+first draw is not special (round 9's three hard-right starts were
+chance). The pitch multiplier through zero passes at amounts 0.6 and 0.8
+(multipliers up to 2.28) and misses at 1 (lfo-zero-a100, 1.55 dB, -1 to
+3): no limit fits (a cap at 2.5 gives 3.5 dB, a floor at 0 or -0.5 3.5
+and 2.5), the first 60 ms match best with the LFO 0.6 % faster (-29 dB
+waveform error against -12), and the match is lost at the saw's wrap
+whatever its smoother's cutoff or order. Sweep Wobble stays open with
+it. **[open]**
+With round 12 and five seeds the fit rounds pass 413 of 469 (the
+earlier rounds still 399 of 452, round 12 14 of 17: cr-tone, lfo-zero-a100
+and rndpan1st's attack fail), the held-out round 48 of 67.
 
 - OSR self-oscillating near its input's pitch (17 cents at a 300 Hz
   cutoff on a 262 Hz sine; the input level moves the pull little and the
