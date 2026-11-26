@@ -481,6 +481,7 @@ static void start_voice(le_analog* d, le_analog_voice* v, uint32_t origin, int32
   v->pitch_to = key_pitch(d, note);
   v->pitch = glide ? d->last_pitch : v->pitch_to;
   v->glided = glide;
+  v->keyed_at = d->age;
   /* the unison copies sit 0, +1, -1, +2 steps from the note (fit: the
    * unison renders), a step of ExpZ(0.001, 1) octaves on the stored value
    * times 127 (Tension's reading of the shared unison; 0.379 semitone at
@@ -607,10 +608,18 @@ int32_t le_analog_note_on(le_analog* d, uint32_t origin, int32_t note, int32_t v
       v->origin = origin;
       v->velocity = vel;
       v->pitch_to = key_pitch(d, note);
-      /* fit: a voice that has not played yet keeps the start its first key
-       * gave it: no glide between a chord's keys when it started without
-       * one (Muted Dark Bass's triad lands on its last key at once) */
-      if (!glide || (v->since == 0 && !v->glided)) v->pitch = v->pitch_to;
+      /* fit: in Const mode, keys that arrive with the key that started or
+       * took back the voice do not glide when that key did not (Muted Dark
+       * Bass's triads, on a fresh and on a releasing voice, land on their
+       * last key at once); in Prop mode they glide (Dual OSC Buzz Octaves
+       * Bass's) */
+      if (!was_held) {
+        v->keyed_at = d->age;
+        v->glided = glide;
+      }
+      if (!glide || (was_held && v->keyed_at == d->age && !v->glided && !vi(d, LE_ANALOG_GLIDE_MODE))) {
+        v->pitch = v->pitch_to;
+      }
       v->state = LE_ANALOG_VOICE_HELD;
       for (int32_t k = 0; k < v->copies; ++k) {
         for (int32_t c = 0; c < 2; ++c) {

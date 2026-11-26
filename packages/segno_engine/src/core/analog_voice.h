@@ -98,7 +98,8 @@ typedef struct le_analog_voice {
   int32_t copies;
   float pitch, pitch_to; /* the keyboard pitch in octaves from C4, glided */
   float glide_c;         /* per-tick glide coefficient */
-  int32_t glided;        /* the voice started with a glide */
+  int32_t glided;        /* the key that started or took back the voice glided */
+  int32_t keyed_at;      /* the device's age then */
   double vib_ph;
   float vib_t;           /* seconds since the note (vibrato delay and fade) */
   float vib_dev;         /* this vibrato cycle's rate deviation, a fraction */
