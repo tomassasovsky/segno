@@ -258,10 +258,14 @@ typedef struct le_aas_filter {
 static inline void le_aas_filter_set(le_aas_filter* f, int32_t type, float fc, float q, float rate) {
   /* fit: BP12's and Notch4's two stages each take the full Q (Analog's
    * BP12 and Notch4 renders); LP24's and HP24's take sqrt(Q) each. The
-   * clamp to 100 is the stage's, after the sqrt (LP24 at full Q) */
+   * clamp to 100 is the stage's, after the sqrt (LP24 at full Q). Below,
+   * the core takes the Q its modulation asks for: a negative envelope on Q
+   * damps the stage to near silence (fit: Analog's Rhythmic Iron, whose
+   * chain 2 at a hard A5 drives Q to 1e-5; a floor of 0.01 left it 16 to
+   * 39 dB too bright at 2 to 10 kHz). 1e-6 only keeps k finite. */
   const float qs = fminf(type == 1 || type == 7 ? sqrtf(q) : q, 100.0f);
   f->g[0] = tanf(LE_AAS_PI * fc / rate);
-  f->k = 1.0f / fmaxf(qs, 0.01f);
+  f->k = 1.0f / fmaxf(qs, 1e-6f);
 }
 
 /* The formant filter's vowels, Peterson and Barney's adult-male averages

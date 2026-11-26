@@ -1607,7 +1607,9 @@ Tags as for Meld. Segno's implementation is `analog_voice.c`.
   octave, semitone and detune, and the LFO, go through exact ones (the LFO
   renders fit closer so). **[measured]**
 - Sub: a square an octave down, Exp(0.01, 1). Sync: a master at the note
-  and a slave at Exp(1, 20) times it (the sine does not sync); at a ratio
+  and a slave at Exp(1, 20) times it (the sine does not sync, and set to
+  Sync it has no sub either: segno-analog-fit4 Soft Morning Keys with amp 1
+  off from 3.9 to 0.2 dB); at a ratio
   of 1 the master still resets the slave, which moves the saw half a
   period against an unsynced one (Saw Pure Brass's chains beat in Live's
   phase only so). **[code]** **[measured]**
@@ -1640,8 +1642,11 @@ Tags as for Meld. Segno's implementation is `analog_voice.c`.
   gives); the 4-pole types cascade two, LP24's and HP24's stages each at
   sqrt(Q),
   BP12's and Notch4's at the full Q. The band-pass is the band node itself,
-  peaking at Q. **[code]** **[measured]** (BP's level, BP12's and
-  Notch4's Q)
+  peaking at Q. Below, a stage takes the Q its modulation asks for, with no
+  floor: a negative envelope on Q damps it to near silence (Rhythmic Iron's
+  chain 2 at a hard note reaches Q 1e-5). **[code]** **[measured]** (BP's
+  level, BP12's and Notch4's Q, no floor: segno-analog-fit6 Rhythmic
+  Iron's A5, 16 to 39 dB too bright at 2 to 10 kHz with a floor of 0.01)
 - Formant 6 and 12: three band-passes in parallel at a vowel's formants,
   the middle one inverted, each at Q 20 (Formant 6) or 45 (Formant 12) and
   8/sqrt(Q) times its level. The Q knob picks the vowel, 0..9 across its
@@ -1674,21 +1679,33 @@ Tags as for Meld. Segno's implementation is `analog_voice.c`.
 - LFO: sine, triangle (starting at its top, the pulse width setting its
   symmetry), rectangle, sample and hold, and noise (a ramp from one cycle's
   random value to the next), at Exp(3, 1000) cycles a minute or a tempo
-  division, with delay, fade-in, phase and retrigger. **[code]**
-  **[measured]** (the triangle's start, the noise ramp, the random
-  waves' random start)
+  division, with delay, fade-in, phase and retrigger. A retriggered random
+  wave starts from a random value; a free one holds 0 until its first
+  cycle ends (Live's copies of the free S&H and noise presets agree to the
+  sample until then, and differ after). **[code]** **[measured]** (the
+  triangle's start, the noise ramp, the random starts: segno-analog-fit5
+  lfo-wave3 and its copies; segno-analog-fit6 Dual OSC Sample & Hold
+  Bass's first 0.35 s from 17.9 to 0.45 dB, Overtones' from 6.8 to 0.7)
 - The tempo divisions 0..23 run 16 beats down to an eighth of a beat,
   each dotted, straight and triplet (division 4 is 8 beats, 3 is 12): the
   brass presets' LFO pan cycles in 4 and 6 s at 120 BPM. **[measured]**
 - Amp: Exp(0.01, 2) times the envelope, (1 + depth x LFO) and the key;
   key, envelope and LFO move the pan. The LFO's depths on the level and
   the pan are linear in the knob (Tremolo Tines' pan swing and the lfo-amp
-  render). **[code]** **[measured]**
+  render). The modulated pan is not clamped: past an edge its angle runs
+  on and the far channel's gain turns negative (Soft Morning Keys, whose
+  envelope and LFO pans add to 1.35: Live's left channel stays 27 dB down
+  where a clamp silences it, and folding the position back gives the
+  levels but not the side signal; with amp 1 off from 3.7 to 0.4 dB, its
+  attack from 16.1 to 0.9 dB). **[code]** **[measured]**
 - A mono key change (a new key, or a released key handing the voice to a
   held one) retriggers each envelope whose Legato is off: a straight fall
   to 0 over 0.7 ms, then the attack from 0; the oscillators keep their
-  phase. **[measured]** (the glide renders dip to silence at the key
-  change)
+  phase. Each LFO with Retrigger on starts again with it, at its Phase,
+  with a fresh random value, its delay and its fade-in. **[measured]**
+  (the glide renders dip to silence at the key change; segno-analog-fit6
+  Rhythmic Iron, whose A5 retakes the releasing mono voice: its S&H on the
+  cutoff fading in again takes it from 10.4 to 5.8 dB)
 
 ### Voices
 
@@ -1700,9 +1717,14 @@ Tags as for Meld. Segno's implementation is `analog_voice.c`.
 - The device has as many voices as the Voices setting, and some state
   stays with a voice from one note to the next: a free LFO (one that does
   not retrigger) and a filter envelope with Legato on. A note takes the
-  stolen voice, or the lowest idle one. A free LFO starts three quarters
-  of Phase into its cycle on the voice's first note and runs while the
-  voice plays and for 52 ms after it goes quiet; a Legato filter envelope
+  stolen voice, or the lowest idle one. A free LFO runs from the device's
+  start, three quarters of Phase into its cycle there, until its voice's
+  first note, and from then on while the voice plays and for 52 ms after
+  it goes quiet (segno-analog-fit6 Nasal Mod Lead's triad on fresh voices
+  from 8.6 to 3.8 dB, Glass High Strings Pad from 7.5 to 5.9, Organ
+  Octaves Slow's stereo from 4.2 to 1.4; lfo-free's second voice enters
+  within 0.013 cycle of that phase); a free random wave's held values stay
+  with the voice too. A Legato filter envelope
   carries its value into the voice's next note, its release run on for
   0.1 s after the voice went quiet and then held (fleg-on, fleg-on-mono,
   fleg-on-pos fit best between 0.08 and 0.12 s; running the release
@@ -1730,9 +1752,15 @@ Tags as for Meld. Segno's implementation is `analog_voice.c`.
   to 1.3 cents sharp between), which puts the lower copy 0.3 cent sharp
   as the renders show. Vibrato: Lin(0.25, 10) Hz, each cycle's rate off by
   a random fraction up to Error = Lin(0, 0.2), its depth and the mod
-  wheel's up to 2 semitones, with delay and fade-in. **[code]** (Tension's
-  reading of the shared unison; the vibrato error) **[measured]** (the
-  offsets' pattern; 0.374 semitone at 0.5; the cubic on the offsets)
+  wheel's up to 2 semitones, with delay and fade-in. A poly voice's
+  vibrato starts at 0 with each note; a mono voice's runs on through the
+  silence between its notes, from the device's start. **[code]**
+  (Tension's reading of the shared unison; the vibrato error)
+  **[measured]** (the offsets' pattern; 0.374 semitone at 0.5; the cubic
+  on the offsets; the mono run-on: segno-analog-fit6 Square Pure Bass's
+  median pitch error from 0.38 to 0.04 cent, Saw Detune Sync Lead's from
+  12.0 to 2.8, while running on puts Strings Detuned Pad's poly triad 5.5
+  cents off)
 
 ### The fits so far
 
@@ -2130,6 +2158,52 @@ free LFO's run-on on one mono voice with gaps of 50 ms to 0.8 s, with a
 long release, on two voices, and a sine LFO; a third note's steal (three
 keys together, in sequence, one released); Kick Complex Perc on a C4, a
 C5, a triad and a dyad; Saw Pure Muted Bass on a C3, a C5, and a soft C5.
+
+Before round 8's export, the held-out failures sorted by kind (source,
+random or not, metric, phrase segment) showed seven shared causes, each
+fitted on fit renders: a free random wave holds 0 until its first cycle
+ends; a fresh device voice's free LFO has run since the device started;
+a mono key change restarts each retriggered LFO; a stage's Q has no floor;
+a mono voice's vibrato runs on through silence; a sine set to Sync has no
+sub; the modulated pan's angle is not clamped (all above). Fit renders 286
+to 290 of 384, factory presets 18 to 22 of 79; held out 11 to 15 of 58
+(Overtones, Rhythmic Iron, Square Pure Bass, Soft Morning Keys). What the
+renders show and is still open:
+
+- Dual OSC Buzz Lead: every later note that starts a fresh voice carries
+  a DC offset in Live (-0.39 at the triad, -0.24 at the C5, in all five
+  copies), from the first sample and decaying with the amp; the first
+  note has none. Its chain 2 is a synced rectangle with its pulse width on
+  an LFO into Asym 3 drive. Keeping a reused voice's integrator value
+  gives a DC of the wrong sign. segno-analog-fit9 isolates it.
+- The oscillators' start phase: on single notes at the song's start,
+  after Live's 15-sample first-note offset, Live's sine and saw lead
+  Segno's by about 16 log2(P / 109) samples (P the period; C1 69, C2 46,
+  C3 27, C4 12 samples), as a first oscillator tick ramping from A4's
+  period would give, while the rectangle matches. Such a ramp breaks the
+  pitch-envelope sweeps (penv7 attack from 0.3 to 8 dB), so it is not in.
+  It sets the phase between two chains at one pitch: Dual OSC Rubber
+  Bass's C5 fundamental is 13 dB low in Segno, its rectangle and sine
+  cancelling where Live's add.
+- Square Percussive Bass (mono, Stretch 0.825) sits 5.8 cents flat of
+  Live, as if its mono voice took half the poly stretch law, which the
+  stretch renders confirm for poly voices; segno-analog-fit9 plays mono
+  and poly stretch.
+- Live's later note events land early (16 to 64 samples at the phrases'
+  times); a fixed lead in the harness moves Muted Dark Bass by up to 2
+  dB but no single lead fits, and its tf is in the onset cells.
+
+segno-analog-fit9 (41 renders, built, to be exported): vibrato across
+notes on mono and poly voices and its rate; a free LFO's phase on a note
+that is the device's first but not at 0 s, and on a second voice; a mono
+key change against a retriggered LFO's fade, delay and phase; a reused
+voice's rectangle, saw and sine (and the synced, PW-modulated rectangle
+through drive, Buzz Lead's chain); Dual OSC Buzz Lead, Fourths Lead,
+Square Pure Bass, Muted Dark Bass, Nasal Mod Lead, Rhythmic Iron and
+Square Percussive Bass on a phrase of their own (with Live copies of the
+random ones); a sine at the held-out, round-6 and that phrase's note
+times (Live's event timing); Q driven below 0.01; Keyboard Stretch on mono
+and poly voices.
 
 ## Decisions
 
