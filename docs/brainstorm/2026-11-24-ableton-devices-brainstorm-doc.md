@@ -1110,6 +1110,19 @@ the loop's crossfading heads and high-pass; not done. The Filther at 20
 kHz under a loud chord matches at three input levels, so Happy Chords'
 0.55 dB is not the Filther. Bitgrunge's skips are a table (above).
 
+Traced, not yet fixed: Comb Bass's and Whley's errors sit in the bands
+their Vowel filter shapes (Comb Bass 2 to 4 dB low at 1.4 and 2.8 kHz,
+2 to 3 dB high at 5.6 kHz), and the Vowel's formants are Segno's own;
+Bad Maths Arp is 4 to 5 dB low below 300 Hz, where engine B's Bandpass
+sweeps ten octaves with LFO 2. Happy Chords' 0.55 dB stays with one copy
+instead of two, without Spread's offsets and in Poly, and amp modulation
+before the filter does not remove it. Round 11 asks for Noise Loop read
+back (C0 to C4, Macro 1 0 and 0.5), Chord halfway between chord types,
+Happy Chords' engine B at velocity 100 and 127 with and without its
+Filther, and the Vowel filter at each vowel, three frequencies and two
+Macro 1 values. With Live's spread from five instances the held-out
+round passes 19 of 84.
+
 ## Decisions
 
 | Decision | Proposal | State |

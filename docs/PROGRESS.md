@@ -116,7 +116,8 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   first note through silences, a silent voice's oscillator starting as
   Reset does, and Bitgrunge's skips (now a table): 503 of 594 fit
   renders, 13 of 21 presets, 17 of 84 held-out (tf mean 4.2 dB). Live's
-  Noise Loop is a fixed noise sequence, not yet measured.
+  Noise Loop is a fixed noise sequence, not yet measured. With Live's
+  spread from five instances: 19 of 84 held-out; round 11 requested.
 - A voice with both engines on a Basic Shapes saw and SVF 12 costs 1.8 us
   per millisecond on the dev machine; MS2 6.8, a Swarm 3.7, three unison
   copies 5.6.
