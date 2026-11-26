@@ -1,6 +1,6 @@
 # Ableton Live device presets on the pedal — brainstorm
 
-<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance kModBy kCarriers Celesta transconductances Bandpass Bitgrunge Csound Drivetime Extratone Filther Lofi Lowpass Megatripolis Minnaert Sawstyle Starchestra polyBLEP Metalic Formant formants Barney Asym quintic Wurli MKII Schroeder Fretless Balafon Glockenspiel Perc halvings Inharmonicity travelled Inharmonics atan Freq bilinearly penv mvol retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations filt voicecut Unisono pul meldfit Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penvd rndpan Bassic Bitgrunge's Catchem Filther's Kaneda Werkstuecktraeger Whley Whley's filt nloop avel fleg unmodulated retunes -->
+<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance kModBy kCarriers Celesta transconductances Bandpass Bitgrunge Csound Drivetime Extratone Filther Lofi Lowpass Megatripolis Minnaert Sawstyle Starchestra polyBLEP Metalic Formant formants Barney Asym quintic Wurli MKII Schroeder Fretless Balafon Glockenspiel Perc halvings Inharmonicity travelled Inharmonics atan Freq bilinearly penv mvol retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations filt voicecut Unisono pul meldfit Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penvd rndpan Bassic Bitgrunge's Catchem Filther's Kaneda Werkstuecktraeger Whley Whley's filt nloop avel fleg unmodulated retunes Basscycle -->
 
 **Date:** 2026-11-24
 **Issue:** SEG-109 (related: SEG-57, Segno's own instrument voices)
@@ -952,6 +952,27 @@ scores only the first note, against Live's three copies: Live's own
 first-note pans differ from copy to copy (Bells Fifths +0.52, −0.32,
 +0.03), so a small Live spread there (Pitchy Release Pluck +0.55, +0.49,
 +0.59) is chance in three draws, which Segno's three seeds cannot match.
+
+With five Live copies of each random held-out preset (39 of 67 pass), the
+random failures split in two. Where Segno varies far more than Live
+(Fizzling Pad: Segno's seeds 12.5 dB apart, Live's copies 4.8; Warble
+Rhythm Noise Pad's attack 11.5 against 1.6), the cause is random pan
+with Spread: Segno pans each of Spread's two one-channel voices, so a
+draw near a side silences a channel (Segno's first Fizzling note −125 dB
+on the right), while Live's copies are never more than 13 dB apart.
+Placing each voice at ∓1 plus the pan brings Fizzling Pad to 3.6 dB with
+its seeds 2.5 apart, but leaves its stereo width 3.8 dB off, so neither
+law is Live's; round 10 (`segno-op-fit10`, 12 renders) pans Spread
+fixed, by key and at random. Where the spreads agree and the score does
+not (Nebulae Keys 2.6 against 0.9, Glass Wah Pad's stereo), the cause is
+deterministic. The deterministic Spread presets that fail on stereo
+(Major 3rd Lead, Full Perc Pluck, Tesseract) do so below 160 Hz only, in
+bands 40 to 60 dB under the loudest: onset and release transients, and
+Tesseract's self-oscillation, where Live's two voices ring less in phase
+than Segno's (round 10 repeats it three times). Basscycle Aftertouch's
+pitch error is the tracker on a 23 Hz fundamental beating with Spread
+(rounding its velocity Coarse down instead is 2.6 dB worse); Wobbly Flag
+Bass is MS2 driven at a 30 Hz cutoff, the open drive case.
 
 - OSR self-oscillating near its input's pitch (17 cents at a 300 Hz
   cutoff on a 262 Hz sine; the input level moves the pull little and the
