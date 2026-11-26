@@ -1018,6 +1018,120 @@ static void test_engine_drift_midi(void) {
   le_engine_destroy(e);
 }
 
+/* ---- configure re-initialises only the device instances a slot used ---- */
+
+/* The largest device instance, for the byte copies below. */
+static size_t cfg_largest(void) {
+  size_t n = 0;
+  for (int i = 0; i < LE_INST_DEVICE_COUNT; ++i) {
+    if (le_inst_devices[i].size > n) n = le_inst_devices[i].size;
+  }
+  return n;
+}
+
+/* Whether slot k's instance of table entry i is, byte for byte, what a
+ * fresh init at `sr` with the engine's default voice limit gives. The init
+ * runs in place, as the engine's does: an instance may point into itself
+ * (Operator's user waves), so a fresh one anywhere else differs. It leaves
+ * the instance freshly initialised either way. */
+static int cfg_fresh(le_engine* e, int i, int32_t k, int32_t sr,
+                     unsigned char* save) {
+  const le_inst_device* dv = &le_inst_devices[i];
+  void* d = le_instruments_device(e, dv->id, k);
+  memcpy(save, d, dv->size);
+  CHECK(dv->init(d, sr) == 0);
+  dv->set_voice_limit(d, 32);
+  return memcmp(save, d, dv->size) == 0;
+}
+
+/* Whether every slot's instance of every device is fresh (cfg_fresh). */
+static int cfg_all_fresh(le_engine* e, int32_t sr, unsigned char* save) {
+  int same = 1;
+  for (int i = 0; i < LE_INST_DEVICE_COUNT; ++i) {
+    for (int k = 0; k < LE_MAX_INSTRUMENTS; ++k) {
+      same = cfg_fresh(e, i, k, sr, save) && same;
+    }
+  }
+  return same;
+}
+
+/* A parameter of `dv` that can leave its default, and a value for it. */
+static int32_t cfg_param(const le_inst_device* dv, float* value) {
+  for (int32_t p = 0; p < dv->params; ++p) {
+    const float def = dv->def(p);
+    for (int s = -1; s <= 1; s += 2) {
+      const float v = dv->clamp(p, def + (float)s);
+      if (v != def) {
+        *value = v;
+        return p;
+      }
+    }
+  }
+  return -1;
+}
+
+/* A configure at the same rate re-initialises only the device instances a
+ * slot was given (le_instruments_reset); for every device, every instance
+ * afterwards is what a fresh init gives: the played one with no voice held
+ * and its values back to the defaults, an unused one rendering silence.
+ * Every device's cut, which reaches every instance, leaves an unused one
+ * as it is. A rate change re-initialises every one. */
+static void test_engine_devices_configure_reinitialises_used(void) {
+  printf("test_engine_devices_configure_reinitialises_used\n");
+  enum { N = 960 };
+  static float l[N], r[N];
+  unsigned char* save = (unsigned char*)malloc(cfg_largest());
+  CHECK(save != NULL);
+  if (save == NULL) return;
+  for (int i = 0; i < LE_INST_DEVICE_COUNT; ++i) {
+    const le_inst_device* dv = &le_inst_devices[i];
+    float value = 0.0f;
+    const int32_t param = cfg_param(dv, &value);
+    CHECK(param >= 0);
+    le_engine* e = ins_engine(INS_SR);
+    CHECK(cfg_all_fresh(e, INS_SR, save));
+    CHECK(le_engine_set_voice_limit(e, 8) == LE_OK); /* every instance's */
+    CHECK(le_engine_set_instrument_device(e, 2, dv->id, NULL) == LE_OK);
+    CHECK(le_engine_instrument_note_on(e, 2, 1, 57, 100) == LE_OK);
+    CHECK(le_engine_instrument_sustain(e, 2, 2, 1) == LE_OK);
+    drift_run(e, N, 64, 2, l, r);
+    CHECK(drift_peak(l, N) > 0.0f);
+    CHECK(dv->active(le_instruments_device(e, dv->id, 2)) > 0);
+    CHECK(le_engine_set_instrument_device_param(e, 2, param, value) == LE_OK);
+    drift_run(e, 64, 64, 2, NULL, NULL);
+    for (int j = 0; j < LE_INST_DEVICE_COUNT; ++j) {
+      CHECK(e->inst_dev_used[2][j] == (j == i));
+      CHECK(e->inst_dev_used[0][j] == 0);
+    }
+    CHECK(le_engine_cut_sound(e) == LE_OK); /* a cut reaches every instance */
+    drift_run(e, 64, 64, 2, NULL, NULL);
+    CHECK(le_engine_configure(e, INS_SR, 2, 2, INS_SR * 4) == LE_OK);
+    for (int k = 0; k < LE_MAX_INSTRUMENTS; ++k) {
+      for (int j = 0; j < LE_INST_DEVICE_COUNT; ++j) CHECK(e->inst_dev_used[k][j] == 0);
+    }
+    CHECK(dv->active(le_instruments_device(e, dv->id, 2)) == 0);
+    CHECK(cfg_all_fresh(e, INS_SR, save));
+    /* an unused instance of every device renders silence (in place; the
+     * init after it leaves it fresh) */
+    for (int j = 0; j < LE_INST_DEVICE_COUNT; ++j) {
+      le_inst_devices[j].render(le_instruments_device(e, le_inst_devices[j].id, 5), l, r, N);
+      CHECK(drift_peak(l, N) == 0.0f && drift_peak(r, N) == 0.0f);
+      cfg_fresh(e, j, 5, INS_SR, save);
+    }
+    /* the slot plays again after it */
+    CHECK(le_engine_set_instrument_device(e, 2, dv->id, NULL) == LE_OK);
+    CHECK(le_engine_instrument_note_on(e, 2, 1, 57, 100) == LE_OK);
+    drift_run(e, N, 64, 2, l, r);
+    CHECK(drift_peak(l, N) > 0.0f);
+    /* a rate change re-initialises every instance at the new rate */
+    CHECK(le_engine_configure(e, 44100, 2, 2, 44100 * 4) == LE_OK);
+    CHECK(cfg_all_fresh(e, 44100, save));
+    CHECK(e->inst_dev_rate == 44100);
+    le_engine_destroy(e);
+  }
+  free(save);
+}
+
 static void run_drift_tests(void) {
   test_drift_every_type_renders();
   test_drift_filter_self_oscillates();
@@ -1052,4 +1166,5 @@ static void run_drift_tests(void) {
   test_engine_drift_params_and_switching();
   test_engine_drift_refusals();
   test_engine_drift_midi();
+  test_engine_devices_configure_reinitialises_used();
 }
