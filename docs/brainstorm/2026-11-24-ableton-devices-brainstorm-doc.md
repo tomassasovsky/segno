@@ -351,7 +351,14 @@ written from it.
   - Poly: one voice per note. PolyVoiceDepth has no effect.
   - Mono: four voices on one note at 0, −12, −12 and −24 semitones; Thickness
     fades the three lower voices in one after another across the knob's
-    thirds; mode gain about −1 dB.
+    thirds; mode gain about −1 dB. Each lower voice plays as the note it
+    sounds (12 or 24 below) for key tracking, the Key source and the
+    per-key drift **[measured]**: Live's Mono presets (Rogue tf 3.0 to
+    1.7, Seventy Two Bass 3.9 to 3.2, Sol Bass's level 0.9 to 0.1 dB:
+    its noise through filter II peaks where the sub lanes' key tracking
+    puts it). Round 21's Mono handoffs (releases of 0.1 to 2 s, gaps of 0
+    and 0.3 s, Thickness 0 to 1, chords, held notes, Legato) all match
+    already, so the handoff itself is right.
   - Stereo: two voices per note (16 notes at most); Spread's law is
     **[open]**.
   - Unison: four voices per note (8 notes at most), the left side sharp:
