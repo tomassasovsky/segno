@@ -1,6 +1,6 @@
 # Ableton Live device presets on the pedal — brainstorm
 
-<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance kModBy kCarriers Celesta transconductances Bandpass Bitgrunge Csound Drivetime Extratone Filther Lofi Lowpass Megatripolis Minnaert Sawstyle Starchestra Quantizer autocorrelation tfz unmeasured retriggered isolations pul meldfit Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Perc Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penv penvd rndpan -->
+<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance kModBy kCarriers Celesta transconductances Bandpass Bitgrunge Csound Drivetime Extratone Filther Lofi Lowpass Megatripolis Minnaert Sawstyle Starchestra Quantizer autocorrelation tfz unmeasured retriggered isolations pul meldfit Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Perc Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penv penvd rndpan Bassic Bitgrunge's Catchem Filther's Kaneda Werkstuecktraeger Whley Whley's filt nloop Basscycle spr -->
 
 **Date:** 2026-11-24
 **Issue:** SEG-109 (related: SEG-57, Segno's own instrument voices)
@@ -206,7 +206,10 @@ written from it.
   feedback, r × (1 + 1/3.3), cancels it at resonance 1, so the section is
   a state-variable low-pass with damping 1.12 (1 − r) plus the cubic in
   the resonance path; sixth-octave levels within 1.4 dB rms on Live's
-  filter I renders.
+  filter I renders. The cubic's input is the band state × 1.7
+  **[measured]**: self-oscillation on noise at resonance 1 within 0.2 dB
+  of Live's level (× 1.4 gave 0.64 dB loud), and two saws at Gain 2 into
+  resonance 0.7 (round 19) tf 2.0 to 1.8.
 - Type II: two nonlinear sections in series with a diode-style shaper in
   each feedback path, two fixed iterations per sample, input gain × 3,
   resonance curve q = 4r/(3r + 1) + 4·max(r − 1, 0)² with a limiter at high
@@ -348,7 +351,14 @@ written from it.
   - Poly: one voice per note. PolyVoiceDepth has no effect.
   - Mono: four voices on one note at 0, −12, −12 and −24 semitones; Thickness
     fades the three lower voices in one after another across the knob's
-    thirds; mode gain about −1 dB.
+    thirds; mode gain about −1 dB. Each lower voice plays as the note it
+    sounds (12 or 24 below) for key tracking, the Key source and the
+    per-key drift **[measured]**: Live's Mono presets (Rogue tf 3.0 to
+    1.7, Seventy Two Bass 3.9 to 3.2, Sol Bass's level 0.9 to 0.1 dB:
+    its noise through filter II peaks where the sub lanes' key tracking
+    puts it). Round 21's Mono handoffs (releases of 0.1 to 2 s, gaps of 0
+    and 0.3 s, Thickness 0 to 1, chords, held notes, Legato) all match
+    already, so the handoff itself is right.
   - Stereo: two voices per note (16 notes at most); Spread's law is
     **[open]**.
   - Unison: four voices per note (8 notes at most), the left side sharp:
@@ -552,6 +562,33 @@ What the strict score still fails, and why **[measured]**:
   failing: Chirp Pluck and Clob Bass, the Mono presets Sol Bass, Seventy Two Bass, Rogue
   and Crunch Arcade (tf 3 to 4.5), Metallic Strings (random Sample & Hold),
   and filter I at a hot input with resonance (`drv-f1-g4-r07`, 2.0).
+- Held-out breakdown (2026-11-26, 49 of 89 passing, five Live copies of
+  each random preset): of the 40 failures 17 are random (noise or Sample
+  & Hold) and 23 deterministic; 21 are Stereo, 7 Mono, 7 Unison, 5 Poly.
+  The worst third-octave segment is the C3 in 12, the triad in 15 and
+  the C5 in 13; averaged over a segment the spectra mostly agree within
+  2 dB, so most failures sit in the time structure: beating between
+  lanes and oscillators (Echo Bells, Transistor Reeds), low-frequency
+  side signal in Stereo (Toy Helicopter's triad), release tails (Darkened
+  and Slow Roll Strings: a 100 Hz component in Live's tails that Segno
+  lacks, 30 dB down) and the Mono presets (Seventy Two Bass, Rogue,
+  Crunch Arcade, Gear Shift, Sol Bass, AG Bass). Round 21 isolates Mono
+  note handoff.
+- Round 22 (2026-11-26): the oscillators' starting phases match Live's
+  within 0.01 cycle on every note **[measured]**: sines around the
+  filters, Osc 1, Osc 2 and both, a fresh voice, the same voice after 0.5
+  and 2 s, Reset Oscillator Phase on and off, Poly and Stereo, with the
+  voice's block idle or running, at Drift Depth 0 and 1. So the beating
+  differences in Echo Bells and Transistor Reeds do not come from the
+  start phases. Toy Helicopter's triad alone (and with each oscillator
+  alone) matches; its failure appears only after the D2, and is not the
+  idle voices turning nor the synced LFO's restart. Clob Bass's stereo
+  error is the noise in quiet bands (its noise-only isolation fails only
+  in bands 15 to 35 dB down, where the noise's own fluctuation rules).
+  Live's Sample & Hold is the same in every instance (Metallic Strings'
+  and Numan Keystrike's Live copies differ by tf 0.06 and 0.00), so those
+  draws are deterministic in Live; matching them would take Live's own
+  random sequence, which only the code shows: a decision for the owner.
 - Round 16 settled two questions. Live's drift is the same in every
   instance: three Live renders of one Drift Depth patch, each a fresh
   device, correlate 1.0000. And Bloom Pad's filter peak came from key
@@ -866,7 +903,14 @@ where the reading was silent or disagreed. Segno's implementation is
   expected). **[measured: rndpan-a, -b; the held-out copies; round 9
   rndpan-100 and its copies]**
 - Pan is equal-power, unity at the centre (√2 cos and √2 sin); key and
-  random pan are latched at the note. **[code]** **[measured]**
+  random pan are latched at the note. **[code]** **[measured]** With
+  Spread, a fixed pan scales each one-channel voice by the same law
+  (+0.5: left −5.3 dB, right +2.3; ±1 silences a side), but each of the
+  two voices draws its own random pan: Live's per-note power over both
+  channels moves from −7.7 to +3 dB (a shared pan would hold it), and no
+  channel goes silent in 36 notes at 50 %. Fizzling Pad goes from 10.3 to
+  6.6 dB, Warble Rhythm Noise Pad from 6.5 to 4.8. **[measured: round 10
+  spr-pan-p05, -p1, -m1, spr-rndpan-50 and its copies]**
 
 ### The fits so far
 
@@ -952,6 +996,28 @@ scores only the first note, against Live's three copies: Live's own
 first-note pans differ from copy to copy (Bells Fifths +0.52, −0.32,
 +0.03), so a small Live spread there (Pitchy Release Pluck +0.55, +0.49,
 +0.59) is chance in three draws, which Segno's three seeds cannot match.
+
+With five Live copies of each random held-out preset (39 of 67 pass), the
+random failures split in two. Where Segno varies far more than Live
+(Fizzling Pad: Segno's seeds 12.5 dB apart, Live's copies 4.8; Warble
+Rhythm Noise Pad's attack 11.5 against 1.6), the cause is random pan
+with Spread: Segno pans each of Spread's two one-channel voices, so a
+draw near a side silences a channel (Segno's first Fizzling note −125 dB
+on the right), while Live's copies are never more than 13 dB apart.
+Placing each voice at ∓1 plus the pan brings Fizzling Pad to 3.6 dB with
+its seeds 2.5 apart, but leaves its stereo width 3.8 dB off, so neither
+law is Live's; round 10 (`segno-op-fit10`, 12 renders) pans Spread
+fixed, by key and at random. Where the spreads agree and the score does
+not (Nebulae Keys 2.6 against 0.9, Glass Wah Pad's stereo), the cause is
+deterministic. The deterministic Spread presets that fail on stereo
+(Major 3rd Lead, Full Perc Pluck, Tesseract) do so below 160 Hz only, in
+bands 40 to 60 dB under the loudest: onset and release transients, and
+Tesseract's self-oscillation, where Live's two voices ring less in phase
+than Segno's; round 10's three copies of it are identical, so Live's
+self-oscillation is not random. Basscycle Aftertouch's
+pitch error is the tracker on a 23 Hz fundamental beating with Spread
+(rounding its velocity Coarse down instead is 2.6 dB worse); Wobbly Flag
+Bass is MS2 driven at a 30 Hz cutoff, the open drive case.
 
 - OSR self-oscillating near its input's pitch (17 cents at a 300 Hz
   cutoff on a 262 Hz sine; the input level moves the pull little and the
