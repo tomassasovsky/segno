@@ -435,6 +435,60 @@ static void test_analog_stretch(void) {
   }
 }
 
+/* The keyboard pitch goes through the engine's cubic 2^x: a G4 sits 1.15
+ * cents sharp of equal temperament against the C4 (fit: a mono G4). */
+static void test_analog_key_pitch(void) {
+  printf("test_analog_key_pitch\n");
+  enum { N = 48000 };
+  static float l[N], r[N];
+  const double g4 = opr_note_hz(67) * pow(2.0, -0.98 / 1200.0);
+  analog_reference(&g_analog);
+  CHECK(le_analog_note_on(&g_analog, 1, 67, 127, 0) == 0);
+  le_analog_render(&g_analog, l, r, N);
+  CHECK(opr_component(l, N, g4 * pow(2.0, 1.15 / 1200.0)) > opr_component(l, N, g4) + 0.01 * kAnalogSinePeak);
+}
+
+/* The pitch envelope at full depth: the oscillator's first 40-sample tick
+ * ramps its period from the unmodulated one, so a C-1 sine swept 6
+ * octaves first crosses zero after about 104 samples (fit: penv-1-t015,
+ * Live's first crossing at 102). */
+static void test_analog_pitch_envelope(void) {
+  printf("test_analog_pitch_envelope\n");
+  enum { N = 4800 };
+  static float l[N], r[N];
+  analog_reference(&g_analog);
+  analog_chain(&g_analog, 0, LE_ANALOG_OSC_OCT, -3.0f);
+  analog_chain(&g_analog, 0, LE_ANALOG_OSC_ENV_AMOUNT, 1.0f);
+  analog_chain(&g_analog, 0, LE_ANALOG_OSC_ENV_TIME, 0.15f);
+  CHECK(le_analog_note_on(&g_analog, 1, 36, 127, 0) == 0);
+  le_analog_render(&g_analog, l, r, N);
+  int32_t cross = 0;
+  for (int32_t i = 40; i < N - 1 && cross == 0; ++i) {
+    if ((l[i] > 0.0f) != (l[i + 1] > 0.0f)) cross = i;
+  }
+  CHECK(cross > 96 && cross < 112);
+}
+
+/* A free-running amp envelope ignores the key's release: it runs its
+ * attack and decay as it would held. */
+static void test_analog_free_run(void) {
+  printf("test_analog_free_run\n");
+  enum { N = 9600 };
+  static float a[N], b[N], r[N];
+  for (int32_t k = 0; k < 2; ++k) {
+    analog_reference(&g_analog);
+    analog_chain(&g_analog, 0, LE_ANALOG_AMP_ENV + LE_ANALOG_ENV_FREE_RUN, 1.0f);
+    analog_chain(&g_analog, 0, LE_ANALOG_AMP_ENV + LE_ANALOG_ENV_DECAY, 0.4f);
+    analog_chain(&g_analog, 0, LE_ANALOG_AMP_ENV + LE_ANALOG_ENV_SUSTAIN, 0.5f);
+    float* x = k == 0 ? a : b;
+    CHECK(le_analog_note_on(&g_analog, 1, 60, 127, 0) == 0);
+    le_analog_render(&g_analog, x, r, 480);
+    if (k == 1) le_analog_note_off(&g_analog, 1);
+    le_analog_render(&g_analog, x + 480, r, N - 480);
+  }
+  CHECK(memcmp(a, b, sizeof(a)) == 0);
+}
+
 /* ---- the engine: a slot playing Analog ---- */
 
 static void test_engine_analog_slot_matches_offline(void) {
@@ -536,6 +590,9 @@ static void run_analog_tests(void) {
   test_analog_oscillator_start();
   test_analog_mono_retrigger();
   test_analog_stretch();
+  test_analog_key_pitch();
+  test_analog_pitch_envelope();
+  test_analog_free_run();
   test_engine_analog_slot_matches_offline();
   test_engine_analog_params_and_switching();
   test_engine_analog_midi();
