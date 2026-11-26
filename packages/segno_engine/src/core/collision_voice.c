@@ -372,7 +372,17 @@ static le_collision_voice* oldest(le_collision* d, int32_t state) {
  * hard C5 starts centred in all five, on a slot never played, not on the
  * ended C3's, whose pan its LFO had moved hard left); past them, or when
  * none is free, as before. */
-static le_collision_voice* free_slot(le_collision* d) {
+static le_collision_voice* free_slot(le_collision* d, int32_t note) {
+  /* Retrigger (Smart) first takes the free slot that last played this key
+   * (fit: va8-smart's repeated C2 and C6 start at their own pan at once,
+   * where Retrigger off, va8-rr, ramps in on a new slot) */
+  if (vi(d, LE_COLLISION_RETRIGGER)) {
+    const int32_t count = voice_count(d);
+    for (int32_t i = 0; i < count; ++i) {
+      le_collision_voice* v = &d->voices[i];
+      if (v->state == LE_COLLISION_VOICE_FREE && v->serial != 0 && v->note == note) return v;
+    }
+  }
   {
     le_collision_voice* o = NULL;
     const int32_t count = voice_count(d);
@@ -686,7 +696,20 @@ static void start_voice(le_collision* d, le_collision_voice* v, uint32_t origin,
   v->quiet = 0;
   v->tick_left = 0;
   if (fresh) {
-    v->rng = 0x2545f491u ^ (uint32_t)(v->serial * 2654435761u);
+    {
+      /* each strike's own stream: the serial hashed (a 32-bit finalizer),
+       * since the generator's first draws from seeds a multiple of the
+       * serial apart came out alike (Hit < Random's offsets on consecutive
+       * strikes 1.13, 1.07, 1.25 normal units), where Live's strikes draw
+       * from one running stream */
+      uint32_t h = 0x2545f491u ^ (uint32_t)(v->serial * 2654435761u);
+      h ^= h >> 16;
+      h *= 0x7feb352du;
+      h ^= h >> 15;
+      h *= 0x846ca68bu;
+      h ^= h >> 16;
+      v->rng = h;
+    }
     memset(&v->pulse, 0, sizeof(v->pulse));
     memset(&v->mnoise, 0, sizeof(v->mnoise));
     memset(&v->nf1, 0, sizeof(v->nf1));
@@ -810,7 +833,7 @@ int32_t le_collision_note_on(le_collision* d, uint32_t origin, int32_t note, int
     fade_voice(o);
     d->stolen++;
   }
-  v = free_slot(d);
+  v = free_slot(d, note);
   if (v != NULL) start_voice(d, v, origin, note, velocity, 1);
   return 0;
 }
