@@ -259,7 +259,13 @@ written from it.
   negative side rises again with slope 1 to a hard edge at -1.6 (the
   code's ±1.6 clip of the sum) **[measured]**: a saw at Gain 2 and two at
   Gain 2 into filter II at resonance 0 (round 19), harmonics within 1 dB
-  rms (held at the knee, harmonics 2 to 5 were 2 to 5 dB low). The path around
+  rms (held at the knee, harmonics 2 to 5 were 2 to 5 dB low). Round 24
+  then showed that the negative side has no knee at all: it stays linear
+  to the hard edge at -1.6 **[measured]**. With the knee at -0.98, a
+  rectangle at Gain 1.5 and two rectangles summed to 1.5 into filter II
+  (`sq1-f2`, `sq2-f2*`) came out 0.8 dB quiet. Without it they are within
+  0.05 dB, round 19's hot saws go from tf 0.7 to 0.05, and Majestic FM
+  Bells and Slip Sliding go from 0.6 and 0.8 dB quiet to within 0.2 dB. The path around
   the filters is about 1.8 dB louder for the oscillators than for the
   noise. **[fitted]**
 - High-pass: a linear 2-pole state-variable filter, Q about 1.47 (a small
@@ -374,11 +380,17 @@ written from it.
   attack keeps its tail below 0.001 while the triad holds its block
   (Darkened Strings 2.5 to 0.5, Slow Roll Strings 2.3 to 0.5); round 19's
   filter II notes with Reset on start from rest (`drv-f2-*-r0`, tf 0.02
-  either way only with the reset). Not yet settled (round 24): whether a
-  stopped block's filter state decays while it waits (Airfare Bass's
-  triad starts between the held state and rest: tf 1.0 from rest, 1.5
-  held) and what a voice never played feeds its filter with (Floot Bass's
-  triad starts about half as hot as Live's).
+  either way only with the reset). Round 24 confirmed this on isolations:
+  a never-played voice's filter state, a voice restruck after 0.05 to
+  2.5 s with its block stopped, the same with the block running, filter
+  I, Reset on and the release tail below 0.001 all pass (`fs-*`). A
+  stopped block holds its state: letting the filters ring down with no
+  input changed none of those renders and took `fs-idle-g030-hp` from
+  tf 2.3 to 11. That render (high-pass at 200 Hz, restruck after 0.3 s)
+  is the one still failing: Live's restart jumps to +0.30 with a sharp
+  step, Segno's rises from +0.12. Clearing the high-pass at the note
+  made it worse (4.1). Airfare Bass, Floot Bass and Vanguard Brass stay
+  open.
 - With ResetOscillatorPhase on, a note on a sounding voice waits for a fast
   fade-out, then starts with reset phases; with it off, the note starts at
   once and the envelope continues from its level. **[code]** Measured: the
@@ -462,6 +474,13 @@ written from it.
   selects Drift Depth's per-voice tables (see above) **[measured]**. The
   preset reader must pass `Global_SerialNumber` as the device parameter
   `LE_DRIFT_SERIAL_NUMBER` (integer, 0..8388607).
+- Glide starts from the pitch the voice holds: a sounding voice (legato,
+  a restrike, notes struck in the same sample), and in Mono also a voice
+  whose last note has ended **[measured]**. Round 24's Mono chord after a
+  note that ended 0.5 s before (`gl-mono-chord`, `-leg`) went from tf 3.0
+  to 0.2; gliding only between the chord's own notes gave 1.8. A free
+  Poly voice still starts on its note (`gl-poly-chord`). Held-out Rogue
+  went from 1.88 to 1.37.
 - Glide: a one-pole in hertz (not in pitch) with time constant 0.144 x
   Glide **[measured]**: on Live's octave glides at 0.5, 1 and 2 s the
   distance to the new note in hertz falls by the same ratio every 50 ms,
@@ -683,6 +702,34 @@ What the strict score still fails, and why **[measured]**:
   into filter II) has its second harmonic 14 dB too strong. Neither a
   symmetric positive clip nor an inverted rectangle fits (both far
   worse), so the input clip's shape for square sums is open (`sq*`).
+- Round 24 (50 renders, 2026-11-26): 32 of 50 passed as built; with the
+  two changes it confirmed, 39. Confirmed: the silent-voice model
+  (`fs-*`, all passing but `fs-idle-g030-hp`); a stopped block holds its
+  filter state (the ring-down candidate rejected); Mono glides from its
+  last note after it ended (`gl-*`, adopted); the negative side of the
+  filter input has no knee (`sq*`, adopted; see Filters). Strict score
+  with five seeds: 408 of 440 fit (366 to 369 of the 390 scored before,
+  none lost; round 24 32 to 39), factory presets 4 of 5; held-out 67 to
+  69 of 89 (Rogue, Majestic FM Bells and Slip Sliding pass; Echo Pulse,
+  a random preset, went from 2.04 to 2.06 against its limit). Still
+  open:
+  - Filter I at resonance 1 with a loud saw (`f1s-*`, Seventy Two Bass):
+    Live shows no ringing peak at the cutoff, only a broad plateau, where
+    Segno peaks 14 to 22 dB above it at harmonics 30 to 32 (2 kHz). A
+    stronger resonance shaper (drive 1.7 to 2.5) halves the peak and
+    passes Seventy Two Bass (2.24 to 1.48), but drops the self-oscillation
+    on noise (`f1-1k-r1`) 1.8 dB, so the limiting has another shape.
+  - Audio-rate cutoff modulation: the cycling envelope in Ratio mode on
+    either filter passes (`am-cyc-*`), and so does a slow Square LFO
+    (`am-sqs-*`); a Square LFO at the note's frequency fails (`am-sq-f2`
+    tf 2.6, `am-sq-f1` 4.0) with its harmonics within 0.5 dB, the error
+    in bands below the note, where a slow beat sits. Inverting the square
+    or moving its start phase made it far worse. Metallic Strings
+    (`ms-held` 5.2) and Numan Keystrike (`nk-held` 4.7, 1.8 dB quiet)
+    stay open.
+  - Metallic Swell Pad: the triad and its version with velocity to
+    cutoff off pass (`msp-tri*`); one note at four velocities fails on
+    stereo and onset (`msp-vel`).
 - Round 16 settled two questions. Live's drift is the same in every
   instance: three Live renders of one Drift Depth patch, each a fresh
   device, correlate 1.0000. And Bloom Pad's filter peak came from key
