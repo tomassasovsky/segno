@@ -1,6 +1,6 @@
 # Ableton Live device presets on the pedal — brainstorm
 
-<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance kModBy kCarriers Celesta transconductances Bandpass Bitgrunge Csound Drivetime Extratone Filther Lofi Lowpass Megatripolis Minnaert Sawstyle Starchestra polyBLEP Metalic Formant formants Barney Asym quintic Wurli MKII Schroeder Fretless Balafon Glockenspiel Perc halvings Inharmonicity travelled Inharmonics atan Freq bilinearly penv mvol retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations filt voicecut Unisono pul meldfit Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penvd rndpan Bassic Bitgrunge's Catchem Filther's Kaneda Werkstuecktraeger Whley Whley's filt nloop avel fleg unmodulated retunes Basscycle rvol mnoise lr spr ccg Clav restruck restrikes restrike prewarping Floot Halfstep Gametal Plucks Neurotimbre sqperc unstepped unnormalized fenv scalings fmdrive oscvol unsmoothed relc colfm -->
+<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance kModBy kCarriers Celesta transconductances Bandpass Bitgrunge Csound Drivetime Extratone Filther Lofi Lowpass Megatripolis Minnaert Sawstyle Starchestra polyBLEP Metalic Formant formants Barney Asym quintic Wurli MKII Schroeder Fretless Balafon Glockenspiel Perc halvings Inharmonicity travelled Inharmonics atan Freq bilinearly penv mvol retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations filt voicecut Unisono pul meldfit Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penvd rndpan Bassic Bitgrunge's Catchem Filther's Kaneda Werkstuecktraeger Whley Whley's filt nloop avel fleg unmodulated retunes Basscycle rvol mnoise lr spr ccg Clav restruck restrikes restrike prewarping Floot Halfstep Gametal Plucks Neurotimbre sqperc unstepped unnormalized fenv scalings fmdrive oscvol unsmoothed relc colfm sidebands rescaling lphp -->
 
 **Date:** 2026-11-24
 **Issue:** SEG-109 (related: SEG-57, Segno's own instrument voices)
@@ -3176,10 +3176,20 @@ Meld. Segno's implementation is `collision_voice.c`.
   (of constant skirt: its peak gain is Q) or a low-pass and high-pass pair
   a width apart, under a linear ADSR, its cutoff moved by the envelope
   (Freq < Env octaves) and the routes. The filters are set at the strike
-  and when a knob moves; when the envelope or a route moves the cutoff,
-  they step to the new cutoff every 10 ms. **[code]** **[measured]** (Toy
-  Piano Bells 14.5 to 7.7 dB, noise-env 12.2 to 10.3, against a ramp
-  every 10 ms)
+  and when a knob moves, and step to the cutoff the envelope and the
+  routes give every 10 ms. **[code]** **[measured]** (Toy Piano Bells 14.5
+  to 7.7 dB, noise-env 12.2 to 10.3, against a ramp every 10 ms) Each
+  10 ms update restarts the filters from rest, their inputs and outputs
+  cleared, whether the cutoff moved or not (the update's condition holds
+  on the cutoff's route factor, which is 1); the restarts are the floor
+  far into the stopband that the high-pass and the low-pass showed.
+  **[code]** (the coefficient routine clears the four filter states when
+  called from the 10 ms update) In the LP + HP pair the low-pass runs
+  first. **[code]** The update runs every 480 samples from the strike.
+  **[measured]** (the reading counts 481 from the module's setup; 480
+  from the strike passes all seven dense-membrane high-pass renders,
+  dn-hp, dn-hp-f03, -f07, -q0, -q1, -att and -sus, six of which failed
+  without the restarts; 481 fails dn-hp-q0)
 
 ### Resonators
 
@@ -3289,6 +3299,14 @@ Meld. Segno's implementation is `collision_voice.c`.
   channels share one gain. **[measured]** (lim-lr, heard from two points:
   its channels peak at 8.3 and 6.0 before the limiter and take the same
   gain within 0.1 dB)
+- The Volume and Res 2 Input destinations ramp linearly across each
+  control tick (32 samples) from where the last tick left them; a slot's
+  first tick takes them at once. **[code]** (the mixer and the input gain
+  interpolate a control-rate gain across each block) Stepping them per
+  tick put a 1.5 kHz zipper on every tremolo: Vibes Mellow's and Tube
+  Harp's LFO on Volume left sidebands at k x 1.5 kHz +- the note 20 to
+  40 dB above Live's highs; with the ramp Vibes Mellow's 4 to 12 kHz band
+  falls as Live's within 3 dB. **[measured]**
 - Each resonator's volume and pan ramp to their values over 2 ms, from
   where the voice's last note left them; a voice never played starts at
   the knobs' own volume and pan, without the key's or the matrix's pan. A
@@ -3462,6 +3480,29 @@ too few strikes to change the formula. va8-smart and va8-rr settle the
 slot order (above); their ramps from the centre onto a slot never played
 match Live's within 0.6 dB in every 0.5 ms step, but no strike there ramps
 between two pans, so Bell Plate Long's 1/3 ms stays open.
+
+After round 8, from the engine's code and the fit renders (no new round).
+Scored by the rule of round 7 (Live's spread only across Live Sets) the
+previous commit passes 157 of 223 fit renders, 16 of the 33 factory
+presets, and 16 of 33 held out. The noise source's restarts (above) pass
+the seven dense-membrane high-pass renders and dn-bp and lose dn-lp-env
+(attack 5.1 against 5.0) and noise-lphp (a pitch track on noise); the
+ramped voice gain removes the tremolo's zipper, which no score sees (its
+sidebands sit about 80 dB under the note). Now 162 of 223, 16 of the 33 factory
+presets, and 16 of 33 held out (Bell Airy in, Toy Piano Bells out on its
+pitch track's spread over Segno's seeds, 40.9 cents against Live's
+cap of 39.2). Tried and not taken: tuning the strike's modes before the
+pitch envelope with the envelope's pitch at the next retune (every
+pitch-envelope render 5 to 14 dB off in level); a pan ramp that runs to
+its end before taking a new target (no render moved); the mallet noise's
+high-pass bypassed (the round-8 copies' random part moved under 1 dB at
+the low bands). Left as before: the mallet noise reached through its
+velocity routes (mn8-vel, mn8-s20k: Live's copies differ 4 to 8 dB more
+than Segno's seeds while their mean spectra agree within 1 dB, and the
+code shows the routes entering the noise amount and the stiffness exactly
+as the knobs do, so the cause is not in the mallet's own computation),
+the octave pitch sweep (the retune's state rescaling reads as Segno's),
+Tube Harp's low side and Bell Plate Long's pan ramp.
 
 
 ## Decisions

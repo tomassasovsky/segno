@@ -1,4 +1,4 @@
-<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Metalic Wurli MKII Schroeder Fretless Balafon Glockenspiel Perc halvings Inharmonicity travelled Inharmonics atan Freq bilinearly penv mvol retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations filt voicecut Unisono pul meldfit Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penvd rndpan Bassic Bitgrunge's Catchem Filther's Kaneda Werkstuecktraeger Whley Whley's filt nloop avel fleg unmodulated retunes Basscycle rvol mnoise lr spr ccg Clav restruck restrikes restrike prewarping prewarp Floot Halfstep Gametal Plucks Neurotimbre sqperc unstepped fenv scalings fmdrive oscvol unsmoothed relc colfm -->
+<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Metalic Wurli MKII Schroeder Fretless Balafon Glockenspiel Perc halvings Inharmonicity travelled Inharmonics atan Freq bilinearly penv mvol retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations filt voicecut Unisono pul meldfit Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penvd rndpan Bassic Bitgrunge's Catchem Filther's Kaneda Werkstuecktraeger Whley Whley's filt nloop avel fleg unmodulated retunes Basscycle rvol mnoise lr spr ccg Clav restruck restrikes restrike prewarping prewarp Floot Halfstep Gametal Plucks Neurotimbre sqperc unstepped fenv scalings fmdrive oscvol unsmoothed relc colfm sidebands rescaling lphp -->
 # Segno — Progress & Roadmap
 
 <!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs multicore smarttune -->
@@ -76,9 +76,10 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   marimba, string, membrane, plate as banks of up to 70 modes; pipe and
   tube as waveguides) in series or parallel, with two LFOs and the
   per-voice modulation matrix.
-- Fitted against 223 Live renders in eight rounds: 154 pass the strict
-  score with five seeds (32 of 92 at the start), 16 of the 33 factory
-  presets (1); the held-out round passes 17 of 33. Measured: the
+- Fitted against 223 Live renders in eight rounds: 162 pass the strict
+  score with five seeds and Live's spread taken across Live Sets only (32
+  of 92 at the start), 16 of the 33 factory presets (1); the held-out
+  round passes 16 of 33. Measured: the
   waveguides' read offset, the inverted Off Decay, the engine's grids for
   the mode shapes, the synced LFO lengths, an exponential pitch envelope,
   the chooser's pitch unit, a 1 ms look-ahead limiter at 1 after the
@@ -91,9 +92,12 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   down to its step. A new note takes the free slot whose last
   note is the oldest (with Retrigger on, the one that last played the
   key), a voice's Random LFO starts from a value it already holds, and
-  each strike's random stream is seeded through a hash. Left: the mallet
-  noise reached through its velocity routes and at the 20 kHz clamp, the
-  noise filters' stopband floors, an upward pitch sweep of an octave,
+  each strike's random stream is seeded through a hash. Read and
+  confirmed: the noise source's filters restarting from rest at every
+  10 ms update (their stopband floors), the voice gain and resonator 2's
+  input ramped across each control tick. Left: the mallet
+  noise reached through its velocity routes and at the 20 kHz clamp, an
+  upward pitch sweep of an octave,
   small stereo differences in weak bands on the held-out presets.
 - A voice costs 0.8 us per millisecond on the dev machine, two 70-mode
   resonators 1.4. A device holds 24 voices (1.7 MB).
