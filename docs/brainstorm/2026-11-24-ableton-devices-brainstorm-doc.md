@@ -1369,12 +1369,13 @@ are built from the same modules.
   on the string; the plectrum pushes only while it overlaps the string by
   less than its protrusion, and past that it has slipped by. Each starts
   0.1 mm behind the string as it stands. A hammer is parked once 1 m
-  behind its start and the plectrum 1 m past it; a hammer driven on into
-  the string stays on it. Mass, stiffness and speed are not held to any
+  behind its start while gravity takes it away (a bouncing hammer still
+  held falls back from any height and strikes again), the plectrum 1 m
+  past it; a hammer driven on into the string stays on it. Mass, stiffness and speed are not held to any
   range (velocity amounts take them 16 octaves either way). **[code]**
   **[measured]** (the bouncing hammer's re-strikes in round 4, the
   lightest hammer's level, Strat Muted Guitar, Nice Harp and the held-out
-  Slap Bass's hard C5)
+  Slap Bass's hard C5 and Moving String Pad's chord release)
 - The bow: a stick-slip junction, sticking within a zone around the bow's
   speed and released along a straight line (slope 10) back to the string's
   own velocity beyond it, lifted at the release. Its speed takes the

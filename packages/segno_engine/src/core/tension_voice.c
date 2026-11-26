@@ -696,10 +696,11 @@ static float string_tick(le_tension* d, le_tension_voice* v, int held) {
     *ea += 0.5f * f;
     *eb += 0.5f * f;
     v->ys_exc += (u + 0.5f * f) / rate;
-    /* parked 1 m behind its start (a hammer), or 1 m past it (the
-     * plectrum); a hammer driven on into the string stays on it [code]
-     * (Slap Bass's hard C5) */
-    if (moving ? c->y - c->y0 < -1.0 : c->y - c->y0 > 1.0) c->on = 0;
+    /* parked 1 m behind its start (a hammer, once gravity takes it away:
+     * a bouncing hammer still held falls back from any height), or 1 m
+     * past it (the plectrum); a hammer driven on into the string stays on
+     * it [code] (Slap Bass's hard C5; Moving String Pad's chord) */
+    if (moving ? c->grav < 0.0f && c->y - c->y0 < -1.0 : c->y - c->y0 > 1.0) c->on = 0;
   } else {
     v->ys_exc += u / rate;
   }
