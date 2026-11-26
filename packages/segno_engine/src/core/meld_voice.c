@@ -1393,6 +1393,16 @@ static void tick_copy(le_meld* d, le_meld_voice* v, le_meld_copy* cp) {
       en->amp_sustain = a->amp_sustain;
       en->mod_sustain = a->mod_sustain;
     }
+    /* a note's Amp attack takes the time the matrix sets at its first
+     * tick: an attack of 0 the matrix lengthens is played, not skipped.
+     * fit: aat-note-n67, -n72 and -n81 (Note into an attack of 0, 0.44)
+     * match Live's to the sample, tf 20.7 dB to 0 at A5 */
+    if ((v->since == 0 || (e == 1 && v->since == v->b_delay)) && en->amp.state == ENV_DECAY &&
+        en->amp.x == 0.0 && en->amp_dx[0] < 1.0f) {
+      const env_def ad = amp_def(d, e, en->amp_dx, en->amp_sustain);
+      en->amp.y = ad.initial;
+      env_enter(&en->amp, ENV_ATTACK, ad.initial, ad.peak);
+    }
     /* the LFOs, for the next tick's sources */
     const float r1 = lfo_rate(d, e, 0, m.sum[T_LFO1_RATE]);
     lfo1_tick(&en->lfo1, d, e, r1, ef(d, e, LE_MELD_E_LFO1_MACRO1) + m.sum[T_LFO1_M1],
@@ -1448,11 +1458,11 @@ static void render_voice(le_meld* d, le_meld_voice* v, float* left, float* right
   const int limiter = vi(d, LE_MELD_LIMITER);
   const float att = 1.0f - expf(-1.0f / (0.01f * rate));
   const float rel = 1.0f - expf(-1.0f / (0.1f * rate));
-  /* fit: Live's output sits 0.0206 dB below 0.5 x Volume (Live / Segno
-   * 0.99763 in every render: plain shapes, pan, unison, drive) */
-  const float out_gain = 0.4988165f * vf(d, LE_MELD_VOLUME) / sqrtf((float)v->copies);
+  const float out_gain = 0.5f * vf(d, LE_MELD_VOLUME) / sqrtf((float)v->copies);
   /* the end check's level: the reading's 0.0002 on the voice's |L + R|,
-   * before the device's 0.5 x Volume (fit below) */
+   * before the device's 0.5 x Volume (fit below: nloop-55-vol05 ends each
+   * note on the sample nloop-55-notes does, so the level scales with
+   * Volume) */
   const float quiet_level = 0.0001f * vf(d, LE_MELD_VOLUME);
   const float fade_step = 1.0f / (0.001f * rate);
   /* the output gains follow the matrix through a one-pole of 4.8 ms
