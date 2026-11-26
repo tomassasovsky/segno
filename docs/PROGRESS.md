@@ -1,4 +1,4 @@
-<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated autocorrelation tfz unmeasured retriggered isolations Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Perc Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penv penvd rndpan Basscycle -->
+<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated autocorrelation tfz unmeasured retriggered isolations Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Perc Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penv penvd rndpan Basscycle spr -->
 # Segno — Progress & Roadmap
 
 <!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs multicore smarttune -->
@@ -129,6 +129,9 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   a releasing envelope ends at 10^-3 and its voice a block later, a chord
   joining a voice that took a sounding one's place does not glide. 365 of
   419 fit renders, 8 of 10 presets; held out 38 of 67.
+- Round 10: each of Spread's two voices draws its own random pan (a fixed
+  pan scales them by one law). 371 of 427 fit renders, 8 of 10 presets;
+  held out 39 of 67 (five Live copies per random preset).
 - A voice costs 2.7 us per period at 48 kHz on the dev machine, 4.5 with
   Antialias (a Drift voice 7.1).
 

@@ -1,6 +1,6 @@
 # Ableton Live device presets on the pedal — brainstorm
 
-<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance kModBy kCarriers Celesta transconductances autocorrelation tfz unmeasured retriggered isolations Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Perc Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penv penvd rndpan Basscycle -->
+<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance kModBy kCarriers Celesta transconductances autocorrelation tfz unmeasured retriggered isolations Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Perc Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penv penvd rndpan Basscycle spr -->
 
 **Date:** 2026-11-24
 **Issue:** SEG-109 (related: SEG-57, Segno's own instrument voices)
@@ -866,7 +866,14 @@ where the reading was silent or disagreed. Segno's implementation is
   expected). **[measured: rndpan-a, -b; the held-out copies; round 9
   rndpan-100 and its copies]**
 - Pan is equal-power, unity at the centre (√2 cos and √2 sin); key and
-  random pan are latched at the note. **[code]** **[measured]**
+  random pan are latched at the note. **[code]** **[measured]** With
+  Spread, a fixed pan scales each one-channel voice by the same law
+  (+0.5: left −5.3 dB, right +2.3; ±1 silences a side), but each of the
+  two voices draws its own random pan: Live's per-note power over both
+  channels moves from −7.7 to +3 dB (a shared pan would hold it), and no
+  channel goes silent in 36 notes at 50 %. Fizzling Pad goes from 10.3 to
+  6.6 dB, Warble Rhythm Noise Pad from 6.5 to 4.8. **[measured: round 10
+  spr-pan-p05, -p1, -m1, spr-rndpan-50 and its copies]**
 
 ### The fits so far
 
@@ -969,7 +976,8 @@ deterministic. The deterministic Spread presets that fail on stereo
 (Major 3rd Lead, Full Perc Pluck, Tesseract) do so below 160 Hz only, in
 bands 40 to 60 dB under the loudest: onset and release transients, and
 Tesseract's self-oscillation, where Live's two voices ring less in phase
-than Segno's (round 10 repeats it three times). Basscycle Aftertouch's
+than Segno's; round 10's three copies of it are identical, so Live's
+self-oscillation is not random. Basscycle Aftertouch's
 pitch error is the tracker on a 23 Hz fundamental beating with Spread
 (rounding its velocity Coarse down instead is 2.6 dB worse); Wobbly Flag
 Bass is MS2 driven at a 30 Hz cutoff, the open drive case.
