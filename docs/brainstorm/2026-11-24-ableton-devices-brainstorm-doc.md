@@ -1678,7 +1678,8 @@ Tags as for Meld. Segno's implementation is `analog_voice.c`.
   **[code]** **[measured]** (T's curve, the chords)
 - Unison: the copies sit 0, +1, -1, +2 steps from the note, a step of
   ExpZ(0.001, 1) octaves on 127 times the stored value (0.379 semitone at
-  0.5, an octave at 1); they start ExpZ(0.002, 0.1) s apart. A copy's
+  0.5, an octave at 1); copy k starts k times ExpZ(0.002, 0.1) s after
+  the note (uni4-dly-100's copies enter at 0.1, 0.2 and 0.3 s). A copy's
   offset goes through the engine's cubic 2^x (exact at whole octaves, up
   to 1.3 cents sharp between), which puts the lower copy 0.3 cent sharp
   as the renders show. Vibrato: Lin(0.25, 10) Hz, each cycle's rate off by
@@ -2045,6 +2046,44 @@ envelope carried into a voice's next notes (negative and positive depth,
 poly and mono, and Legato off), the LFO rate at eleven more knob
 positions, and which device voice a note takes (a free LFO on pitch with
 steals, idle voices and overlapping notes on 2 and 4 voices).
+
+The held-out round with Live's own copies (segno-analog-val3, val4):
+
+- Of the held-out presets random on Segno's side, Bright Thin Sweep Pad,
+  Charry Pad, Dual OSC
+  Plastic Bass, E-Piano Muted Pure, Fifth Pad, Movie Pad, Organ Octaves
+  Slow, Overtones, Rhythmic Iron, Dual OSC Sample & Hold Bass, the three
+  S&H presets and Synth Organ Long Release now pass tf within Live's
+  spread; they fail on attack,
+  stereo, pitch or level, where Live's copies agree with each other more
+  than Segno's seeds do. Kick Complex Perc, Saw Complex Bass and Dual OSC
+  Rubber Bass are deterministic in Live (tf spread 0.2 to 0.4).
+- The unison delay is the shared cause of four of the eight held-out
+  presets that already fail on the quiet C3 (Saw Filter Bass, Dual OSC
+  Muted Sweep Lead, Accordion Unisono Pad, Strings Detuned Pad). With 4
+  copies Live starts copy k at k delays (uni4-dly-100); Segno now does.
+  The delay itself is not read yet: separating uni2-dly-050-sine's two
+  sines puts copy 2 110 samples (mod a 734-sample period) behind copy 1,
+  where Segno's ExpZ(0.002, 0.1) gives 679; the saw renders' combs fit a
+  copy delay of 843 samples with a saw phase offset of -0.19 cycle, but
+  the 0.75 and 1.0 renders do not fit that law. segno-analog-fit8 reads
+  it directly.
+- Kick Complex Perc's triad on two voices: stealing the newest held voice
+  instead of the oldest takes its round-6 render from 3.4 to 2.9 dB but
+  Rhythmic Octaves Bass from 10.2 to 12.9; segno-analog-fit8 plays the
+  steal cases alone.
+- Organ Church Slow's triad lacks 12.6 dB above 10 kHz, where chain 2's
+  key-tracked high-pass at Q 100 sits at 12 to 18 kHz; neither a cutoff
+  without prewarping (worse, 4.7 dB) nor a higher Q clamp moves it. Open.
+
+segno-analog-fit8 (40 renders, built, to be exported): the unison delay
+on a C-1 sine with 2 copies at ten delay settings and 4 copies at three
+(each copy readable by subtracting the ones before it), a saw and a
+rectangle at three and two settings (their phase against the sine's); the
+free LFO's run-on on one mono voice with gaps of 50 ms to 0.8 s, with a
+long release, on two voices, and a sine LFO; a third note's steal (three
+keys together, in sequence, one released); Kick Complex Perc on a C4, a
+C5, a triad and a dyad; Saw Pure Muted Bass on a C3, a C5, and a soft C5.
 
 ## Tension: behavior
 
@@ -2447,6 +2486,7 @@ Live, and before the first 0.1 s the two taps give the same signal.
 With round 8: 279 of 322 fit renders pass (rounds 1 to 7 unchanged at 248,
 round 8 31 of 37), 44 of the 67 factory-preset renders; held-out 77 of 107
 (Electric Basic Bass and Meow Keys now pass).
+
 
 ## Decisions
 
