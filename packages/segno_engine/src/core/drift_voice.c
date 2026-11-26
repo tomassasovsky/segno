@@ -1314,9 +1314,10 @@ static float cubic_clip(float v) {
  * bounds the ringing and self-oscillation past 1. Above resonance 1 the
  * resonance is pulled back as the cutoff rises past 0.075 of the rate.
  * Fitted on Live's filter I renders: base damping 1.12, the shaper's
- * input x1.4, output gain 2.90 (a sine within 0.1 dB); sixth-octave
- * levels within 2.6 dB rms on average (the fitted state-variable filter it
- * replaces: 3.0). */
+ * input x1.7 (self-oscillation on noise at resonance 1 within 0.1 dB of
+ * Live's level; it was x1.4, 0.64 dB loud), output gain 2.90 (a sine
+ * within 0.1 dB); sixth-octave levels within 2.6 dB rms on average (the
+ * fitted state-variable filter it replaces: 3.0). */
 static float filter1(float* s, float x, float fc, float r, float rate,
                      uint32_t* rng) {
   const float g = prewarp(PI_F * fc / rate);
@@ -1325,7 +1326,7 @@ static float filter1(float* s, float x, float fc, float r, float rate,
       0.001f, r / (1.0f + 3.0f * fmaxf(f - 0.075f, 0.0f) * fmaxf(r - 1.0f, 0.0f)));
   const float k0 = 2.0f * 1.12f;
   const float kr = k0 * rp; /* the resonance's share of the damping */
-  const float d = 1.4f;     /* into the shaper */
+  const float d = 1.7f;     /* into the shaper */
   const float b = s[2];
   x += 2e-5f * rnd_bipolar(rng);
   x += kr * (cubic_clip(b * d) / d - b);

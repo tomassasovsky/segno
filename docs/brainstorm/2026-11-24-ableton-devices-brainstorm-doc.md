@@ -206,7 +206,10 @@ written from it.
   feedback, r × (1 + 1/3.3), cancels it at resonance 1, so the section is
   a state-variable low-pass with damping 1.12 (1 − r) plus the cubic in
   the resonance path; sixth-octave levels within 1.4 dB rms on Live's
-  filter I renders.
+  filter I renders. The cubic's input is the band state × 1.7
+  **[measured]**: self-oscillation on noise at resonance 1 within 0.2 dB
+  of Live's level (× 1.4 gave 0.64 dB loud), and two saws at Gain 2 into
+  resonance 0.7 (round 19) tf 2.0 to 1.8.
 - Type II: two nonlinear sections in series with a diode-style shaper in
   each feedback path, two fixed iterations per sample, input gain × 3,
   resonance curve q = 4r/(3r + 1) + 4·max(r − 1, 0)² with a limiter at high
@@ -552,6 +555,18 @@ What the strict score still fails, and why **[measured]**:
   failing: Chirp Pluck and Clob Bass, the Mono presets Sol Bass, Seventy Two Bass, Rogue
   and Crunch Arcade (tf 3 to 4.5), Metallic Strings (random Sample & Hold),
   and filter I at a hot input with resonance (`drv-f1-g4-r07`, 2.0).
+- Held-out breakdown (2026-11-26, 49 of 89 passing, five Live copies of
+  each random preset): of the 40 failures 17 are random (noise or Sample
+  & Hold) and 23 deterministic; 21 are Stereo, 7 Mono, 7 Unison, 5 Poly.
+  The worst third-octave segment is the C3 in 12, the triad in 15 and
+  the C5 in 13; averaged over a segment the spectra mostly agree within
+  2 dB, so most failures sit in the time structure: beating between
+  lanes and oscillators (Echo Bells, Transistor Reeds), low-frequency
+  side signal in Stereo (Toy Helicopter's triad), release tails (Darkened
+  and Slow Roll Strings: a 100 Hz component in Live's tails that Segno
+  lacks, 30 dB down) and the Mono presets (Seventy Two Bass, Rogue,
+  Crunch Arcade, Gear Shift, Sol Bass, AG Bass). Round 21 isolates Mono
+  note handoff.
 - Round 16 settled two questions. Live's drift is the same in every
   instance: three Live renders of one Drift Depth patch, each a fresh
   device, correlate 1.0000. And Bloom Pad's filter peak came from key

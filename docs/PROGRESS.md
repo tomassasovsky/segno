@@ -124,6 +124,11 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   Morning, Synth on Screen, Grimer Bass and Game Console now pass. Strict
   score 318 of 351 (rounds 19 and 20 included), factory presets 3 of 5;
   held-out 47 of 89.
+- Filter I's resonance shaper drive fitted (self-oscillation level within
+  0.2 dB, the long-open f1-1k-r1): 319 of 351; held-out 49 of 89 with
+  five Live copies per random preset (17 of its 40 failures random, 23
+  deterministic, most in time structure: beating, Stereo side, release
+  tails, Mono). Round 21 is built for Mono note handoff.
 
 ## November 2026 Drift's filter II as an MS-20 circuit model (SEG-109 P4, round 4)
 
