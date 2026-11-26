@@ -22,8 +22,12 @@
 #define LE_OSR_IN 2.59076f    /* the signal into the circuit, in volts */
 #define LE_OSR_G 1.00934f     /* the cutoff calibration */
 #define LE_OSR_VK 0.5f        /* fit: the diode's knee, volts */
+#ifndef LE_OSR_DK /* a device may set its own fit before including this */
 #define LE_OSR_DK 1.0f        /* fit: its conductance above the knee */
+#endif
+#ifndef LE_OSR_KAPPA /* a device may set its own fit before including this */
 #define LE_OSR_KAPPA 0.1915f
+#endif
 #define LE_OSR_RAIL 20.0f     /* fit: the input stage saturates far above
                                * the 5 V rails the reading names */
 #define LE_OSR_STATES 5

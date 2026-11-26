@@ -48,7 +48,7 @@ enum {
  * rate / 2044 Hz (23.5 Hz at 48 kHz, 47 at 96) and hold there below */
 #define LE_MELD_COMB_LEN 2048
 #define LE_MELD_MODES 32
-#define LE_MELD_FORMANTS 5
+#define LE_MELD_FORMANTS 4
 
 typedef struct le_meld_filter {
   int32_t type;
