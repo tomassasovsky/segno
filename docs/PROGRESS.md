@@ -253,6 +253,10 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
 - Round 10: each of Spread's two voices draws its own random pan (a fixed
   pan scales them by one law). 371 of 427 fit renders, 8 of 10 presets;
   held out 39 of 67 (five Live copies per random preset).
+- Round 11: OSR damped at resonance 1 (no self-oscillation there) and
+  without drive in Morph mode; Spread draws nothing per voice beyond its
+  pans, the truncated table read and the sample-and-hold LFO match Live.
+  387 of 452 fit renders, 8 of 10 presets; held out 39 of 67.
 - A voice costs 2.7 us per period at 48 kHz on the dev machine, 4.5 with
   Antialias (a Drift voice 7.1).
 
@@ -326,6 +330,12 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   Sol Bass 4.5 to 4.2, held-out Gear Shift passes, AG Bass, Rogue and
   Sol Bass close. Strict score 335 of 370 (round 21 included), factory
   presets 3 of 5; held-out 50 of 89.
+- Round 22: the oscillators' start phases already match Live's. Sample &
+  Hold and Wander now follow the reader's description of Live's
+  generator and its stepping (every voice tick, two steps at a block
+  reset and at a retriggered note, the starting lane taking lane 0's
+  values). Strict score 354 of 390 (round 22 included); round 23 is
+  built for Stereo voice pairing.
 
 ## November 2026 Drift's filter II as an MS-20 circuit model (SEG-109 P4, round 4)
 

@@ -15,7 +15,7 @@
 #include "ms2_section.h"
 /* Operator's OSR fit (round 9: self-oscillation level within 0.6 dB, pitch within
  * 1 cent at 100 Hz and 6 at 1 kHz); Meld's Bandpass keeps the section's defaults. */
-#define LE_OSR_DK 0.85f
+#define LE_OSR_DK 0.75f /* round 11: refitted with the damping at q = 1 */
 #define LE_OSR_KAPPA 0.145f
 #include "osr_section.h"
 #include "synth_voice.h" /* LE_SYNTH_BEND, LE_SYNTH_MOD, LE_SYNTH_PRESSURE */
@@ -1814,7 +1814,10 @@ static void render_voice(le_operator* d, le_operator_voice* v, const chunk_ctx* 
   if (circuit == CIRC_OSR) {
     const float fcs = fminf(fmaxf(ft.fc, 1.0f), 0.48f * rate);
     ms2.g = LE_OSR_G * tanf(fminf((float)OP_PI * fcs / rate, 1.54f));
-    k1 = 2.0f * (1.0f - le_ms2_q(ft.r, ft.fc, rate)) - 0.01f;
+    /* damped by 0.05 at q = 1, so resonance 1 does not self-oscillate
+     * (measured: round 11 tess-res1, Live's 30 Hz ring 20 dB under
+     * Segno's undamped one; 6.9 dB to 5.0) */
+    k1 = 2.0f * (1.0f - le_ms2_q(ft.r, ft.fc, rate)) + 0.05f;
     k2 = 2.0f * (1.0f - OP_OSR_K2 * le_ms2_q(ft.r, ft.fc, rate)) - 0.01f;
   }
   const env_ctx ec = make_ctx(d, VKEY(v), rate, v->time_mod);
@@ -1862,7 +1865,9 @@ static void render_voice(le_operator* d, le_operator_voice* v, const chunk_ctx* 
     if (c->filter_on) {
       float y;
       if (circuit == CIRC_OSR) {
-        const float u = le_osr_input(LE_OSR_IN * ft.drive * x);
+        /* OSR's Morph takes no drive (measured: round 11 morph-osr-drive12,
+         * at drive 0's level, 11 dB under Segno's driven input) */
+        const float u = le_osr_input(LE_OSR_IN * (c->filter_type == 4 ? 1.0f : ft.drive) * x);
         float o[3];
         le_osr_tick(v->f_an, u, ms2.g, k1, o);
         y = clean_pick(c->filter_type, v->f_w, o[2], o[1], o[0]);
