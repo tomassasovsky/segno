@@ -1,4 +1,4 @@
-<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Metalic Wurli MKII Schroeder Fretless Balafon Glockenspiel Perc halvings Inharmonicity travelled Inharmonics atan Freq bilinearly penv mvol retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations filt voicecut Unisono pul meldfit Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penvd rndpan Bassic Bitgrunge's Catchem Filther's Kaneda Werkstuecktraeger Whley Whley's filt nloop avel fleg unmodulated retunes Basscycle rvol mnoise lr spr ccg Clav restruck restrikes restrike -->
+<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Metalic Wurli MKII Schroeder Fretless Balafon Glockenspiel Perc halvings Inharmonicity travelled Inharmonics atan Freq bilinearly penv mvol retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations filt voicecut Unisono pul meldfit Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penvd rndpan Bassic Bitgrunge's Catchem Filther's Kaneda Werkstuecktraeger Whley Whley's filt nloop avel fleg unmodulated retunes Basscycle rvol mnoise lr spr ccg Clav restruck restrikes restrike prewarping prewarp -->
 # Segno — Progress & Roadmap
 
 <!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs multicore smarttune -->
@@ -107,9 +107,9 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
 - Analog's envelope, LFO waves, filter (with the formants) and drive move
   into `aas_parts.h`, which both devices use; Analog's 201 fit renders are
   bit-identical across the move.
-- Fitted against 322 Live renders in eight rounds. Strict score: 279 of
+- Fitted against 322 Live renders in eight rounds. Strict score: 281 of
   322 pass, 44 of the 67 factory-preset renders; the held-out round of
-  every factory preset 77 of 107 (from 8); the chaotic bowed and bouncing
+  every factory preset 80 of 107 (from 8); the chaotic bowed and bouncing
   renders are scored against Segno's own spread. Measured: the keyboard's
   Stretch and Fine Tune, the key amounts' resting 0.1, the bridge read's
   1.5 samples, the termination's loss, the output stage, the body's line
@@ -129,7 +129,8 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   the bent string's tap at the damper (Soft Buzz Bass); measured: a
   restruck string's envelope dropping first, a unison copy letting go its
   delay after the key; in round 8: a chord's keys arriving with a key
-  that did not glide do not glide. Open: a mono string struck by a chord
+  that did not glide do not glide; read and confirmed: vibrato's random
+  rate Error. Open (round 9 built): a mono string struck by a chord
   while it rings, Strings Quartet's bow after its first block, the unison
   copies' host timing on later notes (the harness cannot place it), Live's
   cut of released voices (measured, rule not found) and its random

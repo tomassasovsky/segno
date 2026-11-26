@@ -815,7 +815,7 @@ static void start_voice(le_tension* d, le_tension_voice* v, uint32_t origin, int
   v->pitch_to = key_pitch(d, note) + v->kerr + v->detune;
   v->pitch = glide ? d->last_pitch + v->detune : v->pitch_to;
   v->vib_t = 0.0f;
-  if (fresh) v->vib_ph = 0.0;
+  if (fresh) v->vib_ph = 0.0, v->vib_dev = 0.0f;
   string_strike(d, v, v->pitch, v->pitch_to, fresh);
   v->sh_ratio = 1.0f;
   v->sh_mix = 0.0f;
@@ -1132,7 +1132,12 @@ static void tick_voice(le_tension* d, le_tension_voice* v) {
   float vib = 0.0f;
   v->vib_t += dt;
   if (vi(d, LE_TENSION_VIBRATO_ON)) {
-    const float hz = le_aas_lin(0.25f, 10.0f, vf(d, LE_TENSION_VIBRATO_SPEED));
+    /* the rate, off by up to Error = Lin(0, 0.2) of it, a new draw each
+     * cycle, as Analog's [code] (Live's own copies of the presets with
+     * Error up differ from each other: Strings Quartet, Ensemble Strings,
+     * Wire Noise and Steel Direct Guitar on the held-out round) */
+    const float hz =
+        le_aas_clamp(le_aas_lin(0.25f, 10.0f, vf(d, LE_TENSION_VIBRATO_SPEED)) * (1.0f + v->vib_dev), 0.1f, 15.0f);
     float depth = mod_expz(0.0002f, 1.0f / 6.0f, vf(d, LE_TENSION_VIBRATO_AMOUNT)) +
                   d->mod * mod_expz(0.0002f, 1.0f / 6.0f, vf(d, LE_TENSION_VIBRATO_WHEEL));
     const float delay = mod_expz(0.05f, 5.0f, vf(d, LE_TENSION_VIBRATO_DELAY));
@@ -1140,7 +1145,11 @@ static void tick_voice(le_tension* d, le_tension_voice* v) {
     if (v->vib_t < delay) depth = 0.0f;
     else if (fade > 0.0f) depth *= fminf((v->vib_t - delay) / fade, 1.0f);
     v->vib_ph += (double)(hz * dt);
-    v->vib_ph -= floor(v->vib_ph);
+    if (v->vib_ph >= 1.0) {
+      v->vib_ph -= floor(v->vib_ph);
+      const float err = le_aas_lin(0.0f, 0.2f, vf(d, LE_TENSION_VIBRATO_ERROR));
+      if (err > 0.0f) v->vib_dev = err * le_aas_bipolar(&v->rng);
+    }
     vib = depth * sinf(2.0f * LE_AAS_PI * (float)v->vib_ph);
   }
   /* the pitch handler: the key with bend follows on the string at or below
