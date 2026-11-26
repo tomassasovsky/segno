@@ -804,17 +804,38 @@ static int sounding(const le_operator_voice* v) {
 
 static void fade_voice(le_operator_voice* v) {
   if (v->state == LE_OPERATOR_VOICE_FREE) return;
+  /* one still waiting to start never sounds */
+  if (v->wait > 0) {
+    v->state = LE_OPERATOR_VOICE_FREE;
+    return;
+  }
   v->state = LE_OPERATOR_VOICE_FADING;
   if (v->fade <= 0.0f) v->fade = 1.0f;
 }
 
-/* Fades every voice of the note `serial` started (a Spread pair). */
-static void fade_note(le_operator* d, uint64_t serial) {
+/* The samples a voice sounds before it is free: the rest of its fade (a
+ * full one if it is not fading yet), or for a voice still waiting to
+ * start, its wait. */
+static int32_t fade_left(const le_operator* d, const le_operator_voice* v) {
+  const float n = 0.001f * (float)d->sample_rate;
+  if (v->wait > 0) return v->wait;
+  if (v->state != LE_OPERATOR_VOICE_FADING) return (int32_t)n;
+  return (int32_t)ceilf(v->fade * n);
+}
+
+/* Fades every voice of the note `serial` started (a Spread pair), and
+ * drops one still waiting to start; returns the samples until all are
+ * free. */
+static int32_t fade_note(le_operator* d, uint64_t serial) {
+  int32_t left = 0;
   for (int32_t i = 0; i < LE_OPERATOR_VOICE_SLOTS; ++i) {
-    if (d->voices[i].state != LE_OPERATOR_VOICE_FREE && d->voices[i].serial == serial) {
-      fade_voice(&d->voices[i]);
-    }
+    le_operator_voice* v = &d->voices[i];
+    if (v->state == LE_OPERATOR_VOICE_FREE || v->serial != serial) continue;
+    const int32_t n = fade_left(d, v);
+    if (n > left) left = n;
+    fade_voice(v);
   }
+  return left;
 }
 
 static int32_t note_count(const le_operator* d) {
@@ -1022,11 +1043,18 @@ int32_t le_operator_note_on(le_operator* d, uint32_t origin, int32_t note, int32
   /* a new voice glides from the last note only while some voice sounds */
   int glide = vi(d, LE_OPERATOR_GLIDE_ON) && d->played && le_operator_active(d) > 0;
   int took = 0;
+  /* a note that takes a sounding voice's place waits until that voice has
+   * faded, then starts, as Live queues it: a mono chord's last note starts
+   * a fade (48 samples) late, its first sounding through the fade, and a
+   * note dropped from the queue never sounds (measured: Rhythmic Pong
+   * Bass's triad, held out, -3 dB waveform error to -19) */
+  int32_t wait = 0;
   if (vi(d, LE_OPERATOR_RETRIGGER_MODE)) {
     for (int32_t i = 0; i < LE_OPERATOR_VOICE_SLOTS; ++i) {
       le_operator_voice* v = &d->voices[i];
       if (sounding(v) && v->note == note) {
-        fade_voice(v);
+        const int32_t n = fade_note(d, v->serial);
+        if (n > wait) wait = n;
         took = 1;
       }
     }
@@ -1036,7 +1064,8 @@ int32_t le_operator_note_on(le_operator* d, uint32_t origin, int32_t note, int32
     if (v == NULL) v = oldest(d, LE_OPERATOR_VOICE_SUSTAINED);
     if (v == NULL) v = oldest(d, LE_OPERATOR_VOICE_HELD);
     if (v == NULL) break;
-    fade_note(d, v->serial);
+    const int32_t n = fade_note(d, v->serial);
+    if (n > wait) wait = n;
     d->stolen++;
     took = 1;
   }
@@ -1059,7 +1088,10 @@ int32_t le_operator_note_on(le_operator* d, uint32_t origin, int32_t note, int32
   }
   if (took) {
     for (int32_t i = 0; i < LE_OPERATOR_VOICE_SLOTS; ++i) {
-      if (d->voices[i].serial == serial) d->voices[i].snap = 1;
+      if (d->voices[i].serial == serial) {
+        d->voices[i].snap = 1;
+        d->voices[i].wait = wait;
+      }
     }
   }
   d->last_pitch = (float)note;
@@ -1739,11 +1771,27 @@ static int carriers_triggered(const chunk_ctx* c) {
   return any;
 }
 
+#define OP_END_GRID 32
+
 static void render_voice(le_operator* d, le_operator_voice* v, const chunk_ctx* c, float* left,
                          float* right, int32_t frames) {
   filter_target ft = {0};
   lfo_coef lc;
   float lfo_a, penv_a;
+  if (v->wait > 0) {
+    /* waiting to start: Sync's retriggers stay on the song's grid */
+    const int32_t n = v->wait < frames ? v->wait : frames;
+    for (int32_t op = 0; op < LE_OPERATOR_OPS; ++op) {
+      if (c->env[op].loop == LOOP_SYNC) v->env[op].repeat -= (double)n;
+    }
+    if (c->fenv.loop == LOOP_SYNC) v->fenv.repeat -= (double)n;
+    if (c->penv.loop == LOOP_SYNC) v->penv.repeat -= (double)n;
+    if (c->lenv.loop == LOOP_SYNC) v->lenv.repeat -= (double)n;
+    if (v->wait >= frames) {
+      v->wait -= frames;
+      return;
+    }
+  }
   v->snap = 0;
   voice_chunk(d, v, c, &ft, &lc, &lfo_a, &penv_a, frames);
   if (c->filter_on) {
@@ -1833,7 +1881,9 @@ static void render_voice(le_operator* d, le_operator_voice* v, const chunk_ctx* 
   const float fade_step = 1.0f / (0.001f * (float)d->sample_rate);
   const float shp_pre = powf(10.0f, c->shaper_drive / 20.0f);
   const float shp_wet = (1.0f - c->shaper_dry) * powf(10.0f, -c->shaper_drive / 40.0f);
-  for (int32_t i = 0; i < frames; ++i) {
+  const int32_t first = v->wait;
+  v->wait = 0;
+  for (int32_t i = first; i < frames; ++i) {
     float env[LE_OPERATOR_OPS];
     for (int32_t op = 0; op < LE_OPERATOR_OPS; ++op) {
       env[op] = c->on[op] ? env_tick(&v->env[op], &c->env[op], fv[op], &ec) : 0.0f;
@@ -1932,9 +1982,15 @@ static void render_voice(le_operator* d, le_operator_voice* v, const chunk_ctx* 
   if (v->state != LE_OPERATOR_VOICE_FADING && voice_done(v, c) &&
       ((v->state != LE_OPERATOR_VOICE_HELD && v->state != LE_OPERATOR_VOICE_SUSTAINED) ||
        carriers_triggered(c))) {
-    /* Live ends it a block after: one more chunk */
-    if (v->ending) v->state = LE_OPERATOR_VOICE_FREE;
-    v->ending = 1;
+    /* Live checks for the end on a 32-sample grid and ends the voice 32
+     * samples later (measured: the release renders, with the modulation
+     * at 16 samples) */
+    if (v->ending > 0) {
+      v->ending -= frames;
+      if (v->ending <= 0) v->state = LE_OPERATOR_VOICE_FREE;
+    } else if (fmod(d->clock + (double)frames, (double)OP_END_GRID) < 0.5) {
+      v->ending = OP_END_GRID;
+    }
   } else {
     v->ending = 0;
   }
