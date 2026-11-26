@@ -1445,7 +1445,16 @@ are built from the same modules.
   diffusion's growth with size; High Cut's direction: up shortens the
   highs)
 - Mono or 2 to 32 voices, unison of 2 or 4 strings (the shared unison
-  law), glide, vibrato. A key struck again strikes its ringing string
+  law), glide, vibrato. The voices count strings, so a unison note takes
+  two or four of them (two voices with unison play one note of a chord).
+  Each unison string starts a whole delay behind the one before, the
+  delay (ExpZ(0.002, 0.1) s) counted in whole milliseconds, the engine's
+  1 ms blocks. Velocity reaches the device as (velocity - 1) / 126, the
+  engines' shared MIDI front end. **[code]** (the velocity) **[measured]**
+  (round 5: the voice count on unison chords; the reference's second and
+  fourth strings at delays 0.25 to 1 land on Live's sample; with the
+  velocity the hammer references match Live's to -100 dB, from -80)
+  A key struck again strikes its ringing string
   without resetting it. A released string ends after 50 ms below
   -100 dBFS, but not while its gated damper is still in the air (for at
   most 2 s of flight): the damper lands again and the string sounds.
@@ -1559,6 +1568,21 @@ about 1.8 % early in Live, and a two-voice unison preset seems to play
 one note, not two), and Soft Buzz Bass's mono chord, which rings about
 10 dB too long with a 120 Hz component, the heavy damper's own bounce
 on the string.
+
+Round 5 (34 renders) settles the unison and the mono voice: the voices
+count strings, the delay counts whole milliseconds, each further string a
+whole delay later, and the mono voice given a chord or a legato line
+matches Live's to the sample on the reference (Live plays the chord's
+last note alone, as Segno does). Soft Buzz Bass on its own E3 passes; its
+chord at B3 is 5 dB off at 2.5 kHz and 17 dB at 6.4 kHz in the first
+250 ms, a note-dependent difference the round does not isolate. Live
+ends a released voice by a rule Segno does not have yet: a quiet voice
+with its damper resting is cut to silence 84 ms (4032 samples) after
+the release (sbb-nobody-52, the terminated and resting-damper
+references), others later; Segno's ends only below -100 dBFS. With round 5 and the velocity:
+186 of 219 fit renders pass, 28 of the 38 factory-preset renders;
+held-out 60 of 107 (hammer 16 of 26, plucked 38 of 60, bouncing 3 of 6,
+bowed 3 of 15).
 
 ## Decisions
 

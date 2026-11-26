@@ -247,7 +247,10 @@ static int32_t note_count(const le_tension* d) {
 }
 
 static int32_t voice_count(const le_tension* d) {
-  int32_t n = kVoices[vi(d, LE_TENSION_POLYPHONY)];
+  /* the voices count strings, so a unison note takes two or four of them
+   * [measured] (round 5: two voices with unison play one note of a
+   * chord, four play two) */
+  int32_t n = kVoices[vi(d, LE_TENSION_POLYPHONY)] / copies_per_note(d);
   const int32_t lim = d->voice_limit / copies_per_note(d);
   if (n > lim) n = lim;
   return n < 1 ? 1 : n;
@@ -787,8 +790,12 @@ static void start_voice(le_tension* d, le_tension_voice* v, uint32_t origin, int
   v->copies = copies;
   static const float kSteps[4] = {0.0f, 1.0f, -1.0f, 2.0f};
   v->detune = unison_expz(0.001f, 1.0f, vf(d, LE_TENSION_UNISON_DETUNE)) * kSteps[copy];
-  v->delay = (int32_t)(unison_expz(0.002f, 0.1f, vf(d, LE_TENSION_UNISON_DELAY)) * rate * (float)copy /
-                       (float)(copies > 1 ? copies - 1 : 1));
+  /* each copy a whole delay behind the one before, the delay counted in
+   * whole milliseconds (the engine's 1 ms blocks). [measured] (round 5:
+   * the reference's second string at delays 0.25, 0.5, 0.75 and 1 and
+   * four strings at 0.5 land on Live's sample) */
+  v->delay = (int32_t)(floorf(unison_expz(0.002f, 0.1f, vf(d, LE_TENSION_UNISON_DELAY)) * 1000.0f) * rate /
+                       1000.0f) * copy;
   if (fresh) v->since = 0; /* a re-strike keeps the copies' delays behind them */
   v->quiet = 0;
   v->flying = 0;
@@ -877,7 +884,9 @@ void le_tension_set_tempo(le_tension* d, float bpm) {
 
 int32_t le_tension_note_on(le_tension* d, uint32_t origin, int32_t note, int32_t velocity, int chord) {
   if (d == NULL || note < 0 || note > 127 || velocity < 1 || velocity > 127) return -1;
-  const float vel = (float)velocity / 127.0f;
+  /* velocity 1..127 to 0..1, as the engines' shared MIDI front end sends
+   * it [code] (the hammer references then match Live's to -100 dB) */
+  const float vel = (float)(velocity - 1) / 126.0f;
   if (!chord) {
     for (int32_t i = 0; i < LE_TENSION_VOICE_SLOTS; ++i) {
       le_tension_voice* v = &d->voices[i];
