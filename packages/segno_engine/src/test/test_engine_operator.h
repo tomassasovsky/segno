@@ -507,6 +507,38 @@ static void test_operator_round10_fits(void) {
   CHECK(hi / lo > 1.5);
 }
 
+/* A note that takes a sounding voice's place waits for that voice's 1 ms
+ * fade, then starts; a mono chord's middle note, taken before it sounds,
+ * never plays (measured: Rhythmic Pong Bass's triad). */
+static void test_operator_steal_waits(void) {
+  printf("test_operator_steal_waits\n");
+  enum { N = 480 };
+  static float l[N], r[N];
+  opr_reference(&g_opr);
+  opr_set(&g_opr, LE_OPERATOR_VOICES, 0.0f);
+  CHECK(le_operator_note_on(&g_opr, 1, 60, 127, 1) == 0);
+  CHECK(le_operator_note_on(&g_opr, 1, 64, 127, 1) == 0);
+  CHECK(le_operator_note_on(&g_opr, 1, 67, 127, 1) == 0);
+  int32_t waiting = 0;
+  le_operator_voice* last = NULL;
+  for (int32_t i = 0; i < LE_OPERATOR_VOICE_SLOTS; ++i) {
+    le_operator_voice* v = &g_opr.voices[i];
+    if (v->state == 0) continue;
+    if (v->wait > 0) {
+      waiting++;
+      last = v;
+    }
+  }
+  CHECK(waiting == 1 && last != NULL && last->note == 67 && last->wait == OPR_SR / 1000);
+  CHECK(le_operator_fading(&g_opr) == 1);
+  le_operator_render(&g_opr, l, r, OPR_SR / 1000);
+  CHECK(opr_peak(l, OPR_SR / 1000) > 0.01f); /* the first note sounds through its fade */
+  CHECK(last->phase[0] == 0.0);  /* the last has not started */
+  le_operator_render(&g_opr, l, r, N);
+  CHECK(last->phase[0] != 0.0 && le_operator_fading(&g_opr) == 0);
+  CHECK(opr_component(l, N, opr_note_hz(67)) > 0.5);
+}
+
 /* Voice bookkeeping: a mono legato note whose held voice was taken still
  * sounds; glide starts only while a voice sounds; fading a Spread note
  * reports its two voices; a Trigger-mode voice frees once it is silent,
@@ -667,6 +699,7 @@ static void run_operator_tests(void) {
   test_operator_circuits_bounded();
   test_operator_controllers_rest();
   test_operator_voice_bookkeeping();
+  test_operator_steal_waits();
   test_operator_strict_fits();
   test_operator_round8_fits();
   test_operator_round10_fits();
