@@ -609,7 +609,8 @@ static void test_drift_ratio_lfo_is_phase_modulation(void) {
 }
 
 /* A Ratio-mode LFO follows a Mono lane's octave: the sub lanes' LFOs run
- * at half and a quarter of the top lane's rate. */
+ * at half and a quarter of the top lane's rate, and each lane keys as the
+ * note it plays. */
 static void test_drift_mono_lane_ratio_lfo(void) {
   printf("test_drift_mono_lane_ratio_lfo\n");
   static float l[480], r[480];
@@ -618,6 +619,7 @@ static void test_drift_mono_lane_ratio_lfo(void) {
   drift_set(&g_drift, LE_DRIFT_MONO_DEPTH, 1.0f);
   drift_set(&g_drift, LE_DRIFT_LFO_MODE, 2.0f);
   drift_set(&g_drift, LE_DRIFT_LFO_RATIO, 1.0f);
+  drift_set(&g_drift, LE_DRIFT_DRIFT_DEPTH, 0.0f); /* no per-key offsets */
   le_drift_render(&g_drift, l, r, 32);
   CHECK(le_drift_note_on(&g_drift, 1, 60, 100, 0) == 0);
   le_drift_render(&g_drift, l, r, 480);
@@ -625,6 +627,10 @@ static void test_drift_mono_lane_ratio_lfo(void) {
   CHECK(top > 0.0f);
   CHECK(fabsf(g_drift.voices[1].lfo_inc - 0.5f * top) < 1e-6f);
   CHECK(fabsf(g_drift.voices[3].lfo_inc - 0.25f * top) < 1e-6f);
+  /* and each lane keys as its own note: C4's lanes as C4, C3, C3, C2 */
+  CHECK(fabsf(g_drift.voices[0].key - (60.0f - 69.0f) / 120.0f) < 1e-6f);
+  CHECK(fabsf(g_drift.voices[1].key - (48.0f - 69.0f) / 120.0f) < 1e-6f);
+  CHECK(fabsf(g_drift.voices[3].key - (36.0f - 69.0f) / 120.0f) < 1e-6f);
 }
 
 /* The filters' input stage: a sine at Gain 0.5 passes clean, one at Gain
