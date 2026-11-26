@@ -455,16 +455,19 @@ static int32_t osc2_wave(int32_t stored) {
 /* Drift Depth's tuning: a deviation per key plus one per voice, both fixed
  * (neither moves over time, nor between strikes, nor between instances),
  * linear in w = Drift Depth / 0.58, in cents per unit of w. Measured on
- * Live 12.2.7's renders (round 17, a sine at Drift Depth 1): the per-voice
- * offsets from each lane of 16 Stereo pairs alone on its channel (pair p
- * is voices 2p and 2p + 1, at notes 84 + p, above the per-key range), the
- * per-key ones from C1..B5 struck one at a time on voice 0, minus voice
- * 0's offset. Keys outside C1..B5 have no per-key offset. */
+ * Live 12.2.7's renders (rounds 17 and 18, a sine at Drift Depth 1): the
+ * per-voice offsets from each lane of 16 Stereo pairs alone on its channel
+ * (pair p is voices 2p and 2p + 1, at notes 84 + p); the per-key ones on
+ * C1..B5 from voice 0 one key at a time and from every voice at once
+ * (Stereo pairs at notes 28..43 and 48..63), minus the voice's offset. The
+ * per-voice offset does not depend on the key, the per-key one follows the
+ * key played (not Transpose), and keys outside C1..B5 have none (0.00 +-
+ * 0.06 cents on Live's renders of keys 0..23 and 84..127). */
 static const float kKeyCents[60] = {
-    3.57f, 0.35f, -4.53f, -4.30f, -5.11f, 1.15f, 5.36f, 14.07f, 9.55f, 6.31f,
-    0.90f, -0.95f, -2.81f, -2.41f, -2.80f, 0.40f, -0.14f, 5.80f, 7.48f, 5.31f,
-    1.22f, -1.59f, -2.09f, -1.00f, -1.50f, 0.10f, -0.38f, 0.40f, 1.95f, 4.81f,
-    6.55f, 1.78f, 0.39f, -1.58f, 0.13f, 12.94f, 0.49f, 0.10f, -0.97f, 0.96f,
+    -0.17f, -2.40f, -5.12f, -4.06f, -4.36f, 1.83f, 5.63f, 14.06f, 9.53f, 6.27f,
+    0.88f, -0.99f, -2.83f, -2.40f, -2.74f, 0.41f, -0.14f, 5.78f, 7.47f, 5.27f,
+    1.22f, -1.58f, -2.10f, -1.00f, -1.50f, 0.10f, -0.39f, 0.41f, 1.96f, 4.81f,
+    6.56f, 1.79f, 0.39f, -1.57f, 0.14f, 12.94f, 0.49f, 0.10f, -0.98f, 0.96f,
     0.90f, 2.83f, 3.29f, -0.43f, -1.28f, -0.00f, 0.13f, 0.41f, 0.16f, 1.35f,
     1.09f, 0.12f, 0.38f, -0.14f, 0.96f, 0.68f, 0.81f, 1.18f, -2.28f, 0.40f,
 };
@@ -778,6 +781,10 @@ static void lane_setup(const le_drift* d, le_drift_voice* v, int32_t lane,
   const float w = vf(d, LE_DRIFT_DRIFT_DEPTH) / 0.58f;
   const float cents = d->key_cents[note] + d->voice_cents[v - d->voices];
   v->ratio = ratio * exp2f(w * cents / 1200.0f);
+  /* the Ratio rate modes follow a Mono lane's octave, not Unison's detune
+   * nor the drift (measured: Crunch Arcade's Mono LFO at Ratio 12; Numan
+   * Keystrike's Unison and Church Bell's Stereo lanes) */
+  v->ref_ratio = mode == MODE_MONO ? ratio : 1.0f;
   const float ng = d->note_gain[note];
   v->gain_l = gl * ng;
   v->gain_r = gr * ng;
@@ -1514,19 +1521,26 @@ static void voice_sample(le_drift* d, le_drift_voice* v, float* out_l,
   }
   /* pitch */
   v->pitch += b->glide * (v->pitch_target - v->pitch);
-  /* the note's frequency alone, for the Ratio rate modes only */
+  /* the lane's note frequency (glided, a Mono lane's octave below), before
+   * the oscillators' own Transpose and pitch modulation, for the Ratio rate
+   * modes only */
   const int lfo_ratio = b->lfo_mode == RATE_RATIO;
-  const float note_f =
-      (lfo_ratio || b->cyc_mode == RATE_RATIO) ? v->pitch * b->bend_ratio
-                                               : 0.0f;
-  /* A pitch slot fed by an LFO in Ratio mode (audio rate) moves both
-   * oscillators' phase by LFO x amount cycles instead of their pitch:
-   * phase modulation, limited below one cycle. */
+  const float note_f = (lfo_ratio || b->cyc_mode == RATE_RATIO)
+                           ? v->pitch * b->bend_ratio * v->ref_ratio
+                           : 0.0f;
+  /* A pitch slot fed by a source running in Ratio mode (audio rate: the
+   * LFO, or Envelope 2 as the cycling envelope) moves both oscillators'
+   * phase instead of their pitch: phase modulation by source x amount x
+   * half the slot's range in octaves, in cycles, limited below one cycle.
+   * Measured: the LFO (range 2) on Live's Ratio renders, the cycling
+   * envelope (range 4) on Bellatine's sidebands at Ratio 14. */
+  const int cyc_ratio = b->cycling && b->cyc_mode == RATE_RATIO;
   float pitch = 0.0f, phase = 0.0f;
   for (int k = 0; k < 2; ++k) {
     const int32_t s = b->pm_src[k];
-    if (lfo_ratio && s == LE_DRIFT_SRC_LFO) {
-      phase += b->pm_amt[k] * src.bi[s];
+    if ((lfo_ratio && s == LE_DRIFT_SRC_LFO) ||
+        (cyc_ratio && s == LE_DRIFT_SRC_ENV2)) {
+      phase += b->pm_amt[k] * src.bi[s] * 0.5f * kPitchRange[s];
     } else {
       pitch += b->pm_amt[k] * src.bi[s] * kPitchRange[s];
     }

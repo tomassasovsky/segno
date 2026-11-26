@@ -84,6 +84,7 @@ typedef struct le_drift_voice {
   float pitch;
   float pitch_target;
   float ratio;
+  float ref_ratio; /* the lane's ratio the Ratio rate modes follow */
   /* the voice mode's gains */
   float gain_l, gain_r;
   /* oscillators and noise; the phase increments last used, which a silent

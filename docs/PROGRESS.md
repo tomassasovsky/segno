@@ -1,4 +1,4 @@
-<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance retriggered isolations -->
+<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance retriggered isolations Bellatine Keystrike Numan -->
 # Segno — Progress & Roadmap
 
 <!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs multicore smarttune -->
@@ -97,6 +97,18 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   Depth uses the measured per-key and per-voice tables (round 17). Strict
   score 247 of 263, factory presets 3 of 5 (Bloom Pad, Euphoria Lead,
   80s Tape).
+- Round 18 (51 renders): keys outside C1..B5 carry no drift offset, the
+  per-voice offset does not depend on the key, the per-key offset follows
+  the key played, and C1..F#1 are remeasured (round 17's windows were too
+  short there). A Ratio-mode LFO follows a Mono lane's octave (Crunch
+  Arcade: pitch an octave off before, tf 11.8 to 3.1), and the cycling
+  envelope in Ratio mode on a pitch slot is phase modulation (Bellatine:
+  336 cents sharp before, tf 15.7 to 2.9). Strict score 252 of 296 before
+  and after with round 18 included, factory presets 3 of 5; held-out 14 of
+  89 (Bellatine and Crunch Arcade much closer, still failing). Round 19 is
+  built for Osc 2's own drift offsets, filters at a hot input, the
+  cycling-envelope depth, the Key source, Pulse and voice reuse at the end
+  of a release.
 
 ## November 2026 Drift's filter II as an MS-20 circuit model (SEG-109 P4, round 4)
 

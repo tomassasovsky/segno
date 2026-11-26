@@ -534,15 +534,16 @@ static void test_drift_filter2_starts_at_rest(void) {
 }
 
 /* Drift Depth's tuning is the measured table: a few values pinned (cents
- * per unit of depth / 0.58: voice 0 +2.48, voice 18 -12.33, key 31 +14.07,
- * key 59 +12.94, none outside C1..B5), and a note's ratio is the sum at
+ * per unit of depth / 0.58: voice 0 +2.48, voice 18 -12.33, key 24 -0.17,
+ * key 31 +14.06, key 59 +12.94, none outside C1..B5), and a note's ratio is the sum at
  * w. Unison's first lane is the sharpest, panned left. */
 static void test_drift_tuning_table(void) {
   printf("test_drift_tuning_table\n");
   drift_init(&g_drift, DRIFT_SR);
   CHECK(fabsf(g_drift.voice_cents[0] - 2.48f) < 0.005f);
   CHECK(fabsf(g_drift.voice_cents[18] + 12.33f) < 0.005f);
-  CHECK(fabsf(g_drift.key_cents[31] - 14.07f) < 0.005f);
+  CHECK(fabsf(g_drift.key_cents[24] + 0.17f) < 0.005f);
+  CHECK(fabsf(g_drift.key_cents[31] - 14.06f) < 0.005f);
   CHECK(fabsf(g_drift.key_cents[59] - 12.94f) < 0.005f);
   CHECK(g_drift.key_cents[23] == 0.0f && g_drift.key_cents[84] == 0.0f);
   drift_set(&g_drift, LE_DRIFT_DRIFT_DEPTH, 0.58f); /* w = 1 */
@@ -560,18 +561,23 @@ static void test_drift_tuning_table(void) {
 
 /* An LFO in Ratio mode routed to pitch moves the oscillators' phase, not
  * their frequency: the phase accumulators run as without it. In Freq mode
- * the same routing is vibrato and they do not. */
+ * the same routing is vibrato and they do not. The cycling envelope in
+ * Ratio mode is phase modulation too (run 3). */
 static void test_drift_ratio_lfo_is_phase_modulation(void) {
   printf("test_drift_ratio_lfo_is_phase_modulation\n");
   static float l[4800], r[4800];
-  float ph[3];
-  for (int run = 0; run < 3; ++run) {
+  float ph[4];
+  for (int run = 0; run < 4; ++run) {
     drift_init(&g_drift, DRIFT_SR);
     drift_set(&g_drift, LE_DRIFT_LFO_MODE, run == 2 ? 0.0f : 2.0f);
     drift_set(&g_drift, LE_DRIFT_LFO_RATE, 7.0f);
     drift_set(&g_drift, LE_DRIFT_LFO_RATIO, 2.375f);
     drift_set(&g_drift, LE_DRIFT_LFO_AMOUNT, 1.0f);
-    drift_set(&g_drift, LE_DRIFT_PITCH_MOD_SOURCE1, (float)LE_DRIFT_SRC_LFO);
+    drift_set(&g_drift, LE_DRIFT_ENV2_CYCLING, 1.0f);
+    drift_set(&g_drift, LE_DRIFT_CYC_MODE, 2.0f);
+    drift_set(&g_drift, LE_DRIFT_CYC_RATIO, 3.0f);
+    drift_set(&g_drift, LE_DRIFT_PITCH_MOD_SOURCE1,
+              (float)(run == 3 ? LE_DRIFT_SRC_ENV2 : LE_DRIFT_SRC_LFO));
     drift_set(&g_drift, LE_DRIFT_PITCH_MOD_AMOUNT1, run == 0 ? 0.0f : 0.5f);
     le_drift_render(&g_drift, l, r, 32);
     CHECK(le_drift_note_on(&g_drift, 1, 48, 100, 0) == 0);
@@ -580,6 +586,26 @@ static void test_drift_ratio_lfo_is_phase_modulation(void) {
   }
   CHECK(fabsf(ph[1] - ph[0]) < 1e-3f);
   CHECK(fabsf(ph[2] - ph[0]) > 1e-2f);
+  CHECK(fabsf(ph[3] - ph[0]) < 1e-3f);
+}
+
+/* A Ratio-mode LFO follows a Mono lane's octave: the sub lanes' LFOs run
+ * at half and a quarter of the top lane's rate. */
+static void test_drift_mono_lane_ratio_lfo(void) {
+  printf("test_drift_mono_lane_ratio_lfo\n");
+  static float l[480], r[480];
+  drift_init(&g_drift, DRIFT_SR);
+  drift_set(&g_drift, LE_DRIFT_VOICE_MODE, 1.0f);
+  drift_set(&g_drift, LE_DRIFT_MONO_DEPTH, 1.0f);
+  drift_set(&g_drift, LE_DRIFT_LFO_MODE, 2.0f);
+  drift_set(&g_drift, LE_DRIFT_LFO_RATIO, 1.0f);
+  le_drift_render(&g_drift, l, r, 32);
+  CHECK(le_drift_note_on(&g_drift, 1, 60, 100, 0) == 0);
+  le_drift_render(&g_drift, l, r, 480);
+  const float top = g_drift.voices[0].lfo_inc;
+  CHECK(top > 0.0f);
+  CHECK(fabsf(g_drift.voices[1].lfo_inc - 0.5f * top) < 1e-6f);
+  CHECK(fabsf(g_drift.voices[3].lfo_inc - 0.25f * top) < 1e-6f);
 }
 
 /* The filters' input stage: a sine at Gain 0.5 passes clean, one at Gain
@@ -883,6 +909,7 @@ static void run_drift_tests(void) {
   test_drift_filter2_starts_at_rest();
   test_drift_tuning_table();
   test_drift_ratio_lfo_is_phase_modulation();
+  test_drift_mono_lane_ratio_lfo();
   test_drift_filter_input_clips_asymmetrically();
   test_drift_voice_blocks();
   test_drift_filter_type_switch_is_smooth();

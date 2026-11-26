@@ -1,6 +1,6 @@
 # Ableton Live device presets on the pedal — brainstorm
 
-<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance retriggered isolations -->
+<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance retriggered isolations Bellatine Keystrike Numan -->
 
 **Date:** 2026-11-24
 **Issue:** SEG-109 (related: SEG-57, Segno's own instrument voices)
@@ -270,7 +270,12 @@ written from it.
   2 ratio to the note, 3 tempo sync. **[code]**, and fitted (Time 0.5 s
   gives 2 Hz).
 - Ratio follows the note's frequency after glide, Transpose and pitch bend,
-  not the oscillators' own Transpose. Sync divisions 0..21 run slowest
+  not the oscillators' own Transpose. A Mono lane's Ratio LFO follows that
+  lane's octave (an octave or two below the note), while Unison's detune
+  and the drift do not move it **[measured]**: Crunch Arcade's Mono LFO at
+  Ratio 12 (tf 11.6 to 2.6 dB, its pitch an octave off before), Numan
+  Keystrike's Unison and Church Bell's Stereo lanes (both worse when the
+  detune or the drift is followed). Sync divisions 0..21 run slowest
   first, 8 bars to 1/64; the default is 15 (1/8). **[code]**, fitted.
 - LFO: a phase per voice, increment clamped below Nyquist, rate modes as
   the cycling envelope. Retrigger restarts it at the shape's peak (0.25
@@ -286,7 +291,13 @@ written from it.
   Live's renders were made, not of the device.
 - An LFO in Ratio mode routed to a pitch slot becomes phase modulation of
   both oscillators (LFO × amount cycles, below one cycle) instead of
-  vibrato. **[code]**, fitted (sidebands within 0.1 dB of Live's).
+  vibrato. **[code]**, fitted (sidebands within 0.1 dB of Live's). The
+  cycling envelope in Ratio mode does the same: phase modulation by its
+  level × amount × 2 cycles, half the slot's 4-octave range as the LFO's
+  depth is half of its 2 **[measured]**: Bellatine's Ratio-14 sidebands
+  (at 952, 1098 and 1978 Hz) within 1 dB at that depth; as vibrato
+  Segno's note sat 336 cents sharp. Round 19 checks the depth and the
+  offset on a plain sine.
 - LFO shapes 0..8: Sine,
   Triangle, two saws (rising and falling; which one is "Saw Up" is
   **[open]**), Square, Sample & Hold (two steps per cycle), Wander (smoothed
@@ -345,18 +356,32 @@ written from it.
   device, are identical). **[measured]** Segno uses the measured values
   (the owner's decision, 2026-11-25, on values measured from Live's
   rendered audio), in cents per unit of w, from round 17 at Drift Depth 1
-  with a sine: per voice (32) from `dv-stereo`, each lane of 16 Stereo
-  pairs alone on its channel at notes 84..99 (pair p is voices 2p, 2p + 1;
-  cross-checked against `dv-poly` voices 0..18 and against half depth in
-  `dv-poly-d05`, both within 0.01 cent; `dv-poly`'s voices 19..31 sit
-  where a lower note's third harmonic falls, which spoiled them); per key
-  (C1..B5) from `dk-a/b/c`, the keys struck one at a time on voice 0,
-  minus voice 0's offset. Statistics of the values: per key a mean of
+  with a sine: per voice (32) from round 17's `dv-stereo`, each lane of 16
+  Stereo pairs alone on its channel at notes 84..99 (pair p is voices 2p,
+  2p + 1; cross-checked against `dv-poly` voices 0..18, half depth in
+  `dv-poly-d05` and round 18's `dv-poly-hi2` voices 16..31, all within
+  0.01 cent); per key (C1..B5) minus the voice's offset, from round 18:
+  C1..D#1 from `dk-lo2` (voice 0, the oscillator two octaves up so the
+  window holds 30 cycles), E1..G2 from `dv-st-lo` and C3..D#4 from
+  `dv-st-mid` (every voice at once, 3 s windows), G#2..B2 from
+  `dk-trans`, and E4..B5 from round 17's `dk-c`. Round 17's `dk-a` held
+  too few cycles at the lowest keys: C1..F#1 were 0.5 to 6.5 cents off.
+  Round 18 also settled: the per-voice offset does not depend on the key
+  (every pair's split at E1..G2 and C3..D#4 within 0.06 cent of the
+  table); the per-key offset follows the key played, not Transpose
+  (`dk-trans`); depth is linear (`dv-st-mid-d05` within 0.06 cent); and
+  keys outside C1..B5 have none (`dk-lo`, C-1..B0, and `dk-hi`, C6..G9,
+  within 0.07 cent). Statistics of the values: per key a mean of
   +1.18, a spread of 3.63, neighbours correlated 0.53; per voice a mean of
   +2.26 and a spread of 7.2, independent from voice to voice; Stereo pairs
-  and Unison groups are consecutive voices. Keys outside C1..B5 get no
-  per-key offset in Segno until round 18 measures them. The measurement
-  script is the fit tooling's `dfit/drift_tables.py`.
+  and Unison groups are consecutive voices. The measurement script is the
+  fit tooling's `dfit/drift_tables.py`. Still open **[measured, round
+  19]**: Osc 2 does not follow these values exactly. In 80s Tape its lanes
+  sit 0.2 to 0.75 cent per unit of w off Osc 1's on the same voice, which
+  is what fails tape-chord's stereo (side to mid at 98 Hz: -16.3 dB in
+  Live, -23.9 in Segno), and Monday Morning (Osc 2 alone, Transpose +24)
+  plays about 11 cents flatter than these tables give. Round 19 measures
+  Osc 2's own offsets.
 - SerialNumber: a random number per instance, saved in the preset,
   probably the seed for per-instance randomness. **[inferred]**
 - Glide: a one-pole in hertz (not in pitch) with time constant 0.144 x
@@ -486,8 +511,9 @@ What the strict score still fails, and why **[measured]**:
   at the notes 84..99 it was measured on (80s Tape's G2 pair: 0.68 against
   0.29 cents per unit of w; Bloom Pad's lanes 2 and 3 within 0.9 cent), so
   the per-voice offset may depend on the key; and the keys outside C1..B5.
-  Round 18 measures both (every voice at C3..D#4 and E1..G2, at two depths,
-  and voice 0 from C-1 to B0 and C6 to G9).
+  Round 18 measured both (every voice at C3..D#4 and E1..G2, at two depths,
+  and voice 0 from C-1 to B0 and C6 to G9): neither holds, see Voices; the
+  80s Tape difference is Osc 2's own offset (round 19).
 - Round 16 settled two questions. Live's drift is the same in every
   instance: three Live renders of one Drift Depth patch, each a fresh
   device, correlate 1.0000. And Bloom Pad's filter peak came from key
