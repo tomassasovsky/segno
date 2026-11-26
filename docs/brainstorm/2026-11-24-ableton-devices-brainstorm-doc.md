@@ -1,6 +1,6 @@
 # Ableton Live device presets on the pedal — brainstorm
 
-<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance kModBy kCarriers Celesta transconductances Bandpass Bitgrunge Csound Drivetime Extratone Filther Lofi Lowpass Megatripolis Minnaert Sawstyle Starchestra polyBLEP Metalic Formant formants Barney Asym quintic Perc retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations penv Unisono pul meldfit Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penvd rndpan Bassic Bitgrunge's Catchem Filther's Kaneda Werkstuecktraeger Whley Whley's filt nloop avel fleg unmodulated Basscycle spr prewarping Floot Halfstep Gametal Plucks Neurotimbre sqperc -->
+<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance kModBy kCarriers Celesta transconductances Bandpass Bitgrunge Csound Drivetime Extratone Filther Lofi Lowpass Megatripolis Minnaert Sawstyle Starchestra polyBLEP Metalic Formant formants Barney Asym quintic Perc retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations penv Unisono pul meldfit Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penvd rndpan Bassic Bitgrunge's Catchem Filther's Kaneda Werkstuecktraeger Whley Whley's filt nloop avel fleg unmodulated Basscycle spr prewarping Floot Halfstep Gametal Plucks Neurotimbre sqperc unnormalized fenv -->
 
 **Date:** 2026-11-24
 **Issue:** SEG-109 (related: SEG-57, Segno's own instrument voices)
@@ -472,7 +472,7 @@ written from it.
 ### Open items and the fits (P4)
 
 Settled by rendering Live 12.2.7 (a Live Set built by script, exported
-per track, unnormalised, 48 kHz) against Segno's render of the same
+per track, unnormalized, 48 kHz) against Segno's render of the same
 patch and notes, one setting changed per render from a plain saw or white
 noise. Fitted 2026-11-25, three rounds:
 
@@ -1202,8 +1202,8 @@ circ2-r075 from passing to 3.1 dB) and a tanh transconductance (circ2-saw-d12
 4.8 to 3.1, the noise renders worse). What would need to change is the
 large-signal shape of the first integrator's transconductance, or what
 feeds it, without changing its small-signal slope: it has to compress
-the saw's edges (normalised input near 1.3) harder than the present
-z (1 - z^2/4 + |z|^3/16) does, while noise (normalised rms near 0.4)
+the saw's edges (normalized input near 1.3) harder than the present
+z (1 - z^2/4 + |z|^3/16) does, while noise (normalized rms near 0.4)
 passes as now. Drift's filter II renders would have to confirm the same
 shape. **[open]**
 
