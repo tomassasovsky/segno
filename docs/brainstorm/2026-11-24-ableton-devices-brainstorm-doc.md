@@ -1,6 +1,6 @@
 # Ableton Live device presets on the pedal — brainstorm
 
-<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance kModBy kCarriers Celesta transconductances Bandpass Bitgrunge Csound Drivetime Extratone Filther Lofi Lowpass Megatripolis Minnaert Sawstyle Starchestra polyBLEP Metalic Formant formants Barney Asym quintic Wurli MKII Schroeder Fretless Balafon Glockenspiel Perc halvings Inharmonicity travelled Inharmonics atan Freq bilinearly penv mvol retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations filt voicecut Unisono pul meldfit Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penvd rndpan Bassic Bitgrunge's Catchem Filther's Kaneda Werkstuecktraeger Whley Whley's filt nloop avel fleg unmodulated retunes Basscycle rvol mnoise lr spr ccg Clav restruck restrikes restrike prewarping Floot Halfstep Gametal Plucks Neurotimbre sqperc unstepped unnormalized fenv scalings fmdrive oscvol unsmoothed relc -->
+<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance kModBy kCarriers Celesta transconductances Bandpass Bitgrunge Csound Drivetime Extratone Filther Lofi Lowpass Megatripolis Minnaert Sawstyle Starchestra polyBLEP Metalic Formant formants Barney Asym quintic Wurli MKII Schroeder Fretless Balafon Glockenspiel Perc halvings Inharmonicity travelled Inharmonics atan Freq bilinearly penv mvol retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations filt voicecut Unisono pul meldfit Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penvd rndpan Bassic Bitgrunge's Catchem Filther's Kaneda Werkstuecktraeger Whley Whley's filt nloop avel fleg unmodulated retunes Basscycle rvol mnoise lr spr ccg Clav restruck restrikes restrike prewarping Floot Halfstep Gametal Plucks Neurotimbre sqperc unstepped unnormalized fenv scalings fmdrive oscvol unsmoothed relc colfm -->
 
 **Date:** 2026-11-24
 **Issue:** SEG-109 (related: SEG-57, Segno's own instrument voices)
@@ -1374,9 +1374,22 @@ Chip at min(rate, 10.05 kHz), all read back through a 4-point Hermite.
   second slave's law)
 - Square 5th: a pulse with two notches that morph a square at f into one at
   3f, then 3f into 9f; Macro 2 skews the width and notches. **[code]**
-- Sub: a sine an octave down through a biased parabolic clip that holds at
-  its peak, a 5 Hz DC blocker, plus a sine two octaves down at 2 M2^2.5.
-  **[code]** **[measured]** (the clip's hold)
+- Sub: two coupled-form ("magic circle") sines, one an octave down and one
+  two octaves down, with no table and no phase. At every control tick
+  (the note's first sample, then every 16 samples) the frequency is sent
+  again and both states are rescaled to x^2 + y^2 = 1. The recursion keeps
+  x^2 + y^2 - e x y instead, so each rescale steps the amplitude by up to
+  about e/4: lines at |n f/2 - 3000 Hz| on high notes. Macro 1 drives K =
+  1 + 64 (M1/3)^2 into a saturator on K (sine + 0.3), sign(v) 0.92167 a
+  (2 - a) with a = min(0.625 |v|, 1), flat beyond 1.6, and mixes it in at
+  M1 through a 5 Hz bilinear high-pass whose state runs on from note to
+  note. Macro 2 adds the lower sine at 2 M2^2.5 (Meld's fast pow) after
+  both. The macros ramp over 5 ms in N - 1 steps; the saturator takes the
+  value from before each step, so a ramp ends a step short. A note starts
+  both sines at (cos, sin) of its phase. **[code]**
+  (segno-re-findings/md-08-sub.md) The A6 renders (sub-m032, -m064 and
+  -m100-n93) now match Live's to the sample, tf 8 to 20 dB to 0.00.
+  **[measured]**
 - Swarm Sine/Triangle/Saw/Square: 2 x 12 voices at the ratios of 9 voicing
   stacks crossfaded by Macro 2, each drifting in pitch by up to 0.13 M1^2 +
   0.002 over 0.32..0.65 s segments, random phases at each note, x 1/sqrt 12.
@@ -1535,7 +1548,11 @@ third-octave band, the MS2 pair within 2.6 short of full drive. **[measured]**
   matrix sets at its first tick: an attack of 0 the matrix lengthens is
   played, not skipped (round 12's aat-note-n67, -n72 and -n81, Note into
   an attack of 0 at 0.44, match Live's to the sample; aat-note-a01-n72
-  from 0.1 s likewise). **[measured]** Loop modes: None, Trigger (ignores note-off), Loop (the tail, then
+  from 0.1 s likewise). Engine B's first tick takes B's own attack, before
+  the matrix moves it: round 13's aat-note-b-n81 and -b-oct-n81 (4.6e-5 s,
+  Note into it at 0.28) are at full level at once in Live and match to
+  the sample that way, tf 8.5 dB to 0, while the same route on engine A
+  lengthens the attack (aat-note-a*). **[measured]** Loop modes: None, Trigger (ignores note-off), Loop (the tail, then
   again), AD Loop. The Mod envelope holds its loop through note-off unless
   LegacyEnvLoopBehaviour. Link Envelopes gives engine B engine A's.
   **[code]** **[measured]**
@@ -1648,7 +1665,11 @@ third-octave band, the MS2 pair within 2.6 short of full drive. **[measured]**
   pass that way only). **[measured]**
 - The drive (two tanh stages after up to 18 dB in) and the limiter (4:1
   above -6 dBFS, 10 ms attack, 100 ms release, at the device's level) run
-  per copy. **[code]** **[measured]** (where the limiter listens)
+  per copy. **[code]** **[measured]** (where the limiter listens) The
+  limiter hears a peak envelope (an instant rise, the release's fall), not
+  each sample's level: round 13's saw 12 dB up holds its peak at 0.712 in
+  Live, which the sample's level lets through at 1.04 (lim-u1, -u2, -u3
+  and -u2-vol05, tf 3.30 to 0.54 dB, level 3.27 to -0.05 dB). **[measured]**
 
 ### The fits so far
 
@@ -1822,6 +1843,27 @@ unison; a limiter hearing the copies' sum brings the level within 0.2 to
 0.9 dB but leaves tf at 3 and 7 dB, so round 13 isolates the limiter
 against copies and Volume. With these the strict score passes 34 of 84
 held-out at five seeds (from 33).
+
+Round 13 and the Sub reading answered three of these. The Sub is now
+written from the reader's description (two rescaled recursions); it
+matches Live's A6 renders to the sample, and Vertical Bass passes (tf 3.0
+to 0.34 dB). Woozy Bass is at 3.3 dB though each of its engines passes
+alone. The limiter hears a peak envelope; with it, Club Kick's engine A is
+0.3 dB loud instead of 1.6, but both of its engines still fail with the
+limiter off (tf 2.9 and 6.9 dB), so the rest of Club Kick is in the
+engines. Engine B's first tick takes B's own attack, as Neurotimbre's
+engine B showed (tf 14.8 to 3.5 dB). Gotta Catchem's chopped bursts come
+from engine B (its Noise Loop through a DFM) and drift late in Segno by
+12 to 18 ms a second, resetting at every note. It is one of two factory
+presets, with Don't Laugh, whose looping Mod envelope (loop mode 2) has
+its times moved by the matrix: engine B's LFO 1 into the Mod decay. Both
+fail, and the presets that loop that envelope with fixed times pass
+(Drivetime Sine, Stellar Saws). Its engine A's LFO 1 Ramp with the rising
+slew transformer is shared only by Balkan Kid and colfm2, which fail too.
+Round 14 (11 renders) isolates the looping envelope under a moved decay,
+by Velocity and by a slow and a 0.5 Hz LFO, and Gotta Catchem's engines
+alone. Fit: 572 of 657 renders (561 of round 12's 644, from 554), 13 of
+21 presets; held-out 34 of 84 at five seeds (tf mean 3.89 dB).
 
 ## Analog: behavior
 

@@ -109,6 +109,7 @@ typedef struct le_meld_copy {
   float spread; /* the Spread source: the copy's position x Spread */
   float position;
   float lim[2]; /* the limiter's gain, dB, per channel */
+  float lim_peak[2]; /* the peak envelope the limiter hears, per channel */
   uint32_t rng;
 } le_meld_copy;
 
