@@ -2644,7 +2644,12 @@ Meld. Segno's implementation is `collision_voice.c`.
   shapes, free or synced; the synced lengths follow Live's menu, its note
   values from the longest down: 8, 6, 4, 3, 2, 1.5, 1, 3/4, 1/2, 3/8, 1/3,
   5/16, 1/4, 3/16, 1/6, 1/8, 1/12, 1/16, 1/24, 1/32, 1/48, 1/64 whole
-  notes. A strike reads each LFO at its start phase. A released voice
+  notes. A strike reads each LFO at its start phase. A voice holds a
+  random value from the moment it is set up, so a Random LFO's first ramp
+  starts there, not at 0; later strikes start from the value the last one
+  ramped to. **[code]** (the LFO's setup draws twice; Vibes Modulated's
+  five held-out renders start at five different pans, two hard right, two
+  hard left) A released voice
   ends after 50 ms below -100 dBFS, counted once the mallet's pulse and
   both waveguides' round trips have passed; any voice, held or not, ends
   at the first 512-sample block in which its resonators' outputs (before
@@ -2682,10 +2687,16 @@ Meld. Segno's implementation is `collision_voice.c`.
   where the voice's last note left them; a voice never played starts at
   the knobs' own volume and pan, without the key's or the matrix's pan. A
   full device restarts its oldest note's own voice, its states cleared;
-  only a cut of the engine's slot limit fades a voice. **[code]**
-  **[measured]** (the ramp is read; Bell Plate Long's phrase, whose hard
-  C5 takes over the C3's hard-left voice, and Marimba Glassy's Pan < Key,
-  whose first notes start centred)
+  only a cut of the engine's slot limit fades a voice. A note on a device
+  with a free slot takes, of its 2p slots, the one whose last note is the
+  oldest, a slot never played first, so an ended voice's slot waits its
+  turn. **[code]** **[measured]** (the ramp is read; the allocator cycles
+  its voices; Bell Plate Long's phrase, whose hard C5 takes over the C3's
+  hard-left voice, and Marimba Glassy's Pan < Key, whose first notes start
+  centred; Bells Attack's held-out phrase, whose hard C5 starts centred in
+  all five Live renders on a slot never played, where the lowest free slot,
+  the ended C3's, would start it hard left, 5.6 dB of side against Live's
+  1.5)
 
 ### The fits so far
 
@@ -2751,6 +2762,39 @@ Neither a leak through the
 low-pass nor one through the band-pass output fits the noise source's
 high-pass floor: the leak would have to fall from 0.16 at a 970 Hz cutoff
 to 0.028 at 3.1 kHz and to 0.07 at Q 0.2.
+
+The 22 held-out presets that fail, by kind. Most are random in Live too,
+and most of those fail on level or stereo by less than 10 % over Live's
+own spread. The largest shared cause is the mallet's noise at a hard
+velocity: 20 presets raise Noise Amount through Noise < Vel (0.6 to 5),
+which no fit render isolates. On Balafon Brushed's hard C5 (a 2.3 kHz
+pulse, w 0.77) Live is 4 to 6 dB louder at 1 to 3 kHz and its resonator 2
+fundamental varies 10 dB over the copies, against 0.1 in Segno; on Vibes
+Mellow's (the pulse at the 20 kHz clamp) Segno's level varies more than
+Live's. The noise source's velocity routes are the next: Noisy Pad's
+highs (3 to 6 kHz) are 3 to 6 dB under Live's at the soft C3 and 3 to 4
+dB over at the hard C5 (Freq < Vel 2.25), which Slow Pad, with the same
+route, does not show. Two presets moved their pan wrong and now match on
+stereo: Bells Attack (the slot order above) and Vibes Modulated (the
+Random LFO's start above); both still fail on other metrics. Bell Plate
+Long's hard C5 ramps from the old voice's hard-left pan about 1/3 ms
+sooner in Live; starting the exciters 16 samples after the voice's
+controls, instead of delaying the whole output, passes it (stereo 1.27 to
+0.70) but fails ph-bell-plate-long and ph-marimba-glassy on stereo and
+moves the pitch-envelope renders both ways, so it is not taken. A Live
+ramp that runs its 2 ms to the end before taking a new target, as read,
+made Bell Plate Long worse (1.27 to 1.57). Tube Harp sits 0.4 dB under
+Live at every note and velocity, which no other tube render shows. With
+three seeds the random renders' scores are a draw: taking the LFOs'
+start values from the strike's own stream moved p-xylophone-basic's tf
+from 1.17 to 6.11 and its floor from 2.1 to 6.3, so the start values come
+from a stream of their own. Round 8 (requested) puts the mallet noise
+through its velocity routes against the same values on the knobs, on a
+2.3 kHz and a 20 kHz pulse, Balafon Brushed's hard C5 without its hit
+randomness and without its noise source, a Random LFO's first value on
+pan and on the noise filter, the slot order and pan ramp under Retrigger
+on and off, the hit randomness at full amount, and the noise source's
+Freq < Vel and Volume < Vel.
 
 
 ## Decisions

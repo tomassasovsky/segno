@@ -87,9 +87,12 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   filters stepping every 10 ms when modulated, the resonators' gains
   ramping from the voice's last note, stolen voices restarted in place,
   and held voices ending at about -94 dBFS. The limiter's 1 ms is the
-  device's only added latency. Left: the noise high-pass's low end, an
-  upward pitch sweep of an octave, small stereo differences in weak
-  bands on the held-out presets.
+  device's only added latency. A new note takes the free slot whose last
+  note is the oldest, and a voice's Random LFO starts from a value it
+  already holds. Left: the mallet noise and the noise source through
+  their velocity routes (round 8 requested), the noise high-pass's low
+  end, an upward pitch sweep of an octave, small stereo differences in
+  weak bands on the held-out presets.
 - A voice costs 0.8 us per millisecond on the dev machine, two 70-mode
   resonators 1.4. A device holds 24 voices (1.7 MB).
 
