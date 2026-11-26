@@ -1,6 +1,6 @@
 # Ableton Live device presets on the pedal — brainstorm
 
-<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance kModBy kCarriers Celesta transconductances Bandpass Bitgrunge Csound Drivetime Extratone Filther Lofi Lowpass Megatripolis Minnaert Sawstyle Starchestra polyBLEP Metalic Formant formants Barney Asym quintic Wurli MKII Schroeder Fretless Balafon Glockenspiel Perc halvings Inharmonicity travelled Inharmonics atan Freq bilinearly penv mvol retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations -->
+<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance kModBy kCarriers Celesta transconductances Bandpass Bitgrunge Csound Drivetime Extratone Filther Lofi Lowpass Megatripolis Minnaert Sawstyle Starchestra polyBLEP Metalic Formant formants Barney Asym quintic Wurli MKII Schroeder Fretless Balafon Glockenspiel Perc halvings Inharmonicity travelled Inharmonics atan Freq bilinearly penv mvol retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations rvol mnoise lr -->
 
 **Date:** 2026-11-24
 **Issue:** SEG-109 (related: SEG-57, Segno's own instrument voices)
@@ -1496,7 +1496,10 @@ Meld. Segno's implementation is `collision_voice.c`.
   through the shapes at the two listening points, its level tilted by
   Brightness about the mode at ratio 4. A heavily damped high-pass
   resonance at the top mode stands in for the modes left out (Bleed).
-  **[code]** No mode rings longer than the knob's 35 s, and the decay
+  **[code]** Its amount is Exp(0.001, 1) of the knob. **[measured]** (the
+  reading's Exp(0.01, 1) left the dense membrane's highs above 10 kHz 3
+  to 10 dB too strong at knob 0.5, dn-hp and dn-mnoise-0; Music Box Basic,
+  Noisy Pad and Marimba Classic move with it) No mode rings longer than the knob's 35 s, and the decay
   routes keep T 2^d within 10 ms and 35 s. **[Segno]** (a bound the
   reading does not show; the metal presets with long highs fit it)
 - A pitch move retunes the modes at most every 200 samples (Segno: every
@@ -1542,17 +1545,29 @@ Meld. Segno's implementation is `collision_voice.c`.
   resonator or master volume of 1; a metal note, mat-1, stops about 12 dB
   higher, which the output level does not explain) **[Segno]** (the
   released voice's 50 ms)
-- The output is the voices' sum times Volume (Sq(0, 2)), then times 4,
-  then a look-ahead peak limiter at 1: the gain each sample needs is taken
-  as the least over the next 17 samples, held 5 ms, released towards 1
-  with a 10 ms time constant and averaged over 17 samples, so it ramps
-  down before a peak and no peak passes 1. The output lags the strike by
-  16 samples. **[code]** **[measured]** (the x4 reaches Live's output;
-  renders that would pass 1 hold their peaks at exactly 1 with little
-  distortion; the hold and release from the lim-* renders, mvol-08,
-  mvol-09 and mvol-1, which pass, against the series string's slow build,
-  serial and serial-m03, which want a slower release; Live's renders start
-  16 samples after the note)
+- The output is the voices' sum times Volume (Sq(0, 2)), then times 4.
+  The engine's output stage soft-clips above 0.7 of its scale (0.7 to 1,
+  then x4), as Analog's, Electric's and Tension's do. **[code]** In Live
+  that stage never acts on Collision: a peak limiter holds the output at
+  1, a quarter of the stage's ceiling, before it. The limiter looks 1 ms
+  ahead: the gain a sample needs (1 over its peak, at most 1) is taken as
+  the least over the next 1 ms and the last 1/3 ms; a released gain falls
+  at once to it and rises back towards 1 with a 5.3 ms time constant, and
+  is smoothed with a 0.225 ms one; a slow gain falls at once to the need
+  but never below -0.79 dB, and rises back with a 197 ms time constant;
+  the lower of the two applies. So a loud strike
+  recovers to within 0.8 dB in about 20 ms, then over a few hundred ms,
+  whether the overload lasted 7 ms or 2 s. The output lags the strike by
+  16 samples, and the limiter adds its 1 ms, which Live compensates and a
+  host can (`le_collision_latency`). **[measured]** (sample by sample
+  against the device without its limiter on lim-d0, lim-d1, lim-48,
+  lim-72, lim-rep, lim-rvol, mvol-08, mvol-09, serial-m03 and serial-m04:
+  the gain starts falling 1 ms before each peak, tracks every peak to
+  exactly 1, and keeps 0.6 to 0.8 dB of reduction after every overload; a
+  waveform error of -39 dB against -22 for the earlier 17-sample limiter;
+  the soft clip would bend the waveform, which Live's does not) Both
+  channels share one gain. **[Segno]** (every limiter render is mono;
+  round 5's lim-pan and lim-lr measure it)
 - Each resonator's volume and pan ramp to their values over 2 ms, from
   where the voice's last note left them; a voice never played starts at
   the knobs' own volume and pan, without the key's or the matrix's pan. A
@@ -1569,23 +1584,31 @@ mallet-on-beam reference, the 33 factory presets, the matrix units, the
 pitch envelope, Off Decay, pipes across the keyboard, Live copies of the
 random renders, the noise excitation through a dense 70-mode membrane,
 presets playing the held-out phrase with copies, and the limiter's
-release), scored by the strict score with three Segno seeds and Live's
-own spread where copies exist: 106 of 152 pass, 18 of the 33 factory
-presets. The held-out round (every preset, a quiet C3, a loud C4 triad
-and a hard C5, with Live's copies) passes 11 of 33.
+release), scored by the strict score with three Segno seeds, Live's own
+spread where copies exist and each later note aligned to Live's: 114 of
+152 pass, 18 of the 33 factory presets (104 before the measured limiter
+and bleed, under the same score). The held-out round (every preset, a
+quiet C3, a loud C4 triad and a hard C5, with Live's copies) passes
+5 of 33, as before the change under this score (11 under the score
+before the per-note alignment).
 
-Left: the noise source's high-pass and band-pass lack 7 to 34 dB below
-250 Hz against Live on the dense membrane, and the mallet's noise is 3 to
-10 dB too strong above 10 kHz there (two guesses failed: ramping the
-filters in from the default low-pass, a two-tap average on the mallet's
-noise). The limiter's one hold and release cannot serve both a loud
-strike and the series string's slow build (serial-m03 passes at 70 ms,
-the loud strikes at 10). An upward pitch sweep leaves the second and
-fourth beam modes 3 and 9 dB low (penv-1, also on 4 modes and a string).
-In the held-out round the marimbas' side signal is 0.3 dB high below
-500 Hz and 3 dB low at 8 kHz. Live's AAS notes after the first land about
-51 samples early; that belongs to the harness and is not fitted. Still
-open besides: the MPE destinations.
+Left: the noise source's high-pass passes 7 to 18 dB less than Live's
+between 125 and 250 Hz on the dense membrane (below its lowest mode), and
+neither the input minus the low-pass nor a constant leak fits it; an
+upward pitch sweep from an octave above leaves the beam's third mode 9 dB
+too strong and its fourth 9 dB too weak, the difference arising at the
+first retune 4 ms after the strike (no state rescaling of six tried
+fixes it; few presets sweep that far). Several renders are random with
+one Live render: noise-lp and noise-env fail on level, yet Segno's
+level over eight seeds (mean -51.6 dB, spread 4.5) matches Live's four
+renders of the same patch (-51.5, the others named cp-noise-lp); round 5
+asks for the copies. The per-note alignment splices each later note
+group into place, and on a ringing preset the splice alone costs the
+stereo score: Vibes Basic's held-out render scores 0.17 dB without it and
+3.15 with it, the render unchanged. Live's later notes land 0 to 51
+samples early against the first, differing between Live Sets at the
+same note times, so the harness does not emulate it. Still open besides:
+the MPE destinations.
 
 ## Decisions
 

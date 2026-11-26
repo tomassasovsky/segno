@@ -33,7 +33,7 @@ extern "C" {
 #define LE_COLLISION_PIPE 4096 /* samples per waveguide line: a power of two (note 0 at 48 kHz) */
 #define LE_COLLISION_TICK 32
 #define LE_COLLISION_SUSTAIN_MAX 16
-#define LE_COLLISION_LOOKAHEAD 17 /* the output limiter's window; the output lags 16 samples */
+#define LE_COLLISION_LIM_RING 512 /* the output limiter's delay lines: a power of two above 1.34 ms at 192 kHz */
 
 /* The matrix's destinations, in Live's chooser order (1..17), then the
  * knob-only ones. */
@@ -153,12 +153,13 @@ typedef struct le_collision {
   int32_t voice_limit;
   uint32_t stolen;
   float gain; /* the master volume, smoothed */
-  float limit; /* the output limiter's gain, released */
-  float lim_l[LE_COLLISION_LOOKAHEAD], lim_r[LE_COLLISION_LOOKAHEAD]; /* the output, delayed */
-  float lim_need[LE_COLLISION_LOOKAHEAD], lim_g[LE_COLLISION_LOOKAHEAD];
-  int32_t lim_pos;
-  float lim_held;
-  int32_t lim_hold;
+  /* the output limiter: the output delayed, the window's least gains
+   * needed (a monotonic queue), its released, smoothed and slow gains */
+  float lim_l[LE_COLLISION_LIM_RING], lim_r[LE_COLLISION_LIM_RING];
+  float lim_qv[LE_COLLISION_LIM_RING];
+  uint32_t lim_qi[LE_COLLISION_LIM_RING];
+  uint32_t lim_n, lim_head, lim_tail;
+  float lim_rel, lim_fast, lim_slow;
   uint32_t serial_values; /* bumped by every set_values */
   le_collision_voice voices[LE_COLLISION_VOICE_SLOTS];
 } le_collision;
@@ -177,6 +178,9 @@ void le_collision_cut(le_collision* d);
 void le_collision_set_voice_limit(le_collision* d, int32_t limit);
 int32_t le_collision_fade_oldest(le_collision* d);
 void le_collision_set_tempo(le_collision* d, float bpm);
+/* The samples the output limiter's look-ahead delays the output by, beyond
+ * the engine's own lag; a host compensates them as Live does. */
+int32_t le_collision_latency(const le_collision* d);
 void le_collision_render(le_collision* d, float* left, float* right, int32_t frames);
 int32_t le_collision_active(const le_collision* d);
 int32_t le_collision_fading(const le_collision* d);

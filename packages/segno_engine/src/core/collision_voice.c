@@ -377,11 +377,11 @@ int32_t le_collision_init(le_collision* d, int32_t sample_rate) {
   for (int32_t i = 0; i < LE_COLLISION_VOICE_SLOTS; ++i) d->voices[i].r[0].amp_n = d->voices[i].r[1].amp_n = -1;
   for (int32_t p = 0; p < LE_COLLISION_PARAMS; ++p) d->values[p] = le_collision_default(p);
   d->gain = -1.0f;
-  d->limit = 1.0f;
-  d->lim_held = 1.0f;
-  for (int32_t k = 0; k < LE_COLLISION_LOOKAHEAD; ++k) d->lim_need[k] = d->lim_g[k] = 1.0f;
+  d->lim_rel = d->lim_fast = d->lim_slow = 1.0f;
   return 0;
 }
+
+int32_t le_collision_latency(const le_collision* d) { return d == NULL ? 0 : d->sample_rate / 1000; }
 
 void le_collision_set_values(le_collision* d, const float* values) {
   if (d == NULL || values == NULL) return;
@@ -635,7 +635,10 @@ static void tune_res(le_collision* d, le_collision_voice* v, int32_t r, float pi
    * mode fitted */
   rs->bleed_g = 0.0f;
   if (used == n && used > 0) {
-    const float bl = k_exp(d, LE_COLLISION_RES(r, LE_COLLISION_R_BLEED), 0.01f, 1.0f);
+    /* fit: Exp(0.001, 1), not the 0.01 the reading gave (the dense
+     * membrane's highs, dn-hp and dn-mnoise-0; Music Box Basic, Noisy Pad,
+     * Marimba Classic) */
+    const float bl = k_exp(d, LE_COLLISION_RES(r, LE_COLLISION_R_BLEED), 0.001f, 1.0f);
     const float c = cosf(top_w);
     const float g = fminf(32.0f * top_g, 0.95f);
     bq_set(&rs->bleed, (1.0f + c) / 2.0f, -(1.0f + c), (1.0f + c) / 2.0f, 1.0f + g, -2.0f * c, 1.0f - g);
@@ -1240,38 +1243,49 @@ void le_collision_render(le_collision* d, float* left, float* right, int32_t fra
   /* the master volume, Sq(0, 2), smoothed over 1 ms, then the bundle's x4
    * (fit: the renders sit 12 dB above the voices' sum), then a look-ahead
    * peak limiter at 1 (fit: renders that would pass 1 hold their peaks at
-   * exactly 1 with little distortion: mvol-1, serial; the output lags the
-   * strike by 16 samples, as Live's renders do). The gain a sample needs is
-   * taken as the least over the next 17, held 5 ms, released with a 10 ms
-   * time constant (fit: the lim-* renders, mvol-08, mvol-09) and averaged
-   * over 17, so it ramps down before a peak and never lets one pass 1. */
+   * exactly 1 with little distortion, measured from the lim-* renders,
+   * mvol-08, mvol-09, serial-m03 and serial-m04). The engine's output lags
+   * the strike by 16 samples (a third of a millisecond); the limiter delays
+   * it 1 ms more. The gain a sample needs (1 over its peak, at most 1) is
+   * taken as the least over the 1 ms ahead and the third of a millisecond
+   * behind; the gain released from it rises towards 1 with a 5.3 ms time
+   * constant and falls at once to it, then is smoothed with a 0.225 ms one;
+   * a slow gain, never more than 0.79 dB down, falls at once to the need
+   * and rises back with a 197 ms one; the lower of the two applies. */
   const float target = k_sq(d, LE_COLLISION_VOLUME, 0.0f, 2.0f);
   if (d->gain < 0.0f) d->gain = target;
-  const float a = 1.0f / (0.001f * (float)d->sample_rate);
-  const float rel = 1.0f - expf(-1.0f / (0.01f * (float)d->sample_rate));
-  const int32_t hold = d->sample_rate / 200;
+  const float rate = (float)d->sample_rate;
+  const float a = 1.0f / (0.001f * rate);
+  const uint32_t ahead = (uint32_t)(d->sample_rate / 1000), lag = (uint32_t)(d->sample_rate / 3000);
+  const uint32_t span = ahead + lag; /* the window: the need's least over span + 1 samples */
+  const float rel = 1.0f - expf(-1.0f / (0.0053f * rate));
+  const float att = 1.0f - expf(-1.0f / (0.000225f * rate));
+  const float slow = 1.0f - expf(-1.0f / (0.197f * rate));
+  const float floor_slow = 0.91310f; /* -0.79 dB */
+  const uint32_t mask = LE_COLLISION_LIM_RING - 1;
   for (int32_t s = 0; s < frames; ++s) {
     d->gain += a * (target - d->gain);
-    const float l = 4.0f * d->gain * left[s], r = 4.0f * d->gain * right[s];
-    const float pk = fmaxf(fabsf(l), fabsf(r));
-    const int32_t at = d->lim_pos;
-    d->lim_need[at] = pk > 1.0f ? 1.0f / pk : 1.0f;
-    float need = 1.0f;
-    for (int32_t k = 0; k < LE_COLLISION_LOOKAHEAD; ++k) need = fminf(need, d->lim_need[k]);
-    if (need <= d->lim_held) d->lim_held = need, d->lim_hold = hold;
-    else if (d->lim_hold > 0) d->lim_hold--;
-    else d->lim_held = need;
-    d->limit = fminf(d->lim_held, d->limit + (1.0f - d->limit) * rel);
-    d->lim_g[at] = d->limit;
-    float g = 0.0f;
-    for (int32_t k = 0; k < LE_COLLISION_LOOKAHEAD; ++k) g += d->lim_g[k];
-    g *= 1.0f / (float)LE_COLLISION_LOOKAHEAD;
-    const int32_t old = (at + 1) % LE_COLLISION_LOOKAHEAD; /* the sample 16 behind */
-    const float ol = d->lim_l[old], orr = d->lim_r[old];
-    d->lim_l[at] = l;
-    d->lim_r[at] = r;
-    d->lim_pos = old;
-    left[s] = clampf(ol * g, -1.0f, 1.0f);
-    right[s] = clampf(orr * g, -1.0f, 1.0f);
+    const uint32_t n = d->lim_n++;
+    d->lim_l[n & mask] = 4.0f * d->gain * left[s];
+    d->lim_r[n & mask] = 4.0f * d->gain * right[s];
+    /* the limiter sees the output 16 samples late, as it leaves the engine */
+    const uint32_t j = n - lag;
+    const float pk = fmaxf(fabsf(d->lim_l[j & mask]), fabsf(d->lim_r[j & mask]));
+    const float need = pk > 1.0f ? 1.0f / pk : 1.0f;
+    while (d->lim_tail != d->lim_head && d->lim_qv[(d->lim_tail - 1) & mask] >= need) d->lim_tail--;
+    d->lim_qv[d->lim_tail & mask] = need;
+    d->lim_qi[d->lim_tail & mask] = j;
+    d->lim_tail++;
+    while ((int32_t)(j - d->lim_qi[d->lim_head & mask]) > (int32_t)span) d->lim_head++;
+    const float t = d->lim_qv[d->lim_head & mask];
+    d->lim_rel = fminf(t, d->lim_rel + (1.0f - d->lim_rel) * rel);
+    d->lim_fast += (d->lim_rel - d->lim_fast) * att;
+    const float ts = fmaxf(t, floor_slow);
+    d->lim_slow = ts < d->lim_slow ? ts : d->lim_slow + (1.0f - d->lim_slow) * slow;
+    const float g = fminf(d->lim_fast, d->lim_slow);
+    /* the sample 1 ms behind the window's front, 16 + 1 ms behind the input */
+    const uint32_t o = j - ahead;
+    left[s] = clampf(d->lim_l[o & mask] * g, -1.0f, 1.0f);
+    right[s] = clampf(d->lim_r[o & mask] * g, -1.0f, 1.0f);
   }
 }

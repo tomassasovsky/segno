@@ -1,4 +1,4 @@
-<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Metalic Wurli MKII Schroeder Fretless Balafon Glockenspiel Perc halvings Inharmonicity travelled Inharmonics atan Freq bilinearly penv mvol retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations -->
+<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Metalic Wurli MKII Schroeder Fretless Balafon Glockenspiel Perc halvings Inharmonicity travelled Inharmonics atan Freq bilinearly penv mvol retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations rvol mnoise lr -->
 # Segno — Progress & Roadmap
 
 <!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs multicore smarttune -->
@@ -76,16 +76,19 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   marimba, string, membrane, plate as banks of up to 70 modes; pipe and
   tube as waveguides) in series or parallel, with two LFOs and the
   per-voice modulation matrix.
-- Fitted against 152 Live renders in four rounds: 106 pass the strict
-  score (32 of 92 at the start), 18 of the 33 factory presets (1); the
-  held-out round passes 11 of 33. Measured: the waveguides' read offset,
-  the inverted Off Decay, the engine's grids for the mode shapes, the
-  synced LFO lengths, an exponential pitch envelope, the chooser's pitch
-  unit, a look-ahead limiter at 1 after the bundle's x4, the noise
+- Fitted against 152 Live renders in four rounds: 114 pass the strict
+  score with per-note alignment (32 of 92 at the start), 18 of the 33
+  factory presets (1); the held-out round passes 5 of 33. Measured: the
+  waveguides' read offset, the inverted Off Decay, the engine's grids for
+  the mode shapes, the synced LFO lengths, an exponential pitch envelope,
+  the chooser's pitch unit, a 1 ms look-ahead limiter at 1 after the
+  bundle's x4 with a fast and a slow release (its latency reported by
+  `le_collision_latency`), the bleed's Exp(0.001, 1) amount, the noise
   filters stepping every 10 ms when modulated, the resonators' gains
   ramping from the voice's last note, stolen voices restarted in place,
-  and held voices ending at about -94 dBFS. Left: the noise filters' low
-  end, the limiter on the series string, an upward pitch sweep.
+  and held voices ending at about -94 dBFS. Left: the noise high-pass's
+  low end, an upward pitch sweep of an octave, the random presets that
+  need Live copies (round 5 asks for them).
 - A voice costs 0.8 us per millisecond on the dev machine, two 70-mode
   resonators 1.4. A device holds 24 voices (1.7 MB).
 
