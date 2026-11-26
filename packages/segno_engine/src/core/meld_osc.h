@@ -88,6 +88,24 @@ typedef struct le_meld_resampler {
 #define LE_MELD_BUBBLES 64
 #define LE_MELD_VOSS_ROWS 16
 
+/* Noise Loop's recorder, kept across notes and oscillator changes: three
+ * ring buffers of a tenth of a second (up to 48 kHz), their write
+ * positions, which buffer each reader and the writer hold, the noise
+ * generator, the recording low-pass and the random levels. */
+#define LE_MELD_LOOP_MAX 4800
+typedef struct le_meld_nloop {
+  float buf[3][LE_MELD_LOOP_MAX];
+  int32_t w[3];
+  int32_t n;
+  int32_t ra, rb, wr;
+  uint32_t gx, gy;
+  float z, b0, a1;
+  float psi, theta, a_prev, b_prev, ga, gb;
+  float ic1, ic2, g;
+  int32_t countdown;
+  int32_t built; /* the buffers hold the construction fill (copied on first use) */
+} le_meld_nloop;
+
 typedef struct le_meld_osc {
   int32_t type;
   float rate;  /* the host rate */
@@ -99,7 +117,7 @@ typedef struct le_meld_osc {
   int32_t ramp_n, ramp_left;
   uint32_t rng;
   le_meld_resampler rs; /* the 44.1 kHz types' resampler */
-  float loop_fir[16];   /* Noise Loop's low-pass at this rate */
+  le_meld_nloop nloop;  /* Noise Loop's state, outside the union */
   union {
     struct {
       double ph[2];
@@ -146,13 +164,6 @@ typedef struct le_meld_osc {
       double master, slave[2];
       float out, carry; /* the one-sample delay the sync corrections need */
     } sync;
-    struct {
-      double theta, psi;
-      uint32_t seed[2];
-      float level[2];
-      int32_t filtered[2]; /* the stretch was recorded through the low-pass */
-      le_meld_svf_state hp;
-    } loop; /* Noise Loop */
     struct {
       double ph, trill;
       int32_t upper;

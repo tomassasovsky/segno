@@ -812,91 +812,185 @@ static float rain_tick(le_meld_osc* o) {
 
 /* ---- Noise Loop ---- */
 
-/* The looped noise: white noise from a seeded hash, through a 16-tap FIR of
- * a 2.5 kHz one-pole low-pass, circular over the loop's length; a refresh
- * takes a new seed (a new stretch of noise). Live records it into three
- * rotating 100 ms buffers, which start full of unfiltered noise (so a tap
- * plays that until its first refresh); regenerating it needs none. */
-#define MO_LOOP_TAPS 16
-
-static float loop_white(uint32_t seed, uint32_t i) {
-  uint32_t x = seed ^ (i * 0x9e3779b1u);
-  x ^= x >> 16;
-  x *= 0x7feb352du;
-  x ^= x >> 15;
-  x *= 0x846ca68bu;
-  x ^= x >> 16;
-  return (float)(x >> 8) * (2.0f / 16777216.0f) - 1.0f;
+/* Live's Noise Loop, written from the reader's description in
+ * segno-re-findings/rng-01-drift-meld.md, section 2 [code]: a two-word
+ * xorshift (10, 13, 10) from a fixed seed fills three ring buffers of a
+ * tenth of a second with raw noise, backwards, when the oscillator is
+ * built; every sample it records one more 2.5 kHz low-passed draw into the
+ * writer buffer, two refresh taps half a cycle apart hand the writer's
+ * buffer to a reader when they wrap (with a new random level), and each
+ * reader plays its buffer backwards from its newest sample through two
+ * heads half a loop apart. The noise is the same in every voice and every
+ * instance. */
+static uint32_t nl_step(le_meld_nloop* l) {
+  const uint32_t t = l->gx ^ (l->gx << 10);
+  l->gx = l->gy;
+  l->gy = l->gy ^ (l->gy >> 10) ^ t ^ (t >> 13);
+  return l->gy;
 }
 
-static void loop_fir(float* fir, float rate) {
-  const float K = 2.0f * tanf(fminf((float)MO_PI * 2500.0f / rate, 1.5f));
-  const float h0 = K / (K + 2.0f), p = (2.0f - K) / (2.0f + K);
-  float pk = 1.0f;
-  for (int t = 0; t < MO_LOOP_TAPS; ++t) {
-    fir[t] = t == 0 ? h0 : h0 * (pk + pk / p);
-    pk *= p;
+static float nl_unit(uint32_t y) { return (float)(y >> 9) / 4194304.0f - 1.0f; }
+
+/* The rational tan the description gives. */
+static float nl_tan(float x) {
+  const float x2 = x * x;
+  return x * (0.99999946f - 0.09652461f * x2) / (1.0f - 0.42986727f * x2 + 0.00998188f * x2 * x2);
+}
+
+/* M1 cubed, through the fast log2 and exp2 the description gives. */
+static float nl_cube(float m) {
+  m = fmaxf(m, 1e-6f);
+  int e;
+  const float fr = frexpf(m, &e); /* m = fr 2^e, fr in [0.5, 1) */
+  const float mm = 2.0f * fr - 1.0f;
+  const float lg = (float)(e - 1) + mm * (2.1196218f + mm * (0.3883265f - 0.0384236f * mm)) / (mm + 1.4695246f);
+  float z = 3.0f * lg + 127.0f;
+  z = mo_clamp(z, 0.0f, 255.0f);
+  const float zi = floorf(z), f = z - zi;
+  const float p = 1.0f + f * (0.6930501f + f * (0.2412875f + f * (0.0521745f + f * 0.0134879f)));
+  return ldexpf(p, (int)zi - 127);
+}
+
+/* The construction fill is the same for every oscillator at a rate: it is
+ * made once and copied into an oscillator's buffers the first time it
+ * plays Noise Loop. */
+static float g_nl_fill[3][LE_MELD_LOOP_MAX];
+static le_meld_nloop g_nl_after; /* the generator after the fill */
+static float g_nl_rate = -1.0f;
+
+static void nl_tables(float rate) {
+  if (rate == g_nl_rate) return;
+  le_meld_nloop* l = &g_nl_after;
+  l->n = (int32_t)floorf(2.0f * rate / 20.0f);
+  if (l->n > LE_MELD_LOOP_MAX) l->n = LE_MELD_LOOP_MAX;
+  l->gx = 0xFFFFFFFFu;
+  l->gy = 0x0103BC47u;
+  for (int k = 0; k < 3; ++k) {
+    int32_t w = 0;
+    for (int32_t i = 0; i < l->n; ++i) {
+      if (w == 0) w = l->n;
+      w--;
+      g_nl_fill[k][w] = nl_unit(nl_step(l));
+    }
   }
+  g_nl_rate = rate;
 }
 
-static float loop_sample(const float* fir, uint32_t seed, int32_t j, int32_t len, int filtered) {
-  if (!filtered) return loop_white(seed, (uint32_t)j);
-  float y = 0.0f;
-  for (int t = 0; t < MO_LOOP_TAPS; ++t) {
-    int32_t k = j - t;
-    if (k < 0) k += len;
-    y += fir[t] * loop_white(seed, (uint32_t)k);
-  }
-  return y;
+static void nl_ensure(le_meld_nloop* l) {
+  if (l->built) return;
+  memcpy(l->buf, g_nl_fill, sizeof(l->buf));
+  l->gx = g_nl_after.gx;
+  l->gy = g_nl_after.gy;
+  l->w[0] = l->w[1] = l->w[2] = 0;
+  l->built = 1;
 }
 
-static float loop_read(const float* fir, uint32_t seed, double pos, int32_t len, int filtered) {
-  const int32_t i = (int32_t)pos;
-  const float f = (float)(pos - (double)i);
-  return (1.0f - f) * loop_sample(fir, seed, i % len, len, filtered) +
-         f * loop_sample(fir, seed, (i + 1) % len, len, filtered);
+static void nl_build(le_meld_nloop* l, float rate) {
+  nl_tables(rate);
+  l->n = g_nl_after.n;
+  l->built = 0;
+  l->ra = 1;
+  l->rb = 0;
+  l->wr = 2;
+  l->z = 0.0f;
+  l->ga = l->gb = 1.0f;
+  const float om = fminf(2.0f * (float)MO_PI * 2500.0f / rate, 3.1337388f);
+  const float K = 2.0f * nl_tan(0.5f * om);
+  l->b0 = K / (K + 2.0f);
+  l->a1 = (K - 2.0f) / (K + 2.0f);
 }
 
-/* The refresh window: up over w/2, held to the half, down over w/2. */
-static float loop_window(double p, float w) {
-  const float t = p < 0.5 ? (float)p : 0.5f + 0.5f * w - (float)p;
-  const float x = mo_clamp(2.0f * t / fmaxf(w, 1e-9f), 0.0f, 1.0f);
+static void nl_note(le_meld_nloop* l, float phase) {
+  nl_ensure(l);
+  l->psi = 0.0f;
+  l->a_prev = l->b_prev = 0.0f;
+  l->theta = phase;
+  l->ic1 = l->ic2 = 0.0f;
+  l->countdown = 1;
+}
+
+static float nl_window(float t, float w) {
+  const float tt = t < 0.5f ? t : 0.5f + 0.5f * w - t;
+  const float x = mo_clamp(2.0f * tt / fmaxf(w, 1e-9f), 0.0f, 1.0f);
   return x * (2.0f - x);
 }
 
+static float nl_read(const le_meld_nloop* l, int32_t k, float pos) {
+  const int32_t i = (int32_t)pos;
+  const float ph = pos - (float)i;
+  const float* x = l->buf[k];
+  const int32_t j0 = (l->w[k] + i) % l->n, j1 = (j0 + 1) % l->n;
+  return x[j0] + ph * (x[j1] - x[j0]);
+}
+
 static float noise_loop_tick(le_meld_osc* o) {
+  le_meld_nloop* l = &o->nloop;
+  nl_ensure(l);
   const float rate = o->rate, m2 = o->m2;
-  const float half = fminf(0.5f * o->hz, 0.5f * rate);
-  float len = rate / fmaxf(half, 1.0f);
-  if (len > 0.1f * rate - 4.0f) len = 0.1f * rate - 4.0f;
-  const int32_t li = len < 2.0f ? 2 : (int32_t)len;
-  const float r = 0.5f * (119.76f * o->m1 * o->m1 * o->m1 + 0.24f);
-  const float w = m2 < 0.5f ? (1.0f - 2.0f * m2) + 2.0f * m2 * 0.02f * (r / rate) : 0.02f * (r / rate);
-  const float depth = m2 < 0.5f ? 0.0f : 2.0f * m2 - 1.0f;
-  const double th = o->s.loop.theta, th2 = mo_wrap(th + 0.5);
-  float y = 0.0f;
-  for (int k = 0; k < 2; ++k) {
-    const uint32_t seed = o->s.loop.seed[k];
-    const int fl = o->s.loop.filtered[k];
-    const float* fir = o->loop_fir;
-    const float l = (1.0f - fabsf(2.0f * (float)th - 1.0f)) * loop_read(fir, seed, th * li, li, fl) +
-                    (1.0f - fabsf(2.0f * (float)th2 - 1.0f)) * loop_read(fir, seed, th2 * li, li, fl);
-    y += loop_window(mo_wrap(o->s.loop.psi + 0.5 * k), w) * o->s.loop.level[k] * l;
+  const float h = fminf(0.5f * o->hz, 0.5f * rate);
+  /* the output high-pass's coefficient, every 32 samples */
+  if (--l->countdown <= 0) {
+    l->g = nl_tan(0.5f * fminf(2.0f * (float)MO_PI * h / rate, 3.1337388f));
+    l->countdown = 32;
   }
-  o->s.loop.theta = mo_wrap(th + half / rate);
-  const double before = o->s.loop.psi;
-  o->s.loop.psi += (double)(r / rate);
-  for (int k = 0; k < 2; ++k) {
-    /* a tap whose phase wraps takes a new stretch of noise */
-    if (floor(o->s.loop.psi + 0.5 * k) != floor(before + 0.5 * k)) {
-      o->s.loop.seed[k] = mo_next(&o->rng);
-      o->s.loop.level[k] = 1.0f - mo_bipolar(&o->rng) * depth;
-      o->s.loop.filtered[k] = 1;
-    }
+  /* record one low-passed draw, backwards */
+  const float u = nl_unit(nl_step(l));
+  const float y = l->b0 * u + l->z;
+  l->z = l->b0 * u - l->a1 * y;
+  if (l->w[l->wr] == 0) l->w[l->wr] = l->n;
+  l->buf[l->wr][--l->w[l->wr]] = y;
+  /* the refresh taps */
+  const float dpsi = 0.5f * (119.76f * nl_cube(o->m1) + 0.24f) / rate;
+  float w, s;
+  if (m2 < 0.5f) {
+    w = (1.0f - 2.0f * m2) + 2.0f * m2 * 0.02f * dpsi;
+    s = 0.0f;
+  } else {
+    w = 0.02f * dpsi;
+    s = 2.0f * fminf(m2, 1.0f) - 1.0f;
   }
-  o->s.loop.psi = mo_wrap(o->s.loop.psi);
-  float hp = 0.0f;
-  (void)le_meld_svf(&o->s.loop.hp, y, mo_tan(half, rate), 1.41421356f, 0, &hp);
+  const float psi0 = l->psi;
+  l->psi = psi0 + dpsi;
+  if (l->psi >= 1.0f) l->psi -= 1.0f;
+  const float ta = psi0;
+  float tb = psi0 + 0.5f;
+  if (tb >= 1.0f) tb -= 1.0f;
+  if (l->a_prev > ta) {
+    const int32_t t = l->ra;
+    l->ra = l->wr;
+    l->wr = t;
+    l->ga = 1.0f - s * nl_unit(nl_step(l));
+  }
+  if (l->b_prev > tb) {
+    const int32_t t = l->rb;
+    l->rb = l->wr;
+    l->wr = t;
+    l->gb = 1.0f - s * nl_unit(nl_step(l));
+  }
+  const float wa = nl_window(ta, w), wb = nl_window(tb, w);
+  l->a_prev = ta;
+  l->b_prev = tb;
+  /* the readers: two heads half a loop apart, backwards in time */
+  const float L = fminf(rate / fmaxf(h, 1e-6f), (float)(l->n - 4));
+  const float th0 = l->theta;
+  l->theta = th0 + h / rate;
+  if (l->theta >= 1.0f) l->theta -= 1.0f;
+  float th1 = th0 + 0.5f;
+  if (th1 >= 1.0f) th1 -= 1.0f;
+  const float t1 = 1.0f - fabsf(2.0f * th0 - 1.0f), t2 = 1.0f - fabsf(2.0f * th1 - 1.0f);
+  const float la = t1 * nl_read(l, l->ra, th0 * L) + t2 * nl_read(l, l->ra, th1 * L);
+  const float lb = t1 * nl_read(l, l->rb, th0 * L) + t2 * nl_read(l, l->rb, th1 * L);
+  const float x = wa * l->ga * la + wb * l->gb * lb;
+  /* the output high-pass at f/2 */
+  const float k = 1.4144272f, g = l->g;
+  const float a = g / (1.0f + g * (g + k));
+  const float v3 = x - l->ic2;
+  const float d1 = a * (v3 - (g + k) * l->ic1);
+  const float d2 = a * (g * v3 + l->ic1);
+  const float v1 = l->ic1 + d1, v2 = l->ic2 + d2;
+  l->ic1 += 2.0f * d1;
+  l->ic2 += 2.0f * d2;
+  const float hp = x - k * v1 - v2;
   return (2.0f - m2) * 1.25f * sqrtf(rate / 44100.0f) * hp;
 }
 
@@ -1082,7 +1176,7 @@ void le_meld_osc_init(le_meld_osc* o, float rate, uint32_t seed) {
   if (o->ramp_n < 1) o->ramp_n = 1;
   o->hz = 261.6256f;
   o->note = 60.0f;
-  loop_fir(o->loop_fir, rate); /* Noise Loop's filter, on this slow path */
+  nl_build(&o->nloop, rate); /* Noise Loop's buffers, filled once */
   le_meld_osc_set_type(o, LE_MELD_OSC_BASIC);
 }
 
@@ -1099,11 +1193,6 @@ void le_meld_osc_set_type(le_meld_osc* o, int32_t type) {
   } else if (type == LE_MELD_OSC_CHORD) {
     chord_retune(o);
     o->s.chord.left = MO_CHORD_UPDATE;
-  } else if (type == LE_MELD_OSC_NOISE_LOOP) {
-    for (int k = 0; k < 2; ++k) {
-      o->s.loop.seed[k] = mo_next(&o->rng);
-      o->s.loop.level[k] = 1.0f;
-    }
   } else if (type == LE_MELD_OSC_RAIN) {
     for (int i = 0; i < LE_MELD_RAIN_LANES; ++i) o->s.rain.timer[i] = 1.0f;
     o->s.rain.last_hz = -1.0f;
@@ -1204,9 +1293,7 @@ void le_meld_osc_reset(le_meld_osc* o, float phase) {
       memset(&o->s.rain.bg, 0, sizeof(o->s.rain.bg));
       break;
     case LE_MELD_OSC_NOISE_LOOP:
-      o->s.loop.theta = phase;
-      o->s.loop.psi = 0.0;
-      memset(&o->s.loop.hp, 0, sizeof(o->s.loop.hp));
+      nl_note(&o->nloop, phase);
       break;
     case LE_MELD_OSC_CHIP:
       o->s.chip.ph = phase;
