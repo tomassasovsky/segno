@@ -150,6 +150,12 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   363 of 390, factory presets 4 of 5 (Clob Bass); held-out 61 of 89,
   from 48. Round 24 is built: the filter state of a stopped block,
   audio-rate cutoff modulation, Metallic Swell Pad.
+- Filter I's output saturates softly (y / sqrt(1 + 2 y^2)): every
+  oscillator at Gain 1 through an open filter I was 0.2 to 0.35 dB loud
+  while Gain 0.25 matched. Metallic Swell Pad, FM Halfstep Sticks,
+  Bellatine, Echo Pulse and Monday Morning now pass. Strict score 364 of
+  390, factory presets 4 of 5; held-out 66 of 89. Round 24 grew to 50
+  renders (Mono glide in a chord, two rectangles hot into filter II).
 
 ## November 2026 Drift's filter II as an MS-20 circuit model (SEG-109 P4, round 4)
 
