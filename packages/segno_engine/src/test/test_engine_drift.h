@@ -530,7 +530,7 @@ static void test_drift_filter2_starts_at_rest(void) {
   drift_set(&g_drift, LE_DRIFT_LFO_SHAPE, 5.0f);
   drift_set(&g_drift, LE_DRIFT_LFO_RETRIGGER, 1.0f);
   CHECK(le_drift_note_on(&g_drift, 1, 60, 127, 0) == 0);
-  CHECK(g_drift.voices[0].lfo_hold != 0.0f);
+  CHECK(g_drift.voices[0].lfo_b != 0.0f);
 }
 
 /* Drift Depth's tuning is the measured table: a few values pinned (cents
@@ -576,6 +576,35 @@ static void test_drift_serial_picks_tuning(void) {
     le_drift_render(&g_drift, l, r, 32);
     CHECK(fabsf(g_drift.voice_cents[0] - k[i].voice0) < 0.005f);
   }
+}
+
+/* Sample & Hold changes its value only at half-cycle boundaries (twice per
+ * cycle), while its generator steps every sample: 100 Hz over 0.1 s holds
+ * 20 values after the first, each in -1..1. */
+static void test_drift_sample_hold_steps(void) {
+  printf("test_drift_sample_hold_steps\n");
+  static float l[1], r[1];
+  drift_init(&g_drift, DRIFT_SR);
+  drift_set(&g_drift, LE_DRIFT_LFO_SHAPE, 5.0f);
+  drift_set(&g_drift, LE_DRIFT_LFO_MODE, 0.0f);
+  drift_set(&g_drift, LE_DRIFT_LFO_RATE, 100.0f);
+  drift_set(&g_drift, LE_DRIFT_LFO_AMOUNT, 1.0f);
+  drift_set(&g_drift, LE_DRIFT_LFO_RETRIGGER, 1.0f);
+  le_drift_render(&g_drift, l, r, 1);
+  CHECK(le_drift_note_on(&g_drift, 1, 60, 100, 0) == 0);
+  float last = g_drift.voices[0].lfo_b;
+  const uint32_t gy = g_drift.voices[0].lfo_gy;
+  int changes = 0;
+  const int n = DRIFT_SR / 10;
+  for (int i = 0; i < n; ++i) {
+    le_drift_render(&g_drift, l, r, 1);
+    const float b = g_drift.voices[0].lfo_b;
+    CHECK(b >= -1.0f && b < 1.0f);
+    if (b != last) ++changes;
+    last = b;
+  }
+  CHECK(changes >= 19 && changes <= 21);
+  CHECK(g_drift.voices[0].lfo_gy != gy);
 }
 
 /* An LFO in Ratio mode routed to pitch moves the oscillators' phase, not
@@ -934,6 +963,7 @@ static void run_drift_tests(void) {
   test_drift_filter2_starts_at_rest();
   test_drift_tuning_table();
   test_drift_serial_picks_tuning();
+  test_drift_sample_hold_steps();
   test_drift_ratio_lfo_is_phase_modulation();
   test_drift_mono_lane_ratio_lfo();
   test_drift_filter_input_clips_asymmetrically();

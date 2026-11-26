@@ -268,6 +268,12 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   Sol Bass 4.5 to 4.2, held-out Gear Shift passes, AG Bass, Rogue and
   Sol Bass close. Strict score 335 of 370 (round 21 included), factory
   presets 3 of 5; held-out 50 of 89.
+- Round 22: the oscillators' start phases already match Live's. Sample &
+  Hold and Wander now follow the reader's description of Live's
+  generator and its stepping (every voice tick, two steps at a block
+  reset and at a retriggered note, the starting lane taking lane 0's
+  values). Strict score 354 of 390 (round 22 included); round 23 is
+  built for Stereo voice pairing.
 
 ## November 2026 Drift's filter II as an MS-20 circuit model (SEG-109 P4, round 4)
 
