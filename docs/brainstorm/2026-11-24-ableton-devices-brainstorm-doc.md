@@ -581,7 +581,12 @@ where the reading was silent or disagreed. Segno's implementation is
   since init (the fit harness starts it with the export). Sync and Beat
   retrigger a modulator's envelope as a carrier's. **[measured: round 7's
   sync and beat renders]** A Beat retrigger due after the note-off does
-  not restart the release. **[measured: round 8's beat-noteoff]** A
+  not restart the release, and a retrigger falls a whole period after its
+  start, so one due at the very sample of the note-off finds the release
+  begun (Segno had fired a sample early: round 7's sync and beat renders
+  0.69 dB to 0.14; held out, Pure Bell 8ths, whose triad's 12 s release
+  had started from a fresh peak, 6.0 to 0.1). **[measured: round 8's
+  beat-noteoff, round 7]** A
   Loop's restart runs even a minimal attack (the note's own start skips
   it), and each segment lasts its time rounded up to whole samples: a
   0.1 + 13 + 50 ms loop repeats every 3029 samples, the first 3024
@@ -593,7 +598,13 @@ where the reading was silent or disagreed. Segno's implementation is
   whatever EnvTimeIncludeAttack says (Live scales the attack either way).
   **[code]** **[measured]**
 - A voice ends when every sounding carrier's envelope has ended; a stolen
-  voice fades in 1 ms. **[code]**
+  voice fades in 1 ms. **[code]** In its release an envelope has ended
+  once it falls below 10^−3 of full level (before the operator's own
+  amplitude), and the voice stops a block later: a 50 ms release from
+  full level ends 1760 samples after the note-off, from 0.25 at 1648,
+  from full level at volume 0.1 at 2296 (Segno within 1 to 17 samples
+  now; it ran each release out). **[measured: sine, env-loop-1, round 9's
+  rel-in-* and osr-self renders]**
 
 ### LFO and pitch envelope
 
@@ -739,7 +750,11 @@ where the reading was silent or disagreed. Segno's implementation is
   scaling (operator level, filter, envelope times, LFO rate, the key
   route). **[measured: diagnosed on a held-out preset, Electric FM Wow
   Bass; round 8's legato-keyscale, legato-fltkey and legato-triad
-  confirm it, 0.1 to 0.75 dB]**
+  confirm it, 0.1 to 0.75 dB]** A mono voice that has just taken a
+  sounding voice's place, and so starts at its own pitch, takes the same
+  instant's later chord notes at their pitch too, without gliding (Harsh
+  FM Bass, round 8 1.9 dB to 1.1, held out 2.2 to 1.2; neutral on Wobbly
+  Flag Bass). **[measured]**
 - Random pan and the random start phases do not repeat from one Live
   instance to the next: two identical tracks draw different pans, and
   every held-out preset's Live copies differ (Live against itself 0.8 to
@@ -826,12 +841,19 @@ of 10 presets; the held-out round 36 of 67.
 
 Still open:
 
+After round 9, a pass over the held-out failures (14 deterministic, 17
+random) found the Beat and Sync retrigger a sample early (Pure Bell 8ths),
+the voice end at 10^−3, and the snap of a chord joining a taken voice
+(Harsh FM Bass): the fit rounds pass 365 of 419, the held-out round 38 of
+67. Of the random held-out failures, most fail on the attack, which
+scores only the first note, against Live's three copies: Live's own
+first-note pans differ from copy to copy (Bells Fifths +0.52, −0.32,
++0.03), so a small Live spread there (Pitchy Release Pluck +0.55, +0.49,
++0.59) is chance in three draws, which Segno's three seeds cannot match.
+
 - OSR self-oscillating near its input's pitch (17 cents at a 300 Hz
-  cutoff on a 262 Hz sine) and the click as a ringing voice ends: Live's
-  voice ends 2 ms before its 50 ms release runs out (the level about
-  10^−4), Segno's at its end.
-- Harsh FM Bass passes only with its 12 ms glide near zero, while other
-  mono presets glide as Segno does.
+  cutoff on a 262 Hz sine; the input level moves the pull little and the
+  ringing level much).
 - Beat and Sync retrigger detail (Rhythmic Pong, Sweep Wobble, Noisy
   Triple Beat, Full Perc Pluck), the free LFO's first-block chords, the
   circuit drive renders, PRD's and MS2's high-passes.
@@ -839,8 +861,8 @@ Still open:
   Pluck and Fizzling Pad put their first notes at the sides, so Segno's
   spread exceeds 1.5 times Live's; rndpan-100's first note is hard right
   in all three Live copies.
-- glide-mono-gap: its second note's onset in the first note's release is
-  aligned by 0.9 ms, which costs 4.0 dB (0.20 unaligned).
+- Wobbly Flag Bass (4.1 to 4.3 dB), Tesseract's stereo, Full Perc Pluck,
+  Creep Bass's release tail.
 
 ## Decisions
 

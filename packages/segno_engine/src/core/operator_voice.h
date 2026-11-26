@@ -80,6 +80,8 @@ typedef struct le_operator_voice {
   int32_t state; /* LE_OPERATOR_VOICE_* (operator_voice.c) */
   int32_t note;
   int32_t key; /* the note key scaling follows: kept through legato */
+  int32_t ending; /* its carriers ended in the last chunk: it frees after this one */
+  int32_t snap;   /* took a sounding voice's place and has not played yet: legato notes jump */
   uint32_t origin;
   uint64_t serial;
   int32_t side;   /* 0: both channels, 1: left only, 2: right only (Spread) */

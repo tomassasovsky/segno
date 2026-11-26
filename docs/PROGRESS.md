@@ -125,6 +125,10 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   span, Res, Filter Drive and Aux Env are gain destinations, OSR's
   self-oscillation refitted, envelope segments last whole samples. 363 of
   419 fit renders (round 9 23 of 29), 8 of 10 presets; held out 36 of 67.
+- Held-out pass: Beat and Sync retrigger a whole period after their start,
+  a releasing envelope ends at 10^-3 and its voice a block later, a chord
+  joining a voice that took a sounding one's place does not glide. 365 of
+  419 fit renders, 8 of 10 presets; held out 38 of 67.
 - A voice costs 2.7 us per period at 48 kHz on the dev machine, 4.5 with
   Antialias (a Drift voice 7.1).
 

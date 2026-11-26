@@ -599,7 +599,10 @@ static float env_curve(float y0, float y1, float s, double t) {
 static float env_tick(le_operator_env* e, const env_def* p, float fv, const env_ctx* c) {
   if (p->loop == LOOP_BEAT || p->loop == LOOP_SYNC) {
     e->repeat -= 1.0;
-    if (e->repeat <= 0.0) {
+    /* the retrigger falls a whole period after its start, so one due at a
+     * note-off finds the release begun (measured: round 7's sync and beat
+     * renders, 0.69 dB to 0.14; held out, Pure Bell 8ths 6.0 to 0.1) */
+    if (e->repeat < 0.0) {
       e->repeat += (double)kRepeatBeats[p->repeat] * 60.0 / (double)c->bpm * (double)c->rate;
       if (e->state != ENV_RELEASE && e->state != ENV_OFF) env_attack(e, p, fv, c, 0);
     }
@@ -992,6 +995,13 @@ int32_t le_operator_note_on(le_operator* d, uint32_t origin, int32_t note, int32
                                        1000.0f / (float)LE_OPERATOR_CHUNK);
       v->glide_chunks = chunks < 1 ? 1 : chunks;
       v->pitch_step = ((float)note - v->pitch) / (float)v->glide_chunks;
+      /* a voice that has just taken a sounding voice's place (and so starts
+       * at its own pitch) takes the chord's later notes at theirs too
+       * (measured: Harsh FM Bass, round 8, 1.9 dB to 1.1) */
+      if (v->snap) {
+        v->glide_chunks = 0;
+        v->pitch = (float)note;
+      }
       v->note = note;
       v->origin = origin;
       retuned = 1;
@@ -1037,6 +1047,11 @@ int32_t le_operator_note_on(le_operator* d, uint32_t origin, int32_t note, int32
   } else {
     le_operator_voice* a = free_slot(d);
     if (a != NULL) start_voice(d, a, origin, note, vel, serial, SIDE_BOTH, pan_rnd, glide);
+  }
+  if (took) {
+    for (int32_t i = 0; i < LE_OPERATOR_VOICE_SLOTS; ++i) {
+      if (d->voices[i].serial == serial) d->voices[i].snap = 1;
+    }
   }
   d->last_pitch = (float)note;
   d->played = 1;
@@ -1746,13 +1761,23 @@ static float operators_tick(le_operator* d, le_operator_voice* v, const chunk_ct
   return sum;
 }
 
-/* Whether every sounding carrier's envelope has ended. */
+/* Whether every sounding carrier's envelope has ended: run out, or fallen
+ * in its release below 10^-3 of full level (before the operator's own
+ * amplitude). Live ends a voice there, about 40 samples later: a 50 ms
+ * release at 1760 samples from full level, 1648 from 0.25, 2296 from full
+ * level at volume 0.1 (measured: sine, env-loop-1, round 9's rel-in-*
+ * and osr-self renders, all at 10^-3 within 2 %). */
+#ifndef ENV_END
+#define ENV_END 1e-3f
+#endif
 static int voice_done(const le_operator_voice* v, const chunk_ctx* c) {
   int any = 0;
   for (int32_t op = 0; op < LE_OPERATOR_OPS; ++op) {
     if (!c->on[op] || !(kCarriers[c->alg] & (1u << op))) continue;
     any = 1;
-    if (v->env[op].state != ENV_OFF) return 0;
+    const le_operator_env* e = &v->env[op];
+    if (e->state != ENV_OFF && !(e->state == ENV_RELEASE && fabsf(e->y) < ENV_END && e->y1 < ENV_END))
+      return 0;
   }
   return any || v->state == LE_OPERATOR_VOICE_RELEASED;
 }
@@ -1774,6 +1799,7 @@ static void render_voice(le_operator* d, le_operator_voice* v, const chunk_ctx* 
   filter_target ft = {0};
   lfo_coef lc;
   float lfo_a, penv_a;
+  v->snap = 0;
   voice_chunk(d, v, c, &ft, &lc, &lfo_a, &penv_a, frames);
   if (c->filter_on) {
     if (v->f_g <= 0.0f) {
@@ -1956,7 +1982,11 @@ static void render_voice(le_operator* d, le_operator_voice* v, const chunk_ctx* 
   if (v->state != LE_OPERATOR_VOICE_FADING && voice_done(v, c) &&
       ((v->state != LE_OPERATOR_VOICE_HELD && v->state != LE_OPERATOR_VOICE_SUSTAINED) ||
        carriers_triggered(c))) {
-    v->state = LE_OPERATOR_VOICE_FREE;
+    /* Live ends it a block after: one more chunk */
+    if (v->ending) v->state = LE_OPERATOR_VOICE_FREE;
+    v->ending = 1;
+  } else {
+    v->ending = 0;
   }
 }
 
