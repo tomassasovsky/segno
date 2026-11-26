@@ -1331,9 +1331,9 @@ the shape of, rebuilt by Segno's own rule. Segno's implementation is
   copy sums both engines, then the voice's drive and limiter. **[code]**
 - The device's output is 0.5 x Volume (linear) x the sum of the voices;
   copies sum at 1/sqrt(N). Engine volume is dB, pan constant power (sine
-  law, -3 dB a side at centre). **[code]** **[measured]** Live's output
-  sits a further 0.0206 dB down: Live over Segno is 0.99763 in every
-  render, plain shapes, hard pan, unison and drive alike. **[measured]**
+  law, -3 dB a side at centre). **[code]** **[measured]** (Live over
+  Segno 1.0000 in every round; an earlier note here had it 0.0206 dB
+  lower, a measurement against a build with the wrong output gain)
 - The Mod envelopes, both LFOs and the matrix run once per 16 samples; the
   oscillators, filters and Amp envelopes every sample. Macros and gains
   glide over 5 ms. **[code]**
@@ -1348,7 +1348,10 @@ the shape of, rebuilt by Segno's own rule. Segno's implementation is
   the sample the 480th quiet sample ends, not at the end of a 16-sample
   tick. Live's notes ran 26878, 26998, 26878, 26878 and 26878 samples (the
   second's tail crosses the level 120 samples late); Segno's now do, and
-  every note matches Live's to the sample. **[measured]**
+  every note matches Live's to the sample. **[measured]** Round 12's
+  nloop-55-vol05 (Volume 0.5) ends each note on the same samples, so the
+  level scales with Volume, and nloop-55-u2 (two copies) ends each note on
+  Live's sample too. **[measured]**
 
 ### Oscillators
 
@@ -1525,7 +1528,14 @@ third-octave band, the MS2 pair within 2.6 short of full drive. **[measured]**
 
 - Each segment ramps x from 0 to 1 over its time and follows (e^(kx) - 1) /
   (e^k - 1), k = -7.5 slope. A note restarts the attack from the initial
-  level. Loop modes: None, Trigger (ignores note-off), Loop (the tail, then
+  level. x runs in double precision: in float its steps drift a tenth of a
+  sample over a release, and Live's release over Segno's then rises to
+  1.006 at its end, where in double it stays 1.0000 to the last sample
+  (nloop-55-notes). **[measured]** A note's Amp attack takes the time the
+  matrix sets at its first tick: an attack of 0 the matrix lengthens is
+  played, not skipped (round 12's aat-note-n67, -n72 and -n81, Note into
+  an attack of 0 at 0.44, match Live's to the sample; aat-note-a01-n72
+  from 0.1 s likewise). **[measured]** Loop modes: None, Trigger (ignores note-off), Loop (the tail, then
   again), AD Loop. The Mod envelope holds its loop through note-off unless
   LegacyEnvLoopBehaviour. Link Envelopes gives engine B engine A's.
   **[code]** **[measured]**
@@ -1791,6 +1801,27 @@ legato restart (Thunder Kick's chord); Club Kick 2 dB loud; and Poly
 Plucks, whose Noise Loop follows Live's at 0.99 correlation while its
 level wanders 2.5 dB as an LFO moves Macro 2 across 0.5, where the
 refresh levels switch on.
+
+Round 12 answered: the voice end's level scales with Volume and holds in
+unison (nloop-55-vol05, nloop-55-u2 end each note on Live's sample once
+the envelope runs in double precision); Note into an Amp attack of 0 is
+played (aat-note-*, every one to the sample); Harmonic and Fold FM
+crossing entries under an LFO pass as they are (hfm-cross, ffm-cross), so
+Granny State's trouble is elsewhere; Tarp's Mono legato restart passes
+alone (tarp-leg-single, -chord), so Thunder Kick's is elsewhere too.
+Neurotimbre's engine A alone now matches (tf 8.2 to 0.07 dB); its engine
+B, whose attack of 4.6e-5 s Note lengthens to about 3 s by the law, is
+nearly as fast in Live as with no route at all (tf 14.8 dB, 3.5 without
+the route), which the attacks of 0 and 0.1 s do not explain: round 13
+asks for tiny attacks. The Sub passes at A4 and A5 at every Macro 1 and
+fails at A6 only (tf 8 to 20 dB), where Live's has lines at 880k +- 360
+and 520 Hz, on a 40 Hz grid, 41 dB down at Macro 1 0.32: the shape of a
+table or rate artefact in Live's sine, for a reader to describe. Club
+Kick's engines alone are each 1.6 to 1.9 dB loud with the limiter on in
+unison; a limiter hearing the copies' sum brings the level within 0.2 to
+0.9 dB but leaves tf at 3 and 7 dB, so round 13 isolates the limiter
+against copies and Volume. With these the strict score passes 34 of 84
+held-out at five seeds (from 33).
 
 ## Analog: behavior
 
