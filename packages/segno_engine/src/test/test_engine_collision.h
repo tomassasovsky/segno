@@ -441,6 +441,34 @@ static void test_collision_fits(void) {
   int32_t flat = 0;
   for (int32_t i = 0; i < N; ++i) flat += fabsf(l[i]) > 0.999f;
   CHECK(pk <= 1.0f && pk > 0.99f && flat < N / 20);
+  /* the limiter looks 1 ms ahead: the output starts 16 samples plus that
+   * after the strike; a quiet note through it comes out unchanged */
+  CHECK(le_collision_latency(&g_collision) == 48);
+  collision_reference(&g_collision);
+  CHECK(le_collision_note_on(&g_collision, 1, 60, 100, 0) == 0);
+  le_collision_render(&g_collision, l, r, N);
+  int32_t first = 0;
+  while (first < N && l[first] == 0.0f) first++;
+  CHECK(first == 16 + 48);
+  /* a loud strike's gain falls before its peaks and rises back fast to
+   * within 0.79 dB, then slowly: 25 ms after the strike of a short beam the
+   * output is still 0.5 to 1 dB below the quiet strike scaled up */
+  {
+    static float ql[N], qr[N];
+    for (int32_t k = 0; k < 2; ++k) {
+      collision_reference(&g_collision);
+      collision_set(&g_collision, LE_COLLISION_RES(0, LE_COLLISION_R_DECAY), 0.0f);
+      if (k) collision_set(&g_collision, LE_COLLISION_MALLET_VOLUME, 1.0f);
+      CHECK(le_collision_note_on(&g_collision, 1, 60, 100, 0) == 0);
+      le_collision_render(&g_collision, k ? l : ql, k ? r : qr, N);
+    }
+    /* the strike's force: Exp(0.001, 1), 1 at full and 0.001 * 1000^(64/127) at half */
+    const double scale = 1.0 / (0.001 * pow(1000.0, 64.0 / 127.0));
+    double el = 0.0, eq = 0.0;
+    for (int32_t i = 1200; i < 1248; ++i) el += (double)l[i] * l[i], eq += (double)ql[i] * ql[i];
+    const double db = 10.0 * log10(el / (eq * scale * scale));
+    CHECK(db < -0.5 && db > -1.0);
+  }
   /* the synced LFO on Res 1 Pan: index 4 swings once in 4 s */
   collision_reference(&g_collision);
   collision_set(&g_collision, LE_COLLISION_RES(0, LE_COLLISION_R_DECAY), 1.0f);
