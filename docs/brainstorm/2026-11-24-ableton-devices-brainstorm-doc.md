@@ -1374,7 +1374,7 @@ are built from the same modules.
   past it; a hammer driven on into the string stays on it. Mass, stiffness and speed are not held to any
   range (velocity amounts take them 16 octaves either way). **[code]**
   **[measured]** (the bouncing hammer's re-strikes in round 4, the
-  lightest hammer's level, Strat Muted Guitar, Nice Harp and the held-out
+  lightest hammer's level, the muted guitar preset, Nice Harp and the held-out
   Slap Bass's hard C5 and Moving String Pad's chord release)
 - The bow: a stick-slip junction, sticking within a zone around the bow's
   speed and released along a straight line (slope 10) back to the string's
@@ -1533,7 +1533,7 @@ bowed 1 of 15. What moved them, each against Live's renders:
   keep Live's pitch for the whole render.
 - The gated damper starts resting and is thrown off from there: Wood Bass
   (3.6 dB loud) and Clean Basic Guitar at C6 pass.
-- No ranges on the exciters' and damper's values: Strat Muted Guitar and
+- No ranges on the exciters' and damper's values: the muted guitar preset and
   Nice Harp pass; a hammer driven into the string stays on it (the
   held-out Slap Bass's hard C5 was 16 to 24 dB loud).
 - The bow's release line and its first block's speed: the attack passes
