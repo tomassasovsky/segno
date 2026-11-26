@@ -557,6 +557,39 @@ static void test_meld_measured(void) {
   const double fund = opr_component(l + N / 2, N / 2, f0);
   CHECK(opr_component(l + N / 2, N / 2, f0 * 1.4983071) > 0.003 * fund);
   CHECK(opr_component(l + N / 2, N / 2, f0 * 1.2599210) < 0.0003 * fund);
+  /* a voice ends on its own sample whatever the block size: the quiet
+   * count runs from the release's last step and the oscillators stop with
+   * the voice (nloop-55-notes) */
+  int32_t ends[2];
+  for (int run = 0; run < 2; ++run) {
+    meld_reference(&g_meld);
+    /* engine B, off, still has its Amp envelope to finish */
+    for (int32_t e = 0; e < 2; ++e) meld_eng(&g_meld, e, LE_MELD_E_AMP_RELEASE, 0.05f);
+    CHECK(le_meld_note_on(&g_meld, 1, 60, 127, 0) == 0);
+    le_meld_render(&g_meld, l, r, 4800);
+    le_meld_note_off(&g_meld, 1);
+    const le_meld_voice* w = &g_meld.voices[0];
+    for (int32_t k = 0; k < N && w->state != 0; k += run == 0 ? 1 : 7) {
+      le_meld_render(&g_meld, l, r, run == 0 ? 1 : 7);
+    }
+    CHECK(w->state == 0);
+    ends[run] = w->since;
+  }
+  CHECK(ends[0] == ends[1]);
+  CHECK(ends[0] > 4800 + 2400 + 470 && ends[0] < 4800 + 2400 + 1200);
+  /* a legato restart of a ringing voice lets the oscillator run on, Reset
+   * on (The Rhythm's Noise Loop, Plate Kick's FM) */
+  meld_reference(&g_meld);
+  meld_set(&g_meld, LE_MELD_MONO_POLY, 0.0f);
+  CHECK(le_meld_note_on(&g_meld, 1, 60, 127, 0) == 0);
+  le_meld_render(&g_meld, l, r, 1000);
+  le_meld_note_off(&g_meld, 1);
+  le_meld_render(&g_meld, l, r, 100);
+  const double ph = g_meld.voices[0].c[0].e[0].osc.s.basic.ph[0];
+  CHECK(ph > 0.01);
+  CHECK(le_meld_note_on(&g_meld, 2, 67, 127, 0) == 0);
+  CHECK(g_meld.voices[0].state == 1);
+  CHECK(g_meld.voices[0].c[0].e[0].osc.s.basic.ph[0] == ph);
 }
 
 static void run_meld_tests(void) {
