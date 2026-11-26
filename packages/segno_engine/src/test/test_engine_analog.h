@@ -416,6 +416,81 @@ static void test_analog_mono_retrigger(void) {
   CHECK(opr_peak(l + N / 2, N / 2) > 0.9f * kAnalogSinePeak);
 }
 
+/* The LFOs and the vibrato at a note's start: a free S&H holds 0 for its
+ * first cycle, a fresh voice's free LFO has run since the device started,
+ * a mono key change restarts a retriggered LFO's fade-in, and a mono
+ * voice's vibrato runs on through silence while a poly voice's starts at
+ * 0. */
+static void test_analog_lfo_starts(void) {
+  printf("test_analog_lfo_starts\n");
+  enum { N = 4800 };
+  static float l[N], r[N];
+  /* a free S&H: 0 until its first cycle ends */
+  analog_reference(&g_analog);
+  analog_chain(&g_analog, 0, LE_ANALOG_LFO_ON, 1.0f);
+  analog_chain(&g_analog, 0, LE_ANALOG_LFO_WAVE, 3.0f);
+  analog_chain(&g_analog, 0, LE_ANALOG_LFO_GATE_RESET, 0.0f);
+  analog_chain(&g_analog, 0, LE_ANALOG_LFO_SPEED, 0.2f); /* 0.16 Hz */
+  analog_chain(&g_analog, 0, LE_ANALOG_AMP_LFO_VOL, 1.0f);
+  CHECK(le_analog_note_on(&g_analog, 1, 60, 127, 0) == 0);
+  le_analog_render(&g_analog, l, r, N);
+  CHECK(g_analog.voices[0].c[0].ch[0].lfo == 0.0f);
+  CHECK(fabsf(opr_peak(l + N / 2, N / 2) - kAnalogSinePeak) < 0.002f);
+  /* a free LFO on a fresh voice: three quarters of Phase at the device's
+   * start, then the free rate */
+  analog_reference(&g_analog);
+  analog_chain(&g_analog, 0, LE_ANALOG_LFO_ON, 1.0f);
+  analog_chain(&g_analog, 0, LE_ANALOG_LFO_GATE_RESET, 0.0f);
+  analog_chain(&g_analog, 0, LE_ANALOG_LFO_PHASE, 1.0f);
+  le_analog_render(&g_analog, l, r, N); /* 0.1 s of silence */
+  CHECK(le_analog_note_on(&g_analog, 1, 60, 127, 0) == 0);
+  le_analog_render(&g_analog, l, r, 1);
+  {
+    /* Exp(3, 1000) a minute at the knob's 0.5, position 64 of 127 */
+    const double hz = 3.0 * pow(1000.0 / 3.0, 64.0 / 127.0) / 60.0;
+    double want = 0.75 + hz * (double)(N + LE_ANALOG_TICK) / OPR_SR;
+    want -= floor(want);
+    CHECK(fabs(g_analog.voices[0].c[0].ch[0].lfo_ph - want) < 2e-4);
+  }
+  /* a mono key change restarts a retriggered LFO's fade-in */
+  analog_reference(&g_analog);
+  analog_set(&g_analog, LE_ANALOG_POLYPHONY, 0.0f);
+  analog_set(&g_analog, LE_ANALOG_PRIORITY, 2.0f);
+  analog_chain(&g_analog, 0, LE_ANALOG_LFO_ON, 1.0f);
+  analog_chain(&g_analog, 0, LE_ANALOG_LFO_FADE, 0.0001f); /* 0.2 s */
+  CHECK(le_analog_note_on(&g_analog, 1, 48, 127, 0) == 0);
+  le_analog_render(&g_analog, l, r, N);
+  CHECK(g_analog.voices[0].c[0].ch[0].lfo_amp > 0.45f);
+  CHECK(le_analog_note_on(&g_analog, 2, 60, 127, 0) == 0);
+  le_analog_render(&g_analog, l, r, 64);
+  CHECK(g_analog.voices[0].c[0].ch[0].lfo_amp < 0.02f);
+  /* the vibrato: a mono voice's runs on through silence, a poly voice's
+   * starts at 0 */
+  for (int32_t poly = 0; poly < 2; ++poly) {
+    analog_reference(&g_analog);
+    analog_set(&g_analog, LE_ANALOG_POLYPHONY, poly ? 5.0f : 0.0f);
+    analog_set(&g_analog, LE_ANALOG_VIBRATO_ON, 1.0f);
+    analog_set(&g_analog, LE_ANALOG_VIBRATO_AMOUNT, 0.5f);
+    analog_set(&g_analog, LE_ANALOG_VIBRATO_SPEED, 0.5f);
+    analog_chain(&g_analog, 0, LE_ANALOG_AMP_ENV + LE_ANALOG_ENV_RELEASE, 0.0f);
+    CHECK(le_analog_note_on(&g_analog, 1, 60, 127, 0) == 0);
+    le_analog_render(&g_analog, l, r, N);
+    le_analog_note_off(&g_analog, 1);
+    le_analog_render(&g_analog, l, r, N);
+    le_analog_render(&g_analog, l, r, N);
+    CHECK(le_analog_active(&g_analog) == 0);
+    CHECK(le_analog_note_on(&g_analog, 2, 60, 127, 0) == 0);
+    const le_analog_voice* v = NULL;
+    for (int32_t i = 0; i < LE_ANALOG_VOICE_SLOTS; ++i) {
+      if (g_analog.voices[i].state == 1 /* held */) v = &g_analog.voices[i];
+    }
+    CHECK(v != NULL);
+    double want = poly ? 0.0 : (0.25 + 9.75 * 64.0 / 127.0) * (double)(3 * N) / OPR_SR; /* Lin(0.25, 10) */
+    want -= floor(want);
+    CHECK(v != NULL && fabs(v->vib_ph - want) < 1e-3);
+  }
+}
+
 /* Keyboard Stretch turns about A4: at full stretch C2 sits 26 cents flat
  * and A4 in tune. */
 static void test_analog_stretch(void) {
@@ -589,6 +664,7 @@ static void run_analog_tests(void) {
   test_analog_mono_hand_offs();
   test_analog_oscillator_start();
   test_analog_mono_retrigger();
+  test_analog_lfo_starts();
   test_analog_stretch();
   test_analog_key_pitch();
   test_analog_pitch_envelope();
