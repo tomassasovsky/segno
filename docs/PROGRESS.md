@@ -111,9 +111,9 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
 - Analog's envelope, LFO waves, filter (with the formants) and drive move
   into `aas_parts.h`, which both devices use; Analog's 201 fit renders are
   bit-identical across the move.
-- Fitted against 322 Live renders in eight rounds. Strict score: 281 of
-  322 pass, 44 of the 67 factory-preset renders; the held-out round of
-  every factory preset 80 of 107 (from 8); the chaotic bowed and bouncing
+- Fitted against 379 Live renders in nine rounds. Strict score (five
+  noise seeds): 294 of 379 pass, 38 of the 67 factory-preset renders; the
+  held-out round of every factory preset 81 of 107 (from 8); the chaotic bowed and bouncing
   renders are scored against Segno's own spread. Measured: the keyboard's
   Stretch and Fine Tune, the key amounts' resting 0.1, the bridge read's
   1.5 samples, the termination's loss, the output stage, the body's line
