@@ -590,6 +590,48 @@ static void test_meld_measured(void) {
   CHECK(le_meld_note_on(&g_meld, 2, 67, 127, 0) == 0);
   CHECK(g_meld.voices[0].state == 1);
   CHECK(g_meld.voices[0].c[0].e[0].osc.s.basic.ph[0] == ph);
+  /* Sub at A6: its f/2 sine rescaled to unit length every 16 samples
+   * steps in amplitude, a line at |3 x 880 - 3000| = 360 Hz about 40 dB
+   * under the 880 Hz sine (md-08's model; the sub-m*-n93 renders) */
+  meld_reference(&g_meld);
+  meld_eng(&g_meld, 0, LE_MELD_E_OSC_TYPE, (float)LE_MELD_OSC_SUB);
+  meld_eng(&g_meld, 0, LE_MELD_E_OSC_MACRO1, 0.0f);
+  meld_eng(&g_meld, 0, LE_MELD_E_OSC_MACRO2, 0.0f);
+  CHECK(le_meld_note_on(&g_meld, 1, 93, 127, 0) == 0);
+  le_meld_render(&g_meld, l, r, 9600);
+  {
+    const double main = opr_component(l + 4800, 4800, 880.0);
+    const double line = opr_component(l + 4800, 4800, 360.0);
+    CHECK(main > 0.3);
+    CHECK(line > main * 0.005 && line < main * 0.02);
+  }
+  /* the limiter hears a peak envelope: a saw 12 dB up, its peak held near
+   * Live's 0.712 (lim-u1; the sample's own level lets 1.04 through) */
+  meld_reference(&g_meld);
+  meld_set(&g_meld, LE_MELD_LIMITER, 1.0f);
+  meld_eng(&g_meld, 0, LE_MELD_E_OSC_MACRO1, 2.0f / 3.0f);
+  meld_eng(&g_meld, 0, LE_MELD_E_VOLUME, 12.0f);
+  CHECK(le_meld_note_on(&g_meld, 1, 48, 127, 0) == 0);
+  le_meld_render(&g_meld, l, r, N);
+  {
+    const float pk = opr_peak(l + N / 2, N / 2);
+    CHECK(pk > 0.68f && pk < 0.74f);
+  }
+  /* engine B's first tick takes its own attack, before the matrix moves
+   * it: 4.6e-5 s with Note into the attack is at full level within a
+   * millisecond (aat-note-b-n81), while the same route on A lengthens it */
+  for (int32_t e = 0; e < 2; ++e) {
+    meld_reference(&g_meld);
+    meld_eng(&g_meld, 0, LE_MELD_E_ON, e == 0 ? 1.0f : 0.0f);
+    meld_eng(&g_meld, 1, LE_MELD_E_ON, e == 1 ? 1.0f : 0.0f);
+    meld_eng(&g_meld, e, LE_MELD_E_AMP_ATTACK, 4.6e-5f);
+    meld_set(&g_meld, LE_MELD_MOD_AMOUNT(e, 14, 11), 0.28f);
+    CHECK(le_meld_note_on(&g_meld, 1, 81, 127, 0) == 0);
+    le_meld_render(&g_meld, l, r, 96);
+    const float pk = opr_peak(l + 48, 48);
+    if (e == 1) CHECK(pk > 0.3f);
+    else CHECK(pk < 0.01f);
+  }
 }
 
 static void run_meld_tests(void) {

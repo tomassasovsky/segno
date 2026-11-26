@@ -153,8 +153,17 @@ typedef struct le_meld_osc {
       float x1;
     } noisy;
     struct {
-      double ph, ph4;
-      float hp_x, hp_y;
+      /* the f/2 and f/4 recursions (x, y) and their coefficients */
+      float x2, y2, e2, x4, y4, e4;
+      /* the DC blocker's last input and output */
+      float hs, hh;
+      /* the saturator's drive and mix, as the last Macro 1 step left them */
+      float k, w;
+      /* Macro 1 / 3 and the f/4 level, each with its ramp */
+      float m, m_to, m_step, l, l_to, l_step;
+      int32_t m_n, l_n;
+      /* the type was just set: the next snap sets the drive and mix */
+      int32_t typed;
     } sub;
     struct {
       double ph;
