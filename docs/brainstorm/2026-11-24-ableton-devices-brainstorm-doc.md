@@ -1,6 +1,6 @@
 # Ableton Live device presets on the pedal — brainstorm
 
-<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance kModBy kCarriers Celesta transconductances Bandpass Bitgrunge Csound Drivetime Extratone Filther Lofi Lowpass Megatripolis Minnaert Sawstyle Starchestra polyBLEP Metalic Formant formants Barney Asym quintic Wurli MKII Schroeder Fretless Perc halvings Inharmonicity travelled retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations atan filt voicecut penv Unisono pul meldfit Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penvd rndpan Bassic Bitgrunge's Catchem Filther's Kaneda Werkstuecktraeger Whley Whley's filt nloop avel fleg unmodulated Basscycle spr ccg Clav restruck restrikes restrike prewarping Floot Halfstep Gametal Plucks Neurotimbre sqperc unnormalized fenv -->
+<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance kModBy kCarriers Celesta transconductances Bandpass Bitgrunge Csound Drivetime Extratone Filther Lofi Lowpass Megatripolis Minnaert Sawstyle Starchestra polyBLEP Metalic Formant formants Barney Asym quintic Wurli MKII Schroeder Fretless Perc halvings Inharmonicity travelled retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations atan filt voicecut penv Unisono pul meldfit Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penvd rndpan Bassic Bitgrunge's Catchem Filther's Kaneda Werkstuecktraeger Whley Whley's filt nloop avel fleg unmodulated Basscycle spr ccg Clav restruck restrikes restrike prewarping Floot Halfstep Gametal Plucks Neurotimbre sqperc unnormalized fenv relc -->
 
 **Date:** 2026-11-24
 **Issue:** SEG-109 (related: SEG-57, Segno's own instrument voices)
@@ -2484,13 +2484,14 @@ are built from the same modules.
 - The bow: a stick-slip junction, sticking within a zone around the bow's
   speed and released along a straight line (slope 10) back to the string's
   own velocity beyond it, lifted at the release. Its speed takes the
-  strike's key and velocity scaling only from the engine's next block and
-  keeps the one it took last until then (none on a string never bowed):
-  Live's block falls anywhere against a note, Segno holds the old speed a
-  fixed 48 samples so its output keeps to any block size. **[code]**
-  **[Segno]** (the fixed hold) **[measured]** (48: a note at the start of
-  a Live render, after which the C2 bow renders' first 100 samples match
-  Live's to -57 dB)
+  strike's key and velocity scaling only from the engine's next 1 ms
+  block and keeps the one it took last until then (none on a string never
+  bowed); the force and the friction take theirs at the strike. A note
+  starts on a block, so the new speed comes in on the note's sample
+  1 ms + 1 (49 at 48 kHz). **[code]** **[measured]** (bow9-sqx, Strings
+  Quartet's exciter on the reference string, Live's to -80 dB with 49,
+  -15 dB from the switch on with 48; with it the bowed fit renders pass
+  56 of 93, from 35)
 - The key and velocity amounts scale each exciter's three knobs, the
   positions, the damping, the decay and the damper by 2^(amount x pitch
   or velocity), Exp(0.1, 16) each. An amount at zero keeps its resting
@@ -2540,8 +2541,14 @@ are built from the same modules.
   again drops its envelope from where it stands to 0 over 0.7 ms before
   the attack, the shared retrigger. **[code]** **[measured]** (filt-env,
   the pad presets; the retrigger: Soft Buzz Bass's legato line, 0.34 to
-  0.14 dB rms. A mono string struck again after its release passes a
-  short burst in Live that this drop does not reproduce: round 8)
+  0.14 dB rms)
+- The filter's cutoff and Q are worked out once per 1 ms block from the
+  note on, from the envelope and the LFO as they stand at the block's
+  start, as Analog's filter does. **[code]** (an-01) **[measured]**
+  (uab9-48: Upright Ambient Bass's filter, nearly closed and opened by an
+  envelope with no attack, made Segno's first 100 samples up to 4 times
+  Live's on Segno's 32-sample tick; on the 1 ms blocks they match to
+  -60 dB)
 - The body: four recirculating lines, each a delay and a Schroeder
   all-pass, through a low cut and an absorption low-pass whose highs decay
   High Cut times as fast; Body Level is the device's volume, Sq(0, 2) on
@@ -2586,31 +2593,48 @@ are built from the same modules.
   the device's voices after the note-on), so uni8-three, s12-8-two and
   12 String Chorus Guitar's phrase match; round 9 checks notes off the
   1 ms grid)
-  Vibrato's rate is off by up to Error = Lin(0, 0.2) of it, a new random
-  draw each cycle, as Analog's. **[code]** (Live's own copies of the
-  presets with Error up differ from each other, those with it at zero
-  do not; Ice Ballad Keys and New Age String then pass on the held-out
-  round)
+  Vibrato's phase is never reset: a note finds it where its voice left
+  it. A voice without a note is still processed, one 1 ms block in 32
+  (the 32 voices take turns, one per block), until it has had 2048
+  samples of it from the device's start or the last parameter change
+  (each gives every voice those 2048 again); a playing voice spends
+  them too, each block. So a note on a voice never played finds its
+  vibrato 48 samples on for each turn it had, at most 43 turns (0.19 of a
+  cycle at 4.4 Hz, by about 1.4 s after the start). After the delay each
+  note draws its rate error, off by up to Error = Lin(0, 0.2) of the
+  rate, which takes the same share off the amount's depth (the depth
+  is amount x (2 - rate factor)); the amount fades in, the mod wheel's
+  share is neither delayed nor faded. A new note takes the free voice
+  that played longest ago (one never played first, in order); the mono
+  voice is always the same strings. **[code]** (ts-01's voice loop and
+  the vibrato module) **[measured]** (vib9-late-first, vib9-chord,
+  vib9-later and Wood Bass's phrase: a note on a fresh voice finds Live's
+  vibrato 0.15 of a cycle on at 1.0 s, 0.17 at 1.1 s and 0.19 from 1.5 s
+  on, on Wood Bass's 4.40 Hz as on 4.38; vib9-later's notes each on a
+  voice never played. The held-out Wood Bass, Robot Voice and String
+  Delay Pad then pass)
   Keys that arrive with a key that did not glide do not glide either
   (Const mode), as Analog's triads showed: a chord's later notes would
   otherwise glide from its first under Legato. **[measured]** (round 8:
   Electric Basic Bass's and Meow Keys' chords, 4.5 and 3.3 dB rms to
   0.07 and 0.06)
   A key struck again strikes its ringing string
-  without resetting it. A released string ends after 84 one-millisecond
-  blocks in a row, counted from the release, in which its own sound
-  (before the filter, which an LFO can close for a while) peaks below
-  -101.1 dBFS, but not while its gated damper is still in the air (for
-  at most 2 s of flight): the damper lands again and the string sounds.
-  Live cuts to silence on those 1 ms boundaries and never sooner than 84
-  blocks; a resting damper, a terminated string or a landed gated damper
-  makes it cut sooner than a silent string would, by a condition the
-  renders have not shown.
-  **[code]** **[Segno]** (the voice end) **[measured]** (Wurli Mellow's
-  phrase: a low thump 190 ms after a release, as in Live; Moving Space
-  Alarm, whose LFO closes its filter after a release while Live's string
-  rings on; round 7: the cut at 84 blocks for a silent string, and at
-  2094 for one held at -88 dBFS with no release loss)
+  without resetting it, and a string's rails start again at a strike only
+  if a parameter changed since its last strike or its length or the
+  damper's tap moved. A voice whose key is up at a 1 ms block's start
+  watches its sound through that block: after the filter, in Live's
+  scale (Segno's x 2 / 1.4373), smoothed by a one-pole of 0.05. Each
+  time it reaches the threshold the voice gets 4000 samples more and the
+  scan stops for the rest of the block; otherwise the samples run down,
+  and a voice out of them at the block's end is cut there. The threshold
+  is 0.005 with the damper on, 1e-4 with the finger on, 1e-5 otherwise.
+  **[code]** (ts-01: the voice loop, its silence check and the
+  string's note-on) **[measured]** (round 6's resting and gated damper's
+  references and the terminated string cut on Live's sample, 84 blocks
+  after the release for a still string; round 7's string held at
+  -88 dBFS with no release loss 30 blocks early, from 57. Where Live's
+  zeros start between blocks, its string has decayed below single
+  precision, which Segno does not copy: inaudible)
 
 ### The fits so far
 
@@ -2852,6 +2876,36 @@ With the score's five noise seeds (from three), and round 9: 294 of 379
 fit renders pass (round 9 22 of 57), 38 of the 67 factory-preset
 renders (seven chaotic bowed renders that passed on three seeds' spread
 no longer do); held-out 81 of 107.
+
+Then, read in the engine's voice loop and settled on the renders we
+have: the idle round that leaves a voice's vibrato on, the vibrato's
+phase never reset, its rate error drawn per note, the voices taken in
+turn (all above; vib9-later, vib9-late-first, vib9-held and Wood Bass's
+phrase pass); the bow's new speed on the next block's first sample
+(bow9-sqx, Wow Pad's and Ensemble Strings' parts, the cello and violin
+phrases); the filter worked out on 1 ms blocks (Upright Ambient Bass at
+C2); the voice's end (the damper, gated damper and finger references on
+Live's sample; Soft Buzz Bass's mono string struck by a chord, the open
+question of rounds 8 and 9, now passes in eight of its eleven renders).
+The fit harness puts the device's 1 ms grid on Live's, 16 samples into
+the render. With them: 330 of 379 fit renders pass, 47 of
+the 67 factory-preset renders; held-out 89 of 107.
+
+Still open: Strings Quartet's bow with its light gated damper, which
+parts from the string within the first 100 samples (the exciter alone
+now matches); Soft Buzz Bass's mono string struck by a chord that holds
+the key it played before (sbb9-relc4-tri) or with Low priority, where
+Live plays a strike at the chord's release that Segno does not; Soft
+Buzz Bass with its filter envelope off, 0.8 dB under Live's; the
+chaotic bowed and bouncing renders. Round 10 (43 renders,
+`segno-tension-fit10`) asks: single vibrato notes on fresh voices at
+0.25 to 3 s, at other rates, on a voice played again, mono, with delay,
+fade and rate error (with copies); the voice's end through a closed
+filter, a light resting damper and a finger on ringing strings; the
+bow's speed switch and the filter's updates on notes off the 1 ms grid;
+the Strings Quartet damper's speed and mass; a mono string falling back
+to a held key; a mono string struck again on its key; Soft Buzz Bass's
+filter envelope off.
 
 
 ## Decisions

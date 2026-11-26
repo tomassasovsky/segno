@@ -67,17 +67,21 @@ typedef struct le_tension_voice {
   int32_t since;  /* samples since the note, saturating */
   int32_t off_wait; /* samples until a released copy lets go, its delay after the key */
   int32_t fade_left, fade_len;
-  int32_t quiet;  /* released 1 ms blocks in a row that were quiet */
-  int32_t flying; /* released samples with the damper off the string */
-  int32_t rel_n;  /* released samples into the current 1 ms block */
-  float blk_peak; /* the string's peak in that block */
+  float cut_env;    /* the voice end's smoothed sound */
+  int32_t cut_left; /* samples it may stay under the threshold */
+  int cut_on;       /* the voice is alive */
+  int cut_watch;    /* its key was up at this block's start */
+  int cut_hit;      /* this block reached the threshold */
   int32_t tick_left;
   float pitch, pitch_to; /* the played pitch, octaves from C4, glided */
   float kerr;            /* octaves: Keyboard Error's draw for this strike */
   float p0;              /* the pitch at the strike */
-  double vib_ph;
+  double vib_ph;  /* never reset: it runs on from the voice's last note */
   float vib_t;
-  float vib_dev; /* this cycle's rate error, a fraction of the rate */
+  float vib_dev;  /* this note's rate error, a fraction of the rate */
+  int vib_drawn;  /* the note's rate error is drawn (at the end of the delay) */
+  int32_t idle_left; /* samples of idle processing left (the idle round) */
+  int dirty;         /* a parameter changed since its last strike */
   /* the string */
   float a[LE_TENSION_RAIL], b[LE_TENSION_RAIL];
   int32_t w;       /* the rails' write index */
@@ -107,6 +111,8 @@ typedef struct le_tension_voice {
   le_aas_filter f;
   le_aas_env fenv;
   float fc, q;
+  float lfo_out;    /* the LFO's value at the last tick */
+  int32_t filt_left; /* samples until the filter's next 1 ms update */
   double lfo_ph;
   float lfo_sh, lfo_sh_prev, lfo_amp, lfo_wait;
   uint32_t rng;
@@ -147,6 +153,8 @@ typedef struct le_tension {
   int32_t keyed_glide; /* whether that key glided */
   int32_t voice_limit;
   uint32_t stolen;
+  uint32_t blocks;  /* 1 ms blocks since init: the idle round's turn */
+  int32_t blk_pos;  /* samples into the current 1 ms block */
   float mix[LE_TENSION_TICK * 8]; /* scratch: the voices' sum */
   le_tension_body body;
   le_tension_voice voices[LE_TENSION_VOICE_SLOTS];
