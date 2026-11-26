@@ -220,6 +220,28 @@ static void test_tension_voices(void) {
   CHECK(le_tension_note_on(&g_tension, 1, 60, 100, 0) == 0);
   CHECK(le_tension_active(&g_tension) == 4);
   CHECK(le_tension_fade_oldest(&g_tension) == 4);
+  /* a unison copy, started its delay after the key, lets go its delay
+   * after it too */
+  tension_reference(&g_tension);
+  tension_set(&g_tension, LE_TENSION_UNISON_ON, 1.0f);
+  tension_set(&g_tension, LE_TENSION_UNISON_DELAY, 0.5f);
+  CHECK(le_tension_note_on(&g_tension, 1, 60, 100, 0) == 0);
+  le_tension_render(&g_tension, l, r, N);
+  le_tension_note_off(&g_tension, 1);
+  {
+    le_tension_voice* c1 = NULL;
+    for (int32_t i = 0; i < LE_TENSION_VOICE_SLOTS; ++i) {
+      if (g_tension.voices[i].copy == 1) c1 = &g_tension.voices[i];
+    }
+    CHECK(c1 != NULL && c1->delay > 100 && c1->off_wait == c1->delay);
+    if (c1 != NULL) {
+      const int32_t wait = c1->delay;
+      le_tension_render(&g_tension, l, r, wait - 10);
+      CHECK(c1->off_wait == 10 && c1->fenv.seg != LE_AAS_SEG_RELEASE);
+      le_tension_render(&g_tension, l, r, 20);
+      CHECK(c1->off_wait == 0 && c1->state == 2); /* released */
+    }
+  }
   /* the same key again strikes its sounding string */
   tension_reference(&g_tension);
   CHECK(le_tension_note_on(&g_tension, 1, 60, 100, 0) == 0);

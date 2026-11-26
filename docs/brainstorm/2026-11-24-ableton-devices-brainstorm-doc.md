@@ -1,6 +1,6 @@
 # Ableton Live device presets on the pedal — brainstorm
 
-<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance kModBy kCarriers Celesta transconductances Bandpass Bitgrunge Csound Drivetime Extratone Filther Lofi Lowpass Megatripolis Minnaert Sawstyle Starchestra polyBLEP Metalic Formant formants Barney Asym quintic Wurli MKII Schroeder Fretless Perc halvings Inharmonicity travelled retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations atan filt voicecut -->
+<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance kModBy kCarriers Celesta transconductances Bandpass Bitgrunge Csound Drivetime Extratone Filther Lofi Lowpass Megatripolis Minnaert Sawstyle Starchestra polyBLEP Metalic Formant formants Barney Asym quintic Wurli MKII Schroeder Fretless Perc halvings Inharmonicity travelled retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations atan filt voicecut ccg -->
 
 **Date:** 2026-11-24
 **Issue:** SEG-109 (related: SEG-57, Segno's own instrument voices)
@@ -1313,6 +1313,13 @@ are built from the same modules.
   with both, the references at C2, C4 and C6 keep Live's pitch to within
   1 % of the signal for 2 s, where they drifted 1.1 to 2.7 samples a
   second)
+- The Lagrange read takes the five taps from L plus the whole part of e
+  (toward zero), so the read point sits 1.5 plus e's fraction into them,
+  about their middle, where the interpolator loses least. **[code]**
+  **[measured]** (Segno's taps one sample earlier, off the middle, lost up
+  to 1.2 dB a round trip at 14 kHz: on loud high notes the plucked
+  presets' highs fell 10 to 30 dB short of Live's within half a second;
+  Clav Bright's phrase now matches to 0.05 dB rms, the C4 bow to 0.00)
 - The keyboard: Stretch scales the key about A4 (0.992 to 1.008 times,
   so C2 sits 15 cents flat at a preset's usual 0.8), Fine Tune spans half
   a semitone either way, and Error adds a random rise of up to 0.02 octave
@@ -1401,14 +1408,19 @@ are built from the same modules.
   started again with the damper on starts bent under its weight: rail A
   holds a / (1 + g) from the damper to the nut and -a g / (1 + g) from the
   bridge to it, rail B the same from the damper to the bridge and from the
-  nut, a = m g / 2; the bridge's filters and the output's high-pass start
+  nut, a = m g / 2, each rail's own tap at the damper still holding the
+  wave before the damper's push; the bridge's filters and the output's high-pass start
   settled on that, and the finger starts on the fret under its weight and
   the bent string's push. The damper itself starts resting on the string,
   its weight against the felt and the contact, and a gated one is thrown
   off from there at each strike, so it pushes the string while it parts
   from it; a string struck again keeps its damper where it is. **[code]**
   **[measured]** (the resting damper; the plucked presets' onsets and
-  level; Wood Bass and Clean Basic Guitar, 2 to 3 dB loud before)
+  level; Wood Bass and Clean Basic Guitar, 2 to 3 dB loud before; with
+  rail B's tap at the damper holding the wave after the push, the string
+  started with a jolt of half the weight's push, which a heavy damper
+  turned into Soft Buzz Bass's 6.4 kHz excess: its B3 now matches to
+  0.04 dB rms, from 3.9, and Clav Celesta's first sample is Live's)
 - The finger presses the string onto a
   fret at the nut, the two contacts solved together by Newton; the wave
   leaving the nut is the arriving wave plus the contacts' push, times the
@@ -1427,8 +1439,12 @@ are built from the same modules.
 - Analog's filter, all ten types (each stage clamping its own Q), its key
   tracking from the key with bend (no glide or vibrato); the filter
   envelope (attack, decay, sustain, release, velocity) in straight
-  segments, its module's default; the LFO as Analog's. **[code]**
-  **[measured]** (filt-env, the pad presets)
+  segments, its module's default; the LFO as Analog's. A string struck
+  again drops its envelope from where it stands to 0 over 0.7 ms before
+  the attack, the shared retrigger. **[code]** **[measured]** (filt-env,
+  the pad presets; the retrigger: Soft Buzz Bass's legato line, 0.34 to
+  0.14 dB rms. A mono string struck again after its release passes a
+  short burst in Live that this drop does not reproduce: round 8)
 - The body: four recirculating lines, each a delay and a Schroeder
   all-pass, through a low cut and an absorption low-pass whose highs decay
   High Cut times as fast; Body Level is the device's volume, Sq(0, 2) on
@@ -1454,11 +1470,17 @@ are built from the same modules.
   two or four of them (two voices with unison play one note of a chord).
   Each unison string starts a whole delay behind the one before, the
   delay (ExpZ(0.002, 0.1) s) counted in whole milliseconds, the engine's
-  1 ms blocks. Velocity reaches the device as (velocity - 1) / 126, the
+  1 ms blocks, and each lets go the same delay after the key, so a copy
+  plays the note delayed, its end too. Velocity reaches the device as (velocity - 1) / 126, the
   engines' shared MIDI front end. **[code]** (the velocity) **[measured]**
   (round 5: the voice count on unison chords; the reference's second and
   fourth strings at delays 0.25 to 1 land on Live's sample; with the
-  velocity the hammer references match Live's to -100 dB, from -80)
+  velocity the hammer references match Live's to -100 dB, from -80; the
+  copies' release: ccg-tri 1.6 to 1.3 dB rms, 12 String Chorus Guitar's
+  release 40 dB under Live's signal, from 15. For every note but the
+  song's first, Live's copies start and end one more 1 ms block late
+  against the first string, measured to the sample on 12 String Chorus
+  Guitar; whether that is Live's host or the engine is open: round 8)
   A key struck again strikes its ringing string
   without resetting it. A released string ends after 84 one-millisecond
   blocks in a row, counted from the release, in which its own sound
@@ -1616,6 +1638,29 @@ of the failing bowed and bouncing presets: where a 1e-6 change leaves
 Segno's attack in place (Cello and Ensemble Strings at D3, Strings Quartet
 at A4, Wow Pad and Moving Space Alarm at D3) the first 150 ms differ from
 Live's for a reason of the model's, not chaos.
+
+Then, from the held-out round sorted by kind (bowed, bouncing, plucked,
+hammer; random or not; which of the three notes fails), four causes shared
+by many renders, each confirmed on fit renders. The bridge's Lagrange read
+sat one tap off its middle whenever e's fraction was under a half, a
+high-frequency loss of up to 1.2 dB a round trip, which ate the highs of
+every loud high note (the plucked presets' hard C5 10 to 30 dB short above
+9 kHz); the string bent under a resting damper started with rail B's tap
+at the damper one sample on the wrong side, a jolt at the first sample
+(Soft Buzz Bass's B3, the open question of rounds 5 and 6, and Clav
+Celesta's highs); a string struck again restarted its filter envelope from
+0 where the shared module drops it over 0.7 ms; a unison copy let go with
+the key instead of its delay after it. Fit renders 248 of 285 pass (from
+233), 44 of the 67 factory-preset renders (from 41); held-out 75 of 107
+(from 62). Round 8 (37 renders,
+`segno-tension-fit8`) asks: the unison copies' timing on a note that is
+not the song's first; a mono string struck again after its release, with
+a filter envelope and as Soft Buzz Bass; Upright Ambient Bass's heavy,
+fast, soft, fully damped hammer at a quiet C2, whose highs come 6 to
+14 dB short; the bow with and without the speed's velocity amount, to
+test the speed switch after the first block that still moves Strings
+Quartet off Live's at sample 70; Meow Keys' chord, 6 dB short at 180 Hz;
+Electric Basic Bass's chord after a voice Live has cut.
 
 ## Decisions
 

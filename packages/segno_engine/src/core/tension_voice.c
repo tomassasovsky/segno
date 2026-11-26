@@ -533,7 +533,10 @@ static void string_strike(le_tension* d, le_tension_voice* v, float p, float pk,
    * weight: the constant waves that the weight's push (half of m g into
    * each rail, toward the damper's side) and the two lossy reflections
    * hold, a / (1 + g) on the damper's far side of each rail and -a g /
-   * (1 + g) on its near side */
+   * (1 + g) on its near side, the damper's own tap on each rail still
+   * holding the wave before its push [measured] (Soft Buzz Bass's B3,
+   * 0.04 dB rms, and Clav Celesta's first sample: with rail B's tap
+   * holding the wave after it, the string started with a jolt) */
   float rest_wave = 0.0f;
   if (reinit && dm->on) {
     const float g = fminf(v->g_to, 0.99999f);
@@ -542,7 +545,7 @@ static void string_strike(le_tension* d, le_tension_voice* v, float p, float pk,
     rest_wave = far;
     const int32_t tail = len + (int32_t)v->e + 5;
     for (int32_t k = 0; k <= len; ++k) v->a[(v->w - k) & TV_MASK] = k > len - damp_tap ? far : near;
-    for (int32_t k = 0; k <= tail; ++k) v->b[(v->w - k) & TV_MASK] = k >= damp_tap ? far : near;
+    for (int32_t k = 0; k <= tail; ++k) v->b[(v->w - k) & TV_MASK] = k > damp_tap ? far : near;
     /* the bridge's filters and the output's high-pass already settled on
      * it, so the bent string makes no step */
     v->ap_x = v->ap_y = v->lp_x = v->lp_y = far;
@@ -631,10 +634,16 @@ static float bow(const le_tension_voice* v, float u) {
   return stick + (du > 0.0f ? t : -t) * (outer - vc); /* a straight line [code] */
 }
 
-/* rail B at delay `dl` samples: a 5-tap Lagrange read */
-static float rail_read(const float* r, int32_t w, float dl) {
-  const int32_t i0 = (int32_t)floorf(dl) - 2;
-  const float x = dl - (float)i0; /* in [2, 3) */
+/* rail B at delay len + e + 1.5 samples: a 5-tap Lagrange read on the
+ * taps len + n .. len + n + 4, n the whole part of e (toward zero), so the
+ * read point sits 1.5 + its fraction into them, about their middle [code]
+ * [measured] (taps one earlier, off the middle, lost up to 1.2 dB a round
+ * trip at 14 kHz: Clav Bright's and the guitar presets' highs on loud high
+ * notes 10 to 30 dB short of Live's; now 0.05 dB rms) */
+static float rail_read(const float* r, int32_t w, int32_t len, float e) {
+  const int32_t n = (int32_t)e;
+  const int32_t i0 = len + n;
+  const float x = TV_BRIDGE_READ + (e - (float)n);
   float y = 0.0f;
   for (int32_t k = 0; k < 5; ++k) {
     float h = 1.0f;
@@ -651,7 +660,7 @@ static float string_tick(le_tension* d, le_tension_voice* v, int held) {
   const float rate = (float)d->sample_rate;
   const int32_t w = v->w, len = v->len;
   /* the bridge: rail B, delayed, through the dispersion and damping */
-  const float rb = rail_read(v->b, w, (float)len + v->e + TV_BRIDGE_READ);
+  const float rb = rail_read(v->b, w, len, v->e);
   const float ap = v->ap_a * rb + v->ap_x - v->ap_a * v->ap_y;
   v->ap_x = rb;
   v->ap_y = ap;
@@ -796,6 +805,7 @@ static void start_voice(le_tension* d, le_tension_voice* v, uint32_t origin, int
   if (fresh) v->since = 0; /* a re-strike keeps the copies' delays behind them */
   v->quiet = 0;
   v->flying = 0;
+  v->off_wait = 0;
   v->fade_left = 0;
   v->fade_len = (int32_t)lroundf(0.001f * rate);
   v->tick_left = 0;
@@ -817,7 +827,14 @@ static void start_voice(le_tension* d, le_tension_voice* v, uint32_t origin, int
                                 vf(d, LE_TENSION_FENV_ATTACK), vf(d, LE_TENSION_FENV_DECAY), vf(d, LE_TENSION_FENV_VEL),
                                 vf(d, LE_TENSION_FENV_SUSTAIN), 1.0f, vf(d, LE_TENSION_FENV_RELEASE)};
   const le_aas_env_set es = le_aas_env_read(k);
-  le_aas_env_start(&v->fenv, &es, vel, rate, 0);
+  /* a string struck again drops its envelope from where it stands to 0
+   * over 0.7 ms before the attack, the shared retrigger [measured]
+   * (sbb-leg, the mono legato line, 0.34 to 0.14 dB rms) */
+  if (fresh) {
+    le_aas_env_start(&v->fenv, &es, vel, rate, 0);
+  } else {
+    le_aas_env_drop(&v->fenv, &es, vel, rate);
+  }
   v->lfo_ph = 0.0;
   v->lfo_sh = v->lfo_sh_prev = le_aas_bipolar(&v->rng);
   v->lfo_wait = vf(d, LE_TENSION_LFO_DELAY) > 0.0f ? le_aas_exp(0.2f, 5.0f, vf(d, LE_TENSION_LFO_DELAY)) : 0.0f;
@@ -856,9 +873,22 @@ static void release_voice(le_tension* d, le_tension_voice* v) {
   }
 }
 
+/* A unison copy lets go its delay after the key, as it started its delay
+ * after it: each copy plays the note delayed, its end too [measured]
+ * (ccg-tri, 1.6 to 1.3 dB rms; 12 String Chorus Guitar's release, its
+ * error 15 dB under Live's signal before, 40 after). */
+static void release_copy(le_tension* d, le_tension_voice* v) {
+  if (v->delay > 0) {
+    v->state = LE_TENSION_VOICE_RELEASED;
+    v->off_wait = v->delay;
+  } else {
+    release_voice(d, v);
+  }
+}
+
 static void let_go(le_tension* d, le_tension_voice* v) {
   if (d->sustain_n > 0) v->state = LE_TENSION_VOICE_SUSTAINED;
-  else release_voice(d, v);
+  else release_copy(d, v);
 }
 
 int32_t le_tension_init(le_tension* d, int32_t sample_rate) {
@@ -970,7 +1000,7 @@ void le_tension_note_off(le_tension* d, uint32_t origin) {
 static void release_sustained(le_tension* d) {
   if (d->sustain_n > 0) return;
   for (int32_t i = 0; i < LE_TENSION_VOICE_SLOTS; ++i) {
-    if (d->voices[i].state == LE_TENSION_VOICE_SUSTAINED) release_voice(d, &d->voices[i]);
+    if (d->voices[i].state == LE_TENSION_VOICE_SUSTAINED) release_copy(d, &d->voices[i]);
   }
 }
 
@@ -1018,7 +1048,7 @@ void le_tension_release_matching(le_tension* d, uint32_t mask, uint32_t value) {
     if (v->state == LE_TENSION_VOICE_HELD && (v->origin & mask) == value) {
       key_up(d, v);
     } else if (v->state == LE_TENSION_VOICE_SUSTAINED && d->sustain_n == 0) {
-      release_voice(d, v);
+      release_copy(d, v);
     }
   }
 }
@@ -1333,6 +1363,7 @@ static void render_voice(le_tension* d, le_tension_voice* v, float* out, int32_t
       }
       const int32_t n = v->delay - v->since < frames - i ? v->delay - v->since : frames - i;
       v->since += n;
+      if (v->off_wait > 0 && (v->off_wait -= n) == 0 && v->state == LE_TENSION_VOICE_RELEASED) release_voice(d, v);
       i += n;
       continue;
     }
@@ -1346,7 +1377,8 @@ static void render_voice(le_tension* d, le_tension_voice* v, float* out, int32_t
       v->state = LE_TENSION_VOICE_FREE;
       return;
     }
-    const int held = v->state == LE_TENSION_VOICE_HELD || v->state == LE_TENSION_VOICE_SUSTAINED;
+    if (v->off_wait > 0 && v->off_wait < n) n = v->off_wait;
+    const int held = v->state == LE_TENSION_VOICE_HELD || v->state == LE_TENSION_VOICE_SUSTAINED || v->off_wait > 0;
     const float period = rate / (TV_C4 * exp2_engine(fminf(v->pitch_to + bend_oct(d), v->p0)));
     for (int32_t s = 0; s < n; ++s) {
       float y = string_tick(d, v, held);
@@ -1376,7 +1408,7 @@ static void render_voice(le_tension* d, le_tension_voice* v, float* out, int32_t
        * 190 ms after a release) [Segno] (Live cuts a resting damper's,
        * a terminated string's and a landed gated damper's string sooner,
        * by a condition the renders have not shown) */
-      if (v->state == LE_TENSION_VOICE_RELEASED) {
+      if (v->state == LE_TENSION_VOICE_RELEASED && v->off_wait == 0) {
         const int flying = v->damper.on && v->damper.f <= 0.0 && v->damper.grav != 0.0f &&
                            v->flying < (int32_t)(2.0f * rate);
         v->flying += flying;
@@ -1394,6 +1426,7 @@ static void render_voice(le_tension* d, le_tension_voice* v, float* out, int32_t
       }
     }
     v->tick_left -= n;
+    if (v->off_wait > 0 && (v->off_wait -= n) == 0 && v->state == LE_TENSION_VOICE_RELEASED) release_voice(d, v);
     if (v->since < (1 << 30)) v->since += n;
     i += n;
     if (v->state == LE_TENSION_VOICE_FADING) {
