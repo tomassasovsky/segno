@@ -1410,9 +1410,15 @@ are built from the same modules.
 - The finger presses the string onto a
   fret at the nut, the two contacts solved together by Newton; the wave
   leaving the nut is the arriving wave plus the contacts' push, times the
-  loss. The fret lies on the side the exciters push toward. **[code]**
-  **[measured]** (Sitar Far's buzz, Banjo and the upright and fretless
-  basses: 3 to 12 dB off with the fret on the other side)
+  loss. The fret lies on the side the exciters push toward. The finger,
+  the fret and every contact's motion are worked in double precision, as
+  the engine's are: a heavy finger on a stiff fret pushes with hundreds of
+  newtons where the wave is their small difference, and a heavy damper's
+  felt holds centimetres where its contact holds microns; single precision
+  left a noise floor 80 dB down. **[code]** **[measured]** (Sitar Far's
+  buzz, Banjo and the upright and fretless basses: 3 to 12 dB off with the
+  fret on the other side; the held-out Kalimba Big's highs, now Live's to
+  the dB)
 
 ### Filter, body, voices
 
@@ -1441,7 +1447,10 @@ are built from the same modules.
 - Mono or 2 to 32 voices, unison of 2 or 4 strings (the shared unison
   law), glide, vibrato. A key struck again strikes its ringing string
   without resetting it. A released string ends after 50 ms below
-  -100 dBFS. **[code]** **[Segno]** (the voice end)
+  -100 dBFS, but not while its gated damper is still in the air (for at
+  most 2 s of flight): the damper lands again and the string sounds.
+  **[code]** **[Segno]** (the voice end) **[measured]** (Wurli Mellow's
+  phrase: a low thump 190 ms after a release, as in Live)
 
 ### The fits so far
 
@@ -1527,6 +1536,29 @@ sustained motion (18 renders and the bowed presets), Tiny Tonal Drums
 and Hard Picked Guitar (Live's Error draws differ between its own copies),
 Tuned Noise (bowed), Wire Noise (random), Chord Bouncing, and Wurli
 Mellow's phrase (3.4, its later notes).
+
+Then: the bowed string and the bouncing hammer are chaotic. A change of
+1e-6 in the bow's or the hammer's speed at the strike moves Segno from
+itself, for 20 fit renders and 9 held-out bowed presets, at least two
+thirds as far as it is from Live (Tuned Noise 3.42 against Live, 3.41
+against itself; the bouncing hammer at C4 3.06 and 3.62), so those
+renders are scored against Segno's own spread under that change (the
+fit tooling's chaos list); the bow and hammer renders where Segno keeps
+to itself (bow-48, bow-w30-60, bounce-k25-48 and others) still count
+against Live. Wurli Mellow's phrase passes with the damper's flight
+keeping its voice, Kalimba Big's highs with the finger in double
+precision. Overall 154 of 185 fit renders pass, 25 of the 38
+factory-preset renders; held-out 59 of 107 (most chaotic renders still
+fail their attack, level or pitch, which Segno's own spread does not
+reach). Open, waiting on round 5 (34 renders:
+the unison's delay and detune laws, unison strings against the voices,
+the mono voice given a chord or a legato line, and Soft Buzz Bass,
+Kalimba Big, Wurli Mellow, Tuned Noise and Clean Chorus Guitar on notes
+of their own): the held-out unison presets (their second string comes
+about 1.8 % early in Live, and a two-voice unison preset seems to play
+one note, not two), and Soft Buzz Bass's mono chord, which rings about
+10 dB too long with a 120 Hz component, the heavy damper's own bounce
+on the string.
 
 ## Decisions
 

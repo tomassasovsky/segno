@@ -357,29 +357,29 @@ static int32_t clampi(int32_t x, int32_t lo, int32_t hi) { return x < lo ? lo : 
  * contact frame displacement `ys`, solving F = K max(delta, 0)^2 where
  * delta falls linearly with F (the body's, the felt's and the string's
  * give), in closed form. `moving`: the body moves under the force. */
-static float contact_force(const le_tension_contact* c, float ys, float u, int moving, float rate) {
-  const float c1 = 80.0f / (c->r * rate + 80.0f), c2 = 1.0f / (c->r * rate + 80.0f);
-  const float yb = moving ? c->y + (c->v + c->grav / rate) / rate : c->y + c->v / rate;
-  const float d0 = yb - c->z * (1.0f - c1) - ys - u / rate;
-  if (d0 <= 0.0f) return 0.0f;
-  const float beta = (moving ? 1.0f / (c->m * rate * rate) : 0.0f) + c2 + 0.5f / rate;
-  const float kb = c->k * beta;
-  const float s = 2.0f * kb * d0 + 1.0f;
+static float contact_force(const le_tension_contact* c, double ys, float u, int moving, float rate) {
+  const double sr = rate, c1 = 80.0 / (c->r * sr + 80.0), c2 = 1.0 / (c->r * sr + 80.0);
+  const double yb = moving ? c->y + (c->v + c->grav / sr) / sr : c->y + c->v / sr;
+  const double d0 = yb - c->z * (1.0 - c1) - ys - u / sr;
+  if (d0 <= 0.0) return 0.0f;
+  const double beta = (moving ? 1.0 / (c->m * sr * sr) : 0.0) + c2 + 0.5 / sr;
+  const double kb = c->k * beta;
+  const double s = 2.0 * kb * d0 + 1.0;
   /* F = K d0^2 * 2 / (s + sqrt(4 K beta d0 + 1)): the root that is small */
-  return c->k * d0 * d0 * 2.0f / (s + sqrtf(4.0f * kb * d0 + 1.0f));
+  return (float)(c->k * d0 * d0 * 2.0 / (s + sqrt(4.0 * kb * d0 + 1.0)));
 }
 
 /* Advances a contact by one sample under force f. */
 static void contact_step(le_tension_contact* c, float f, int moving, float rate) {
-  const float c1 = 80.0f / (c->r * rate + 80.0f), c2 = 1.0f / (c->r * rate + 80.0f);
-  if (moving) c->v += (c->grav - f / c->m) / rate;
-  c->y += c->v / rate;
+  const double sr = rate, c1 = 80.0 / (c->r * sr + 80.0), c2 = 1.0 / (c->r * sr + 80.0);
+  if (moving) c->v += (c->grav - f / c->m) / sr;
+  c->y += c->v / sr;
   /* the felt's surface yields under the force but follows the body's own
    * push only through the felt, so the body's give this sample comes off
    * the compression. fit: the bouncing hammer's re-strikes (round 4) and
    * the lightest hammer's level */
-  c->z = c->z * (1.0f - c1) + f * c2;
-  if (moving) c->z -= f / (c->m * rate * rate);
+  c->z = c->z * (1.0 - c1) + f * c2;
+  if (moving) c->z -= f / (c->m * sr * sr);
   c->f = f;
 }
 
@@ -565,9 +565,9 @@ static void string_strike(le_tension* d, le_tension_voice* v, float p, float pk,
      * and the bent string's own push at the nut */
     if (reinit || !v->term_was) {
       const float w = v->tf_m * TV_G, wa = fmaxf(w + 2.0f * rest_wave, 0.0f);
-      v->te_y = -sqrtf(wa / v->ta_k);
-      v->tf_y = v->te_y - sqrtf(w / v->tf_k);
-      v->tf_v = 0.0f;
+      v->te_y = -sqrt((double)wa / v->ta_k);
+      v->tf_y = v->te_y - sqrt((double)w / v->tf_k);
+      v->tf_v = 0.0;
       v->t_ff = w;
       v->t_fa = wa;
     }
@@ -579,39 +579,43 @@ static void string_strike(le_tension* d, le_tension_voice* v, float p, float pk,
  * contacts' compressions solved together by Newton, the end free. Returns
  * the wave leaving the nut: the arriving wave and the contacts' push, the
  * loss taken on the sum. */
-static float finger_fret(le_tension_voice* v, float in, float rate) {
-  const float dt = 1.0f / rate;
+static float finger_fret(le_tension_voice* v, float in_wave, float rate) {
+  /* in double, as the engine's: the two forces are large (a heavy finger
+   * on a stiff fret) and the wave is their small difference, which single
+   * precision leaves 80 dB down in noise. [code] (Kalimba Big's highs) */
+  const double dt = 1.0 / (double)rate;
   /* the fret lies on the side the exciters push toward: solved below in
    * a frame with the fret underneath, so the waves change sign there.
    * [code] fit: Sitar Far, Banjo and the upright and fretless basses */
-  in = -in;
-  const float ye0 = v->te_y + 2.0f * in * dt;
-  const float yf0 = v->tf_y + (v->tf_v - TV_G * dt) * dt;
-  const float bf = dt + dt * dt / v->tf_m;
-  float df = sqrtf(v->t_ff / v->tf_k), da = sqrtf(v->t_fa / v->ta_k);
+  const double in = -(double)in_wave;
+  const double kf = v->tf_k, ka = v->ta_k, g = TV_G;
+  const double ye0 = v->te_y + 2.0 * in * dt;
+  const double yf0 = v->tf_y + (v->tf_v - g * dt) * dt;
+  const double bf = dt + dt * dt / v->tf_m;
+  double df = sqrt(v->t_ff / kf), da = sqrt(v->t_fa / ka);
   for (int32_t it = 0; it < 24; ++it) {
-    const float dfp = fmaxf(df, 0.0f), dap = fmaxf(da, 0.0f);
-    const float ff = v->tf_k * dfp * dfp, fa = v->ta_k * dap * dap;
-    const float g1 = df - (ye0 - yf0 + fa * dt - ff * bf);
-    const float g2 = da - (-ye0 - fa * dt + ff * dt);
-    const float j11 = 1.0f + 2.0f * v->tf_k * bf * dfp, j12 = -2.0f * v->ta_k * dt * dap;
-    const float j21 = -2.0f * v->tf_k * dt * dfp, j22 = 1.0f + 2.0f * v->ta_k * dt * dap;
-    const float det = j11 * j22 - j12 * j21;
-    if (!(fabsf(det) > 1e-30f)) break;
-    const float sf = (g1 * j22 - g2 * j12) / det, sa = (g2 * j11 - g1 * j21) / det;
+    const double dfp = fmax(df, 0.0), dap = fmax(da, 0.0);
+    const double ff = kf * dfp * dfp, fa = ka * dap * dap;
+    const double g1 = df - (ye0 - yf0 + fa * dt - ff * bf);
+    const double g2 = da - (-ye0 - fa * dt + ff * dt);
+    const double j11 = 1.0 + 2.0 * kf * bf * dfp, j12 = -2.0 * ka * dt * dap;
+    const double j21 = -2.0 * kf * dt * dfp, j22 = 1.0 + 2.0 * ka * dt * dap;
+    const double det = j11 * j22 - j12 * j21;
+    if (!(fabs(det) > 1e-30)) break;
+    const double sf = (g1 * j22 - g2 * j12) / det, sa = (g2 * j11 - g1 * j21) / det;
     df -= sf;
     da -= sa;
-    if (fabsf(sf) < 1e-9f && fabsf(sa) < 1e-9f) break;
+    if (fabs(sf) < 1e-13 && fabs(sa) < 1e-13) break;
   }
-  if (!(df == df) || !(da == da)) df = da = 0.0f;
-  const float dfp = fmaxf(df, 0.0f), dap = fmaxf(da, 0.0f);
-  v->t_ff = v->tf_k * dfp * dfp;
-  v->t_fa = v->ta_k * dap * dap;
-  const float out = in + (v->t_fa - v->t_ff);
+  if (!(df == df) || !(da == da)) df = da = 0.0;
+  const double dfp = fmax(df, 0.0), dap = fmax(da, 0.0);
+  v->t_ff = kf * dfp * dfp;
+  v->t_fa = ka * dap * dap;
+  const double out = in + (v->t_fa - v->t_ff);
   v->te_y += (in + out) * dt;
-  v->tf_v += (v->t_ff / v->tf_m - TV_G) * dt;
+  v->tf_v += (v->t_ff / v->tf_m - g) * dt;
   v->tf_y += v->tf_v * dt;
-  return -v->g * out;
+  return (float)(-(double)v->g * out);
 }
 
 /* The bow at junction velocity u (the incoming waves' sum): the velocity
@@ -692,7 +696,7 @@ static float string_tick(le_tension* d, le_tension_voice* v, int held) {
     /* parked 1 m behind its start (a hammer), or 1 m past it (the
      * plectrum); a hammer driven on into the string stays on it [code]
      * (Slap Bass's hard C5) */
-    if (moving ? c->y - c->y0 < -1.0f : c->y - c->y0 > 1.0f) c->on = 0;
+    if (moving ? c->y - c->y0 < -1.0 : c->y - c->y0 > 1.0) c->on = 0;
   } else {
     v->ys_exc += u / rate;
   }
@@ -707,7 +711,7 @@ static float string_tick(le_tension* d, le_tension_voice* v, int held) {
     *da += 0.5f * f;
     *db += 0.5f * f;
     v->ys_damp += (ud + 0.5f * f) / rate;
-    if (fabsf(c->y - v->ys_damp) > 1.0f) {
+    if (fabs(c->y - v->ys_damp) > 1.0) {
       /* parked away; at the key's release it returns */
       c->v = 0.0f;
       c->grav = 0.0f;
@@ -787,6 +791,7 @@ static void start_voice(le_tension* d, le_tension_voice* v, uint32_t origin, int
                        (float)(copies > 1 ? copies - 1 : 1));
   if (fresh) v->since = 0; /* a re-strike keeps the copies' delays behind them */
   v->quiet = 0;
+  v->flying = 0;
   v->fade_left = 0;
   v->fade_len = (int32_t)lroundf(0.001f * rate);
   v->tick_left = 0;
@@ -1345,9 +1350,14 @@ static void render_voice(le_tension* d, le_tension_voice* v, float* out, int32_t
       }
       out[i + s] += y;
       /* fit: a released string ends after 50 ms below -100 dBFS, counted
-       * by the sample */
+       * by the sample, and not while its damper is still in the air (it
+       * lands again and the string sounds: Wurli Mellow's low thump 190
+       * ms after a release), for at most 2 s of flight [Segno] */
       if (v->state == LE_TENSION_VOICE_RELEASED) {
-        v->quiet = fabsf(y) < 1e-5f ? v->quiet + 1 : 0;
+        const int flying = v->damper.on && v->damper.f <= 0.0f && v->damper.grav != 0.0f &&
+                           v->flying < (int32_t)(2.0f * rate);
+        v->flying += flying;
+        v->quiet = fabsf(y) < 1e-5f && !flying ? v->quiet + 1 : 0;
         if (v->quiet >= quiet_end) {
           v->state = LE_TENSION_VOICE_FREE;
           return;
