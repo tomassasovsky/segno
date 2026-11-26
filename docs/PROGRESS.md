@@ -191,6 +191,10 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
 - Round 10: each of Spread's two voices draws its own random pan (a fixed
   pan scales them by one law). 371 of 427 fit renders, 8 of 10 presets;
   held out 39 of 67 (five Live copies per random preset).
+- Round 11: OSR damped at resonance 1 (no self-oscillation there) and
+  without drive in Morph mode; Spread draws nothing per voice beyond its
+  pans, the truncated table read and the sample-and-hold LFO match Live.
+  387 of 452 fit renders, 8 of 10 presets; held out 39 of 67.
 - A voice costs 2.7 us per period at 48 kHz on the dev machine, 4.5 with
   Antialias (a Drift voice 7.1).
 
