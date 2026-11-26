@@ -2183,9 +2183,18 @@ are built from the same modules.
   than Segno's, and sometimes not, as Live's host timing predicts. Live
   starts a note's first string on its block before the note, while the
   copies' delay runs from the note's own time and ends on a block too.
-  That is the host's placement, not the engine's, and the fit harness
-  cannot place a copy apart from its note, so Segno keeps the delay
-  from the note-on)
+  That is the host's placement: an event on a block start, as Segno's
+  engine delivers every event, gives Live's copies the delay in whole
+  milliseconds from the note, which is what Segno does. The fit harness
+  now adds the host's 32 samples to each later note's copies (it reaches
+  the device's voices after the note-on), so uni8-three, s12-8-two and
+  12 String Chorus Guitar's phrase match; round 9 checks notes off the
+  1 ms grid)
+  Vibrato's rate is off by up to Error = Lin(0, 0.2) of it, a new random
+  draw each cycle, as Analog's. **[code]** (Live's own copies of the
+  presets with Error up differ from each other, those with it at zero
+  do not; Ice Ballad Keys and New Age String then pass on the held-out
+  round)
   Keys that arrive with a key that did not glide do not glide either
   (Const mode), as Analog's triads showed: a chord's later notes would
   otherwise glide from its first under Legato. **[measured]** (round 8:
@@ -2390,6 +2399,20 @@ Live, and before the first 0.1 s the two taps give the same signal.
 With round 8: 279 of 322 fit renders pass (rounds 1 to 7 unchanged at 248,
 round 8 31 of 37), 44 of the 67 factory-preset renders; held-out 77 of 107
 (Electric Basic Bass and Meow Keys now pass).
+
+Then: the vibrato's Error (above), and the host's offset on later notes'
+unison copies moved into the fit harness. Round 9 (53 renders,
+`segno-tension-fit9`) asks: Strings Quartet's bow with its finger, its
+gated damper, its positions and inharmonicity taken out one at a time,
+its exciter on the reference string with each part added back, and
+Ensemble Strings and Wow Pad, whose first block already differs; Upright
+Ambient Bass at C2, the held-out note (round 8 tried C1 and C4), and its
+hammer on the reference; a mono string struck by a chord while it still
+rings, varied (damper, filter, envelope, body, held, order, priority,
+exciter, a dyad and one key); unison copies on notes off the 1 ms grid.
+With both: 281 of 322 fit renders pass, 44 of the 67 factory-preset
+renders; held-out 80 of 107 (12 String Chorus Guitar, Ice Ballad Keys and
+New Age String now pass).
 
 ## Decisions
 
