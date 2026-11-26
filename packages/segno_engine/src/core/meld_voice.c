@@ -344,6 +344,18 @@ static float env_step(le_meld_env* e, const env_def* p) {
   }
 }
 
+/* 2^x through the polynomial the Noise Loop description gives for its pow
+ * (segno-re-findings/rng-01-drift-meld.md 2.3): Live's note frequency
+ * follows it. [measured] (nl-n12, -n24, -n36, -n60: Noise Loop matches
+ * Live's renders to the sample with it, and drifts a sample in two
+ * seconds with an exact 2^x) */
+static float fast_exp2(float x) {
+  const float z = clampf(x + 127.0f, 0.0f, 255.0f);
+  const float zi = floorf(z), f = z - zi;
+  const float p = 1.0f + f * (0.6930501f + f * (0.2412875f + f * (0.0521745f + f * 0.0134879f)));
+  return ldexpf(p, (int)zi - 127);
+}
+
 /* A time knob in seconds moved by the matrix: the knob's position is the
  * fourth root of the time over 40 s, and the modulation adds to it.
  * [measured] Velocity into Amp Release: 1 s + 0.25 at 127 releases over
@@ -1318,7 +1330,7 @@ static void tick_copy(le_meld* d, le_meld_voice* v, le_meld_copy* cp) {
     mv_mods m;
     eval_matrix(d, e, sb, su, (semis - 60.0f) / 120.0f, &m);
     semis += m.sum[T_DETUNE] + 48.0f * m.sum[T_PITCH] + floorf(48.0f * m.sum[T_PITCH_QUANT] + 0.5f);
-    const float hz = 440.0f * exp2f((semis - 69.0f) / 12.0f);
+    const float hz = 440.0f * fast_exp2((semis - 69.0f) / 12.0f);
     if (en->osc.type != ei(d, e, LE_MELD_E_OSC_TYPE)) {
       le_meld_osc_set_type(&en->osc, ei(d, e, LE_MELD_E_OSC_TYPE));
     }
