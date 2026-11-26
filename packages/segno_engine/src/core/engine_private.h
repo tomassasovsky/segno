@@ -4051,11 +4051,13 @@ static inline float le_meter_fall_gain(uint32_t frames, int sr) {
 }
 
 /* Publishes [block_peak] into the meter at [slot], held against the slot's
- * last value fallen by [fall]. */
+ * last value fallen by [fall]. A non-finite block (a blown-up chain) is not
+ * held: NaN or Inf times the fall stays non-finite, so it would stick. */
 static inline void le_meter_publish(_Atomic uint32_t* slot, float block_peak,
                                     float fall) {
   float held = load_f32(slot) * fall;
-  if (held < LE_METER_FLOOR) held = 0.0f;
+  if (!(held >= LE_METER_FLOOR) || !isfinite(held)) held = 0.0f;
+  if (!isfinite(block_peak)) block_peak = 0.0f;
   store_f32(slot, block_peak > held ? block_peak : held);
 }
 
