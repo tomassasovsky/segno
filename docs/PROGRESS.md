@@ -1,4 +1,4 @@
-<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Metalic Wurli MKII Schroeder Fretless Perc halvings Inharmonicity travelled retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations -->
+<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Metalic Wurli MKII Schroeder Fretless Perc halvings Inharmonicity travelled retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations atan -->
 # Segno — Progress & Roadmap
 
 <!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs multicore smarttune -->
@@ -79,16 +79,20 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
 - Analog's envelope, LFO waves, filter (with the formants) and drive move
   into `aas_parts.h`, which both devices use; Analog's 201 fit renders are
   bit-identical across the move.
-- Fitted against 110 Live renders in two rounds. Strict score: 87 of 110
-  pass, 7 of the 20 factory presets; the held-out round of every factory
-  preset 32 of 107 (from 8). Measured: the keyboard's Stretch and Fine
-  Tune, the key amounts' resting 0.1, the bridge read's 1.5 samples, the
-  termination's loss, the output stage, the body's line lengths (each
+- Fitted against 185 Live renders in four rounds. Strict score: 143 of 185
+  pass, 23 of the 38 factory-preset renders; the held-out round of every
+  factory preset 54 of 107 (from 8). Measured: the keyboard's Stretch and
+  Fine Tune, the key amounts' resting 0.1, the bridge read's 1.5 samples,
+  the termination's loss, the output stage, the body's line lengths (each
   wet-only render fitted sample by sample against the dry reference) and
   its diffusion's growth with size, the damper's side and the string
   starting bent under it, the straight filter envelope, vibrato kept off
-  the pitch shifter, the body at every size. Open: the bouncing hammer
-  (chaotic), the bow with more force, the terminated basses' partials.
+  the pitch shifter, the body at every size, the output gain, the bow's
+  first block. Read and confirmed: the felt following the hammer only
+  through itself, the fret on the exciters' side, the engine's 2^x and C4
+  of 261.62 Hz, the gated damper thrown off from rest, no ranges on the
+  exciters' values. Open: the bouncing hammer after its second strike and
+  the bow's sustained motion (both chaotic), Live's random Keyboard Error.
 - A voice costs 1.8 us per millisecond with the hammer, 0.6 with the bow,
   the body 0.4 more. A device holds 32 strings (1.7 MB).
 

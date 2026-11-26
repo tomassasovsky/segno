@@ -1,6 +1,6 @@
 # Ableton Live device presets on the pedal — brainstorm
 
-<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance kModBy kCarriers Celesta transconductances Bandpass Bitgrunge Csound Drivetime Extratone Filther Lofi Lowpass Megatripolis Minnaert Sawstyle Starchestra polyBLEP Metalic Formant formants Barney Asym quintic Wurli MKII Schroeder Fretless Perc halvings Inharmonicity travelled retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations -->
+<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance kModBy kCarriers Celesta transconductances Bandpass Bitgrunge Csound Drivetime Extratone Filther Lofi Lowpass Megatripolis Minnaert Sawstyle Starchestra polyBLEP Metalic Formant formants Barney Asym quintic Wurli MKII Schroeder Fretless Perc halvings Inharmonicity travelled retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations atan -->
 
 **Date:** 2026-11-24
 **Issue:** SEG-109 (related: SEG-57, Segno's own instrument voices)
@@ -1306,13 +1306,23 @@ are built from the same modules.
   at L, times -g. Rail B's read sits 1.5 samples past L + e. L is fixed
   at the strike from the half period less the loop filters' phase delay
   and those 1.5 samples; e follows the pitch every tick, so glide and
-  vibrato change the string's length. **[code]** (Segno takes the exact
-  phase delay of its own filters) **[measured]** (the reference at C6)
+  vibrato change the string's length. The length is taken from C4 =
+  261.62 Hz, and the damping filter's share of the phase delay is the
+  engine's estimate, an analog one-pole's atan(w / wc) / w, not the
+  filter's exact delay. **[code]** **[measured]** (the reference at C6;
+  with both, the references at C2, C4 and C6 keep Live's pitch to within
+  1 % of the signal for 2 s, where they drifted 1.1 to 2.7 samples a
+  second)
 - The keyboard: Stretch scales the key about A4 (0.992 to 1.008 times,
   so C2 sits 15 cents flat at a preset's usual 0.8), Fine Tune spans half
   a semitone either way, and Error adds a random rise of up to 0.02 octave
   at each strike. **[code]** **[measured]** (the bass and guitar presets'
   pitch at C2, C4 and C6)
+- The engine's 2^x, used for the string's pitch and every key and
+  velocity scaling: whole octaves exactly, the fraction f by the cubic
+  1 + t + t^2 / 2 + 0.200064 t^3, t = f ln 2 (exact at both ends of the
+  octave, up to 0.05 % high near 0.85 of it). **[code]** **[measured]**
+  (Sitar Far's parts at D2 come to Live's sample for sample with it)
 - The knobs reach the curves as whole steps of the engine's 0..127 scale,
   cut to the step below in single precision. **[code]** **[measured]**
   (term-soft and the plucked presets, which a rounded step loses)
@@ -1334,8 +1344,10 @@ are built from the same modules.
   Bass's and Upright Basic Bass's vibrato depth; the vibrato renders'
   rate and depth)
 - The output: the pickup's point on the string, or the wave arriving at
-  the bridge; then a 10 Hz high-pass. **[code]** (fit: a gain of 1.5,
-  2.4 dB under the reading's 2)
+  the bridge; then a 10 Hz high-pass. **[code]** (the gain: **[measured]**
+  1.4634, 2.7 dB under the reading's 2, the median level of the 95
+  hammer, plectrum and bow fit renders that pass; a plain plectrum then
+  matches Live's to -108 dB)
 - Positions along the string: Exp(0.05, 0.5) of the half period (its
   fraction, not its whole samples), the exciter from the bridge, the
   damper and pickup from the nut, each within the string's first half;
@@ -1350,12 +1362,29 @@ are built from the same modules.
   plectrum, on a felt contact with F = K delta^2. Segno solves each
   sample's implicit contact exactly (delta falls linearly with F through
   the body's, the felt's and the string's give, so the quadratic has a
-  closed root). The hammer flies off under gravity; the bouncing hammer
-  falls back and re-strikes until it rests on the string; the plectrum
-  pushes only while it overlaps the string by less than its protrusion,
-  and past that it has slipped by. **[code]**
+  closed root). The felt's surface yields under the force and follows the
+  body only through the felt, so the body's own give under the force in a
+  sample comes off the felt's compression. The hammer flies off under
+  gravity; the bouncing hammer falls back and re-strikes until it rests
+  on the string; the plectrum pushes only while it overlaps the string by
+  less than its protrusion, and past that it has slipped by. Each starts
+  0.1 mm behind the string as it stands. A hammer is parked once 1 m
+  behind its start and the plectrum 1 m past it; a hammer driven on into
+  the string stays on it. Mass, stiffness and speed are not held to any
+  range (velocity amounts take them 16 octaves either way). **[code]**
+  **[measured]** (the bouncing hammer's re-strikes in round 4, the
+  lightest hammer's level, Strat Muted Guitar, Nice Harp and the held-out
+  Slap Bass's hard C5)
 - The bow: a stick-slip junction, sticking within a zone around the bow's
-  speed, released over a short ramp, lifted at the release. **[code]**
+  speed and released along a straight line (slope 10) back to the string's
+  own velocity beyond it, lifted at the release. Its speed takes the
+  strike's key and velocity scaling only from the engine's next block and
+  keeps the one it took last until then (none on a string never bowed):
+  Live's block falls anywhere against a note, Segno holds the old speed a
+  fixed 48 samples so its output keeps to any block size. **[code]**
+  **[Segno]** (the fixed hold) **[measured]** (48: a note at the start of
+  a Live render, after which the C2 bow renders' first 100 samples match
+  Live's to -57 dB)
 - The key and velocity amounts scale each exciter's three knobs, the
   positions, the damping, the decay and the damper by 2^(amount x pitch
   or velocity), Exp(0.1, 16) each. An amount at zero keeps its resting
@@ -1372,13 +1401,18 @@ are built from the same modules.
   bridge to it, rail B the same from the damper to the bridge and from the
   nut, a = m g / 2; the bridge's filters and the output's high-pass start
   settled on that, and the finger starts on the fret under its weight and
-  the bent string's push. Lifting a gated damper at the strike lets the
-  string spring back at once. **[code]** **[measured]** (the resting
-  damper; the plucked presets' onsets and level)
+  the bent string's push. The damper itself starts resting on the string,
+  its weight against the felt and the contact, and a gated one is thrown
+  off from there at each strike, so it pushes the string while it parts
+  from it; a string struck again keeps its damper where it is. **[code]**
+  **[measured]** (the resting damper; the plucked presets' onsets and
+  level; Wood Bass and Clean Basic Guitar, 2 to 3 dB loud before)
 - The finger presses the string onto a
   fret at the nut, the two contacts solved together by Newton; the wave
   leaving the nut is the arriving wave plus the contacts' push, times the
-  loss. **[code]**
+  loss. The fret lies on the side the exciters push toward. **[code]**
+  **[measured]** (Sitar Far's buzz, Banjo and the upright and fretless
+  basses: 3 to 12 dB off with the fret on the other side)
 
 ### Filter, body, voices
 
@@ -1452,6 +1486,47 @@ note lands about 51 samples early in Live (a harness effect common to
 the AAS devices, left to the harness). Error draws Segno's own random rise, so Hard Picked Guitar and Tiny
 Tonal Drums cannot match Live's pitch sample for sample. The MPE
 destinations are stored, not played.
+
+Round 4 (37 renders: the bouncing hammer's mass, felt damping and
+stiffness one at a time at C3, C4 and C5; Sitar Far's parts on their
+own; Wood Bass and Banjo without their filter, body or finger; the bow
+and plectrum read at the string) and a closer reading of the contact
+settle most of what was open. Overall now 143 of 185 renders pass (from
+106), 23 of the 38 factory-preset renders (from 8); held-out 54 of 107
+(from 32): hammer presets 15 of 26, plucked 37 of 60, bouncing 1 of 6,
+bowed 1 of 15. What moved them, each against Live's renders:
+
+- The felt follows the hammer's body only through the felt (the body's
+  give in a sample comes off the compression): the lightest hammer's
+  1.2 dB, and the bouncing hammer's second strike now lands on Live's
+  (C4 130 ms, 0.25 samples apart).
+- The output gain 1.4634 (all exciters had been 0.21 dB loud once the felt
+  was right; the bow's "2.5 % larger first pulse" was this).
+- The fret on the exciters' side: Sitar Far's parts, Banjo, the upright
+  and fretless basses pass (Sitar Far's 30 to 46 dB at 2.5 to 4 kHz was
+  the string lifting off the fret instead of striking it).
+- The engine's 2^x: Sitar Far's D2 renders match to 0.03 dB.
+- C4 = 261.62 Hz and the damping's estimated phase delay: the references
+  keep Live's pitch for the whole render.
+- The gated damper starts resting and is thrown off from there: Wood Bass
+  (3.6 dB loud) and Clean Basic Guitar at C6 pass.
+- No ranges on the exciters' and damper's values: Strat Muted Guitar and
+  Nice Harp pass; a hammer driven into the string stays on it (the
+  held-out Slap Bass's hard C5 was 16 to 24 dB loud).
+- The bow's release line and its first block's speed: the attack passes
+  on most bow renders; the sustained motion is still chaotic.
+
+The fit harness now places a note at 0 s 16 samples in and every later
+event 32 samples early, as Live's exports do (measured on the phrase and
+held-out renders), on a grid of 64-sample blocks.
+
+Still failing: the bouncing hammer after its second or third strike (16
+renders; to the first strikes it matches Live's to -78 dB, and double
+precision or Live's own force iteration do not keep it longer), the bow's
+sustained motion (18 renders and the bowed presets), Tiny Tonal Drums
+and Hard Picked Guitar (Live's Error draws differ between its own copies),
+Tuned Noise (bowed), Wire Noise (random), Chord Bouncing, and Wurli
+Mellow's phrase (3.4, its later notes).
 
 ## Decisions
 

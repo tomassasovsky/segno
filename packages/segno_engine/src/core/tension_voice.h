@@ -49,6 +49,7 @@ typedef struct le_tension_contact {
   float m, k, r; /* mass, stiffness, felt damping */
   float grav;    /* gravity along y */
   float reach;   /* the plectrum's protrusion (0 otherwise) */
+  float y0;      /* the string's displacement at the strike, where the exciter's frame starts */
 } le_tension_contact;
 
 typedef struct le_tension_voice {
@@ -84,6 +85,8 @@ typedef struct le_tension_voice {
   int32_t exc_type; /* engine type: 1 plectrum, 2 hammer, 3 bouncing, 4 bow, 0 off */
   le_tension_contact exc, damper;
   float bow_f, bow_vc, bow_vb; /* the bow */
+  float bow_vb_late, bow_vscale; /* the bow's speed after its first block; the speed scaling it last took */
+  int32_t bow_hold;              /* samples left on the last strike's speed scaling */
   float ys_exc, ys_damp; /* the string's displacement at the contacts */
   /* the finger on the fret */
   int32_t term, term_was; /* the finger is on; it was at the last strike */
