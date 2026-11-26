@@ -316,10 +316,21 @@ written from it.
   **[open]**), Square, Sample & Hold (two steps per cycle), Wander (smoothed
   random), Linear Env and Exponential Env (one-shot, 0..1). Output × Amount
   × the gain from its own mod source. **[code]** Sample & Hold and Wander
-  share one draw per half cycle (Wander glides from the last draw to it
-  along a quadratic S-curve, 2q² then 1 - 2(1 - q)²), and a restart or a
-  block reset draws a value at once, so a retriggered Sample & Hold starts
-  on a random step, not on 0. **[code]**
+  (rng-01-drift-meld.md, Drift section) **[code]**: each lane has its own
+  two-word xorshift (shifts 10, 13, 10; a value from its top 23 bits,
+  uniform in -1..1), and the four lanes of a block differ while every
+  block starts from the same words. Live seeds them from the system's
+  entropy once per instance, so its values differ in every instance;
+  Segno seeds from a fixed seed of its own **[Segno]**. Every lane steps
+  once per voice tick while the shape is one of the two, whether or not a
+  boundary falls; a boundary is the half-cycle phase frac(2p) wrapping.
+  There Sample & Hold holds the step's value, and Wander moves its base to
+  the old target and aims at the new one, gliding along 2q² then
+  1 - 2(1 - q)² over the half cycle. A block reset steps every lane twice
+  (the first value held, the second setting Wander's delta); a
+  retriggered note start steps every lane of its block twice and the
+  starting lane takes lane 0's two values, then holds lane 0's first
+  value for half a cycle.
 - Note gain: a pitch-dependent gain from 1 % of the ISO 226 40-phon
   equal-loudness contour, at most about −0.64 dB. Segno computes it from
   the standard. **[code]**
@@ -585,10 +596,15 @@ What the strict score still fails, and why **[measured]**:
   idle voices turning nor the synced LFO's restart. Clob Bass's stereo
   error is the noise in quiet bands (its noise-only isolation fails only
   in bands 15 to 35 dB down, where the noise's own fluctuation rules).
-  Live's Sample & Hold is the same in every instance (Metallic Strings'
-  and Numan Keystrike's Live copies differ by tf 0.06 and 0.00), so those
-  draws are deterministic in Live; matching them would take Live's own
-  random sequence, which only the code shows: a decision for the owner.
+  (Corrected: Metallic Strings' LFO is the Square shape, and Numan
+  Keystrike's Sample & Hold LFO is routed nowhere, so neither depends on
+  random draws. Their Live copies are the same sample for sample (Numan
+  Keystrike's three renders in round 18 and its held-out copy: rms
+  difference 0; Metallic Strings' within 1 % from its quiet noise), which
+  fits a per-instance seed that nothing audible reads. Metallic Strings
+  switches filter II's cutoff by ±4.2 octaves with that square at the
+  note's frequency, so its sound rests on the LFO's phase against the
+  oscillators: still failing, cause open.)
 - Round 16 settled two questions. Live's drift is the same in every
   instance: three Live renders of one Drift Depth patch, each a fresh
   device, correlate 1.0000. And Bloom Pad's filter peak came from key
