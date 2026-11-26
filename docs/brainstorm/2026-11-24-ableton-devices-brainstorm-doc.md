@@ -1,6 +1,6 @@
 # Ableton Live device presets on the pedal — brainstorm
 
-<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance kModBy kCarriers Celesta transconductances autocorrelation tfz unmeasured retriggered isolations -->
+<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance kModBy kCarriers Celesta transconductances autocorrelation tfz unmeasured retriggered isolations Geigerzaehler -->
 
 **Date:** 2026-11-24
 **Issue:** SEG-109 (related: SEG-57, Segno's own instrument voices)
@@ -574,7 +574,12 @@ where the reading was silent or disagreed. Segno's implementation is
   0.375 ..). Segno's grid is the device's own clock, samples rendered
   since init (the fit harness starts it with the export). Sync and Beat
   retrigger a modulator's envelope as a carrier's. **[measured: round 7's
-  sync and beat renders]**
+  sync and beat renders]** A Beat retrigger due after the note-off does
+  not restart the release. **[measured: round 8's beat-noteoff]** A
+  Loop's restart runs even a minimal attack (the note's own start skips
+  it): Geigerzaehler Bleep's loops come 3 samples later each cycle in
+  Live's render, which shifts its 13 ms bleeps against the waveform
+  (3.0 dB to 1.3). **[measured: round 8]**
 - Times scale by 2^(−8 TimeVel (vel − 70)/127) per envelope and by
   2^(3 EnvTime − 6 EnvTimeKey (key − 70)/127) for all, attack included
   whatever EnvTimeIncludeAttack says (Live scales the attack either way).
@@ -597,16 +602,22 @@ where the reading was silent or disagreed. Segno's implementation is
   Live's renders that phase counts from the export's start (the fit
   harness sets it so): a note 0.5 s in matches within 1°. Notes in the
   very first block do not: 0.30 of a cycle off at 1.9 Hz, 0.17 at 6.5 Hz,
-  Bells Brushed Hits' first chord 0.39. Whether that offset repeats from
-  one Live instance to the next is open (round 8 renders copies).
-  **[open]**
+  Bells Brushed Hits' first chord 0.39. The offset does not repeat from
+  one Live instance to the next: three copies of one render put the
+  same note at −111°, −39° and −1° (the last on the export clock), so it
+  is Live's own per-instance draw, judged against Live's spread.
+  **[measured: lfofree-single and its round 8 copies]**
 - Amount: 2 Amount² × A%, × 4(0.5 + VelScale (v − 0.5))², × the LFO
   envelope. Destination A multiplies an operator's phase increment by
   (1 + L) (linear pitch) and adds 24 semitones per unit to the cutoff
   through a smoother. **[code]** **[measured: pitch within 0.003]**
 - Pitch envelope: its levels in semitones × Amount × A%, as frequency
   ratios, multiply the increments of the operators that take it. **[code]**
-  **[measured]**
+  **[measured]** With LFO PitchEnv on, the same ratio (linear in ratio
+  across a segment) multiplies the LFO's rate: Wobbly Flag Bass's LFO
+  speeds up through its decay from 29 to −45 semitones as Live's does
+  (14.6 dB to 5.4, pitch 6.8 cents to 1.4). **[measured: round 8,
+  Wobbly Flag Bass and lfo-penv-rate]**
 
 ### Modulation routes **[measured]**
 
@@ -625,13 +636,24 @@ where the reading was silent or disagreed. Segno's implementation is
   at rest slows the LFO 1.6 octaves (OP Bass, 1.3 to 0.43 Hz), −20 %
   speeds it 1.6; the mod wheel's +58 % on the A/C crossfade gives C 0.42
   and A 1.58 at rest (Analog Bouquet Brass, its C and D alone 7.5 dB too
-  loud without it). **[measured]**
+  loud without it). **[measured]** Filter Res does the same: the mod
+  wheel at rest with +100 % opens no resonance (Harsh FM Bass, 4.7 dB to
+  2.1). **[measured: one render]**
 - A gain destination only attenuates, by 1 − a⁺ + a u (a⁺ the amount's
   positive part): the operators' volumes, FM Drive, LFO Amount, the
   filter envelope's amount (velocity +50 % leaves it whole at 127), Volume
   and Tone (which scales the Tone value). +100 % from aftertouch at rest
   silences, −100 % leaves full level; velocity −50 % gives 0.5 at 127 and
   0.75 at 64; the pitch envelope at 0 semitones gives 0.5, at +24 0.75.
+  Volume scales the voice's output, after the filter and the shaper, and
+  leaves the modulators whole: Creep Bass (velocity on Volume) drives its
+  shaper as hard at velocity 64 as at 127 and keeps its FM sidebands
+  (4.4 dB to 1.4), Bells Classic Basic 2.1 to 0.05, Smack Kick 2.4 to
+  2.0 (FM Piano Classic, its LFO on Volume, 2.4 to 1.1). **[measured:
+  round 8]**
+- Not built: Shaper Drive, Feedback, Filter Morph, Aux Envelope Amount
+  and Filter Q (legacy) as route destinations; round 9 renders each at
+  rest. **[open]**
 - The LFO's route is scaled by LFO Amount (linear: 0.5 gives half the
   depth) and the pitch envelope's by its Amount; both are silent while
   their LFO or envelope is off. The LFO Amount route scales both of the
@@ -698,7 +720,8 @@ where the reading was silent or disagreed. Segno's implementation is
   **[measured]** A legato glide keeps the first note's key for every key
   scaling (operator level, filter, envelope times, LFO rate, the key
   route). **[measured: diagnosed on a held-out preset, Electric FM Wow
-  Bass; round 8's legato renders confirm or refute it]**
+  Bass; round 8's legato-keyscale, legato-fltkey and legato-triad
+  confirm it, 0.1 to 0.75 dB]**
 - Random pan and the random start phases do not repeat from one Live
   instance to the next: two identical tracks draw different pans, and
   every held-out preset's Live copies differ (Live against itself 0.8 to
@@ -760,7 +783,43 @@ Round 8 (81 renders, `segno-op-fit8`) plays the 36 failing held-out
 preset kinds with another phrase (D2 at 64, an F4 triad at 90, A5 at
 120), with two Live copies of the 19 random ones, and isolates legato key
 scaling, a Beat retrigger at note-off, the pitch envelope on the LFO rate
-and copies of the first-block free LFO.
+and copies of the first-block free LFO. It confirmed legato key scaling,
+the Beat note-off and a constant pitch envelope on the LFO rate, showed
+the free LFO's first-block offset to be Live's own per-instance draw,
+and through the presets: the pitch envelope's ratio on the LFO rate, the
+Volume route on the voice's output, Res taking controllers as bipolar and
+a loop's restart through a minimal attack. Round 8 now passes 13 of its
+41 renders (from 9), the fit rounds 335 of 390 with 8 of 10 presets, the
+held-out round 35 of 67 (from 32).
+
+Still open after round 8, with what round 9 (`segno-op-fit9`, 31
+renders) isolates:
+
+- The pitch envelope's one-pole on small and rising spans: Chorus Strings
+  Sweep Pad (−2 semitones × 0.669 rising to 0) matches Live within 1.1 dB
+  only with its decay 1.29 times faster than the ratio-span rule gives,
+  while the 12- and 6-semitone falls fit it. Round 9: falls and rises of
+  2, 12 and 24 semitones at amounts 1, 0.669 and 0.5.
+- OSR's self-oscillation runs 7 % flat (Tesseract: Live rings at 30.4 Hz
+  for a 31.8 Hz cutoff, Segno at 28.2). Round 9: OSR at resonance 1.25
+  from 30 Hz to 1 kHz, and the band-pass at 100 Hz.
+- The route destinations Segno does not build (Shaper Drive, Feedback,
+  Morph, Aux Envelope) and Res at ±50 %; where the Volume route sits
+  (after a shaper, off a modulator), checked in isolation.
+- A release that starts before its attack or decay has arrived: Pure
+  Bell 8ths (held out) keeps its triad's second harmonics 22 dB louder
+  than Live after the release, its attacks 4.3 and 5 s long. Round 9
+  releases at 0.5 s into a 2 s attack and a 2 s decay.
+- Random pan: Live's draws at small amounts spread uniformly over ±2 ×
+  Rnd (48 draws, standard deviation 1.12 of Rnd against 1.15), but at 40
+  to 60 % none of 36 reached a hard side (largest 0.96). Round 9 draws 36
+  more at 100 % and 12 at 60 %. Segno's own seeds put Pitchy Release
+  Pluck's first notes at the sides, so its spread (14.5 dB) is more than
+  1.5 times Live's (5.8).
+- The scorer's per-note alignment shifts legato notes that have no onset
+  of their own: env-legato, glide-mono-gap, Sub Sine Bass, bq-cd and
+  Electric FM Wow Bass pass unaligned (0.14 to 0.56 dB) and fail aligned
+  (1.6 to 4.4).
 
 
 ## Decisions

@@ -1,4 +1,4 @@
-<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated autocorrelation tfz unmeasured retriggered isolations -->
+<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated autocorrelation tfz unmeasured retriggered isolations Geigerzaehler -->
 # Segno — Progress & Roadmap
 
 <!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs multicore smarttune -->
@@ -116,6 +116,13 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   presets; held out 32 of 67 (from 29). Live's random pan and phases
   differ between instances, so Segno draws its own. Round 8 (81 renders)
   plays the failing held-out kinds with another phrase.
+- Round 8: the pitch envelope moves the LFO rate in ratio, the Volume
+  route scales the voice's output (not the modulators, after the
+  shaper), Res takes controllers as bipolar, a loop's restart runs a
+  minimal attack. 335 of 390 fit renders (round 8 13 of 41, from 9), 8 of
+  10 presets; held out 35 of 67 (from 32). Round 9 (31 renders) isolates
+  the pitch envelope's small spans, OSR's self-oscillation, the unbuilt
+  route destinations, releases during an attack and random pan.
 - A voice costs 2.7 us per period at 48 kHz on the dev machine, 4.5 with
   Antialias (a Drift voice 7.1).
 

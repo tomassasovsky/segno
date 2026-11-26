@@ -536,11 +536,15 @@ typedef struct env_ctx {
   double clock; /* the device clock at the chunk, samples (Sync's grid) */
 } env_ctx;
 
+/* from_initial: 1 at a note (a minimal attack starts at the peak), 2 at a
+ * loop's restart (it runs even a minimal attack: Geigerzaehler Bleep's
+ * loops come 3 samples later each cycle in Live's render, measured), 0
+ * from the current value (Beat and Sync). */
 static void env_attack(le_operator_env* e, const env_def* p, float fv, const env_ctx* c,
                        int from_initial) {
   const float fa = fv * c->fglob;
   if (from_initial) {
-    if (p->at <= 0.11f) {
+    if (p->at <= 0.11f && from_initial == 1) {
       /* a minimal attack starts at the peak */
       e->y = p->dl;
       env_segment(e, ENV_DECAY, p->sl, p->dt, fv * c->fglob, p->ds, c->rate);
@@ -617,7 +621,7 @@ static float env_tick(le_operator_env* e, const env_def* p, float fv, const env_
         }
         break;
       case ENV_LOOP:
-        env_attack(e, p, fv, c, 1);
+        env_attack(e, p, fv, c, 2);
         break;
       default:
         e->state = ENV_OFF;
@@ -1562,7 +1566,7 @@ static void voice_chunk(le_operator* d, le_operator_voice* v, const chunk_ctx* c
   /* LFO */
   float fl = lfo_hz(d, VKEY(v), 1) * exp2f(rm.lfo_rate);
   if (vi(d, LE_OPERATOR_LFO_PITCH_ENV_ON) && c->penv_active) {
-    fl *= exp2f(v->penv.y * c->penv_amount);
+    fl *= penv_ratio(v->penv.y, &v->penv, c->penv_amount);
   }
   *lc = lfo_coefs(fl, rate);
   const float amount = vf(d, LE_OPERATOR_LFO_AMOUNT);
@@ -1627,7 +1631,6 @@ static void voice_chunk(le_operator* d, le_operator_voice* v, const chunk_ctx* c
     if (op == 0 || op == 1) lvl *= clampf(1.0f - rm.bi[op == 0 ? DST_XFADE_AC : DST_XFADE_BD], 0.0f, 2.0f);
     else lvl *= clampf(1.0f + rm.bi[op == 2 ? DST_XFADE_AC : DST_XFADE_BD], 0.0f, 2.0f);
     if (!(kCarriers[c->alg] & (1u << op))) lvl *= route_gain(&rm, DST_FM_DRIVE);
-    lvl *= route_gain(&rm, DST_VOLUME);
     if (v->gl < 0.0f) {
       v->amp[op] = lvl;
       v->amp_step[op] = 0.0f;
@@ -1645,7 +1648,9 @@ static void voice_chunk(le_operator* d, le_operator_voice* v, const chunk_ctx* c
                     OP_FILTER_K * mod[DST_FILTER_FREQ];
     float fc = vf(d, LE_OPERATOR_FILTER_FREQ) * exp2f(clampf(s / 12.0f, -31.0f, 31.0f));
     fc = clampf(fc, 30.0f, fminf(0.48f * rate, 18500.0f));
-    const float res = vf(d, LE_OPERATOR_FILTER_RES) + mod[DST_FILTER_RES];
+    /* Res takes amount x (2u - 1), as LFO Rate does: the mod wheel at rest
+     * with +100 % opens no resonance (measured: Harsh FM Bass) */
+    const float res = vf(d, LE_OPERATOR_FILTER_RES) + rm.bi[DST_FILTER_RES];
     /* Clean holds resonance at 0.9; the analog circuits take up to 2 */
     const float r = clampf(res, 0.0f, 0.9f);
     ft->q = 4.0f * r / (3.0f * r + 1.0f);
@@ -1659,7 +1664,10 @@ static void voice_chunk(le_operator* d, le_operator_voice* v, const chunk_ctx* c
   /* gains */
   const float q = clampf(vf(d, LE_OPERATOR_PAN) + v->pan + mod[DST_PAN], -1.0f, 1.0f);
   const float th = (q + 1.0f) * 0.25f * (float)OP_PI;
-  const float vol = vf(d, LE_OPERATOR_VOLUME);
+  /* the Volume route scales the voice's output, after the filter and the
+   * shaper (measured: Creep Bass, velocity on Volume, drives its shaper as
+   * hard at velocity 64 as at 127, and leaves its modulators whole) */
+  const float vol = vf(d, LE_OPERATOR_VOLUME) * route_gain(&rm, DST_VOLUME);
   float gl = fmaxf(1.41421356f * cosf(th), 1e-5f) * vol;
   float gr = fmaxf(1.41421356f * sinf(th), 1e-5f) * vol;
   if (v->side == SIDE_LEFT) gr = 0.0f;
