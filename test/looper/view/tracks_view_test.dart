@@ -1728,13 +1728,11 @@ void main() {
         await pumpState(tester, TrackState.recording);
         final bar = tester.widget<PeakMeterBar>(find.byType(PeakMeterBar));
         expect(bar.peak, closeTo(0.5, 0.01));
-        expect(
-          bar.color,
-          AppTheme.neon.extension<LooperTheme>()!.meterColor(
-            LooperMeterState.recording,
-            mode: InteractionMode.record,
-          ),
-        );
+        final recording = AppTheme.neon
+            .extension<LooperTheme>()!
+            .stageMeterGradient(LooperMeterState.recording);
+        expect(bar.color, recording.top);
+        expect(bar.bottomColor, recording.bottom);
       });
     });
 
@@ -2235,17 +2233,27 @@ void main() {
   group('mute-mode visuals', () {
     final looper = AppTheme.neon.extension<LooperTheme>()!;
 
-    // The meter Container inside a track tile (the _PeakBar's fill).
-    Container barOf(WidgetTester tester, int channel) =>
-        tester
-                .widget<FractionallySizedBox>(
-                  find.descendant(
-                    of: find.byKey(Key('tracks_tile_$channel')),
-                    matching: find.byType(FractionallySizedBox),
-                  ),
-                )
-                .child!
-            as Container;
+    // The top and foot colours of the meter's gradient fill in a track tile
+    // (SEG-114).
+    List<Color> gradientOf(WidgetTester tester, int channel) {
+      final fill =
+          tester
+                  .widget<FractionallySizedBox>(
+                    find.descendant(
+                      of: find.byKey(Key('tracks_tile_$channel')),
+                      matching: find.byType(FractionallySizedBox),
+                    ),
+                  )
+                  .child!
+              as Container;
+      return ((fill.decoration! as BoxDecoration).gradient! as LinearGradient)
+          .colors;
+    }
+
+    List<Color> stage(LooperMeterState state) {
+      final g = looper.stageMeterGradient(state);
+      return [g.top, g.bottom];
+    }
 
     // The meter fill fraction (the _PeakBar's height factor) for a tile.
     double fillOf(WidgetTester tester, int channel) => tester
@@ -2329,7 +2337,7 @@ void main() {
       expect(box.heightFactor, 0.0);
     });
 
-    testWidgets('the meter color is the track state color', (tester) async {
+    testWidgets('the meter is the track state gradient', (tester) async {
       seed(
         const LooperState(
           tracks: [
@@ -2339,43 +2347,39 @@ void main() {
         ),
       );
       await pump(tester);
-      expect(
-        barOf(tester, 0).color,
-        looper.meterColor(
-          LooperMeterState.recording,
-          mode: InteractionMode.record,
-        ),
-      );
-      expect(
-        barOf(tester, 1).color,
-        looper.meterColor(
-          LooperMeterState.playing,
-          mode: InteractionMode.record,
-        ),
-      );
+      expect(gradientOf(tester, 0), stage(LooperMeterState.recording));
+      expect(gradientOf(tester, 1), stage(LooperMeterState.playing));
+      // The Looper X's greens while playing.
+      expect(gradientOf(tester, 1), const [
+        Color(0xFF42E700),
+        Color(0xFF217500),
+      ]);
     });
 
-    testWidgets('mute mode uses the mute-mode meter table', (tester) async {
+    testWidgets('mute mode keeps the meter gradient and the mute-table '
+        'progress bar', (tester) async {
       control.toggleMode(); // record -> mute
       seed(const LooperState(tracks: [Track(state: TrackState.playing)]));
       await pump(tester);
+      expect(gradientOf(tester, 0), stage(LooperMeterState.playing));
       expect(
-        barOf(tester, 0).color,
+        tester
+            .widget<TrackProgressBar>(
+              find.byKey(const Key('tracks_progress_0')),
+            )
+            .color,
         looper.meterColor(LooperMeterState.playing, mode: InteractionMode.mute),
       );
     });
 
-    testWidgets('a muted track uses the muted override color', (tester) async {
+    testWidgets('a muted track uses the muted gradient', (tester) async {
       seed(
         const LooperState(
           tracks: [Track(state: TrackState.playing, muted: true)],
         ),
       );
       await pump(tester);
-      expect(
-        barOf(tester, 0).color,
-        looper.meterColor(LooperMeterState.muted, mode: InteractionMode.record),
-      );
+      expect(gradientOf(tester, 0), stage(LooperMeterState.muted));
     });
 
     testWidgets('the tile uses a 2px ring with selection color', (

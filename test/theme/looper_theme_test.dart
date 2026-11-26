@@ -41,6 +41,12 @@ void main() {
         LooperMeterState.muted: Color(0xFFFFFFFF),
       },
       muteMeterColors: {LooperMeterState.playing: Color(0xFF0000FF)},
+      stageMeterGradients: {
+        LooperMeterState.playing: (
+          top: Color(0xFF42E700),
+          bottom: Color(0xFF217500),
+        ),
+      },
       toolbarIconColor: Color(0xFFB0B3BC),
     );
 
@@ -91,12 +97,39 @@ void main() {
       expect(theme.waveformColor(LooperMeterState.muted), Colors.transparent);
     });
 
+    test('stageMeterGradient picks the gradient for the meter state', () {
+      expect(theme.stageMeterGradient(LooperMeterState.playing), (
+        top: const Color(0xFF42E700),
+        bottom: const Color(0xFF217500),
+      ));
+      // A state the table omits resolves to transparent, like the meter
+      // tables.
+      expect(theme.stageMeterGradient(LooperMeterState.muted), (
+        top: Colors.transparent,
+        bottom: Colors.transparent,
+      ));
+    });
+
+    test('lerp carries stageMeterGradients toward the other theme', () {
+      const white = Color(0xFFFFFFFF);
+      final other = theme.copyWith(
+        stageMeterGradients: const {
+          LooperMeterState.playing: (top: white, bottom: white),
+        },
+      );
+      expect(
+        theme.lerp(other, 1).stageMeterGradient(LooperMeterState.playing),
+        (top: white, bottom: white),
+      );
+    });
+
     test('copyWith overrides only the given fields', () {
       final updated = theme.copyWith(recordColor: const Color(0xFFABCDEF));
       expect(updated.recordColor, const Color(0xFFABCDEF));
       expect(updated.waveformColors, theme.waveformColors);
       expect(updated.recordMeterColors, theme.recordMeterColors);
       expect(updated.muteMeterColors, theme.muteMeterColors);
+      expect(updated.stageMeterGradients, theme.stageMeterGradients);
     });
 
     test('lerp interpolates toward the other theme', () {

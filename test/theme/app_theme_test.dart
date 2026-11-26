@@ -240,6 +240,62 @@ void main() {
             greaterThanOrEqualTo(3),
           );
         }
+        // The Tracks view draws it as a gradient (SEG-114). Its top, where
+        // the level is read, clears 3:1; in the neon theme the foot fades
+        // below it by design, half the top's brightness as on the Looper X.
+        expect(
+          ratio(
+            looper.stageMeterGradient(LooperMeterState.empty).top,
+            looper.tileBackground,
+          ),
+          greaterThanOrEqualTo(3),
+        );
+      }
+    });
+
+    test('the top of every stage meter gradient clears 3:1 on the track tile '
+        '(SEG-114)', () {
+      // The level is read where the bar ends, and that is the gradient's top.
+      for (final theme in [AppTheme.neon, AppTheme.highContrast]) {
+        final looper = theme.extension<LooperTheme>()!;
+        for (final state in LooperMeterState.values) {
+          expect(
+            ratio(looper.stageMeterGradient(state).top, looper.tileBackground),
+            greaterThanOrEqualTo(3),
+            reason: '$state',
+          );
+        }
+      }
+    });
+
+    test('the high-contrast stage meter is solid in the HC meter colour', () {
+      final looper = AppTheme.highContrast.extension<LooperTheme>()!;
+      for (final state in LooperMeterState.values) {
+        final g = looper.stageMeterGradient(state);
+        final solid = looper.meterColor(state, mode: InteractionMode.record);
+        expect((g.top, g.bottom), (solid, solid), reason: '$state');
+      }
+    });
+
+    test('the stage meter tops follow the meter tables, playing aside', () {
+      // Playing takes the Looper X's green (SEG-114); every other state keeps
+      // the colour its meter and progress bar use.
+      final looper = AppTheme.neon.extension<LooperTheme>()!;
+      for (final state in LooperMeterState.values) {
+        if (state == LooperMeterState.playing) continue;
+        expect(
+          looper.stageMeterGradient(state).top,
+          looper.meterColor(state, mode: InteractionMode.record),
+          reason: '$state',
+        );
+      }
+    });
+
+    test('the record and mute meter tables agree, so the stage meter needs '
+        'no mode (SEG-114)', () {
+      for (final theme in [AppTheme.neon, AppTheme.highContrast]) {
+        final looper = theme.extension<LooperTheme>()!;
+        expect(looper.muteMeterColors, looper.recordMeterColors);
       }
     });
 
