@@ -599,12 +599,50 @@ static float lfo_start_phase(int32_t shape) {
   return shape <= 1 ? 0.25f : shape <= 3 ? 0.5f : 0.0f;
 }
 
-/* A new random step for Sample & Hold (held) and Wander (the glide's new
- * end, from the last one). */
-static void lfo_draw(le_drift_voice* v) {
-  v->lfo_from = v->lfo_to;
-  v->lfo_to = rnd_bipolar(&v->rng);
-  v->lfo_hold = v->lfo_to;
+/* Sample & Hold and Wander's generator, per lane: a two-word xorshift
+ * (shifts 10, 13, 10), its output the new second word, mapped to a uniform
+ * value in [-1, 1) from its top 23 bits. [code] (rng-01-drift-meld.md,
+ * section 0) */
+static float lfo_g(le_drift_voice* v) {
+  const uint32_t t = v->lfo_gx ^ (v->lfo_gx << 10);
+  v->lfo_gx = v->lfo_gy;
+  v->lfo_gy = v->lfo_gy ^ (v->lfo_gy >> 10) ^ t ^ (t >> 13);
+  return (float)(v->lfo_gy >> 9) * (1.0f / 4194304.0f) - 1.0f;
+}
+
+/* Two steps of every lane in voice `v`'s block of four, as a block reset
+ * and a retriggered note start do; r1 and r2 receive lane 0's outputs. */
+static void lfo_g_block_twice(le_drift* d, le_drift_voice* v, float* r1,
+                              float* r2) {
+  le_drift_voice* lane0 = &d->voices[(v - d->voices) & ~3];
+  for (int32_t k = 0; k < 4; ++k) {
+    const float a = lfo_g(&lane0[k]);
+    const float b = lfo_g(&lane0[k]);
+    if (k == 0) {
+      *r1 = a;
+      *r2 = b;
+    }
+  }
+}
+
+/* One voice tick of Sample & Hold (shape 5) and Wander (6): the lane's
+ * generator steps every tick whether or not a half-cycle boundary falls;
+ * at a boundary (the half-cycle phase q = frac(2p) wrapped), S&H holds the
+ * step's value, and Wander moves its base to the old target and aims at
+ * the new one. [code] (rng-01-drift-meld.md, 1.3 and 1.4) */
+static void lfo_random_tick(le_drift_voice* v, int32_t shape) {
+  if (shape != 5 && shape != 6) return;
+  const float q = frac(2.0f * v->lfo_ph);
+  const float u = lfo_g(v);
+  if (v->lfo_qprev > q) {
+    if (shape == 5) {
+      v->lfo_b = u;
+    } else {
+      v->lfo_b += v->lfo_d;
+      v->lfo_d = u - v->lfo_b;
+    }
+  }
+  v->lfo_qprev = q;
 }
 
 static void derive(le_drift* d) {
@@ -615,9 +653,15 @@ static void derive(le_drift* d) {
    * since the reset. */
   if (d->block_mode != vi(d, LE_DRIFT_VOICE_MODE)) {
     d->block_mode = vi(d, LE_DRIFT_VOICE_MODE);
+    /* and two steps of every lane's generator: the first value is held
+     * (Wander's base), the second sets Wander's delta [code] */
     for (int32_t i = 0; i < LE_DRIFT_VOICES; ++i) {
-      d->voices[i].lfo_ph = lfo_start_phase(vi(d, LE_DRIFT_LFO_SHAPE));
-      lfo_draw(&d->voices[i]);
+      le_drift_voice* v = &d->voices[i];
+      v->lfo_ph = lfo_start_phase(vi(d, LE_DRIFT_LFO_SHAPE));
+      const float r1 = lfo_g(v);
+      const float r2 = lfo_g(v);
+      v->lfo_b = r1;
+      v->lfo_d = r2 - r1;
     }
   }
   {
@@ -754,6 +798,19 @@ int32_t le_drift_init(le_drift* d, int32_t sample_rate) {
   load_tuning(d, 0);
   for (int32_t i = 0; i < LE_DRIFT_VOICES; ++i) {
     d->voices[i].rng = 0x9e3779b9u ^ (uint32_t)(i * 2654435761u);
+    /* Sample & Hold and Wander's generators: the four lanes of a block
+     * differ and every block starts from the same words, seeded once per
+     * instance (Live seeds from the system's entropy [code]; Segno from a
+     * fixed seed of its own, [Segno]); a lane whose words are both zero
+     * gets 0xFFFFFFFF [code] */
+    {
+      uint32_t h = 0x9e3779b9u ^ (uint32_t)((i & 3) * 0x85ebca6bu);
+      d->voices[i].lfo_gx = xorshift(&h);
+      d->voices[i].lfo_gy = xorshift(&h);
+      if (d->voices[i].lfo_gx == 0u && d->voices[i].lfo_gy == 0u)
+        d->voices[i].lfo_gx = 0xFFFFFFFFu;
+      d->voices[i].lfo_qprev = -1.0f;
+    }
     d->voices[i].lfo_mod = 1.0f;
     clear_lowpass(d, &d->voices[i], 0);
     /* each block's noise generators start alike: lane k of every block */
@@ -920,8 +977,14 @@ static void begin_note(le_drift* d, le_drift_voice* v, int was_silent) {
    * it the note continues the phase the voice's LFO stopped at */
   if (vi(d, LE_DRIFT_LFO_RETRIGGER) || shape >= 7) {
     v->lfo_ph = lfo_start_phase(shape);
-    lfo_draw(v); /* Sample & Hold and Wander start on a drawn value */
     v->lfo_done = 0;
+    /* every lane of the block steps twice and the starting lane takes lane
+     * 0's two values [code] (rng-01-drift-meld.md, 1.3) */
+    float r1, r2;
+    lfo_g_block_twice(d, v, &r1, &r2);
+    v->lfo_b = r1;
+    v->lfo_d = r2 - r1;
+    v->lfo_qprev = -1.0f;
   }
   v->cyc_ph = 0.0f;
   /* the attack rises from the level it starts at to 1 over Attack */
@@ -1209,12 +1272,13 @@ static float lfo_shape(le_drift_voice* v, int32_t shape, float p) {
     case 4:
       return p < 0.5f ? 1.0f : -1.0f;
     case 5:
-      return v->lfo_hold;
+      return v->lfo_b;
     case 6: {
-      /* a symmetric quadratic S-curve over each half cycle */
-      const float t = frac(2.0f * p);
-      const float e = t < 0.5f ? 2.0f * t * t : 1.0f - 2.0f * (1.0f - t) * (1.0f - t);
-      return v->lfo_from + e * (v->lfo_to - v->lfo_from);
+      /* from the base to the target along 2q^2, then 1 - 2(1 - q)^2, over
+       * each half cycle [code] (rng-01-drift-meld.md, 1.4) */
+      const float q = frac(2.0f * p);
+      const float e = q < 0.5f ? 2.0f * q * q : 1.0f - 2.0f * (1.0f - q) * (1.0f - q);
+      return v->lfo_b + v->lfo_d * e;
     }
     case 7:
       return v->lfo_done ? 0.0f : 1.0f - p;
@@ -1228,15 +1292,14 @@ static float lfo_shape(le_drift_voice* v, int32_t shape, float p) {
   }
 }
 
-/* Advances the LFO phase by `inc`, drawing new random steps at each half
- * cycle and ending a one-shot shape at its cycle's end. */
+/* Advances the LFO phase by `inc`, ending a one-shot shape at its cycle's
+ * end. */
 static void lfo_advance(le_drift_voice* v, float inc) {
-  const float before = v->lfo_ph;
-  float p = before + inc;
-  const int wrapped = p >= 1.0f;
-  if (wrapped) p -= floorf(p);
-  if (wrapped) v->lfo_done = 1;
-  if (wrapped || (before < 0.5f && p >= 0.5f)) lfo_draw(v);
+  float p = v->lfo_ph + inc;
+  if (p >= 1.0f) {
+    p -= floorf(p);
+    v->lfo_done = 1;
+  }
   v->lfo_ph = p;
 }
 
@@ -1551,6 +1614,7 @@ static void voice_sample(le_drift* d, le_drift_voice* v, float* out_l,
       gain_mod(b->lfo_mod_amt, fmaxf(0.0f, b->lfo_src == LE_DRIFT_SRC_KEY
                                                ? fmaxf(v->key, 0.0f)
                                                : src.raw[b->lfo_src]));
+  lfo_random_tick(v, b->lfo_shape);
   const float lfo = lfo_shape(v, b->lfo_shape, v->lfo_ph) * b->lfo_amt * lfo_gain;
   src.raw[LE_DRIFT_SRC_LFO] = lfo;
   for (int i = 0; i < LE_DRIFT_SOURCES; ++i) {
@@ -1761,8 +1825,9 @@ static void tick(le_drift* d, float* l, float* r) {
         v->ph2 += v->dt2;
         if (v->ph2 >= 1.0f) v->ph2 -= 1.0f;
       }
-      /* at the rate it last had (its LFO Rate modulation included), drawing
-       * new Sample & Hold and Wander steps as it goes */
+      /* at the rate it last had (its LFO Rate modulation included), its
+       * Sample & Hold and Wander generator stepping as it goes */
+      lfo_random_tick(v, d->d.lfo_shape);
       lfo_advance(v, d->d.lfo_mode == RATE_RATIO
                          ? v->lfo_inc
                          : fminf(idle_lfo * v->lfo_mod, 0.49999988f));
