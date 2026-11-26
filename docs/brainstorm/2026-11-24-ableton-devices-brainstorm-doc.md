@@ -1,6 +1,6 @@
 # Ableton Live device presets on the pedal — brainstorm
 
-<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance kModBy kCarriers Celesta transconductances Bandpass Bitgrunge Csound Drivetime Extratone Filther Lofi Lowpass Megatripolis Minnaert Sawstyle Starchestra polyBLEP Metalic Formant formants Barney Asym quintic Wurli MKII Schroeder Fretless Perc halvings Inharmonicity travelled retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations atan filt voicecut penv Unisono pul meldfit Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penvd rndpan Bassic Bitgrunge's Catchem Filther's Kaneda Werkstuecktraeger Whley Whley's filt nloop avel fleg unmodulated Basscycle spr ccg Clav restruck restrikes restrike prewarping Floot Halfstep Gametal Plucks Neurotimbre sqperc unnormalized fenv scalings fmdrive oscvol unsmoothed relc colfm -->
+<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance kModBy kCarriers Celesta transconductances Bandpass Bitgrunge Csound Drivetime Extratone Filther Lofi Lowpass Megatripolis Minnaert Sawstyle Starchestra polyBLEP Metalic Formant formants Barney Asym quintic Wurli MKII Schroeder Fretless Perc halvings Inharmonicity travelled retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations atan filt voicecut penv Unisono pul meldfit Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penvd rndpan Bassic Bitgrunge's Catchem Filther's Kaneda Werkstuecktraeger Whley Whley's filt nloop avel fleg unmodulated Basscycle spr ccg Clav restruck restrikes restrike prewarping Floot Halfstep Gametal Plucks Neurotimbre sqperc unnormalized fenv scalings fmdrive oscvol unsmoothed relc colfm rand -->
 
 **Date:** 2026-11-24
 **Issue:** SEG-109 (related: SEG-57, Segno's own instrument voices)
@@ -2259,6 +2259,32 @@ the attack score 3 to 5. Stiffness 0 stands out: Live's tine there is
 20 dB below the mean of Segno's eight seeds. Repeated Live renders would
 settle whether that is chance. The E-Piano
 MKII presets lean 1 dB darker above 1 kHz. **[measured]**
+
+The damper's noise in Live is the C library's rand(): one generator that
+every voice and every instance in the process draws from, one value a
+sample while a voice runs, seeded from the clock (whole seconds) as each
+engine instance is created. **[code]** Segno gives each voice a generator
+of its own with the same distribution, uniform in [0, 1). **[Segno]**
+
+The held-out round's two random failures (Vibes Soft on attack, E-Piano
+MKII Hard on pitch) do not come from a wider draw. Over 80 noise seeds
+Vibes Soft's attack spread is 4.2 dB, against Live's 3.3 across its
+three Live Sets, and Live against Segno is 4.2 too, which is what two
+draws of one process give; over 40 seeds E-Piano MKII Hard's pitch
+spread is 3.1 cents against Live's 3.3, with Live against Segno 3.3. In
+every third-octave band of the strike the random part's power matches
+Live's within what five Live copies can resolve, and no partial is
+consistently more random on either side. Five seeds drawn at random
+pass E-Piano MKII Hard 89 % of the time and Vibes Soft 49 %; the
+scorer's five happen to fail both. **[measured]** (val1, val2, val4; the
+scripts are in the fit scratchpad's `elwork/spread`)
+
+Still open: on the noise-only renders (round 2, Mallet Stiffness 0,
+Damper Amount 1) Live's three copies ring the tine at nearly one level
+and phase, near the top of Segno's spread, where Segno's seeds scatter
+by 4.5 dB; those copies share one Live Set, so they may share their
+draws. Rounds 3 and 4 (segno-electric-fit3, -fit4) repeat them and four
+presets, two copies a round, to measure Live's spread across Sets.
 
 
 
