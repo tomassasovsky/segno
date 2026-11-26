@@ -615,8 +615,12 @@ where the reading was silent or disagreed. Segno's implementation is
 - One mono filter and the shaper per voice, then the voice's gain pair
   (volume and pan) into the stereo sum. With the filter off, the shaper is
   bypassed too. **[code]** **[measured]**
-- Parameters apply per 32-sample chunk; the operators, envelopes, filter
-  and shaper run every sample (Segno's choice, as for Drift).
+- Parameters apply per 16-sample chunk, ramped across it; the operators,
+  envelopes, filter and shaper run every sample. **[measured]** Nebulae
+  Keys, whose 509 Hz sample-and-hold LFO moves operator A's volume, misses
+  12 dB at 1.6 kHz with 32-sample chunks and matches with 16 (round 8 and
+  11's copies 2.9 dB to 1.2; 8 samples 2.2, 4 samples 2.8, every sample
+  or held steps worse). The voice end keeps a 32-sample grid (below).
 
 ### Waveforms
 
@@ -739,7 +743,8 @@ where the reading was silent or disagreed. Segno's implementation is
 - A voice ends when every sounding carrier's envelope has ended; a stolen
   voice fades in 1 ms. **[code]** In its release an envelope has ended
   once it falls below 10^−3 of full level (before the operator's own
-  amplitude), and the voice stops a block later: a 50 ms release from
+  amplitude), and the voice stops a block later, the check and the block on
+  a 32-sample grid whatever the chunk: a 50 ms release from
   full level ends 1760 samples after the note-off, from 0.25 at 1648,
   from full level at volume 0.1 at 2296 (Segno within 1 to 17 samples
   now; it ran each release out). **[measured: sine, env-loop-1, round 9's
@@ -904,6 +909,14 @@ where the reading was silent or disagreed. Segno's implementation is
   instant's later chord notes at their pitch too, without gliding (Harsh
   FM Bass, round 8 1.9 dB to 1.1, held out 2.2 to 1.2; neutral on Wobbly
   Flag Bass). **[measured]**
+- A note that takes a sounding voice's place (the voice budget, or
+  Retrigger Mode's repeated note) waits until that voice has faded (1 ms),
+  then starts; a note taken before it sounded is dropped. A mono chord
+  plays its first note through the fade and its last 48 samples late, as
+  Live's pending queue does; Sync's retriggers stay on the song's grid
+  meanwhile. **[code]** (the queue, op-04) **[measured: Rhythmic Pong
+  Bass's triad, held out, 47 samples late in Live; its waveform error
+  -3 dB to -19, the round 8 copy 2.6 dB to 0.4; Smack Kick 1.8 to 1.6]**
 - Random pan and the random start phases do not repeat from one Live
   instance to the next: two identical tracks draw different pans, and
   every held-out preset's Live copies differ (Live against itself 0.8 to
@@ -1042,6 +1055,36 @@ table read matches Segno's (saw at C4 and C6, sine at C6, FM, all within
 0.4 dB). Warble Rhythm Noise Pad with random pan off is deterministic in
 Live and misses 2.4 dB on its Noise Looped operator (Live's table is its
 own).
+
+A pass over the 28 failing held-out presets by kind found 17 random
+(random pan, random phases, sample-and-hold or noise) and 11 not. Of the
+random ones, eight fail only on the attack or on Segno's own spread, from
+the first note's pan: Segno's three seeds draw it at +0.77, -0.83 and
+-0.98 of the range, Live's five copies anywhere (Bells Fifths +0.93,
+-0.38, +0.16, +0.24, +0.12; FM Piano Simple +0.88, -0.69, +0.08, -0.54,
+-0.31), and a chord's notes draw apart in Live as in Segno. Two fixes came
+from the deterministic ones: a stolen voice's note waits for the fade
+(Rhythmic Pong Bass 1.72 dB to 0.4, its round 8 copy 2.6 to 0.4; Smack
+Kick 1.80 to 1.59, its copy 2.13 to 1.71), and
+the 16-sample control rate (Nebulae Keys 2.6 to 1.0, round 8 and 11's
+copies 2.9 to 1.2); the fit rounds pass 391 of 452 (from 387), the
+held-out round 41 of 67 (from 39). Release Bass, whose C5 opens a Clean
+filter from closed through 108 semitones of envelope, matches Live's
+onset better with the old 32-sample first block (1.1 dB against 1.5), so
+the filter's own control rate may differ from the gains'. **[open]**
+
+Round 12 (`segno-op-fit12`, 23 renders) asks Live: a 1.1 kHz sine LFO
+into Volume, an operator's volume, Pan, FM Drive, Filter Freq, Tone and
+the pitch (the images around multiples of the block rate give each
+destination's control rate); the 509 Hz sample-and-hold into operator A's
+volume alone, three copies; a mono and a two-voice triad and a Retrigger
+Mode repeat (the steal wait); a slow Saw Up on the pitch at amounts 0.6,
+0.8 and 1 (Sweep Wobble: Segno matches Live's first LFO cycle at -20 dB
+and loses it at the wrap, where the pitch multiplier reaches 2.7; capping
+it at 2.5 holds the match, so Live limits it somewhere); a closed filter
+opened by its envelope at a note's start, with and without the Hard
+shaper; five copies of random pan at 100 % (in round 9 all three copies
+put the first note hard right).
 
 - OSR self-oscillating near its input's pitch (17 cents at a 300 Hz
   cutoff on a 262 Hz sine; the input level moves the pull little and the
