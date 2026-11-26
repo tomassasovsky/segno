@@ -1250,6 +1250,7 @@ typedef struct lfo_coef {
   float lp_b, lp_a;     /* the shape smoother (bilinear one-pole) */
   float bp_b0, bp_a1, bp_a2; /* the noise band-pass (b1 = 0, b2 = -b0) */
   float fl_c;           /* the filter path's smoother coefficient */
+  float tone_c;         /* the Tone route's smoother coefficient */
 } lfo_coef;
 
 static float lfo_sample(le_operator_voice* v, int32_t type, const lfo_coef* c) {
@@ -1302,6 +1303,7 @@ static lfo_coef lfo_coefs(float f, float rate) {
   float sc = f < 25.0f ? 200.0f : 200.0f - 185.0f * (f - 25.0f) / 35.0f;
   if (sc < 15.0f) sc = 15.0f;
   c.fl_c = 1.0f - expf(-2.0f * (float)OP_PI * sc / rate);
+  c.tone_c = 1.0f - expf(-2.0f * (float)OP_PI * 200.0f / rate);
   return c;
 }
 
@@ -1624,6 +1626,22 @@ static void voice_chunk(le_operator* d, le_operator_voice* v, const chunk_ctx* c
   route_mods(d, v, 0.0f, penv_st, 0, &rm);
   const float lfo_gain = route_gain(&rm, DST_LFO_AMOUNT);
   route_mods(d, v, v->lfo_out * lfo_gain, penv_st, 1, &rm);
+  /* the LFO's route into Filter Freq passes the filter's own smoother, so
+   * an audio-rate LFO leaves the cutoff still (measured: round 12 cr-filter,
+   * a 1.1 kHz LFO there gives Live no sidebands) */
+  if (vi(d, LE_OPERATOR_LFO_DEST) == DST_FILTER_FREQ) {
+    op_mods rs;
+    route_mods(d, v, v->lfo_smooth * lfo_gain, penv_st, 1, &rs);
+    rm.m[DST_FILTER_FREQ] = rs.m[DST_FILTER_FREQ];
+  }
+  /* its route into Tone passes a 200 Hz one-pole (fit: round 12 cr-tone,
+   * a 1.1 kHz LFO's sidebands 10 to 18 dB under Segno's unsmoothed ones;
+   * 12.8 dB to 5.9, 100 and 400 Hz 6.9 and 7.3) */
+  if (vi(d, LE_OPERATOR_LFO_DEST) == DST_TONE) {
+    op_mods rs;
+    route_mods(d, v, v->lfo_tone * lfo_gain, penv_st, 1, &rs);
+    rm.g[DST_TONE] = rs.g[DST_TONE];
+  }
   const float* mod = rm.m;
   /* Aux Env (the pitch envelope's amount) is a gain destination: the mod
    * wheel at rest with +100 % silences it (measured: round 9 mw-auxenv) */
@@ -1960,6 +1978,8 @@ static void render_voice(le_operator* d, le_operator_voice* v, const chunk_ctx* 
       if (c->filter_on && vi(d, LE_OPERATOR_FILTER_LFO_ON)) {
         v->lfo_filter += lc.fl_c * (24.0f * la - v->lfo_filter);
       }
+      v->lfo_smooth += lc.fl_c * (v->lfo_out - v->lfo_smooth);
+      v->lfo_tone += lc.tone_c * (v->lfo_out - v->lfo_tone);
     }
     const float lmul = 1.0f + la;
     float x;
