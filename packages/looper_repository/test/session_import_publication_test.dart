@@ -11,6 +11,8 @@ import 'package:segno_engine/segno_engine.dart'
 
 import 'helpers/fake_audio_engine.dart';
 
+import 'helpers/output_peak.dart';
+
 class _ImportEngine extends PumpedNativeEngine {
   bool deviceAvailable = true;
 
@@ -307,13 +309,11 @@ void main() {
         states.forEach(_coherent);
         expect(repository.state.tracks[0].fade.amount, .25);
         expect(repository.state.tracks[1].fade.amount, 0);
-        engine.pump(frames: 1);
-        expect(engine.snapshot().outputPeaks[0], 0);
+        expect(pumpOutputPeak(engine, frames: 1), 0);
         expect(repository.play(), EngineResult.ok);
         // The Play fades in over 480 frames (#1400), full on the last one.
-        engine.pump(frames: 480);
         // Only track 0 contributes: PCM .5 times coefficient .25.
-        expect(engine.snapshot().outputPeaks[0], closeTo(.125, 1e-6));
+        expect(pumpOutputPeak(engine, frames: 480), closeTo(.125, 1e-6));
         expect(repository.play(channel: 1), EngineResult.ok);
         engine.pump(frames: 1024);
         for (final channel in [0, 1]) {

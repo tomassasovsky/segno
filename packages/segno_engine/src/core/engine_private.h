@@ -4035,6 +4035,30 @@ static inline float load_f32(_Atomic uint32_t* slot) {
   return bits_to_f32(atomic_load_explicit(slot, memory_order_relaxed));
 }
 
+/* Meter ballistics (SEG-114). A published meter peak rises at once to a new
+ * block peak and otherwise falls at LE_METER_FALL_DB_PER_S, the digital peak
+ * meter's 20 dB in 1.7 s (IEC 60268-18), so the UI's poll never misses a peak
+ * between two reads and a falling level moves smoothly. The audio thread is
+ * the only writer, so the published value is the meter's state. Below
+ * LE_METER_FLOOR (-120 dBFS) it reads 0, so a silent meter reaches silence. */
+#define LE_METER_FALL_DB_PER_S 11.8f
+#define LE_METER_FLOOR 1e-6f
+
+/* The gain a meter falls by over [frames] at [sr]. Once per callback. */
+static inline float le_meter_fall_gain(uint32_t frames, int sr) {
+  return expf(-LE_METER_FALL_DB_PER_S * (logf(10.0f) / 20.0f) *
+              (float)frames / (float)(sr > 0 ? sr : 48000));
+}
+
+/* Publishes [block_peak] into the meter at [slot], held against the slot's
+ * last value fallen by [fall]. */
+static inline void le_meter_publish(_Atomic uint32_t* slot, float block_peak,
+                                    float fall) {
+  float held = load_f32(slot) * fall;
+  if (held < LE_METER_FLOOR) held = 0.0f;
+  store_f32(slot, block_peak > held ? block_peak : held);
+}
+
 /* Caches one chain's published channel handling into its DSP state, once per
  * buffer (slice 3e). Sets chan_any when any ACTIVE entry asks for something
  * other than stereo in, stereo out and unity level, so a chain at its defaults

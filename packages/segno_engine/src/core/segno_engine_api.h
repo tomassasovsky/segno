@@ -1249,7 +1249,8 @@ typedef struct le_track_snapshot {
                           * do something" on a track whose undo_depth is 0. */
   int32_t redo_depth;    /* available redo steps */
   float rms;             /* lane 0 RMS, 0..1 */
-  float peak;            /* lane 0 peak, 0..1 */
+  float peak;            /* the track's meter peak, 0..1 (SEG-114: held
+                          * and falling, see output_peak) */
   uint32_t input_mask;   /* lane 0 input as a bitmask (1 << input_channel, or 0
                           * when lane 0 records no input) */
   uint32_t output_mask;  /* lane 0 output mask */
@@ -1314,7 +1315,8 @@ typedef struct le_track_snapshot {
   /* Absolute stereo peaks AFTER volume, pan and track FX, BEFORE output
    * routing/downmix and the master bus. Values may exceed unity (clipping
    * headroom); never clamped to 1. A mono destination folds the pair later
-   * and need not equal either meter. 0 when no enabled route is audible. */
+   * and need not equal either meter. Meter peaks (SEG-114, see
+   * output_peak): once no enabled route is audible they fall to 0. */
   float peak_l;
   float peak_r;
   uint32_t image_revision; /* last image applied at capture start */
@@ -1806,11 +1808,17 @@ typedef struct le_snapshot {
    * LE_CLIP_HOLD_MS of processed audio. Detected on the RAW device buffer,
    * so the flag reflects the ADC. Loopback-excluded inputs never flag. */
   uint32_t input_clip_mask;
-  /* Trailing (accepted design, slice 1): the master bus's absolute peak over
-   * the most recent block, 0..1 (1.0 = full scale), read AFTER the master
-   * gain and limiter — what actually reaches the outputs. Sums can clip when
-   * no single track does, so the stage footer meters this rather than the
-   * per-track peaks. Sibling of output_rms above. */
+  /* Trailing (accepted design, slice 1): the master bus's absolute meter
+   * peak, 0..1 (1.0 = full scale), read AFTER the master gain and limiter —
+   * what actually reaches the outputs. Sums can clip when no single track
+   * does, so the stage footer meters this rather than the per-track peaks.
+   * Sibling of output_rms above.
+   * Every meter peak here (input_peak, output_peak, input_peaks,
+   * monitor_peaks, output_peaks and a track's peak, peak_l and peak_r) is
+   * a peak meter (SEG-114): it takes a block's peak at once and otherwise
+   * falls 11.8 dB/s (LE_METER_FALL_DB_PER_S, 20 dB in 1.7 s), reading 0
+   * under -120 dBFS. Lane peaks, instrument_peaks and the instrument
+   * sources' input_peaks are still the last block's. */
   float output_peak;
   /* ---- record start settings (accepted design, slice 2b; trailing).
    * Quantize is the control-side gate; auto_record and count_in_bars are
@@ -1820,7 +1828,8 @@ typedef struct le_snapshot {
   int32_t auto_record; /* 0/1: sound-activated record start */
   float overdub_feedback; /* the global coefficient, 0..1 (default 1) */
   /* ---- per-channel meters and capture trim (accepted design, slice 3;
-   * trailing). Absolute block peaks may exceed unity; they are not clamped.
+   * trailing). Absolute meter peaks (see output_peak) may exceed unity;
+   * they are not clamped.
    * input_peaks[c] is input c's RAW device level (before the trim, like
    * input_clip_mask, so a hot ADC reads hot however the trim is
    * set); monitor_peaks[c] is its post-chain/gain/pan stereo peak BEFORE
