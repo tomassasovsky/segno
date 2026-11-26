@@ -137,6 +137,8 @@ int le_instruments_create(le_engine* e) {
     le_operator_init(&e->op[k], 48000);
     le_meld_init(&e->meld[k], 48000);
   }
+  memset(e->inst_dev_used, 0, sizeof(e->inst_dev_used));
+  e->inst_dev_rate = 48000;
   ring_init(&e->inst_ring, e->inst_ring_storage, LE_INST_EVENT_CAPACITY);
   ring_init(&e->inst_release_ring, e->inst_release_storage,
             LE_INST_RELEASE_CAPACITY);
@@ -181,11 +183,25 @@ void le_instruments_reset(le_engine* e, int32_t sample_rate) {
     store_i32(&e->a_inst_patch[k], -1);
     store_i32(&e->a_inst_voices[k], 0);
     store_f32(&e->a_inst_peak_bits[k], 0.0f);
-    le_drift_init(&e->drift[k], sample_rate);
+    /* A device instance no slot was given since its last init at this rate
+     * is still what that init left: only a slot playing it reaches its
+     * state (notes, parameters, render, the voice budget), and a cut on it
+     * writes what is already there. The voice limit, which
+     * LE_CMD_SET_VOICE_LIMIT sets on every instance, is restored on each. */
+    uint8_t* used = e->inst_dev_used[k];
+    const int rate_changed = sample_rate != e->inst_dev_rate;
+    if (rate_changed || used[LE_INST_DEVICE_DRIFT - LE_INST_DEVICE_DRIFT]) {
+      le_drift_init(&e->drift[k], sample_rate);
+    }
+    if (rate_changed || used[LE_INST_DEVICE_OPERATOR - LE_INST_DEVICE_DRIFT]) {
+      le_operator_init(&e->op[k], sample_rate);
+    }
+    if (rate_changed || used[LE_INST_DEVICE_MELD - LE_INST_DEVICE_DRIFT]) {
+      le_meld_init(&e->meld[k], sample_rate);
+    }
+    memset(used, 0, LE_INST_DEVICE_COUNT);
     le_drift_set_voice_limit(&e->drift[k], LE_INST_DEFAULT_VOICE_LIMIT);
-    le_operator_init(&e->op[k], sample_rate);
     le_operator_set_voice_limit(&e->op[k], LE_INST_DEFAULT_VOICE_LIMIT);
-    le_meld_init(&e->meld[k], sample_rate);
     le_meld_set_voice_limit(&e->meld[k], LE_INST_DEFAULT_VOICE_LIMIT);
     e->inst_device[k] = LE_INST_DEVICE_NONE;
     e->inst_device_requested[k] = LE_INST_DEVICE_NONE;
@@ -194,6 +210,7 @@ void le_instruments_reset(le_engine* e, int32_t sample_rate) {
     store_i32(&e->a_dev_param_device[k], LE_INST_DEVICE_NONE);
     store_i32(&e->a_inst_device[k], LE_INST_DEVICE_NONE);
   }
+  e->inst_dev_rate = sample_rate;
   store_i32(&e->a_voice_limit, LE_INST_DEFAULT_VOICE_LIMIT);
   atomic_store_explicit(&e->a_voices_stolen, 0u, memory_order_relaxed);
   atomic_store_explicit(&e->a_voices_stolen_hard, 0u, memory_order_relaxed);
@@ -580,6 +597,28 @@ static le_operator* slot_op(le_engine* e, int32_t k) {
 
 static le_meld* slot_meld(le_engine* e, int32_t k) {
   return e->inst_device[k] == LE_INST_DEVICE_MELD ? &e->meld[k] : NULL;
+}
+
+/* Slot k's Drift, Operator or Meld when the slot was given it since its last
+ * init (inst_dev_used), the only way it can hold, fade or steal a voice;
+ * NULL (no voices: the devices' active, fading and fade_oldest give 0)
+ * otherwise, so the per-block scans never touch an unused instance. */
+static le_drift* used_drift(le_engine* e, int32_t k) {
+  return e->inst_dev_used[k][LE_INST_DEVICE_DRIFT - LE_INST_DEVICE_DRIFT]
+             ? &e->drift[k]
+             : NULL;
+}
+
+static le_operator* used_op(le_engine* e, int32_t k) {
+  return e->inst_dev_used[k][LE_INST_DEVICE_OPERATOR - LE_INST_DEVICE_DRIFT]
+             ? &e->op[k]
+             : NULL;
+}
+
+static le_meld* used_meld(le_engine* e, int32_t k) {
+  return e->inst_dev_used[k][LE_INST_DEVICE_MELD - LE_INST_DEVICE_DRIFT]
+             ? &e->meld[k]
+             : NULL;
 }
 
 /* Whether slot k plays anything (a patch or a device). */
@@ -999,6 +1038,8 @@ static void apply_event(le_engine* e, le_synth* s, const le_inst_event* ev) {
       /* the slot's patch voices fade, as at a patch change */
       le_synth_set_instrument(s, ev->slot, -1);
       store_i32(&e->a_inst_patch[ev->slot], -1);
+      /* the next configure re-initialises it */
+      e->inst_dev_used[ev->slot][ev->note - LE_INST_DEVICE_DRIFT] = 1;
       /* a device given again starts over, and another device's voices fade */
       le_drift_cut(&e->drift[ev->slot]);
       le_operator_cut(&e->op[ev->slot]);
@@ -1049,8 +1090,8 @@ static void enforce_voice_budget(le_engine* e, le_synth* s) {
   int32_t total = le_synth_active(s, -1);
   int32_t active[LE_MAX_INSTRUMENTS];
   for (int k = 0; k < LE_MAX_INSTRUMENTS; ++k) {
-    active[k] = le_drift_active(&e->drift[k]) + le_operator_active(&e->op[k]) +
-                le_meld_active(&e->meld[k]);
+    active[k] = le_drift_active(used_drift(e, k)) + le_operator_active(used_op(e, k)) +
+                le_meld_active(used_meld(e, k));
     total += active[k];
   }
   while (total > s->voice_limit) {
@@ -1058,9 +1099,14 @@ static void enforce_voice_budget(le_engine* e, le_synth* s) {
     for (int k = 1; k < LE_MAX_INSTRUMENTS; ++k) {
       if (active[k] > active[busiest]) busiest = k;
     }
-    int32_t faded = active[busiest] > 0 ? le_drift_fade_oldest(&e->drift[busiest]) : 0;
-    if (faded == 0 && active[busiest] > 0) faded = le_operator_fade_oldest(&e->op[busiest]);
-    if (faded == 0 && active[busiest] > 0) faded = le_meld_fade_oldest(&e->meld[busiest]);
+    int32_t faded =
+        active[busiest] > 0 ? le_drift_fade_oldest(used_drift(e, busiest)) : 0;
+    if (faded == 0 && active[busiest] > 0) {
+      faded = le_operator_fade_oldest(used_op(e, busiest));
+    }
+    if (faded == 0 && active[busiest] > 0) {
+      faded = le_meld_fade_oldest(used_meld(e, busiest));
+    }
     if (faded == 0) return; /* only patch voices: the synth keeps its own limit */
     /* an Operator Spread note is two voices, a Meld note one per unison copy */
     active[busiest] -= faded;
@@ -1086,9 +1132,12 @@ void le_instruments_render(le_engine* e, uint32_t frames) {
   int any = le_synth_fading(s) > 0;
   for (int k = 0; k < LE_MAX_INSTRUMENTS && !any; ++k) {
     any = (s->inst[k].patch >= 0 && le_synth_active(s, k) > 0) ||
-          le_drift_active(&e->drift[k]) > 0 || le_drift_fading(&e->drift[k]) > 0 ||
-          le_operator_active(&e->op[k]) > 0 || le_operator_fading(&e->op[k]) > 0 ||
-          le_meld_active(&e->meld[k]) > 0 || le_meld_fading(&e->meld[k]) > 0;
+          le_drift_active(used_drift(e, k)) > 0 ||
+          le_drift_fading(used_drift(e, k)) > 0 ||
+          le_operator_active(used_op(e, k)) > 0 ||
+          le_operator_fading(used_op(e, k)) > 0 ||
+          le_meld_active(used_meld(e, k)) > 0 ||
+          le_meld_fading(used_meld(e, k)) > 0;
   }
   if (!any) {
     /* Nothing sounds: no render and no cost; a bus that last carried audio
@@ -1134,8 +1183,8 @@ void le_instruments_render(le_engine* e, uint32_t frames) {
     /* A device renders in stereo on top of whatever patch voices of the
      * slot are still fading out; a device that was ended fades out the
      * same way. */
-    le_drift* d = &e->drift[k];
-    if (le_drift_active(d) > 0 || le_drift_fading(d) > 0) {
+    le_drift* d = used_drift(e, k);
+    if (d != NULL && (le_drift_active(d) > 0 || le_drift_fading(d) > 0)) {
       if (bpm > 0.0f) le_drift_set_tempo(d, bpm);
       float dl[256], dr[256];
       for (uint32_t f0 = 0; f0 < frames; f0 += 256) {
@@ -1147,8 +1196,8 @@ void le_instruments_render(le_engine* e, uint32_t frames) {
         }
       }
     }
-    le_operator* o = &e->op[k];
-    if (le_operator_active(o) > 0 || le_operator_fading(o) > 0) {
+    le_operator* o = used_op(e, k);
+    if (o != NULL && (le_operator_active(o) > 0 || le_operator_fading(o) > 0)) {
       if (bpm > 0.0f) le_operator_set_tempo(o, bpm);
       float ol[256], orr[256];
       for (uint32_t f0 = 0; f0 < frames; f0 += 256) {
@@ -1160,8 +1209,8 @@ void le_instruments_render(le_engine* e, uint32_t frames) {
         }
       }
     }
-    le_meld* m = &e->meld[k];
-    if (le_meld_active(m) > 0 || le_meld_fading(m) > 0) {
+    le_meld* m = used_meld(e, k);
+    if (m != NULL && (le_meld_active(m) > 0 || le_meld_fading(m) > 0)) {
       if (bpm > 0.0f) le_meld_set_tempo(m, bpm);
       float ml[256], mr[256];
       for (uint32_t f0 = 0; f0 < frames; f0 += 256) {
@@ -1182,12 +1231,14 @@ void le_instruments_render(le_engine* e, uint32_t frames) {
     }
     store_f32(&e->a_inst_peak_bits[k], peak);
     store_i32(&e->a_inst_voices[k],
-              le_synth_active(s, k) + le_drift_active(&e->drift[k]) +
-                  le_operator_active(&e->op[k]) + le_meld_active(&e->meld[k]));
+              le_synth_active(s, k) + le_drift_active(d) + le_operator_active(o) +
+                  le_meld_active(m));
   }
   uint32_t stolen = s->stolen;
   for (int k = 0; k < LE_MAX_INSTRUMENTS; ++k) {
-    stolen += e->drift[k].stolen + e->op[k].stolen + e->meld[k].stolen;
+    if (used_drift(e, k) != NULL) stolen += e->drift[k].stolen;
+    if (used_op(e, k) != NULL) stolen += e->op[k].stolen;
+    if (used_meld(e, k) != NULL) stolen += e->meld[k].stolen;
   }
   atomic_store_explicit(&e->a_voices_stolen, stolen, memory_order_relaxed);
   atomic_store_explicit(&e->a_voices_stolen_hard, s->stolen_hard,

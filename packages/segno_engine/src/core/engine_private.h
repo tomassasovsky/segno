@@ -58,6 +58,11 @@ extern "C" {
 
 #define LE_RING_CAPACITY 256u
 
+/* The instrument devices (SEG-109), LE_INST_DEVICE_DRIFT onwards: an
+ * instance's index in per-device arrays is its LE_INST_DEVICE_* minus
+ * LE_INST_DEVICE_DRIFT. */
+#define LE_INST_DEVICE_COUNT (LE_INST_DEVICE_MELD - LE_INST_DEVICE_DRIFT + 1)
+
 /* MIDI clock output ring (C1, D15): audio-thread producer, drained by
  * whichever consumer forwards the bytes to le_midi_out_send (a native test's
  * direct le_ring_pop today; a future Dart poll loop, mirroring the existing
@@ -2778,6 +2783,19 @@ struct le_engine {
   /* and one Operator device per slot */
   struct le_operator* op;
   struct le_meld* meld;
+  /* Whether slot k's instance of a device (index: the device's
+   * LE_INST_DEVICE_* minus LE_INST_DEVICE_DRIFT) may differ from a freshly
+   * initialised one: set on the audio thread when the slot is given that
+   * device (a plain store; nothing reaches an instance's state before
+   * that), cleared by the reset that re-initialises it. Only an instance
+   * used since its last init, or every one when the rate changes, is
+   * re-initialised by a configure (a device's init is costly), and the
+   * callback's per-block scans (voice budget, render, counters) skip an
+   * unused one: it holds no voice. `inst_dev_rate` is the rate they were
+   * last initialised at. Cleared only with no callback (create, configure,
+   * reopen). */
+  uint8_t inst_dev_used[LE_MAX_INSTRUMENTS][LE_INST_DEVICE_COUNT];
+  int32_t inst_dev_rate;
   /* audio thread: the device each slot plays (LE_INST_DEVICE_*) */
   int32_t inst_device[LE_MAX_INSTRUMENTS];
   /* audio thread: whether this block's buses hold this block's audio (0 for
