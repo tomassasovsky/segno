@@ -535,8 +535,9 @@ static void test_drift_filter2_starts_at_rest(void) {
 
 /* Drift Depth's tuning is the measured table: a few values pinned (cents
  * per unit of depth / 0.58: voice 0 +2.48, voice 18 -12.33, key 24 -0.17,
- * key 31 +14.06, key 59 +12.94, none outside C1..B5), and a note's ratio is the sum at
- * w. Unison's first lane is the sharpest, panned left. */
+ * key 31 +14.06, key 59 +12.94, none outside C1..B5), and a note's ratio
+ * is the sum at w; Osc 2 adds its own per-voice offset. Unison's first
+ * lane is the sharpest, panned left. */
 static void test_drift_tuning_table(void) {
   printf("test_drift_tuning_table\n");
   drift_init(&g_drift, DRIFT_SR);
@@ -550,6 +551,8 @@ static void test_drift_tuning_table(void) {
   CHECK(le_drift_note_on(&g_drift, 1, 59, 100, 0) == 0);
   const float cents = 1200.0f * log2f(g_drift.voices[0].ratio);
   CHECK(fabsf(cents - (12.94f + 2.48f)) < 0.01f);
+  /* Osc 2 adds its own per-voice offset: voice 0 +0.21 */
+  CHECK(fabsf(1200.0f * log2f(g_drift.voices[0].osc2_drift) - 0.21f) < 0.01f);
   drift_init(&g_drift, DRIFT_SR);
   drift_set(&g_drift, LE_DRIFT_DRIFT_DEPTH, 0.0f);
   drift_set(&g_drift, LE_DRIFT_VOICE_MODE, 3.0f);

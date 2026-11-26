@@ -133,7 +133,12 @@ written from it.
    → high-pass.
 6. The bypassed sum × about −17.8 dB (roughly the filter path's pass-band
    gain, so a routing switch keeps the level) is added after the high-pass;
-   the sum is clipped at a fixed limit **[open: its value]**.
+   the sum is clipped at a fixed limit **[code]**, 0.35 in Segno's scale
+   (a third of the filter path's unity level) **[measured]**: saws at Gain
+   2 and two at Gain 2 into either filter at resonance 0.7 (round 19) peak
+   at the same flat-topped level in Live at C2 and C4; with the clip their
+   harmonics 1 to 24 come within 1.7 dB rms of Live's (4.3 to 8.4 without
+   it, the resonant peak too strong and the top harmonics 5 to 8 dB low).
 7. Amplitude: × Envelope 1 × (1 − VolVel + VolVel · velocity) × Main
    Volume gain (matrix target 11) × note gain × voice-mode gain and pan.
 
@@ -236,7 +241,11 @@ written from it.
 - Filter input: both types clip their input: linear to about +0.70 and
   -0.98, a soft knee, and a hard edge at +0.79 on the positive side. A sine
   at Gain 1 gets Live's harmonics 2 to 41 within 3 dB (the hard edge gives
-  the slowly falling tail); at Gain 0.5 it stays clean. The path around
+  the slowly falling tail); at Gain 0.5 it stays clean. Past the knee the
+  negative side rises again with slope 1 to a hard edge at -1.6 (the
+  code's ±1.6 clip of the sum) **[measured]**: a saw at Gain 2 and two at
+  Gain 2 into filter II at resonance 0 (round 19), harmonics within 1 dB
+  rms (held at the knee, harmonics 2 to 5 were 2 to 5 dB low). The path around
   the filters is about 1.8 dB louder for the oscillators than for the
   noise. **[fitted]**
 - High-pass: a linear 2-pole state-variable filter, Q about 1.47 (a small
@@ -271,11 +280,12 @@ written from it.
   gives 2 Hz).
 - Ratio follows the note's frequency after glide, Transpose and pitch bend,
   not the oscillators' own Transpose. A Mono lane's Ratio LFO follows that
-  lane's octave (an octave or two below the note), while Unison's detune
-  and the drift do not move it **[measured]**: Crunch Arcade's Mono LFO at
-  Ratio 12 (tf 11.6 to 2.6 dB, its pitch an octave off before), Numan
-  Keystrike's Unison and Church Bell's Stereo lanes (both worse when the
-  detune or the drift is followed). Sync divisions 0..21 run slowest
+  lane's octave (an octave or two below the note) and the per-key drift
+  offset, while Unison's detune and the per-voice drift offset do not
+  move it **[measured]**: round 19's Ratio LFO on a pitch slot in Mono,
+  Unison and Stereo at Drift Depth 1 (tf 0.3 to 0.9 dB; following the
+  per-voice offset too gave 3.4 to 5.3) and Crunch Arcade's Mono LFO at
+  Ratio 12 (its pitch an octave off before). Sync divisions 0..21 run slowest
   first, 8 bars to 1/64; the default is 15 (1/8). **[code]**, fitted.
 - LFO: a phase per voice, increment clamped below Nyquist, rate modes as
   the cycling envelope. Retrigger restarts it at the shape's peak (0.25
@@ -292,12 +302,12 @@ written from it.
 - An LFO in Ratio mode routed to a pitch slot becomes phase modulation of
   both oscillators (LFO × amount cycles, below one cycle) instead of
   vibrato. **[code]**, fitted (sidebands within 0.1 dB of Live's). The
-  cycling envelope in Ratio mode does the same: phase modulation by its
-  level × amount × 2 cycles, half the slot's 4-octave range as the LFO's
-  depth is half of its 2 **[measured]**: Bellatine's Ratio-14 sidebands
-  (at 952, 1098 and 1978 Hz) within 1 dB at that depth; as vibrato
-  Segno's note sat 336 cents sharp. Round 19 checks the depth and the
-  offset on a plain sine.
+  cycling envelope in Ratio mode does the same, centred on its middle:
+  phase modulation by (level - 0.5) × amount × 2 cycles, half the slot's
+  4-octave range as the LFO's depth is half of its 2 **[measured]**: round
+  19's sine at Ratio 2 and 3, amounts 0.1 to 0.25, two envelope shapes,
+  sidebands within 0.8 dB rms (3 to 10 uncentred); Bellatine's at Ratio
+  14 (as vibrato Segno's note sat 336 cents sharp).
 - LFO shapes 0..8: Sine,
   Triangle, two saws (rising and falling; which one is "Saw Up" is
   **[open]**), Square, Sample & Hold (two steps per cycle), Wander (smoothed
@@ -375,15 +385,24 @@ written from it.
   +1.18, a spread of 3.63, neighbours correlated 0.53; per voice a mean of
   +2.26 and a spread of 7.2, independent from voice to voice; Stereo pairs
   and Unison groups are consecutive voices. The measurement script is the
-  fit tooling's `dfit/drift_tables.py`. Still open **[measured, round
-  19]**: Osc 2 does not follow these values exactly. In 80s Tape its lanes
-  sit 0.2 to 0.75 cent per unit of w off Osc 1's on the same voice, which
-  is what fails tape-chord's stereo (side to mid at 98 Hz: -16.3 dB in
-  Live, -23.9 in Segno), and Monday Morning (Osc 2 alone, Transpose +24)
-  plays about 11 cents flatter than these tables give. Round 19 measures
-  Osc 2's own offsets.
-- SerialNumber: a random number per instance, saved in the preset,
-  probably the seed for per-instance randomness. **[inferred]**
+  fit tooling's `dfit/drift_tables.py`. Osc 2 adds one more offset per
+  voice (32 values, -0.82 to +0.83 cent per unit of w), the same at every
+  key, octave, Detune and Transpose **[measured]**: round 19's
+  `o2-stereo` (Osc 2 alone, a sine, Stereo pairs at 84..99), within 0.14
+  cent on `o2-st-a..d` (keys 24..83), `o2-st-out`, Osc 2 at -1 octave,
+  Detune +7 and Transpose +24; with it tape-chord's stereo goes from 1.87
+  to 0.04 dB. Transpose +24 leaves both oscillators' tables as they are
+  (`o1-st-t24`, `o2-st-t24` within 0.02 cent).
+- The tables follow the preset's SerialNumber **[measured, open]**: the
+  factory presets hold 0, -2147483648 (0 in its low 23 bits), 2217915 and
+  8388607, and the presets off the serial-0 tables are exactly the ones
+  with the last two (Monday Morning about 12 cents flat throughout,
+  Synth on Screen, Grimer Bass, Game Console, each failing pitch). Six of
+  the 89 factory presets use them. Round 20 measures both serials' tables
+  and checks other values; Segno uses the serial-0 tables for every
+  preset until then.
+- SerialNumber: a random number per instance, saved in the preset; it
+  selects Drift Depth's tables (see above). **[measured]**
 - Glide: a one-pole in hertz (not in pitch) with time constant 0.144 x
   Glide **[measured]**: on Live's octave glides at 0.5, 1 and 2 s the
   distance to the new note in hertz falls by the same ratio every 50 ms,
@@ -514,6 +533,19 @@ What the strict score still fails, and why **[measured]**:
   Round 18 measured both (every voice at C3..D#4 and E1..G2, at two depths,
   and voice 0 from C-1 to B0 and C6 to G9): neither holds, see Voices; the
   80s Tape difference is Osc 2's own offset (round 19).
+- Round 19 (2026-11-26): Osc 2's own per-voice drift offset, the voice
+  clip and the filter input past the knee, the cycling envelope's centred
+  phase modulation and the Ratio reference's per-key drift (each above).
+  Settled as already right: the Key source's scale (`key-lp`,
+  `key-shape`), Pulse's shape clamped at 0 (`pulse-neg05`, `pulse-neg1`),
+  and when a releasing voice counts as free (`free-tie-*`: the voice Live
+  picks, read from its drift, matches Segno's for every gap). Strict score
+  300 of 335 (264 of the 296 scored before round 19, from 252), factory
+  presets 3 of 5; held-out 45 of 89, from 14. Still failing: the four
+  presets with SerialNumber 2217915 or 8388607 (pitch; round 20), Chirp
+  Pluck and Clob Bass, the Mono presets Sol Bass, Seventy Two Bass, Rogue
+  and Crunch Arcade (tf 3 to 4.5), Metallic Strings (random Sample & Hold),
+  and filter I at a hot input with resonance (`drv-f1-g4-r07`, 2.0).
 - Round 16 settled two questions. Live's drift is the same in every
   instance: three Live renders of one Drift Depth patch, each a fresh
   device, correlate 1.0000. And Bloom Pad's filter peak came from key

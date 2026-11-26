@@ -105,10 +105,18 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   envelope in Ratio mode on a pitch slot is phase modulation (Bellatine:
   336 cents sharp before, tf 15.7 to 2.9). Strict score 252 of 296 before
   and after with round 18 included, factory presets 3 of 5; held-out 14 of
-  89 (Bellatine and Crunch Arcade much closer, still failing). Round 19 is
-  built for Osc 2's own drift offsets, filters at a hot input, the
-  cycling-envelope depth, the Key source, Pulse and voice reuse at the end
-  of a release.
+  89 (Bellatine and Crunch Arcade much closer, still failing).
+- Round 19 (39 renders): Osc 2 has its own per-voice drift offset on top
+  of Osc 1's (tape-chord's stereo 1.87 to 0.04 dB); the voice's output
+  clip is 0.35 and the filter input's negative side runs on to -1.6 (hot
+  inputs into either filter within 1.7 dB rms, from up to 8.4); the
+  cycling envelope's phase modulation is centred on its middle; the Ratio
+  rates follow the per-key drift. The Key source, Pulse's shape clamp and
+  when a releasing voice is free already matched. Strict score 300 of 335
+  (round 19 included; 264 of the 296 scored before, from 252), factory
+  presets 3 of 5; held-out 45 of 89, from 14. Drift Depth's tables follow
+  the preset's SerialNumber (the presets with 2217915 or 8388607 are the
+  ones off pitch): round 20 is built to measure them.
 
 ## November 2026 Drift's filter II as an MS-20 circuit model (SEG-109 P4, round 4)
 

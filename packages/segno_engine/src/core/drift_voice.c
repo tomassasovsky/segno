@@ -110,8 +110,12 @@ static float key_tracking(float tracking, float key) {
  * voice's level on each side, and both sides stay on pitch. */
 #define LE_DRIFT_STEREO_GAIN 0.5f
 
-/* The output clip of a voice. Provisional. */
-#define LE_DRIFT_VOICE_CLIP 2.0f
+/* The output clip of a voice (after the high-pass and the bypass sum).
+ * Measured: a saw at Gain 2 and two at Gain 2 into either filter at
+ * resonance 0.7 (round 19) peak at the same level in Live at C2 and C4
+ * (after the note gain), flat-topped; at 0.35 their harmonics 1 to 24 come
+ * within 1.7 dB rms of Live's (from 4.3 to 8.4 at no clip). */
+#define LE_DRIFT_VOICE_CLIP 0.35f
 
 /* The noise generator's level: unit-variance Gaussian x this, per sample
  * at the host's rate (so its level per hertz falls 3 dB when the rate
@@ -478,6 +482,18 @@ static const float kVoiceCents[32] = {
     0.24f, 11.13f, 11.25f,
 };
 
+/* Osc 2 adds one more offset per voice to the two above, the same at every
+ * key, octave, Detune and Transpose. Measured on round 19 (Osc 2 alone, a
+ * sine at Drift Depth 1, each lane of 16 Stereo pairs on its channel at
+ * notes 84..99); the same extra within 0.14 cent at keys 8..83, at Osc 2
+ * -1 octave, Detune +7 and Transpose +24. */
+static const float kOsc2VoiceCents[32] = {
+    0.21f,  -0.19f, -0.34f, -0.74f, -0.22f, 0.76f,  -0.60f, 0.62f,
+    -0.66f, -0.04f, -0.53f, 0.40f,  0.19f,  0.67f,  -0.67f, 0.79f,
+    0.76f,  0.25f,  0.22f,  0.83f,  0.75f,  0.27f,  -0.81f, 0.21f,
+    0.80f,  -0.23f, -0.03f, 0.31f,  -0.70f, -0.37f, -0.82f, 0.57f,
+};
+
 static float key_cents(int32_t note) {
   return note < 24 || note > 83 ? 0.0f : kKeyCents[note - 24];
 }
@@ -651,7 +667,9 @@ static void derive(le_drift* d) {
     const float f =
         440.0f * exp2f(w * (d->key_cents[69] + d->voice_cents[i]) / 1200.0f);
     v->dt1 = fminf(f * x->osc1_ratio / d->rate, 0.4999999f);
-    v->dt2 = fminf(f * x->osc2_ratio / d->rate, 0.4999999f);
+    v->dt2 = fminf(f * x->osc2_ratio * exp2f(w * d->osc2_cents[i] / 1200.0f) /
+                       d->rate,
+                   0.4999999f);
     /* and its LFO, in Ratio mode, at Ratio x A4: measured, a free LFO's
      * phase at a fresh voice's first note */
     v->lfo_inc = fminf(x->lfo_ratio * 440.0f / d->rate, 0.49999988f);
@@ -691,6 +709,7 @@ int32_t le_drift_init(le_drift* d, int32_t sample_rate) {
   f2_rest_state(d->f2_rest);
   for (int32_t i = 0; i < LE_DRIFT_VOICES; ++i) {
     d->voice_cents[i] = voice_cents(i);
+    d->osc2_cents[i] = kOsc2VoiceCents[i];
     d->voices[i].rng = 0x9e3779b9u ^ (uint32_t)(i * 2654435761u);
     d->voices[i].lfo_mod = 1.0f;
     clear_lowpass(d, &d->voices[i], 0);
@@ -781,10 +800,13 @@ static void lane_setup(const le_drift* d, le_drift_voice* v, int32_t lane,
   const float w = vf(d, LE_DRIFT_DRIFT_DEPTH) / 0.58f;
   const float cents = d->key_cents[note] + d->voice_cents[v - d->voices];
   v->ratio = ratio * exp2f(w * cents / 1200.0f);
-  /* the Ratio rate modes follow a Mono lane's octave, not Unison's detune
-   * nor the drift (measured: Crunch Arcade's Mono LFO at Ratio 12; Numan
-   * Keystrike's Unison and Church Bell's Stereo lanes) */
-  v->ref_ratio = mode == MODE_MONO ? ratio : 1.0f;
+  v->osc2_drift = exp2f(w * d->osc2_cents[v - d->voices] / 1200.0f);
+  /* the Ratio rate modes follow a Mono lane's octave and the per-key
+   * tuning, not Unison's detune nor the per-voice tuning (measured: round
+   * 19's Ratio LFO on a pitch slot in Mono, Unison and Stereo at Drift
+   * Depth 1; Crunch Arcade's Mono LFO at Ratio 12) */
+  v->ref_ratio = (mode == MODE_MONO ? ratio : 1.0f) *
+                 exp2f(w * d->key_cents[note] / 1200.0f);
   const float ng = d->note_gain[note];
   v->gain_l = gl * ng;
   v->gain_r = gr * ng;
@@ -1222,7 +1244,15 @@ static float knee(float a, float t) {
 }
 
 static float filter_input(float x) {
-  return x >= 0.0f ? fminf(knee(x, 0.70f), 0.79f) : -knee(-x, 0.98f);
+  if (x >= 0.0f) return fminf(knee(x, 0.70f), 0.79f);
+  /* past the knee the negative side rises again, to the hard edge at -1.6:
+   * measured, a saw at Gain 2 and two saws at Gain 2 into either filter
+   * (round 19, harmonics 1 to 24 within 1 dB rms; held at the knee they
+   * were 2 to 5 dB low on harmonics 2 to 5) */
+  const float a = -x;
+  float y = knee(a, 0.98f);
+  if (a > 0.98f + 0.45f) y += a - (0.98f + 0.45f);
+  return -fminf(y, 1.6f);
 }
 
 /* Filter I's feedback shaper: the cubic v - 2 (0.55032 v)^3, held flat past
@@ -1531,16 +1561,20 @@ static void voice_sample(le_drift* d, le_drift_voice* v, float* out_l,
   /* A pitch slot fed by a source running in Ratio mode (audio rate: the
    * LFO, or Envelope 2 as the cycling envelope) moves both oscillators'
    * phase instead of their pitch: phase modulation by source x amount x
-   * half the slot's range in octaves, in cycles, limited below one cycle.
-   * Measured: the LFO (range 2) on Live's Ratio renders, the cycling
-   * envelope (range 4) on Bellatine's sidebands at Ratio 14. */
+   * half the slot's range in octaves, in cycles, limited below one cycle;
+   * the cycling envelope centred on its middle (level - 0.5). Measured: the
+   * LFO (range 2) on Live's Ratio renders; the cycling envelope (range 4)
+   * on round 19's sine at Ratio 2 and 3, amounts 0.1 to 0.25 and two
+   * shapes (sidebands within 0.8 dB rms; uncentred 3 to 10 dB), and on
+   * Bellatine's at Ratio 14. */
   const int cyc_ratio = b->cycling && b->cyc_mode == RATE_RATIO;
   float pitch = 0.0f, phase = 0.0f;
   for (int k = 0; k < 2; ++k) {
     const int32_t s = b->pm_src[k];
     if ((lfo_ratio && s == LE_DRIFT_SRC_LFO) ||
         (cyc_ratio && s == LE_DRIFT_SRC_ENV2)) {
-      phase += b->pm_amt[k] * src.bi[s] * 0.5f * kPitchRange[s];
+      phase += b->pm_amt[k] * 0.5f * kPitchRange[s] *
+               (s == LE_DRIFT_SRC_ENV2 ? src.bi[s] - 0.5f : src.bi[s]);
     } else {
       pitch += b->pm_amt[k] * src.bi[s] * kPitchRange[s];
     }
@@ -1548,7 +1582,7 @@ static void voice_sample(le_drift* d, le_drift_voice* v, float* out_l,
   phase = clampf(phase, -0.9999999f, 0.9999999f);
   const float base = v->pitch * exp2f(pitch) * v->ratio * b->bend_ratio;
   const float f1 = base * x->osc1_ratio;
-  const float f2 = base * x->osc2_ratio * exp2f(add_detune);
+  const float f2 = base * x->osc2_ratio * v->osc2_drift * exp2f(add_detune);
   const float dt1 = fminf(f1 / rate, 0.4999999f);
   const float dt2 = fminf(f2 / rate, 0.4999999f);
   v->dt1 = dt1; /* kept for while the voice is silent (tick) */
