@@ -1396,7 +1396,7 @@ static float cubic_clip(float v) {
  * resonance is pulled back as the cutoff rises past 0.075 of the rate.
  * Fitted on Live's filter I renders: base damping 1.12, the shaper's
  * input x1.7 (self-oscillation on noise at resonance 1 within 0.1 dB of
- * Live's level; it was x1.4, 0.64 dB loud), output gain 2.90 (a sine
+ * Live's level; it was x1.4, 0.64 dB loud), output gain 2.915 (a sine
  * within 0.1 dB); sixth-octave levels within 2.6 dB rms on average (the
  * fitted state-variable filter it replaces: 3.0). */
 static float filter1(float* s, float x, float fc, float r, float rate,
@@ -1418,7 +1418,12 @@ static float filter1(float* s, float x, float fc, float r, float rate,
   s[0] = bp + g * hp;
   s[1] = lp + g * bp;
   s[2] = bp;
-  return lp * 2.90f;
+  /* the output saturates softly: measured, a sine into an open filter I
+   * is exact at Gain 0.25 and loses 0.28 dB at Gain 1 against filter II
+   * (Live's sine and saw renders at Gain 0.25 to 2); with this, Gain 0.25
+   * to 1 within 0.07 dB, their tf 1.2 to 0.3 at Gain 1, and the
+   * hot-input renders tf 1.1 to 0.7 */
+  return lp / sqrtf(1.0f + 2.0f * lp * lp) * 2.915f;
 }
 
 /* Low-pass type II: two sections in series of Segno's MS-20 low-pass model
