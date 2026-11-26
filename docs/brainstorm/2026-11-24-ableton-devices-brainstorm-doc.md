@@ -1,6 +1,6 @@
 # Ableton Live device presets on the pedal — brainstorm
 
-<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance kModBy kCarriers Celesta transconductances Bandpass Bitgrunge Csound Drivetime Extratone Filther Lofi Lowpass Megatripolis Minnaert Sawstyle Starchestra Quantizer autocorrelation tfz unmeasured retriggered isolations pul meldfit Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Perc Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penv penvd rndpan Bassic Bitgrunge's Catchem Filther's Kaneda Werkstuecktraeger Whley Whley's filt nloop Basscycle spr -->
+<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance kModBy kCarriers Celesta transconductances Bandpass Bitgrunge Csound Drivetime Extratone Filther Lofi Lowpass Megatripolis Minnaert Sawstyle Starchestra Quantizer autocorrelation tfz unmeasured retriggered isolations pul meldfit Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Perc Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penv penvd rndpan Bassic Bitgrunge's Catchem Filther's Kaneda Werkstuecktraeger Whley Whley's filt nloop Basscycle spr Floot Halfstep -->
 
 **Date:** 2026-11-24
 **Issue:** SEG-109 (related: SEG-57, Segno's own instrument voices)
@@ -233,10 +233,12 @@ written from it.
   fits only its path gain and the noise level. **[measured]** The diode's
   slope at 0 sets the small-signal resonance: at 2.21 (the reading's
   value; Segno had 2.19) the resonant peaks on noise sit within 0.3 dB of
-  Live's from resonance 0.5 to 1. A voice's filter II starts from the
-  state its offsets settle to with no input, not from zero: from zero the
-  offsets step through the output coupling, a -43 dB transient that Live's
-  notes do not have (it moved the onset of every filter II render).
+  Live's from resonance 0.5 to 1. A fresh voice's filter II starts from
+  the state its offsets settle to with no input, not from zero: from zero
+  the offsets step through the output coupling, a -43 dB transient that
+  Live's notes do not have (it moved the onset of every filter II render).
+  A note on a voice that ran silent starts from its filters' running
+  state instead (Voices).
 - Path gains **[measured]**: a sine and a saw at every gain through filter
   I within 0.1 dB and through filter II within 0.05 dB of Live's after
   the output gains 2.90 and 3.69 (they were 0.15 and 0.37 dB high); noise
@@ -347,6 +349,27 @@ written from it.
   so a Stereo note on a fresh pair starts its lanes together only when
   that pair's block was idle; every silent voice's LFO keeps running.
   **[code]**, fitted on Live's 16-note Stereo sequence.
+- A silent voice in a running block runs its whole chain, not only its
+  oscillators: they feed its filters, its envelopes keep falling, and its
+  output is summed **[measured]**. So a voice freed by its release (Env 1
+  below 0.001) keeps sounding, falling on, until its block stops, and a
+  new note on a silent voice starts from the filter state that run left
+  (a voice never played runs as A4 with its own drift); with Reset
+  Oscillator Phase on, the note starts both filters from rest. A block
+  with no voice sounding stops with its state held, running only its
+  LFOs. Measured on the held-out presets: notes on silent voices start
+  from their filters' running state (Toy Helicopter's triad after its D2
+  tf 3.0 to 0.5, Transistor Reeds 2.5 to 0.2, Wave Pad 3.1 to 0.6, Echo
+  Bells 2.4 to 0.8), a free voice's Envelope 2 keeps releasing
+  (Transistor Reeds 0.34 to 0.17), a voice released early in a 9 s
+  attack keeps its tail below 0.001 while the triad holds its block
+  (Darkened Strings 2.5 to 0.5, Slow Roll Strings 2.3 to 0.5); round 19's
+  filter II notes with Reset on start from rest (`drv-f2-*-r0`, tf 0.02
+  either way only with the reset). Not yet settled (round 24): whether a
+  stopped block's filter state decays while it waits (Airfare Bass's
+  triad starts between the held state and rest: tf 1.0 from rest, 1.5
+  held) and what a voice never played feeds its filter with (Floot Bass's
+  triad starts about half as hot as Live's).
 - With ResetOscillatorPhase on, a note on a sounding voice waits for a fast
   fade-out, then starts with reset phases; with it off, the note starts at
   once and the envelope continues from its level. **[code]** Measured: the
@@ -605,6 +628,29 @@ What the strict score still fails, and why **[measured]**:
   switches filter II's cutoff by ±4.2 octaves with that square at the
   note's frequency, so its sound rests on the LFO's phase against the
   oscillators: still failing, cause open.)
+- Held-out diagnosis by kind (2026-11-26, 48 of 89 passing): the
+  largest shared cause was the note on a silent voice. Of the
+  deterministic failures most had their error at the triad's or the
+  C5's onset (Floot Bass's triad: Live jumps to -0.42 within the 0.5 ms
+  attack, Segno started from rest), which pointed at the filters'
+  state: in Live a silent voice in a running block runs its whole chain
+  and keeps sounding below its release threshold (Voices). With that,
+  48 to 61 of 89 held-out, fit renders 354 to 363 of 390 (presets 3 to
+  4 of 5, Clob Bass now passing), no fit render lost. Sweet Tooth's
+  onset error is not its note start: Live's copies draw different Wander
+  values there as Segno's seeds do (the pitch in the first 20 ms spans
+  about 40 cents over Live's copies and Segno's seeds alike); the onset is the first sample above -60 dB of the
+  render's peak, and the peak (the triad's, 0.3 s in) varies 1.8 dB over
+  Segno's three seeds against 0.5 dB over Live's five copies, which
+  moves the onset by 3.6 ms through a flat stretch of the attack. So the
+  onset metric samples the peak's spread; no note-start rule is
+  missing. What still fails: the Mono presets (Crunch Arcade, Seventy
+  Two Bass, Sol Bass, Rogue, AG Bass, FM Halfstep Sticks), whose notes
+  start on voices whose state differs (Sol Bass's A5 after the C5: the
+  first 25 ms differ below 150 Hz), and audio-rate cutoff modulation of
+  filter II (Metallic Strings' Square LFO, Numan Keystrike's cycling
+  envelope in Ratio mode: Numan 3 dB quiet across the spectrum). Round
+  24 isolates both, and the filter state of a stopped block.
 - Round 16 settled two questions. Live's drift is the same in every
   instance: three Live renders of one Drift Depth patch, each a fresh
   device, correlate 1.0000. And Bloom Pad's filter peak came from key
