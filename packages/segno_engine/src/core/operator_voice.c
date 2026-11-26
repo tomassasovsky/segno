@@ -1232,15 +1232,25 @@ static float lfo_hz(const le_operator* d, int32_t note, int keyed) {
   return 440.0f * exp2f((n - 69.0f) / 12.0f);
 }
 
-/* A periodic shape at phase u (0..1), read as from a 512-entry table. */
+/* A periodic shape at phase u (0..1). The saws ramp exactly and turn back
+ * over the last 1/256 of a cycle, linearly, as an interpolated table whose
+ * last step holds the wrap would (measured: round 12 lfo-zero-a60, -a80,
+ * -a100, a Saw Up at 8.7 Hz on the pitch: Live's wrap starts about 20
+ * samples before a hard one and its cycles average 1/256 low, 1.55 dB to
+ * 0.61; the slow saws of round 2 ramp as before. The Saw Down's mirror
+ * image is Segno's choice, unmeasured). */
+#define OP_LFO_SAW_TURN (1.0f / 256.0f)
 static float lfo_periodic(int32_t type, double u) {
   const float q = (float)u;
+  const float w = OP_LFO_SAW_TURN;
+  const float saw = q < 1.0f - w ? 2.0f * q - 1.0f
+                                 : (1.0f - 2.0f * w) - (2.0f - 2.0f * w) * (q - (1.0f - w)) / w;
   switch (type) {
     case 0: return sinf((float)(2.0 * OP_PI) * q);
     case 1: return q < 0.5f ? 1.0f : -1.0f;
     case 2: return q < 0.5f ? 4.0f * q - 1.0f : 3.0f - 4.0f * q; /* from -1, rising */
-    case 3: return 2.0f * q - 1.0f;
-    default: return 1.0f - 2.0f * q;
+    case 3: return saw;
+    default: return -saw;
   }
 }
 
@@ -1250,7 +1260,6 @@ typedef struct lfo_coef {
   float lp_b, lp_a;     /* the shape smoother (bilinear one-pole) */
   float bp_b0, bp_a1, bp_a2; /* the noise band-pass (b1 = 0, b2 = -b0) */
   float fl_c;           /* the filter path's smoother coefficient */
-  float tone_c;         /* the Tone route's smoother coefficient */
 } lfo_coef;
 
 static float lfo_sample(le_operator_voice* v, int32_t type, const lfo_coef* c) {
@@ -1303,14 +1312,13 @@ static lfo_coef lfo_coefs(float f, float rate) {
   float sc = f < 25.0f ? 200.0f : 200.0f - 185.0f * (f - 25.0f) / 35.0f;
   if (sc < 15.0f) sc = 15.0f;
   c.fl_c = 1.0f - expf(-2.0f * (float)OP_PI * sc / rate);
-  c.tone_c = 1.0f - expf(-2.0f * (float)OP_PI * 200.0f / rate);
   return c;
 }
 
 /* ---- the filter ---- */
 
 /* The circuits. */
-enum { CIRC_CLEAN = 0, CIRC_OSR, CIRC_MS2, CIRC_SMP, CIRC_PRD, CIRC_MS2_HP };
+enum { CIRC_CLEAN = 0, CIRC_OSR, CIRC_MS2, CIRC_SMP, CIRC_PRD, CIRC_MS2_HP, CIRC_PRD_HP };
 
 /* MS2's and SMP's high-pass: a linear state-variable section's high output
  * plus c x its band output, so it falls 12 dB an octave just below the
@@ -1529,6 +1537,56 @@ static void prd_tick(float* st, float u, float g, float k, float* y) {
   for (int i = 0; i < 4; ++i) st[i] = 2.0f * y[i + 1] - st[i];
 }
 
+/* PRD's high-pass: Segno's model of a ladder of four one-pole high-passes
+ * with feedback k from the fourth around all four, the 12 dB output the
+ * second stage and 24 dB the fourth, the pass band made up by (1 + k), the
+ * input node and the feedback through the low-pass ladder's stage curve so
+ * that it rings at a bounded level from k = 4. At resonance 0 it is two
+ * one-poles (Live's renders within 0.4 dB of that); at 0.5 its stop band
+ * stands (1 + k) above them, the reading's 4.04 q times 0.95 for 12 dB and
+ * 1.37 for 24 (fit: round 7's hp-prd renders and round 4's circ4-hp,
+ * third-octave bands of Live's noise within 0.3 to 0.6 dB at resonance 0
+ * and 0.5, 1.4 at 1, the cutoff 2 % up). */
+#ifndef OP_PRD_HP_K
+#define OP_PRD_HP_K 0.95f
+#endif
+#ifndef OP_PRD_HP_K24
+#define OP_PRD_HP_K24 1.37f
+#endif
+#ifndef OP_PRD_HP_G
+#define OP_PRD_HP_G 1.02f
+#endif
+/* st[0..3] the stages' states, st[4] the feedback's last secant, st[5] the
+ * input node's (it saturates as the low-pass ladder's stages do). Returns
+ * the second stage's and fourth stage's outputs through y2, y4. */
+static void prd_hp_tick(float* st, float u, float g, float k, float* y2, float* y4) {
+  const float a = 1.0f / (1.0f + g);
+  /* stage i: y_{i+1} = a (y_i - s_i), so y4 = A y0 + B */
+  float A = 1.0f, B = 0.0f;
+  for (int i = 0; i < 4; ++i) {
+    A *= a;
+    B = a * (B - st[i]);
+  }
+  /* the node's input v = u - k c(y4) passes the curve: y0 = s0 v */
+  float sg = st[4], s0 = st[5], y0 = u;
+  for (int pass = 0; pass < 2; ++pass) {
+    const float vv = (u - k * sg * B) / (1.0f + k * sg * A * s0);
+    y0 = s0 * vv;
+    sg = prd_secant(A * y0 + B);
+    s0 = prd_secant(vv);
+  }
+  st[4] = sg;
+  st[5] = s0;
+  float y = y0;
+  for (int i = 0; i < 4; ++i) {
+    const float h = a * (y - st[i]);
+    st[i] = 2.0f * (y - h) - st[i]; /* the low-pass state: s = 2 lp - s */
+    y = h;
+    if (i == 1) *y2 = h;
+  }
+  *y4 = y;
+}
+
 /* ---- the shaper ---- */
 
 static float shape_curve(int32_t type, float x) {
@@ -1633,14 +1691,6 @@ static void voice_chunk(le_operator* d, le_operator_voice* v, const chunk_ctx* c
     op_mods rs;
     route_mods(d, v, v->lfo_smooth * lfo_gain, penv_st, 1, &rs);
     rm.m[DST_FILTER_FREQ] = rs.m[DST_FILTER_FREQ];
-  }
-  /* its route into Tone passes a 200 Hz one-pole (fit: round 12 cr-tone,
-   * a 1.1 kHz LFO's sidebands 10 to 18 dB under Segno's unsmoothed ones;
-   * 12.8 dB to 5.9, 100 and 400 Hz 6.9 and 7.3) */
-  if (vi(d, LE_OPERATOR_LFO_DEST) == DST_TONE) {
-    op_mods rs;
-    route_mods(d, v, v->lfo_tone * lfo_gain, penv_st, 1, &rs);
-    rm.g[DST_TONE] = rs.g[DST_TONE];
   }
   const float* mod = rm.m;
   /* Aux Env (the pitch envelope's amount) is a gain destination: the mod
@@ -1779,7 +1829,7 @@ static float operators_tick(le_operator* d, le_operator_voice* v, const chunk_ct
       v->out[op] = 0.0f;
       continue;
     }
-    float off;
+    double off;
     if (c->fb_op[op]) {
       off = kpm * c->fb[op] * (0.75f * v->out[op] + 0.25f * v->y2[op]);
     } else {
@@ -1787,10 +1837,23 @@ static float operators_tick(le_operator* d, le_operator_voice* v, const chunk_ct
       for (int32_t m = 0; m < LE_OPERATOR_OPS; ++m) {
         if (mod_by[op] & (1u << m)) x += v->out[m];
       }
-      const float lp = v->tone_b * (x + v->lp_x[op]) - v->tone_a * v->lp_y[op];
-      v->lp_x[op] = x;
-      v->lp_y[op] = lp;
-      off = kpm * lp;
+      /* Tone low-passes the input's change and the phase accumulates it,
+       * so a Tone that moves leaves its offset behind instead of
+       * filtering the input afresh (op-01 4.3: b0 (x - x[n-2]) - a1 w
+       * into the phase; measured: round 12 cr-tone, a 1.1 kHz LFO on
+       * Tone, every line within 0.8 dB, 12.8 dB to 0.3 rms, where
+       * filtering x itself, smoothed or not, misses Live's sidebands
+       * by 10 to 18 dB) */
+      const double w = (double)v->tone_b * (double)(x - v->tone_x2[op]) -
+                       (double)v->tone_a * v->tone_w[op];
+      v->tone_x2[op] = v->tone_x1[op];
+      v->tone_x1[op] = x;
+      v->tone_w[op] = w;
+      double pm = v->tone_pm[op] + w;
+      /* whole half cycles move the table phase by whole tables */
+      if (pm > 1024.0 || pm < -1024.0) pm -= 0.5 * floor(2.0 * pm);
+      v->tone_pm[op] = pm;
+      off = kpm * pm;
     }
     const le_operator_wave* w = op_wave(d, op);
     float s;
@@ -1889,8 +1952,7 @@ static void render_voice(le_operator* d, le_operator_voice* v, const chunk_ctx* 
   int32_t circuit = c->filter_on ? c->circuit : CIRC_CLEAN;
   le_ms2_coef ms2 = {0};
   float k1 = 0.0f, k2 = 0.0f;
-  /* PRD's high-pass is a core of its own, not built: Clean's */
-  if (circuit == CIRC_PRD && c->filter_type == 1) circuit = CIRC_CLEAN;
+  if (circuit == CIRC_PRD && c->filter_type == 1) circuit = CIRC_PRD_HP;
   float in_scale = OP_MS2_IN;
   float hp_c = 0.0f;
   if ((circuit == CIRC_MS2 || circuit == CIRC_SMP) && c->filter_type == 1) {
@@ -1925,6 +1987,11 @@ static void render_voice(le_operator* d, le_operator_voice* v, const chunk_ctx* 
       const float q = prd_q(ft.r, ft.fc, rate);
       k1 = OP_PRD_K * 4.04f * q * (1.0f + OP_PRD_KB * (1.0f - fminf(q, 1.0f)));
     }
+    k2 = (1.0f + k1) / OP_PRD_IN;
+  } else if (circuit == CIRC_PRD_HP) {
+    const float fcs = fminf(fmaxf(ft.fc, 1.0f), 0.48f * rate);
+    ms2.g = OP_PRD_HP_G * tanf(fminf((float)OP_PI * fcs / rate, 1.54f));
+    k1 = (c->slope ? OP_PRD_HP_K24 : OP_PRD_HP_K) * 4.04f * prd_q(ft.r, ft.fc, rate);
     k2 = (1.0f + k1) / OP_PRD_IN;
   }
   /* the analog state belongs to one circuit and slope: a change starts it
@@ -1979,7 +2046,6 @@ static void render_voice(le_operator* d, le_operator_voice* v, const chunk_ctx* 
         v->lfo_filter += lc.fl_c * (24.0f * la - v->lfo_filter);
       }
       v->lfo_smooth += lc.fl_c * (v->lfo_out - v->lfo_smooth);
-      v->lfo_tone += lc.tone_c * (v->lfo_out - v->lfo_tone);
     }
     const float lmul = 1.0f + la;
     float x;
@@ -2009,6 +2075,10 @@ static void render_voice(le_operator* d, le_operator_voice* v, const chunk_ctx* 
         float yy[5];
         prd_tick(v->f_an, OP_PRD_IN * ft.drive * x, ms2.g, k1, yy);
         y = k2 * (c->slope ? yy[4] : yy[2]);
+      } else if (circuit == CIRC_PRD_HP) {
+        float y2, y4;
+        prd_hp_tick(v->f_an, OP_PRD_IN * ft.drive * x, ms2.g, k1, &y2, &y4);
+        y = k2 * (c->slope ? y4 : y2);
       } else if (circuit == CIRC_MS2_HP) {
         float l, b, h;
         clean_section(v->f_an, v->f_an + 2, ft.drive * x, ms2.g, k1, &l, &b, &h);

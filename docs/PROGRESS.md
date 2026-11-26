@@ -1,4 +1,4 @@
-<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated autocorrelation tfz unmeasured retriggered isolations Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Perc Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penv penvd rndpan Basscycle spr Floot Halfstep fenv restruck fmdrive oscvol unsmoothed -->
+<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated autocorrelation tfz unmeasured retriggered isolations Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Perc Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penv penvd rndpan Basscycle spr Floot Halfstep fenv restruck fmdrive oscvol unsmoothed circ -->
 # Segno — Progress & Roadmap
 
 <!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs multicore smarttune -->
@@ -152,6 +152,14 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   (the filter's own, and 200 Hz); the first random pan is not special.
   Five seeds: 413 of 469 fit renders (the earlier rounds 399 of 452,
   round 12 14 of 17), 9 of 10 presets; held out 48 of 67.
+- Round 12's open questions: Tone's low-pass acts on the modulator's
+  change and the phase accumulates it (an LFO on Tone needs no smoother),
+  the saw LFOs turn back over the last 1/256 of a cycle (the pitch through
+  zero is the plain 1 + L), and PRD's high-pass is a ladder of high-passes.
+  419 of 469 fit renders (from 416 re-scored), 9 of 10 presets; held out
+  48 of 67 (from 47). Round 13 (26 renders) asks Live for the LFO shapes'
+  turns and smoother, Release Bass taken apart, OSR's even harmonics and
+  MS2's loud saw.
 - A voice costs 2.7 us per period at 48 kHz on the dev machine, 4.5 with
   Antialias (a Drift voice 7.1).
 

@@ -97,7 +97,10 @@ typedef struct le_operator_voice {
   double phase[LE_OPERATOR_OPS]; /* table indices, 0..4096 */
   float out[LE_OPERATOR_OPS];
   float y2[LE_OPERATOR_OPS];                         /* feedback history */
-  float lp_x[LE_OPERATOR_OPS], lp_y[LE_OPERATOR_OPS]; /* Tone filter */
+  /* Tone: the modulation input's change, low-passed (x[n-1], x[n-2], the
+   * last output), accumulated into a phase offset in cycles */
+  float tone_x1[LE_OPERATOR_OPS], tone_x2[LE_OPERATOR_OPS];
+  double tone_w[LE_OPERATOR_OPS], tone_pm[LE_OPERATOR_OPS];
   float tone_b, tone_a; /* the Tone filter's coefficients */
   float time_mod;       /* the Time route's factor on envelope times */
   float inc[LE_OPERATOR_OPS];                        /* per engine sample */
@@ -112,7 +115,6 @@ typedef struct le_operator_voice {
   float lfo_out;    /* this sample's shape x envelope, before the amounts */
   float lfo_filter; /* the filter's smoothed LFO, semitones */
   float lfo_smooth; /* the LFO through the filter's smoother: its route into Filter Freq */
-  float lfo_tone;   /* the LFO through a 200 Hz one-pole: its route into Tone */
   /* filter: two sections (band, low) and their previous inputs, and the
    * ramped coefficients */
   float f_s[2][2];
