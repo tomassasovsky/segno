@@ -79,9 +79,9 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
 - Analog's envelope, LFO waves, filter (with the formants) and drive move
   into `aas_parts.h`, which both devices use; Analog's 201 fit renders are
   bit-identical across the move.
-- Fitted against 285 Live renders in seven rounds. Strict score: 248 of
-  285 pass, 44 of the 67 factory-preset renders; the held-out round of
-  every factory preset 75 of 107 (from 8); the chaotic bowed and bouncing
+- Fitted against 322 Live renders in eight rounds. Strict score: 279 of
+  322 pass, 44 of the 67 factory-preset renders; the held-out round of
+  every factory preset 77 of 107 (from 8); the chaotic bowed and bouncing
   renders are scored against Segno's own spread. Measured: the keyboard's
   Stretch and Fine Tune, the key amounts' resting 0.1, the bridge read's
   1.5 samples, the termination's loss, the output stage, the body's line
@@ -100,10 +100,12 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   Lagrange read on the taps about its middle (the loud high notes' highs),
   the bent string's tap at the damper (Soft Buzz Bass); measured: a
   restruck string's envelope dropping first, a unison copy letting go its
-  delay after the key. Open, round 8 built: the unison copies' timing on
-  later notes, a mono string struck after its release, Upright Ambient
-  Bass's hammer, the bow's speed switch; also Live's cut of released
-  voices (measured, rule not found) and its random Keyboard Error.
+  delay after the key; in round 8: a chord's keys arriving with a key
+  that did not glide do not glide. Open: a mono string struck by a chord
+  while it rings, Strings Quartet's bow after its first block, the unison
+  copies' host timing on later notes (the harness cannot place it), Live's
+  cut of released voices (measured, rule not found) and its random
+  Keyboard Error.
 - A voice costs 1.8 us per millisecond with the hammer, 0.6 with the bow,
   the body 0.4 more. A device holds 32 strings (1.7 MB).
 

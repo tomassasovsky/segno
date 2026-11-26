@@ -2178,10 +2178,19 @@ are built from the same modules.
   fourth strings at delays 0.25 to 1 land on Live's sample; with the
   velocity the hammer references match Live's to -100 dB, from -80; the
   copies' release: ccg-tri 1.6 to 1.3 dB rms, 12 String Chorus Guitar's
-  release 40 dB under Live's signal, from 15. For every note but the
-  song's first, Live's copies start and end one more 1 ms block late
-  against the first string, measured to the sample on 12 String Chorus
-  Guitar; whether that is Live's host or the engine is open: round 8)
+  release 40 dB under Live's signal, from 15. Round 8: on a later note a
+  copy sometimes starts one 1 ms block later against the first string
+  than Segno's, and sometimes not, as Live's host timing predicts. Live
+  starts a note's first string on its block before the note, while the
+  copies' delay runs from the note's own time and ends on a block too.
+  That is the host's placement, not the engine's, and the fit harness
+  cannot place a copy apart from its note, so Segno keeps the delay
+  from the note-on)
+  Keys that arrive with a key that did not glide do not glide either
+  (Const mode), as Analog's triads showed: a chord's later notes would
+  otherwise glide from its first under Legato. **[measured]** (round 8:
+  Electric Basic Bass's and Meow Keys' chords, 4.5 and 3.3 dB rms to
+  0.07 and 0.06)
   A key struck again strikes its ringing string
   without resetting it. A released string ends after 84 one-millisecond
   blocks in a row, counted from the release, in which its own sound
@@ -2362,6 +2371,25 @@ fast, soft, fully damped hammer at a quiet C2, whose highs come 6 to
 test the speed switch after the first block that still moves Strings
 Quartet off Live's at sample 70; Meow Keys' chord, 6 dB short at 180 Hz;
 Electric Basic Bass's chord after a voice Live has cut.
+
+Round 8 (37 renders): 27 passed as they came, the mono restrikes after a
+release, Upright Ambient Bass's hammer at C1 and C4 and every reference
+bow among them. The chords of Electric Basic Bass and Meow Keys failed
+because their later notes glided from the first (Glide on, Legato); with
+the rule above every chord of theirs matches. The bow's speed switch
+after its first block matches the reference to -120 dB with a velocity
+amount of 0.6, so Strings Quartet's departure at sample 70 comes from
+something else of that preset's (its finger, its gated damper or its
+positions), not from the switch. Still open: a mono string struck by a
+chord while it still rings (sbb8-rel-tri) shows a 6 ms burst in Live
+that Segno lacks; a single key matches. Two chaotic renders went from
+passing to failing with the damper tap fix (Moving String Pad's bouncing
+hammer at A4, Wire Noise's bow): a 1e-6 change of the exciter's speed
+moves Segno from itself by 5.7 and 5.6 dB, close to their distance from
+Live, and before the first 0.1 s the two taps give the same signal.
+With round 8: 279 of 322 fit renders pass (rounds 1 to 7 unchanged at 248,
+round 8 31 of 37), 44 of the 67 factory-preset renders; held-out 77 of 107
+(Electric Basic Bass and Meow Keys now pass).
 
 ## Decisions
 
