@@ -574,6 +574,21 @@ What the strict score still fails, and why **[measured]**:
   lacks, 30 dB down) and the Mono presets (Seventy Two Bass, Rogue,
   Crunch Arcade, Gear Shift, Sol Bass, AG Bass). Round 21 isolates Mono
   note handoff.
+- Round 22 (2026-11-26): the oscillators' starting phases match Live's
+  within 0.01 cycle on every note **[measured]**: sines around the
+  filters, Osc 1, Osc 2 and both, a fresh voice, the same voice after 0.5
+  and 2 s, Reset Oscillator Phase on and off, Poly and Stereo, with the
+  voice's block idle or running, at Drift Depth 0 and 1. So the beating
+  differences in Echo Bells and Transistor Reeds do not come from the
+  start phases. Toy Helicopter's triad alone (and with each oscillator
+  alone) matches; its failure appears only after the D2, and is not the
+  idle voices turning nor the synced LFO's restart. Clob Bass's stereo
+  error is the noise in quiet bands (its noise-only isolation fails only
+  in bands 15 to 35 dB down, where the noise's own fluctuation rules).
+  Live's Sample & Hold is the same in every instance (Metallic Strings'
+  and Numan Keystrike's Live copies differ by tf 0.06 and 0.00), so those
+  draws are deterministic in Live; matching them would take Live's own
+  random sequence, which only the code shows: a decision for the owner.
 - Round 16 settled two questions. Live's drift is the same in every
   instance: three Live renders of one Drift Depth patch, each a fresh
   device, correlate 1.0000. And Bloom Pad's filter peak came from key
