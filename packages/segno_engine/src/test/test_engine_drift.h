@@ -762,6 +762,29 @@ static void test_drift_silent_voices_run(void) {
   CHECK(v->env1 == held && drift_peak(l, 480) == 0.0f);
 }
 
+/* In Mono a voice glides from the pitch its last note left even after
+ * that note ended; a free Poly voice starts on its note. */
+static void test_drift_mono_glides_from_ended_note(void) {
+  printf("test_drift_mono_glides_from_ended_note\n");
+  static float l[4800], r[4800];
+  for (int mono = 0; mono < 2; ++mono) {
+    drift_init(&g_drift, DRIFT_SR);
+    drift_set(&g_drift, LE_DRIFT_VOICE_MODE, mono ? 1.0f : 0.0f);
+    drift_set(&g_drift, LE_DRIFT_GLIDE, 0.1f);
+    drift_set(&g_drift, LE_DRIFT_ENV1_RELEASE, 0.01f);
+    CHECK(le_drift_note_on(&g_drift, 1, 48, 100, 0) == 0);
+    le_drift_render(&g_drift, l, r, 4800);
+    le_drift_note_off(&g_drift, 1);
+    le_drift_render(&g_drift, l, r, 4800);
+    CHECK(g_drift.voices[0].state == 0);
+    CHECK(le_drift_note_on(&g_drift, 2, 60, 100, 0) == 0);
+    CHECK(g_drift.voices[0].note == 60);
+    const float p = g_drift.voices[0].pitch;
+    if (mono) CHECK(fabsf(p - drift_hz(48)) < 1.0f);
+    else CHECK(fabsf(p - drift_hz(60)) < 0.01f);
+  }
+}
+
 /* Filter I's output saturates softly: through the open filter a sine at
  * Gain 1 against one at Gain 0.25 comes out about 0.28 dB lower than
  * through filter II (both share the input clip and the voice clip). */
@@ -1192,6 +1215,7 @@ static void run_drift_tests(void) {
   test_drift_voice_blocks();
   test_drift_silent_voices_run();
   test_drift_filter1_output_saturates();
+  test_drift_mono_glides_from_ended_note();
   test_drift_filter_type_switch_is_smooth();
   test_engine_drift_slot_matches_offline();
   test_engine_drift_voice_budget();
