@@ -236,8 +236,13 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   a mono key change restarts retriggered LFOs, no floor on Q, a mono
   vibrato runs on through silence, no sub in Sync mode, an unclamped pan
   angle): fit 290 of 384, factory presets 22 of 79, held out 15 of 58.
-  segno-analog-fit9 (41 renders) reads the vibrato and LFOs across notes,
-  a reused voice's oscillators, Live's event timing and mono stretch.
+  Rounds 8 and 9 (77 renders, five seeds): a delayed unison copy starts
+  4 (kD + 13) / P cycles on and releases k delays late; a device voice
+  stays busy 0.1125 s after it goes quiet, its free LFOs running then and
+  while another voice sounds, and fresh voices' LFOs run from the
+  device's first note: fit 312 to 325 of 461, factory presets 24 to 25,
+  held out 16 of 58. The steal order (oldest first), the mono LFO restart,
+  Q without a floor and the stretch law on mono voices are confirmed.
 - A voice of two saw chains through LP24 costs 0.9 us per millisecond on
   the dev machine, four unison copies 3.7, the formant filter 1.0. A
   device holds 40 copies (229 KB).
