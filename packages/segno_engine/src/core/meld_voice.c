@@ -918,7 +918,7 @@ static void start_voice(le_meld* d, le_meld_voice* v, uint32_t origin, int32_t n
                                   : spread_position(position_index % position_count, position_count);
     cp->spread = cp->position * vf(d, LE_MELD_SPREAD);
     cp->random = xs_bipolar(&cp->rng);
-    cp->lim[0] = cp->lim[1] = 0.0f;
+    cp->lim[0] = cp->lim[1] = cp->lim_peak[0] = cp->lim_peak[1] = 0.0f;
     cp->e[0].live = cp->e[1].live = 0;
     cp->e[0].amp.state = cp->e[1].amp.state = ENV_IDLE;
     engine_start(d, v, cp, 0, glide_from);
@@ -1376,6 +1376,14 @@ static void tick_copy(le_meld* d, le_meld_voice* v, le_meld_copy* cp) {
     /* the envelopes' times and sustains */
     const float tick = rate / (float)LE_MELD_TICK;
     en->amp_dx[0] = time_dx(mod_time(envf(d, e, LE_MELD_E_AMP_ATTACK), m.sum[T_AMP_ATTACK]), rate);
+    /* engine B's first tick takes its own attack, before the matrix moves
+     * it; engine A's takes the matrix's. fit: aat-note-b-n81 and
+     * -b-oct-n81 (4.6e-5 s, Note 0.28 on B) match Live's to the sample, tf
+     * 8.53 dB to 0, while the same route on A lengthens it (aat-note-a*);
+     * tr-neurotimbre tf 13.1 to 1.8 */
+    if (e == 1 && v->since == v->b_delay) {
+      en->amp_dx[0] = time_dx(envf(d, e, LE_MELD_E_AMP_ATTACK), rate);
+    }
     en->amp_dx[1] = time_dx(mod_time(envf(d, e, LE_MELD_E_AMP_DECAY), m.sum[T_AMP_DECAY]), rate);
     en->amp_dx[2] = time_dx(mod_time(envf(d, e, LE_MELD_E_AMP_RELEASE), m.sum[T_AMP_RELEASE]), rate);
     en->mod_dx[0] = time_dx(mod_time(envf(d, e, LE_MELD_E_MOD_ATTACK), m.sum[T_MOD_ATTACK]), tick);
@@ -1538,12 +1546,20 @@ static void render_voice(le_meld* d, le_meld_voice* v, float* left, float* right
         }
         if (limiter) {
           /* fit: the limiter works at the device's level, after the 0.5 of
-           * the output (a -9 dBFS sine passes it untouched) */
+           * the output (a -9 dBFS sine passes it untouched). It hears a
+           * peak envelope (instant rise, the release's fall), not the
+           * sample: fit: lim-u1, -u2, -u3 and -u2-vol05, a saw 12 dB up,
+           * Live's peak held at 0.712, tf 3.30 to 0.54 dB and level 3.27 to
+           * -0.05 dB (the sample's level gives 1.036); Club Kick's engine A
+           * level 1.62 to 0.30 dB */
           float* g = cp->lim;
+          float* pk = cp->lim_peak;
           const float lv[2] = {0.5f * l, 0.5f * r};
           float out[2];
           for (int ch = 0; ch < 2; ++ch) {
-            const float level = 20.0f * log10f(fmaxf(fabsf(lv[ch]), 1e-6f));
+            const float a = fabsf(lv[ch]);
+            pk[ch] = a > pk[ch] ? a : pk[ch] + rel * (a - pk[ch]);
+            const float level = 20.0f * log10f(fmaxf(pk[ch], 1e-6f));
             const float target = -0.75f * fmaxf(level + 6.0f, 0.0f);
             g[ch] += (target < g[ch] ? att : rel) * (target - g[ch]);
             out[ch] = lv[ch] * powf(10.0f, g[ch] / 20.0f);

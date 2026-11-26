@@ -1,4 +1,4 @@
-<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Metalic Perc retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations penv Unisono pul meldfit Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penvd rndpan Bassic Bitgrunge's Catchem Filther's Kaneda Werkstuecktraeger Whley Whley's filt nloop avel fleg unmodulated Basscycle spr prewarping prewarp Floot Halfstep Gametal Plucks Neurotimbre sqperc fenv restruck fmdrive oscvol unsmoothed -->
+<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Metalic Perc retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations penv Unisono pul meldfit Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penvd rndpan Bassic Bitgrunge's Catchem Filther's Kaneda Werkstuecktraeger Whley Whley's filt nloop avel fleg unmodulated Basscycle spr prewarping prewarp Floot Halfstep Gametal Plucks Neurotimbre sqperc fenv restruck fmdrive oscvol unsmoothed colfm -->
 # Segno — Progress & Roadmap
 
 <!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs multicore smarttune -->
@@ -212,9 +212,12 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   attack the matrix sets at the first tick is played). Envelope positions
   are now double, and the output gain is 0.5 again (the 0.4988 before was
   a measurement error). At five seeds: 554 of 644 fit renders, 13 of 21
-  presets, 34 of 84 held-out (from 33; tf mean 3.90 dB). Round 13 (tiny
-  Amp attacks under Note, the limiter alone, Club Kick's engines without
-  it) is built.
+  presets, 34 of 84 held-out (from 33; tf mean 3.90 dB). Round 13 and the
+  Sub reading: the Sub written from Live's description (its A6 renders
+  match to the sample), the limiter hearing a peak envelope, engine B's
+  first tick taking its own attack: 572 of 657 fit renders, 13 of 21
+  presets, 34 of 84 held-out. Round 14 (Gotta Catchem's looping Mod
+  envelope under a moved decay, its engines alone) is built.
 - A voice with both engines on a Basic Shapes saw and SVF 12 costs 1.8 us
   per millisecond on the dev machine; MS2 6.8, a Swarm 3.7, three unison
   copies 5.6.

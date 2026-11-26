@@ -466,30 +466,135 @@ static float fnoise_tick(le_meld_osc* o) {
   return gain * hp;
 }
 
-/* ---- Sub ---- */
-
-/* the DC blocker after Sub's clip */
+/* the DC blocker after Sub's saturator */
 #define MO_SUB_HP_HZ 5.0f
 
-static float sub_tick(le_meld_osc* o) {
+/* ---- Sub ---- */
+
+/* Sub, as segno-re-findings/md-08-sub.md describes Live's. [code] Two
+ * coupled-form ("magic circle") sines, the main one at f/2 and the Macro 2
+ * one at f/4, each rescaled to x^2 + y^2 = 1 at every control tick. The
+ * recursion keeps x^2 + y^2 - e x y, not x^2 + y^2, so each rescale steps
+ * the amplitude by up to about e/4: lines at |n f/2 - 3000 Hz| on high
+ * notes. Macro 1 drives a saturator on the biased sine and mixes it in
+ * through a 5 Hz DC blocker; Macro 2 adds the f/4 sine after both. */
+
+/* Live's polynomial sine of a phase in cycles (md-01): a triangle fold to
+ * [-pi/2, pi/2], then an odd polynomial. [code] */
+static float sub_psin(float ph) {
+  float q = ph + 0.25f;
+  q -= floorf(q);
+  const float x = (float)MO_PI * 0.5f - (float)MO_TWO_PI * fabsf(q - 0.5f);
+  const float x2 = x * x;
+  return x * (0.99999833f + x2 * (-0.16664949f + x2 * (0.00830483f - x2 * 0.00018285f)));
+}
+
+/* Meld's fast 2^x and log2, for the f/4 level's 2 M2^2.5 (md-08 5, the
+ * polynomials of rng-01 2.3). [code] */
+static float sub_pow(float b, float k) {
+  b = fmaxf(b, 1e-6f);
+  int ex;
+  const float fr = frexpf(b, &ex); /* b = fr 2^ex, fr in [0.5, 1) */
+  const float m = 2.0f * fr - 1.0f;
+  const float lg =
+      (float)(ex - 1) + m * (2.1196218f + m * (0.3883265f - 0.0384236f * m)) / (m + 1.4695246f);
+  const float z = mo_clamp(k * lg + 127.0f, 0.0f, 255.0f);
+  const float zi = floorf(z), f = z - zi;
+  const float p = 1.0f + f * (0.6930501f + f * (0.2412875f + f * (0.0521745f + f * 0.0134879f)));
+  return ldexpf(p, (int)zi - 127);
+}
+
+/* e = 2 sin(pi f / sr), clamped to [-2, 2] (md-08 1). [code] */
+static float sub_coef(float hz, float rate) {
+  const float s = sub_psin(0.5f * hz / rate);
+  return s > 1.0f ? 2.0f : s < -1.0f ? -2.0f : 2.0f * s;
+}
+
+static void sub_unit(float* x, float* y) {
+  const float r = sqrtf(*x * *x + *y * *y);
+  if (r > 0.0f) {
+    *x /= r;
+    *y /= r;
+  }
+}
+
+/* A macro's new target: a ramp of N - 1 steps of 5 ms' N samples, or a
+ * snap when N < 2 or the target is the value (md-08 6). [code] */
+static void sub_ramp(float* v, float* to, float* step, int32_t* n, float target, int32_t len) {
+  *to = target;
+  if (len < 2 || target == *v) {
+    *v = target;
+    *n = 0;
+    return;
+  }
+  *n = len - 1;
+  *step = (target - *v) / (float)(len - 1);
+}
+
+static void sub_drive(le_meld_osc* o, float m) {
+  o->s.sub.k = 1.0f + 64.0f * m * m;
+  o->s.sub.w = mo_clamp(3.0f * m, 0.0f, 1.0f);
+}
+
+/* the frequency, at every control tick: both coefficients, and both
+ * states back to unit length (md-08 1) */
+static void sub_freq(le_meld_osc* o) {
   const float f = fminf(o->hz, o->rate - 1.0f);
-  const float y = mo_sine(o->s.sub.ph);
-  const float m = o->m1 / 3.0f;
-  const float K = 1.0f + 64.0f * m * m;
-  const float x = (y + 0.3f) * K;
-  /* the parabolic clip: rises to 0.92 at |x| = 1.6 and holds there */
-  /* fit: the parabola stops at its peak, |x| = 1.6 (the Sub renders) */
-  const float u = fminf(0.625f * fabsf(x) - 0.5f, 0.5f);
-  float s = 0.92167f * (u + 0.75f - u * u);
-  if (x < 0.0f) s = -s;
-  const float r = 1.0f - 2.0f * (float)MO_PI * MO_SUB_HP_HZ / o->rate;
-  const float hp = s - o->s.sub.hp_x + r * o->s.sub.hp_y;
-  o->s.sub.hp_x = s;
-  o->s.sub.hp_y = hp;
-  const float low = 2.0f * powf(o->m2, 2.5f) * mo_sine(o->s.sub.ph4);
-  o->s.sub.ph = mo_wrap(o->s.sub.ph + 0.5 * f / o->rate);
-  o->s.sub.ph4 = mo_wrap(o->s.sub.ph4 + 0.25 * f / o->rate);
-  return o->m1 * hp + (1.0f - o->m1) * y + low;
+  o->s.sub.e2 = sub_coef(0.5f * f, o->rate);
+  o->s.sub.e4 = sub_coef(0.25f * f, o->rate);
+  sub_unit(&o->s.sub.x2, &o->s.sub.y2);
+  sub_unit(&o->s.sub.x4, &o->s.sub.y4);
+}
+
+static void sub_macros(le_meld_osc* o, float m1, float m2) {
+  const float m = m1 / 3.0f, l = 2.0f * sub_pow(m2, 2.5f);
+  if (m != o->s.sub.m_to) {
+    sub_ramp(&o->s.sub.m, &o->s.sub.m_to, &o->s.sub.m_step, &o->s.sub.m_n, m, o->ramp_n);
+  }
+  if (l != o->s.sub.l_to) {
+    sub_ramp(&o->s.sub.l, &o->s.sub.l_to, &o->s.sub.l_step, &o->s.sub.l_n, l, o->ramp_n);
+  }
+}
+
+static float sub_tick(le_meld_osc* o) {
+  /* Macro 1's ramp: the saturator takes the value from before the step,
+   * so a ramp ends one step short of its target (md-08 6) */
+  if (o->s.sub.m_n > 0) {
+    sub_drive(o, o->s.sub.m);
+    o->s.sub.m_n--;
+    o->s.sub.m = o->s.sub.m_to - (float)o->s.sub.m_n * o->s.sub.m_step;
+  }
+  /* the f/2 sine: the output is y from before the update (md-08 2) */
+  const float y = o->s.sub.y2;
+  o->s.sub.x2 -= o->s.sub.e2 * o->s.sub.y2;
+  o->s.sub.y2 += o->s.sub.e2 * o->s.sub.x2;
+  /* the saturator on K (y + 0.3): flat beyond |v| = 1.6 (md-08 3) */
+  const float v = o->s.sub.k * (y + 0.3f);
+  const float a = fminf(0.625f * fabsf(v), 1.0f);
+  float s = 0.92166853f * a * (2.0f - a);
+  if (v < 0.0f) s = -s;
+  /* the 5 Hz bilinear high-pass on the saturated part, its state kept
+   * from note to note (md-08 4) */
+  const float t = fminf((float)MO_TWO_PI * MO_SUB_HP_HZ / o->rate, 3.1337388f) * 0.5f;
+  const float t2 = t * t;
+  const float tan_t =
+      t * (0.99999946f - 0.09652461f * t2) / (1.0f - 0.42986727f * t2 + 0.00998188f * t2 * t2);
+  const float kap = 2.0f * tan_t;
+  const float h =
+      2.0f / (kap + 2.0f) * (s - o->s.sub.hs) - (kap - 2.0f) / (kap + 2.0f) * o->s.sub.hh;
+  o->s.sub.hs = s;
+  o->s.sub.hh = h;
+  const float main = (1.0f - o->s.sub.w) * y + o->s.sub.w * h;
+  /* the f/4 sine at the level from before this sample's step (md-08 5) */
+  const float lv = o->s.sub.l;
+  if (o->s.sub.l_n > 0) {
+    o->s.sub.l_n--;
+    o->s.sub.l = o->s.sub.l_to - (float)o->s.sub.l_n * o->s.sub.l_step;
+  }
+  const float y4 = o->s.sub.y4;
+  o->s.sub.x4 -= o->s.sub.e4 * o->s.sub.y4;
+  o->s.sub.y4 += o->s.sub.e4 * o->s.sub.x4;
+  return main + lv * y4;
 }
 
 /* ---- the sweep kernel: Tarp and Extratone (44.1 kHz) ---- */
@@ -1198,6 +1303,11 @@ void le_meld_osc_set_type(le_meld_osc* o, int32_t type) {
   } else if (type == LE_MELD_OSC_CHORD) {
     chord_retune(o);
     o->s.chord.left = MO_CHORD_UPDATE;
+  } else if (type == LE_MELD_OSC_SUB) {
+    /* both recursions start at (1, 0) (md-08 2) */
+    o->s.sub.x2 = o->s.sub.x4 = 1.0f;
+    o->s.sub.typed = 1;
+    sub_drive(o, 0.0f);
   } else if (type == LE_MELD_OSC_RAIN) {
     for (int i = 0; i < LE_MELD_RAIN_LANES; ++i) o->s.rain.timer[i] = 1.0f;
     o->s.rain.last_hz = -1.0f;
@@ -1216,12 +1326,25 @@ void le_meld_osc_set(le_meld_osc* o, float hz, float note, float m1, float m2) {
     o->m1_step = (m1 - o->m1) / (float)o->ramp_n;
     o->m2_step = (m2 - o->m2) / (float)o->ramp_n;
   }
+  if (o->type == LE_MELD_OSC_SUB) {
+    sub_macros(o, m1, m2);
+    sub_freq(o);
+  }
 }
 
 void le_meld_osc_snap(le_meld_osc* o) {
   o->m1 = o->m1_to;
   o->m2 = o->m2_to;
   o->ramp_left = 0;
+  if (o->type == LE_MELD_OSC_SUB && o->s.sub.typed) {
+    /* Live's type set ends with a snap that sets the drive and mix; a note
+     * start does not (md-08 6, 7) */
+    o->s.sub.typed = 0;
+    o->s.sub.m = o->s.sub.m_to;
+    o->s.sub.l = o->s.sub.l_to;
+    o->s.sub.m_n = o->s.sub.l_n = 0;
+    sub_drive(o, o->s.sub.m);
+  }
   /* the tones a note starts with come from its own frequency and macros, so
    * the tones two chords share start and stay in phase (fit: the Chord
    * renders, where a shared tone sums at full level) */
@@ -1254,9 +1377,19 @@ void le_meld_osc_reset(le_meld_osc* o, float phase) {
       memset(&o->s.sync, 0, sizeof(o->s.sync));
       o->s.sync.master = o->s.sync.slave[0] = o->s.sync.slave[1] = phase;
       break;
-    case LE_MELD_OSC_SUB:
-      o->s.sub.ph = o->s.sub.ph4 = phase;
+    case LE_MELD_OSC_SUB: {
+      /* both sines start at (cos, sin) of the same phase; the ramps snap,
+       * the drive, mix and DC blocker keep their state (md-08 7) */
+      const float s = mo_clamp(sub_psin(phase), -1.0f, 1.0f);
+      float c = sqrtf(1.0f - s * s);
+      if (phase >= 0.25f && phase <= 0.75f) c = -c;
+      o->s.sub.x2 = o->s.sub.x4 = c;
+      o->s.sub.y2 = o->s.sub.y4 = s;
+      o->s.sub.m = o->s.sub.m_to;
+      o->s.sub.l = o->s.sub.l_to;
+      o->s.sub.m_n = o->s.sub.l_n = 0;
       break;
+    }
     case LE_MELD_OSC_SWARM_SINE:
     case LE_MELD_OSC_SWARM_TRIANGLE:
     case LE_MELD_OSC_SWARM_SAW:
