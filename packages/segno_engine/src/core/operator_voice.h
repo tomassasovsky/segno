@@ -14,7 +14,7 @@
  * locks, no syscalls on the audio path. le_operator_init is the slow call
  * (the first one also builds the shared wave tables). A user wave's tables
  * are rebuilt on the audio thread when its harmonics change, one operator
- * per render call. Parameters apply per 32-frame chunk (LE_OPERATOR_CHUNK);
+ * per render call. Parameters apply per 16-frame chunk (LE_OPERATOR_CHUNK);
  * the operators, envelopes, filter and shaper run every sample.
  *
  * Notes follow le_synth's rules: a note belongs to an origin, a repeated
@@ -40,7 +40,7 @@ extern "C" {
 /* 48 voices, each with its Spread partner, and room for stolen voices to
  * fade */
 #define LE_OPERATOR_VOICE_SLOTS 104
-#define LE_OPERATOR_CHUNK 32
+#define LE_OPERATOR_CHUNK 16
 #define LE_OPERATOR_SUSTAIN_MAX 16
 #define LE_OPERATOR_HELD_MAX 16
 /* A wave's band-limited copies: every limit from 1024 harmonics down to 1,
@@ -80,7 +80,7 @@ typedef struct le_operator_voice {
   int32_t state; /* LE_OPERATOR_VOICE_* (operator_voice.c) */
   int32_t note;
   int32_t key; /* the note key scaling follows: kept through legato */
-  int32_t ending; /* its carriers ended in the last chunk: it frees after this one */
+  int32_t ending; /* samples until it frees, its carriers having ended (0: sounding) */
   int32_t snap;   /* took a sounding voice's place and has not played yet: legato notes jump */
   uint32_t origin;
   uint64_t serial;
@@ -92,6 +92,7 @@ typedef struct le_operator_voice {
   float pitch, pitch_step;
   int32_t glide_chunks;
   float fade; /* stolen or cut: 1 -> 0 */
+  int32_t wait; /* samples before it starts: the voice it took is still fading */
   /* operators */
   double phase[LE_OPERATOR_OPS]; /* table indices, 0..4096 */
   float out[LE_OPERATOR_OPS];
