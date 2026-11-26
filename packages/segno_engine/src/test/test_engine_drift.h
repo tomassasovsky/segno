@@ -723,6 +723,50 @@ static void test_drift_voice_blocks(void) {
   CHECK(g_drift.lane_noise[0] != g_drift.lane_noise[1]);
 }
 
+/* While a block runs, its silent voices run their whole chain: a voice
+ * never played feeds its filter from its turning oscillators, and a note
+ * on it starts from that state (from rest with Reset Oscillator Phase
+ * on). A voice released below the threshold that freed it keeps sounding
+ * and falling while its block runs; a block with nothing sounding stops. */
+static void test_drift_silent_voices_run(void) {
+  printf("test_drift_silent_voices_run\n");
+  static float l[4800], r[4800];
+  for (int reset = 0; reset < 2; ++reset) {
+    drift_init(&g_drift, DRIFT_SR);
+    drift_set(&g_drift, LE_DRIFT_FILTER_TYPE, 1.0f);
+    drift_set(&g_drift, LE_DRIFT_FILTER_FREQ, 800.0f);
+    drift_set(&g_drift, LE_DRIFT_RESET_OSC_PHASE, (float)reset);
+    CHECK(le_drift_note_on(&g_drift, 1, 36, 100, 0) == 0); /* voice 0 */
+    le_drift_render(&g_drift, l, r, 4800);
+    const size_t n = sizeof(g_drift.voices[1].lp);
+    CHECK(g_drift.voices[1].state == 0);
+    CHECK(memcmp(g_drift.voices[1].lp, g_drift.f2_rest, n) != 0);
+    CHECK(le_drift_note_on(&g_drift, 2, 55, 100, 0) == 0); /* voice 1 */
+    CHECK(g_drift.voices[1].note == 55);
+    CHECK((memcmp(g_drift.voices[1].lp, g_drift.f2_rest, n) == 0) == reset);
+  }
+  drift_init(&g_drift, DRIFT_SR);
+  drift_set(&g_drift, LE_DRIFT_ENV1_ATTACK, 4.0f);
+  drift_set(&g_drift, LE_DRIFT_ENV1_RELEASE, 0.1f);
+  CHECK(le_drift_note_on(&g_drift, 1, 36, 100, 0) == 0); /* voice 0 holds */
+  CHECK(le_drift_note_on(&g_drift, 2, 60, 100, 0) == 0); /* voice 1 */
+  le_drift_render(&g_drift, l, r, 4800);
+  le_drift_note_off(&g_drift, 2);
+  le_drift_voice* v = &g_drift.voices[1];
+  for (int i = 0; i < 100 && v->state != 0; ++i) le_drift_render(&g_drift, l, r, 48);
+  CHECK(v->state == 0);
+  const float freed_at = v->env1;
+  le_drift_render(&g_drift, l, r, 480);
+  CHECK(v->env1 > 0.0f && v->env1 < freed_at);
+  le_drift_note_off(&g_drift, 1);
+  le_drift_render(&g_drift, l, r, 4800);
+  le_drift_render(&g_drift, l, r, 4800); /* voice 0 freed: block 0 stops */
+  CHECK(g_drift.voices[0].state == 0);
+  const float held = v->env1;
+  le_drift_render(&g_drift, l, r, 480);
+  CHECK(v->env1 == held && drift_peak(l, 480) == 0.0f);
+}
+
 /* A Filter Type change while a note sounds starts the new filter from
  * rest: no jolt from the other filter's state, either way round. */
 static void test_drift_filter_type_switch_is_smooth(void) {
@@ -973,6 +1017,7 @@ static void run_drift_tests(void) {
   test_drift_mono_lane_ratio_lfo();
   test_drift_filter_input_clips_asymmetrically();
   test_drift_voice_blocks();
+  test_drift_silent_voices_run();
   test_drift_filter_type_switch_is_smooth();
   test_engine_drift_slot_matches_offline();
   test_engine_drift_voice_budget();

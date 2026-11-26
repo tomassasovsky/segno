@@ -88,10 +88,8 @@ typedef struct le_drift_voice {
   float osc2_drift; /* Osc 2's extra drift ratio */
   /* the voice mode's gains */
   float gain_l, gain_r;
-  /* oscillators and noise; the phase increments last used, which a silent
-   * voice keeps turning at while its block runs, and whether it ever played */
+  /* oscillators and noise, and whether the voice ever played */
   float ph1, ph2;
-  float dt1, dt2;
   int32_t played;
   float pm_prev; /* the last phase-modulation offset (its change widens the
                   * band-limiting, as a faster phase would) */
