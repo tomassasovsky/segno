@@ -2528,13 +2528,13 @@ Meld. Segno's implementation is `collision_voice.c`.
 
 ### The fits so far
 
-Six rounds of Live renders (single changes around a plain
+Seven rounds of Live renders (single changes around a plain
 mallet-on-beam reference, the 33 factory presets, the matrix units, the
 pitch envelope, Off Decay, pipes across the keyboard, Live copies of the
 random renders, the noise excitation through a dense 70-mode membrane,
 presets playing a held-out-like phrase with copies, the limiter's
-release, rounds 5 and 6 below), scored by the strict score with three Segno
-seeds and Live's own spread where copies exist: 135 of 186 pass, 20 of the
+release, rounds 5 to 7 below), scored by the strict score with three Segno
+seeds and Live's own spread where copies exist: 149 of 206 pass, 20 of the
 33 factory presets (104 of 152 before the measured limiter and bleed). The
 held-out round (every preset, a quiet C3, a loud C4 triad and a hard C5,
 with Live's copies) passes 11 of 33.
@@ -2574,9 +2574,18 @@ held-out stereo failures sit in bands 25 to 40 dB below the loudest
 
 Where Segno's seeds spread wider than Live's copies: the hit offset is
 not the cause (above); the mallet's noise was 1.9 dB too strong (above).
-stiff-0, whose noise term is nearly zero (Noise Amount 0) and whose
-highs are all noise, is worse for the 0.8 (tf 2.68 to 3.17), so the
-factor may not hold at the smallest amounts; round 6 has none below 0.5.
+Round 7 holds the 0.8 at Noise Amount 0.05 to 0.3 too (the copy
+differences sit within 1 dB of Segno's at colours 0.29, 0.5 and 0.75);
+stiff-0 (tf 2.68 to 3.17 with it) stays unexplained. The noise high-pass's
+low floor is a steady property, not a strike's: held at full sustain or
+swelling in over 0.5 s, the dense membrane keeps it for the whole note,
+Live's level below 200 Hz falling about 7 dB an octave where Segno's
+falls 20. At an octave of sweep the beam's third and fourth modes stay 9
+dB off with the hit at the end of the bar too, while 0.9 of an octave
+lands within 3 dB and 0.75 leaves the fourth 6 dB low. Bell Plate Long's
+plate without its bleed has more side at 2 kHz in Live than with it,
+where Segno's bleed reaches only the top mode; its random hit makes one
+render each too few to tell.
 Neither a leak through the
 low-pass nor one through the band-pass output fits the noise source's
 high-pass floor: the leak would have to fall from 0.16 at a 970 Hz cutoff

@@ -76,7 +76,7 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   marimba, string, membrane, plate as banks of up to 70 modes; pipe and
   tube as waveguides) in series or parallel, with two LFOs and the
   per-voice modulation matrix.
-- Fitted against 186 Live renders in six rounds: 135 pass the strict
+- Fitted against 206 Live renders in seven rounds: 149 pass the strict
   score (32 of 92 at the start), 20 of the 33 factory presets (1); the
   held-out round passes 11 of 33. Measured: the
   waveguides' read offset, the inverted Off Decay, the engine's grids for
