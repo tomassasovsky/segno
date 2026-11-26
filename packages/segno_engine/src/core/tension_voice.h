@@ -66,8 +66,10 @@ typedef struct le_tension_voice {
   int32_t delay;  /* samples before it starts */
   int32_t since;  /* samples since the note, saturating */
   int32_t fade_left, fade_len;
-  int32_t quiet;  /* released samples below the silence floor */
+  int32_t quiet;  /* released 1 ms blocks in a row that were quiet */
   int32_t flying; /* released samples with the damper off the string */
+  int32_t rel_n;  /* released samples into the current 1 ms block */
+  float blk_peak; /* the string's peak in that block */
   int32_t tick_left;
   float pitch, pitch_to; /* the played pitch, octaves from C4, glided */
   float kerr;            /* octaves: Keyboard Error's draw for this strike */

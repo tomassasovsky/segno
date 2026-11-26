@@ -1345,9 +1345,10 @@ are built from the same modules.
   rate and depth)
 - The output: the pickup's point on the string, or the wave arriving at
   the bridge; then a 10 Hz high-pass. **[code]** (the gain: **[measured]**
-  1.4634, 2.7 dB under the reading's 2, the median level of the 95
-  hammer, plectrum and bow fit renders that pass; a plain plectrum then
-  matches Live's to -108 dB)
+  1.4373, 2.9 dB under the reading's 2, the median level of the 95
+  hammer, plectrum and bow fit renders that pass at the default Body
+  Level, which is unity; a plain plectrum then matches Live's to
+  -108 dB)
 - Positions along the string: Exp(0.05, 0.5) of the half period (its
   fraction, not its whole samples), the exciter from the bridge, the
   damper and pickup from the nut, each within the string's first half;
@@ -1374,7 +1375,7 @@ are built from the same modules.
   past it; a hammer driven on into the string stays on it. Mass, stiffness and speed are not held to any
   range (velocity amounts take them 16 octaves either way). **[code]**
   **[measured]** (the bouncing hammer's re-strikes in round 4, the
-  lightest hammer's level, Strat Muted Guitar, Nice Harp and the held-out
+  lightest hammer's level, the muted guitar preset, Nice Harp and the held-out
   Slap Bass's hard C5 and Moving String Pad's chord release)
 - The bow: a stick-slip junction, sticking within a zone around the bow's
   speed and released along a straight line (slope 10) back to the string's
@@ -1430,8 +1431,11 @@ are built from the same modules.
   **[measured]** (filt-env, the pad presets)
 - The body: four recirculating lines, each a delay and a Schroeder
   all-pass, through a low cut and an absorption low-pass whose highs decay
-  High Cut times as fast; Body Level is the device's volume (Sq(0, 2)),
-  the mix a constant-power sweep with the wet at 0.35. Each line's length
+  High Cut times as fast; Body Level is the device's volume, Sq(0, 2) on
+  the knob's 0..127 value as it stands, not its whole step (the default
+  0.7048 is unity) **[measured]** (the first milliseconds of every
+  preset with the body on, which then match Live's within 0.03 %), the
+  mix a constant-power sweep with the wet at 0.35. Each line's length
   is the prime at or below size x rate / 44.1 kHz x its length in samples
   at 44.1 kHz, a set per type (type 0: 239, 288, 334, 411; 1: 105, 126,
   238, 441; 2: 55, 81, 107, 150; 3: 286, 345, 386, 507), the all-pass
@@ -1456,15 +1460,20 @@ are built from the same modules.
   fourth strings at delays 0.25 to 1 land on Live's sample; with the
   velocity the hammer references match Live's to -100 dB, from -80)
   A key struck again strikes its ringing string
-  without resetting it. A released string ends after its own sound
-  (before the filter, which an LFO can close for a while) stays 50 ms
-  below -100 dBFS, but not while its gated damper is still in the air
-  (for at most 2 s of flight): the damper lands again and the string
-  sounds.
+  without resetting it. A released string ends after 84 one-millisecond
+  blocks in a row, counted from the release, in which its own sound
+  (before the filter, which an LFO can close for a while) peaks below
+  -101.1 dBFS, but not while its gated damper is still in the air (for
+  at most 2 s of flight): the damper lands again and the string sounds.
+  Live cuts to silence on those 1 ms boundaries and never sooner than 84
+  blocks; a resting damper, a terminated string or a landed gated damper
+  makes it cut sooner than a silent string would, by a condition the
+  renders have not shown.
   **[code]** **[Segno]** (the voice end) **[measured]** (Wurli Mellow's
   phrase: a low thump 190 ms after a release, as in Live; Moving Space
   Alarm, whose LFO closes its filter after a release while Live's string
-  rings on)
+  rings on; round 7: the cut at 84 blocks for a silent string, and at
+  2094 for one held at -88 dBFS with no release loss)
 
 ### The fits so far
 
@@ -1533,7 +1542,7 @@ bowed 1 of 15. What moved them, each against Live's renders:
   keep Live's pitch for the whole render.
 - The gated damper starts resting and is thrown off from there: Wood Bass
   (3.6 dB loud) and Clean Basic Guitar at C6 pass.
-- No ranges on the exciters' and damper's values: Strat Muted Guitar and
+- No ranges on the exciters' and damper's values: the muted guitar preset and
   Nice Harp pass; a hammer driven into the string stays on it (the
   held-out Slap Bass's hard C5 was 16 to 24 dB loud).
 - The bow's release line and its first block's speed: the attack passes
