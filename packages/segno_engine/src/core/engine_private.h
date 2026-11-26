@@ -2777,6 +2777,18 @@ struct le_engine {
    * like `synth`; dev[i] is entry i's. A slot renders a device while it
    * plays it, and while the voices it leaves at a change fade. */
   void* dev[LE_INST_DEVICE_COUNT];
+  /* Whether slot k's instance of entry i may differ from a freshly
+   * initialised one: set on the audio thread when the slot is given that
+   * device (a plain store; nothing reaches an instance's state before
+   * that), cleared by the reset that re-initialises it. Only an instance
+   * used since its last init, or every one when the rate changes, is
+   * re-initialised by a configure (a device's init is costly), and the
+   * callback's per-block scans (voice budget, render, counters) skip an
+   * unused one: it holds no voice. `inst_dev_rate` is the rate they were
+   * last initialised at. Cleared only with no callback (create, configure,
+   * reopen). */
+  uint8_t inst_dev_used[LE_MAX_INSTRUMENTS][LE_INST_DEVICE_COUNT];
+  int32_t inst_dev_rate;
   /* audio thread: the device each slot plays (LE_INST_DEVICE_*) */
   int32_t inst_device[LE_MAX_INSTRUMENTS];
   /* audio thread: whether this block's buses hold this block's audio (0 for
