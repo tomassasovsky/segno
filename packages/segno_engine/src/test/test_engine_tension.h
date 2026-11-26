@@ -242,6 +242,21 @@ static void test_tension_voices(void) {
       CHECK(c1->off_wait == 0 && c1->state == 2); /* released */
     }
   }
+  /* Legato glide: a chord's keys land at once, a later key glides */
+  tension_reference(&g_tension);
+  tension_set(&g_tension, LE_TENSION_GLIDE_ON, 1.0f);
+  tension_set(&g_tension, LE_TENSION_GLIDE_LEGATO, 1.0f);
+  tension_set(&g_tension, LE_TENSION_GLIDE_TIME, 0.5f);
+  CHECK(le_tension_note_on(&g_tension, 1, 60, 100, 0) == 0);
+  CHECK(le_tension_note_on(&g_tension, 2, 64, 100, 0) == 0);
+  le_tension_render(&g_tension, l, r, 64);
+  CHECK(le_tension_note_on(&g_tension, 3, 67, 100, 0) == 0);
+  for (int32_t i = 0; i < LE_TENSION_VOICE_SLOTS; ++i) {
+    const le_tension_voice* v = &g_tension.voices[i];
+    if (v->state != 1) continue; /* held */
+    if (v->note == 64) CHECK(v->pitch == v->pitch_to);
+    if (v->note == 67) CHECK(v->pitch != v->pitch_to);
+  }
   /* the same key again strikes its sounding string */
   tension_reference(&g_tension);
   CHECK(le_tension_note_on(&g_tension, 1, 60, 100, 0) == 0);

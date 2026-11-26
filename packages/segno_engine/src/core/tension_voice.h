@@ -141,6 +141,9 @@ typedef struct le_tension {
   uint32_t held_origin[LE_TENSION_HELD_MAX];
   float last_pitch;
   int32_t played;
+  int32_t age;         /* samples rendered since init, saturating */
+  int32_t keyed_at;    /* the age at the last key */
+  int32_t keyed_glide; /* whether that key glided */
   int32_t voice_limit;
   uint32_t stolen;
   float mix[LE_TENSION_TICK * 8]; /* scratch: the voices' sum */

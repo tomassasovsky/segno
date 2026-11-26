@@ -925,8 +925,14 @@ int32_t le_tension_note_on(le_tension* d, uint32_t origin, int32_t note, int32_t
     held_drop(d, origin);
   }
   const int overlapping = d->held_n > 0;
-  const int glide = vi(d, LE_TENSION_GLIDE_ON) && d->played && !chord &&
-                    (!vi(d, LE_TENSION_GLIDE_LEGATO) || overlapping);
+  int glide = vi(d, LE_TENSION_GLIDE_ON) && d->played && !chord &&
+              (!vi(d, LE_TENSION_GLIDE_LEGATO) || overlapping);
+  /* keys that arrive with a key that did not glide do not glide either
+   * (Const mode), the rule Analog's triads showed [measured] (ebb8-tri,
+   * meow8-tri: a chord's later notes glided from its first) */
+  if (d->played && d->keyed_at == d->age && !d->keyed_glide && !vi(d, LE_TENSION_GLIDE_PROP)) glide = 0;
+  d->keyed_at = d->age;
+  d->keyed_glide = glide;
   held_push(d, origin, note);
   const int32_t copies = copies_per_note(d);
   /* mono: the sounding note moves to the key the priority picks, struck
@@ -1438,6 +1444,7 @@ static void render_voice(le_tension* d, le_tension_voice* v, float* out, int32_t
 
 void le_tension_render(le_tension* d, float* left, float* right, int32_t frames) {
   if (d == NULL || left == NULL || right == NULL || frames <= 0) return;
+  d->age = frames < (1 << 30) - d->age ? d->age + frames : (1 << 30);
   memset(left, 0, sizeof(float) * (size_t)frames);
   for (int32_t i = 0; i < LE_TENSION_VOICE_SLOTS; ++i) {
     le_tension_voice* v = &d->voices[i];
