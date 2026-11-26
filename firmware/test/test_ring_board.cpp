@@ -63,25 +63,25 @@ static void expectDark() {
   for (unsigned i = 0; i < RING_N; ++i) assert(shown(i) == 0);
 }
 
-// The approved 40-pixel profile on 35 pixels, scaled to a full-brightness
-// lead (SEG-115): the two-pixel lead at 255, never brightening toward the
+// The approved 40-pixel profile on 35 pixels, scaled to the ceiling
+// (SEG-115): the two-pixel lead at RING_CEILING, never brightening toward the
 // tail, the first ~40 % at half the peak or more, and the last quarter of the
-// ring dark.
+// ring dark. Every assertion holds whatever RING_CEILING is.
 static void cometProfile() {
   assert(RING_N == 35);
-  assert(g_cometDuty[0] == 255 && g_cometDuty[1] == 255);
+  assert(g_cometDuty[0] == RING_CEILING && g_cometDuty[1] == RING_CEILING);
   for (unsigned i = 1; i < RING_N; ++i) assert(g_cometDuty[i] <= g_cometDuty[i - 1]);
-  for (unsigned i = 0; i <= 14; ++i) assert(g_cometDuty[i] >= 128);
+  for (unsigned i = 0; i <= 14; ++i) assert(2u * g_cometDuty[i] + 1 >= RING_CEILING);
   for (unsigned i = 27; i < RING_N; ++i) assert(g_cometDuty[i] == 0);
-  assert(g_cometDuty[26] > 0 && g_cometDuty[26] <= 3);  // the tail eases out
-  // Every duty is the approved one (lead 192) scaled by 255 / 192.
+  assert(g_cometDuty[26] <= 3);  // the tail eases out
+  // Every duty is the approved one (lead 192) scaled by RING_CEILING / 192.
   for (unsigned i = 2; i < RING_N; ++i) {
     const float at = (float)i * APPROVED_N / RING_N;
     const unsigned lo = (unsigned)at;
     const float t = at - lo;
     const float approved =
         APPROVED_DUTY[lo] * (1.0f - t) + APPROVED_DUTY[(lo + 1) % APPROVED_N] * t;
-    assert(std::fabs(g_cometDuty[i] - approved * 255.0f / 192.0f) <= 0.5f);
+    assert(std::fabs(g_cometDuty[i] - approved * RING_CEILING / 192.0f) <= 0.5f);
   }
 }
 
@@ -90,7 +90,7 @@ static void cometOutput() {
   g_ringPhase = 0;
   paintComet({0, 255, 0});
   showRing();
-  assert(shown(0) == (255U << 8) && shown(RING_N - 1) == (255U << 8));
+  assert(shown(0) == ((uint32_t)RING_CEILING << 8) && shown(RING_N - 1) == ((uint32_t)RING_CEILING << 8));
   for (unsigned behind = 0; behind < RING_N; ++behind) {
     const uint32_t p = shown((RING_N - behind) % RING_N);
     assert((p & 0xff00ff) == 0 && ((p >> 8) & 255) == g_cometDuty[behind]);
@@ -99,7 +99,7 @@ static void cometOutput() {
   g_ringPhase = RING_N - 0.5f;
   paintComet({0, 255, 0});
   showRing();
-  assert(((shown(0) >> 8) & 255) == (255U + 0U + 1) / 2);
+  assert(((shown(0) >> 8) & 255) == (RING_CEILING + 0U + 1) / 2);
   // The weaker yellow channel survives to the tail with one gamma pass.
   g_ringPhase = 0;
   paintComet(Rgb{255, 235, 0});
@@ -132,7 +132,7 @@ static void lifecycle() {
   at(now);
   expectDark();  // nothing from the console yet
 
-  // Standby breathes green up to full brightness and never goes black.
+  // Standby breathes green up to the ceiling and never goes black.
   send(live(), now += 20);
   unsigned lowest = 255, highest = 0;
   now = 120000;  // an exact breathe-cycle boundary
@@ -145,7 +145,7 @@ static void lifecycle() {
     if (green > highest) highest = green;
     for (unsigned i = 0; i < RING_N; ++i) assert(shown(i) == (green << 8));
   }
-  assert(highest == 255 && lowest < 32);
+  assert(highest == RING_CEILING && lowest * 4 < highest);
 
   // Activity: one revolution every 1100 ms.
   const Rgb amber = {255, 235, 0};
@@ -171,23 +171,23 @@ static void lifecycle() {
   // A level change shows the arc for 900 ms, then the frozen comet returns.
   send(live({0, 0, 0}, 255, ring_link::FLAG_LOADED), now += 20);
   assert(g_ringView == RING_ARC);
-  for (unsigned i = 0; i < RING_N; ++i) assert(shown(i) == (255U << 8));
+  for (unsigned i = 0; i < RING_N; ++i) assert(shown(i) == ((uint32_t)RING_CEILING << 8));
   hold(live({0, 0, 0}, 255, ring_link::FLAG_LOADED), now, 850);
   assert(g_ringView == RING_ARC);
   hold(live({0, 0, 0}, 255, ring_link::FLAG_LOADED), now, 100);
   assert(g_ringView == RING_COMET && g_ringPhase == phase);
   send(live({0, 0, 0}, 128, ring_link::FLAG_LOADED), now += 20);
   const unsigned lit = (128 * RING_N + 254) / 255;
-  for (unsigned i = 0; i < RING_N; ++i) assert(shown(i) == (i < lit ? (255U << 8) : 0));
+  for (unsigned i = 0; i < RING_N; ++i) assert(shown(i) == (i < lit ? ((uint32_t)RING_CEILING << 8) : 0));
 
   // Idle: the still arc drops to ~20 % on the next render, and comes back.
   const auto dimmedArc = live({0, 0, 0}, 128, ring_link::FLAG_LOADED | ring_link::FLAG_DIMMED);
   send(dimmedArc, now += 20);
-  const uint32_t dimGreen = onePixel(255, ring_link::DIM_LEVEL);
-  assert(dimGreen == 51);  // 20 % of full
+  const uint32_t dimGreen = onePixel(RING_CEILING, ring_link::DIM_LEVEL);
+  assert(dimGreen == (RING_CEILING * ring_link::DIM_LEVEL + 127) / 255u);  // 20 %
   for (unsigned i = 0; i < RING_N; ++i) assert(shown(i) == (i < lit ? (dimGreen << 8) : 0));
   send(live({0, 0, 0}, 128, ring_link::FLAG_LOADED), now += 20);
-  for (unsigned i = 0; i < RING_N; ++i) assert(shown(i) == (i < lit ? (255U << 8) : 0));
+  for (unsigned i = 0; i < RING_N; ++i) assert(shown(i) == (i < lit ? ((uint32_t)RING_CEILING << 8) : 0));
   // A lit channel never dims to black.
   // A lit pixel never dims to black, and keeps its hue: a weak component
   // drops out rather than rising to match the strong one.
@@ -211,18 +211,18 @@ static void lifecycle() {
   // idle dim, and a level of 0 is ignored.
   sendLevel(128, now += 1);
   at(now += 20);
-  const uint32_t halfGreen = onePixel(255, 128);
+  const uint32_t halfGreen = onePixel(RING_CEILING, 128);
   for (unsigned i = 0; i < RING_N; ++i) assert(shown(i) == (i < lit ? (halfGreen << 8) : 0));
   send(dimmedArc, now += 20);
   for (unsigned i = 0; i < RING_N; ++i)
-    assert(shown(i) == (i < lit ? (onePixel(255, ring_link::outputLevel(128, true)) << 8) : 0));
+    assert(shown(i) == (i < lit ? (onePixel(RING_CEILING, ring_link::outputLevel(128, true)) << 8) : 0));
   send(live({0, 0, 0}, 128, ring_link::FLAG_LOADED), now += 20);
   sendLevel(0, now += 1);
   at(now += 20);
   for (unsigned i = 0; i < RING_N; ++i) assert(shown(i) == (i < lit ? (halfGreen << 8) : 0));
   sendLevel(255, now += 1);
   at(now += 20);
-  for (unsigned i = 0; i < RING_N; ++i) assert(shown(i) == (i < lit ? (255U << 8) : 0));
+  for (unsigned i = 0; i < RING_N; ++i) assert(shown(i) == (i < lit ? ((uint32_t)RING_CEILING << 8) : 0));
   assert(g_parser.dropped == 0);
 
   // Not live, a corrupt frame, or silence for 500 ms: dark.
