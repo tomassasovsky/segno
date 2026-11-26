@@ -1047,8 +1047,12 @@ int32_t le_operator_note_on(le_operator* d, uint32_t origin, int32_t note, int32
   if (spread_pct(d) > 0.0f) {
     le_operator_voice* a = free_slot(d);
     if (a != NULL) start_voice(d, a, origin, note, vel, serial, SIDE_LEFT, pan_rnd, glide);
+    /* each of Spread's voices draws its own random pan: Live's two channels
+     * move apart, their power summing from -8 to +3 dB, never one silent
+     * (measured: round 10 spr-rndpan-50 and its copies) */
+    const float pan_rnd_b = lcg_bipolar(&d->rng);
     le_operator_voice* b = free_slot(d);
-    if (b != NULL) start_voice(d, b, origin, note, vel, serial, SIDE_RIGHT, pan_rnd, glide);
+    if (b != NULL) start_voice(d, b, origin, note, vel, serial, SIDE_RIGHT, pan_rnd_b, glide);
   } else {
     le_operator_voice* a = free_slot(d);
     if (a != NULL) start_voice(d, a, origin, note, vel, serial, SIDE_BOTH, pan_rnd, glide);

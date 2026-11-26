@@ -1,4 +1,4 @@
-<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Quantizer autocorrelation tfz unmeasured retriggered isolations pul meldfit Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Perc Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penv penvd rndpan Bassic Bitgrunge's Catchem Filther's Kaneda Werkstuecktraeger Whley Whley's filt nloop Basscycle -->
+<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Quantizer autocorrelation tfz unmeasured retriggered isolations pul meldfit Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Perc Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penv penvd rndpan Bassic Bitgrunge's Catchem Filther's Kaneda Werkstuecktraeger Whley Whley's filt nloop Basscycle spr -->
 # Segno — Progress & Roadmap
 
 <!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs multicore smarttune -->
@@ -188,6 +188,9 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   a releasing envelope ends at 10^-3 and its voice a block later, a chord
   joining a voice that took a sounding one's place does not glide. 365 of
   419 fit renders, 8 of 10 presets; held out 38 of 67.
+- Round 10: each of Spread's two voices draws its own random pan (a fixed
+  pan scales them by one law). 371 of 427 fit renders, 8 of 10 presets;
+  held out 39 of 67 (five Live copies per random preset).
 - A voice costs 2.7 us per period at 48 kHz on the dev machine, 4.5 with
   Antialias (a Drift voice 7.1).
 
@@ -250,6 +253,17 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   Morning, Synth on Screen, Grimer Bass and Game Console now pass. Strict
   score 318 of 351 (rounds 19 and 20 included), factory presets 3 of 5;
   held-out 47 of 89.
+- Filter I's resonance shaper drive fitted (self-oscillation level within
+  0.2 dB, the long-open f1-1k-r1): 319 of 351; held-out 49 of 89 with
+  five Live copies per random preset (17 of its 40 failures random, 23
+  deterministic, most in time structure: beating, Stereo side, release
+  tails, Mono). Round 21 is built for Mono note handoff.
+- Round 21 (19 renders): Mono's handoff already matched (every synthetic
+  render passes); a Mono lane an octave or two down keys as the note it
+  plays (key tracking, Key source, per-key drift): Rogue tf 3.2 to 1.8,
+  Sol Bass 4.5 to 4.2, held-out Gear Shift passes, AG Bass, Rogue and
+  Sol Bass close. Strict score 335 of 370 (round 21 included), factory
+  presets 3 of 5; held-out 50 of 89.
 
 ## November 2026 Drift's filter II as an MS-20 circuit model (SEG-109 P4, round 4)
 
