@@ -241,8 +241,17 @@ written from it.
   state instead (Voices).
 - Path gains **[measured]**: a sine and a saw at every gain through filter
   I within 0.1 dB and through filter II within 0.05 dB of Live's after
-  the output gains 2.90 and 3.69 (they were 0.15 and 0.37 dB high); noise
+  the output gains 2.915 and 3.69 (they were 0.15 and 0.37 dB high); noise
   reaches filter I 2.2 dB and filter II 2.0 dB quieter than the bypass.
+  Filter I's output saturates softly, y / sqrt(1 + 2 y^2) before the gain
+  **[measured]**: through an open filter I a sine at Gain 0.25 matched
+  Live's level while one at Gain 1 was 0.28 dB loud (a saw 0.22, every
+  oscillator at Gain 1 on the fit renders 0.2 to 0.35), and filter II
+  matched at every gain; with it, sines at Gain 0.25 to 1 and the
+  oscillators at Gain 1 within 0.07 dB, the sine at Gain 1 tf 1.15 to
+  0.35, the Saturated oscillator 0.70 to 0.09, two saws at Gain 2 into
+  resonance 0.7 (`drv-f1-g4-r07`) 1.8 to 1.2. Applied to the input
+  instead, the hot-input renders came out worse (1.6).
 - Filter input: both types clip their input: linear to about +0.70 and
   -0.98, a soft knee, and a hard edge at +0.79 on the positive side. A sine
   at Gain 1 gets Live's harmonics 2 to 41 within 3 dB (the hard edge gives
@@ -651,6 +660,29 @@ What the strict score still fails, and why **[measured]**:
   filter II (Metallic Strings' Square LFO, Numan Keystrike's cycling
   envelope in Ratio mode: Numan 3 dB quiet across the spectrum). Round
   24 isolates both, and the filter state of a stopped block.
+- Second pass (2026-11-26): the held-out level errors split by filter
+  type (filter I presets mostly 0.1 to 0.6 dB loud, filter II ones 0 to
+  0.8 dB quiet), which led to filter I's output saturation (Filters):
+  66 of 89 held-out, 364 of 390 fit (`lfo-ratio-shape`'s attack 1.93 to
+  2.22 the one fit render lost); with the scorer's five seeds 67 of 89
+  and 366 of 390. Sweet Tooth still fails on onset at five seeds (2.2
+  ms). Settled from existing renders: a voice
+  never played runs at A4 with velocity 0 and Envelope 2 at 0 (velocity
+  1 or 0.5, C4, Envelope 2 at 1 all made Floot Bass, Transistor Reeds and
+  Wave Pad worse). Candidates held for round 24, not in the product:
+  letting a stopped block's filters ring down with no input passes
+  Airfare Bass (1.54 to 0.99) and Vanguard Brass (1.61 to 1.03) and
+  helps Sol Bass (1.89 to 1.73), but makes Floot Bass worse (1.61 to 2.4),
+  so the held state is not simply decaying (`fs-idle-*` settle it); and
+  gliding between notes struck in the same sample on a voice that was
+  free (Segno jumps to the last note) passes Rogue (1.88 to 1.38), with
+  no fit render that exercises it (`gl-*`). Majestic FM Bells and Slip
+  Sliding share one stage: two rectangle-type oscillators summed to a
+  peak near 1.5 into filter II, 0.7 dB quiet across the spectrum (their
+  fit copies `tr-*` too); `drv-f2-g4-r07-sq` (a saw and a rectangle hot
+  into filter II) has its second harmonic 14 dB too strong. Neither a
+  symmetric positive clip nor an inverted rectangle fits (both far
+  worse), so the input clip's shape for square sums is open (`sq*`).
 - Round 16 settled two questions. Live's drift is the same in every
   instance: three Live renders of one Drift Depth patch, each a fresh
   device, correlate 1.0000. And Bloom Pad's filter peak came from key
