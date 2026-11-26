@@ -509,7 +509,9 @@ static void start_voice(le_analog* d, le_analog_voice* v, uint32_t origin, int32
   for (int32_t k = 0; k < v->copies; ++k) {
     le_analog_copy* cp = &v->c[k];
     cp->detune = step * kSteps[k] + key_error(d, cp);
-    cp->delay = (int32_t)(delay * (float)k / (float)(v->copies > 1 ? v->copies - 1 : 1));
+    /* fit: copy k starts k delays after the note (uni4-dly-100's copies
+     * enter at 0.1, 0.2 and 0.3 s; its level from 5.4 dB low to 0.7) */
+    cp->delay = (int32_t)(delay * (float)k);
     start_copy(d, v, cp);
   }
   d->last_pitch = v->pitch_to;
