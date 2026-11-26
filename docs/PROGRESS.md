@@ -304,8 +304,14 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   legato restart lets the oscillator run on, a single copy's voice
   offset follows its Spread source, Harmonic FM's modulators go by
   parity: 537 of 618 fit renders, 14 of 21 presets, 32 of 84 held-out
-  (tf mean 3.88 dB). Round 12 (the Sub's aliasing, Note into an Amp
-  attack, Tarp's legato restart, two presets' engines alone) is built.
+  (tf mean 3.88 dB). Round 12 measured the voice end's level (it scales
+  with Volume and holds in unison) and Note into an Amp attack of 0 (the
+  attack the matrix sets at the first tick is played). Envelope positions
+  are now double, and the output gain is 0.5 again (the 0.4988 before was
+  a measurement error). At five seeds: 554 of 644 fit renders, 13 of 21
+  presets, 34 of 84 held-out (from 33; tf mean 3.90 dB). Round 13 (tiny
+  Amp attacks under Note, the limiter alone, Club Kick's engines without
+  it) is built.
 - A voice with both engines on a Basic Shapes saw and SVF 12 costs 1.8 us
   per millisecond on the dev machine; MS2 6.8, a Swarm 3.7, three unison
   copies 5.6.
