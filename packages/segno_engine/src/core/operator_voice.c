@@ -1378,8 +1378,8 @@ static float clean_pick(int32_t type, const float* w, float l, float b, float h)
 #endif
 /* OSR: Segno's model of Ableton's state-variable circuit. A two-integrator
  * loop whose transconductances both saturate (the curve PRD's stages use,
- * on the node voltages scaled by 0.145 per volt), damped by 2 (1 - q) -
- * 0.01 and by a diode across the band node that conducts above a knee: so
+ * on the node voltages scaled by 0.145 per volt), damped by 2 (1 - q) +
+ * 0.05 and by a diode across the band node that conducts above a knee: so
  * from about resonance 1 the loop rings at the level where the diode's
  * damping makes up the negative linear damping. The input passes an op-amp
  * stage that saturates softly near its 5 V rails. Linearised at the last
@@ -1398,7 +1398,7 @@ static float clean_pick(int32_t type, const float* w, float l, float b, float h)
 #define OP_OSR_VK 0.5f /* fit: the diode's knee, volts */
 #endif
 #ifndef OP_OSR_DK
-#define OP_OSR_DK 0.85f /* fit: its conductance above the knee (round 9's self-oscillation levels) */
+#define OP_OSR_DK 0.75f /* fit: its conductance above the knee (round 9's self-oscillation levels) */
 #endif
 /* fit: the transconductances' scale, volts to the curve (round 9: the
  * self-oscillation at 100 Hz to 1 kHz within 6 cents of Live's) */
@@ -1873,7 +1873,10 @@ static void render_voice(le_operator* d, le_operator_voice* v, const chunk_ctx* 
   if (circuit == CIRC_OSR) {
     const float fcs = fminf(fmaxf(ft.fc, 1.0f), 0.48f * rate);
     ms2.g = OP_OSR_G * tanf(fminf((float)OP_PI * fcs / rate, 1.54f));
-    k1 = 2.0f * (1.0f - le_ms2_q(ft.r, ft.fc, rate)) - 0.01f;
+    /* damped by 0.05 at q = 1, so resonance 1 does not self-oscillate
+     * (measured: round 11 tess-res1, Live's 30 Hz ring 20 dB under
+     * Segno's undamped one; 6.9 dB to 5.0) */
+    k1 = 2.0f * (1.0f - le_ms2_q(ft.r, ft.fc, rate)) + 0.05f;
     k2 = 2.0f * (1.0f - OP_OSR_K2 * le_ms2_q(ft.r, ft.fc, rate)) - 0.01f;
   }
   const env_ctx ec = make_ctx(d, VKEY(v), rate, v->time_mod);
@@ -1921,7 +1924,9 @@ static void render_voice(le_operator* d, le_operator_voice* v, const chunk_ctx* 
     if (c->filter_on) {
       float y;
       if (circuit == CIRC_OSR) {
-        const float u = osr_input(OP_OSR_IN * ft.drive * x);
+        /* OSR's Morph takes no drive (measured: round 11 morph-osr-drive12,
+         * at drive 0's level, 11 dB under Segno's driven input) */
+        const float u = osr_input(OP_OSR_IN * (c->filter_type == 4 ? 1.0f : ft.drive) * x);
         float o[3];
         osr_tick(v->f_an, u, ms2.g, k1, o);
         y = clean_pick(c->filter_type, v->f_w, o[2], o[1], o[0]);
