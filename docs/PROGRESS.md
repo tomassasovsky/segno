@@ -359,6 +359,12 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   sides). Round 12 (23 renders) asks
   Live for each destination's control rate, the steal wait, the pitch
   multiplier through zero and the first random pan.
+- Round 12 (17 renders and copies): gains, pan, FM Drive and the pitch
+  follow Live's 16-sample control rate to the dB, the steal wait matches
+  to the sample, the LFO's routes into Filter Freq and Tone pass smoothers
+  (the filter's own, and 200 Hz); the first random pan is not special.
+  Five seeds: 413 of 469 fit renders (the earlier rounds 399 of 452,
+  round 12 14 of 17), 9 of 10 presets; held out 48 of 67.
 - A voice costs 2.7 us per period at 48 kHz on the dev machine, 4.5 with
   Antialias (a Drift voice 7.1).
 
