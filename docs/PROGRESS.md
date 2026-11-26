@@ -1,4 +1,4 @@
-<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Metalic Wurli MKII Perc halvings retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations penv Unisono pul meldfit Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penvd rndpan Bassic Bitgrunge's Catchem Filther's Kaneda Werkstuecktraeger Whley Whley's filt nloop avel fleg unmodulated Basscycle spr prewarping prewarp Floot Halfstep -->
+<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Metalic Wurli MKII Perc halvings retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations penv Unisono pul meldfit Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penvd rndpan Bassic Bitgrunge's Catchem Filther's Kaneda Werkstuecktraeger Whley Whley's filt nloop avel fleg unmodulated Basscycle spr prewarping prewarp Floot Halfstep Gametal Plucks -->
 # Segno — Progress & Roadmap
 
 <!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs multicore smarttune -->
@@ -221,7 +221,14 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   Vowel filter's formants and resonance: 522 of 618 fit renders, 13 of 21
   presets, 24 of 84 held-out (tf mean 4.05 dB). Noise Loop is now Live's
   generator, written from the reader's description: 528 of 618 fit
-  renders, 27 of 84 held-out.
+  renders, 27 of 84 held-out. The held-out failures sorted by kind gave
+  four details, each fixed on fit renders: the voice end measured to the
+  sample (every Noise Loop note after the first now matches Live's), a
+  legato restart lets the oscillator run on, a single copy's voice
+  offset follows its Spread source, Harmonic FM's modulators go by
+  parity: 537 of 618 fit renders, 14 of 21 presets, 32 of 84 held-out
+  (tf mean 3.88 dB). Round 12 (the Sub's aliasing, Note into an Amp
+  attack, Tarp's legato restart, two presets' engines alone) is built.
 - A voice with both engines on a Basic Shapes saw and SVF 12 costs 1.8 us
   per millisecond on the dev machine; MS2 6.8, a Swarm 3.7, three unison
   copies 5.6.
