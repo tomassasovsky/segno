@@ -76,9 +76,9 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   marimba, string, membrane, plate as banks of up to 70 modes; pipe and
   tube as waveguides) in series or parallel, with two LFOs and the
   per-voice modulation matrix.
-- Fitted against 206 Live renders in seven rounds: 148 pass the strict
-  score (32 of 92 at the start), 19 of the 33 factory presets (1); the
-  held-out round passes 12 of 33. Measured: the
+- Fitted against 223 Live renders in eight rounds: 154 pass the strict
+  score with five seeds (32 of 92 at the start), 16 of the 33 factory
+  presets (1); the held-out round passes 17 of 33. Measured: the
   waveguides' read offset, the inverted Off Decay, the engine's grids for
   the mode shapes, the synced LFO lengths, an exponential pitch envelope,
   the chooser's pitch unit, a 1 ms look-ahead limiter at 1 after the
@@ -89,11 +89,12 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   and held voices ending at about -94 dBFS. The limiter's 1 ms is the
   device's only added latency. Each resonator's volume is not taken
   down to its step. A new note takes the free slot whose last
-  note is the oldest, and a voice's Random LFO starts from a value it
-  already holds. Left: the mallet noise and the noise source through
-  their velocity routes (round 8 requested), the noise high-pass's low
-  end, an upward pitch sweep of an octave, small stereo differences in
-  weak bands on the held-out presets.
+  note is the oldest (with Retrigger on, the one that last played the
+  key), a voice's Random LFO starts from a value it already holds, and
+  each strike's random stream is seeded through a hash. Left: the mallet
+  noise reached through its velocity routes and at the 20 kHz clamp, the
+  noise filters' stopband floors, an upward pitch sweep of an octave,
+  small stereo differences in weak bands on the held-out presets.
 - A voice costs 0.8 us per millisecond on the dev machine, two 70-mode
   resonators 1.4. A device holds 24 voices (1.7 MB).
 

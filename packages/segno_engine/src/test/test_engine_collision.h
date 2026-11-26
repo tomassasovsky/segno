@@ -274,15 +274,19 @@ static void test_collision_voices(void) {
   le_collision_note_off(&g_collision, 1);
   for (int k = 0; k < 20 && le_collision_active(&g_collision) > 0; ++k) le_collision_render(&g_collision, l, r, N);
   CHECK(le_collision_active(&g_collision) == 0);
-  /* a new note takes a slot never played before an ended one */
-  collision_reference(&g_collision);
-  collision_set(&g_collision, LE_COLLISION_RES(0, LE_COLLISION_R_DECAY), 0.0f);
-  CHECK(le_collision_note_on(&g_collision, 1, 60, 100, 0) == 0);
-  le_collision_note_off(&g_collision, 1);
-  for (int k = 0; k < 10; ++k) le_collision_render(&g_collision, l, r, N);
-  CHECK(le_collision_active(&g_collision) == 0);
-  CHECK(le_collision_note_on(&g_collision, 2, 60, 100, 0) == 0);
-  CHECK(g_collision.voices[0].state == 0 && g_collision.voices[1].state != 0);
+  /* a new note takes a slot never played before an ended one; Retrigger
+   * (Smart) takes the ended slot that last played the same key */
+  for (int32_t smart = 0; smart < 2; ++smart) {
+    collision_reference(&g_collision);
+    collision_set(&g_collision, LE_COLLISION_RES(0, LE_COLLISION_R_DECAY), 0.0f);
+    collision_set(&g_collision, LE_COLLISION_RETRIGGER, (float)smart);
+    CHECK(le_collision_note_on(&g_collision, 1, 60, 100, 0) == 0);
+    le_collision_note_off(&g_collision, 1);
+    for (int k = 0; k < 10; ++k) le_collision_render(&g_collision, l, r, N);
+    CHECK(le_collision_active(&g_collision) == 0);
+    CHECK(le_collision_note_on(&g_collision, 2, 60, 100, 0) == 0);
+    CHECK((g_collision.voices[0].state != 0) == smart && (g_collision.voices[1].state != 0) == !smart);
+  }
   /* a Random LFO on Res 1 Pan starts a fresh voice off centre: its ramp
    * begins at a value the voice already holds, not at 0 */
   collision_reference(&g_collision);

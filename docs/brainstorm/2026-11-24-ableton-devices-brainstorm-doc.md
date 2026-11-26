@@ -3002,7 +3002,18 @@ Meld. Segno's implementation is `collision_voice.c`.
   centred; Bells Attack's held-out phrase, whose hard C5 starts centred in
   all five Live renders on a slot never played, where the lowest free slot,
   the ended C3's, would start it hard left, 5.6 dB of side against Live's
-  1.5)
+  1.5) With Retrigger on (the allocator's Smart mode) a note first takes the
+  free slot that last played its key. **[measured]** (va8-smart and va8-rr:
+  C2 and C6 alternating with Pan < Key, each voice ended before the next;
+  under Smart the repeated keys start at their own pan at once, under Round
+  Robin they ramp in from the centre on slots never played)
+- Each strike seeds its own random stream from the voice's serial through a
+  32-bit hash. **[Segno]** (the generator's first draws from seeds a
+  multiple of the serial apart came out alike: consecutive strikes drew Hit
+  < Random offsets of 1.13, 1.07 and 1.25 normal units, so a phrase's notes
+  shared one offset; Live's strikes draw from one running stream. With the
+  hash Balafon Brushed's hard C5 varies 6 dB over Segno's seeds against
+  Live's 9, where it varied 1)
 
 ### The fits so far
 
@@ -3017,7 +3028,14 @@ seeds and Live's own spread where copies exist: 148 of 206 pass, 19 of the
 held-out round (every preset, a quiet C3, a loud C4 triad and a hard C5,
 with Live's copies) passes 12 of 33. The unstepped resonator volume
 costs p-bell-airy, a random preset with one Live render, its level (0.64
-against 0.5) and gains Balafon Bright's held-out attack.
+against 0.5) and gains Balafon Bright's held-out attack. Scored with five
+seeds and round 8 added: 154 of 223, 16 of the 33 factory presets, and
+17 of 33 held out (160, 22 and 14 before the hashed strike seeds and the
+Smart slot). The fit's loss is the draw: three salts of the hash give 154,
+155 and 159, and the seven rounds were fitted under the old draws; the
+held-out round gains acoustic-string, marimba-classic, marimba-glassy,
+resonant-casing, vibes-bright and xylophone-basic and loses air-of-dread,
+bells-glass and music-box-basic.
 
 Left: the noise source's high-pass passes 7 to 18 dB less than Live's
 between 125 and 250 Hz on the dense membrane (below its lowest mode), and
@@ -3112,6 +3130,38 @@ randomness and without its noise source, a Random LFO's first value on
 pan and on the noise filter, the slot order and pan ramp under Retrigger
 on and off, the hit randomness at full amount, and the noise source's
 Freq < Vel and Volume < Vel.
+
+Round 8, as exported. Balafon Brushed's hard C5 alone on a fresh device
+(bb8-c5, without its hit randomness) matches Live within 1 dB per band,
+in level (-12.9 against -13.2 dB) and in its copies' spread; its held-out
+gap came from Segno's correlated strike seeds (the hash above), not the
+mallet. The mallet noise set on its knobs (mn8-knob) matches Live's
+copies in both the mean spectrum and the random part within 1 dB. Reached
+through Noise < Vel and Stiffness < Vel instead (mn8-vel) and at the 20 kHz
+clamp (mn8-s20k), Live's random part is 6 dB stronger against the strike
+than Segno's; a Noise < Vel unit of 1.2 instead of 0.9685 lost 12 fit
+renders and 7 factory presets, so the unit stays and the cause is open.
+The noise source's Freq < Vel and Volume < Vel act as modelled: against
+the plain dense-membrane render, nf8-v127, nf8-v50 and nv8-v127 match
+Live's bands above the cutoff within 1 dB with the octave unit (a quarter
+octave fits the level but leaves tf at 11.7 against 4.4). The low-pass, like
+the high-pass, has a floor of its own in Live, 2 to 9 dB above Segno's
+far into its stopband (nf8-v50, nv8-v127, dn-lp-env above 4 kHz).
+A Random LFO's first value (lfo8-pan, lfo8-nf) is the same in all three
+copies of one Live Set (a pan of -0.70, a noise filter about 0.6 octave
+down), and differs between Sets (Vibes Modulated's renders from three
+Sets start at three pans, the two of each Set alike); Live seeds the
+generator from the clock as each instance loads, so the instances of one
+Set share their first draws. Segno's random start stands; the held-out
+copies of one Set are not independent for those values, so Live's spread
+there understates its randomness (E-Piano Dreamy's attack). The hit
+randomness at its full amount (hr8-h0, hr8-h1) spreads the first mode's
+level over 12 Live strikes as over 20 of Segno's, with two Live strikes
+14 and 19 dB down at the bar's centre that Segno's draws reach less often;
+too few strikes to change the formula. va8-smart and va8-rr settle the
+slot order (above); their ramps from the centre onto a slot never played
+match Live's within 0.6 dB in every 0.5 ms step, but no strike there ramps
+between two pans, so Bell Plate Long's 1/3 ms stays open.
 
 
 ## Decisions
