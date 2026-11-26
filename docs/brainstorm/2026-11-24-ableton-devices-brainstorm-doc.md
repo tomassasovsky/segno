@@ -1048,13 +1048,27 @@ Chip at min(rate, 10.05 kHz), all read back through a 4-point Hermite.
   f/8 (Extratone), then a biased tanh. **[code]** Tarp's sweep takes its
   time and curve from the note's own macros, not the last note's.
   **[measured]** (every Tarp render within the strict score)
-- Noise Loop: two refreshing taps, each looping two periods of noise
-  low-passed at 2.5 kHz with a click-free pair of read heads, refreshed
-  0.12..60 times a second, windowed by Macro 2 from full crossfades to hard
-  switches with random levels; a high-pass at f/2. **[code]** Segno
-  regenerates each stretch from a seeded hash instead of recording it
-  (Live's three 100 ms buffers start full of unfiltered noise, which Segno
-  plays until a tap's first refresh). **[measured]**
+- Noise Loop: Live's generator, written from the reader's description
+  (`segno-re-findings/rng-01-drift-meld.md`, section 2). A two-word
+  xorshift from a fixed seed fills three ring buffers of a tenth of a
+  second with raw noise, backwards, when the oscillator is built, so the
+  noise is the same in every voice and every instance. Every sample it
+  records one more draw, low-passed at 2.5 kHz, into the writer buffer;
+  two refresh taps half a cycle apart, at (119.76 M1^3 + 0.24)/2 Hz, hand
+  the writer's buffer to a reader when they wrap, with a new random level;
+  each reader plays its buffer backwards through two heads half a loop
+  apart, mixed through x(2 - x) windows set by Macro 2, then a high-pass at
+  f/2 and a gain of (2 - M2) 1.25 sqrt(rate/44100). A note resets only the
+  phases and the filter. **[code]** Segno keeps the buffers outside the
+  oscillator's per-type state (57.6 kB per oscillator at 48 kHz). The note
+  frequency it reads follows the same fast 2^x as the description's pow:
+  with it, the round 11 renders at C0, C1, C2 and C4, nloop-00-notes and
+  every Noise Loop fit render pass, and the first note of a phrase matches
+  Live to the sample. **[measured]** Open: notes after the first part from
+  Live at the first refresh (nloop-55-notes), because the generator's
+  position at a note depends on how many samples the previous note
+  ticked; Live's voice stops about two samples earlier than Segno's, and
+  the rule was not found.
 - The Filther's DC blocker starts settled on its saturator's bias, so a
   note through it rises from silence (woozy-a: Live's Square 5th through
   the Filther rises over its attack; unsettled, the blocker stepped to
