@@ -128,7 +128,14 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   Copy k of a unison voice now starts k delays in, as uni4-dly-100 shows
   (fit 286 of 384 before and after); segno-analog-fit8 (40 renders) reads
   the delay itself, the free LFO's run-on, the steal order and the Kick's
-  and Saw Pure Muted Bass's higher notes.
+  and Saw Pure Muted Bass's higher notes. Seven shared causes found by sorting
+  the held-out failures and fitted on fit renders (a free S&H holds 0 for
+  its first cycle, a fresh voice's free LFO runs from the device's start,
+  a mono key change restarts retriggered LFOs, no floor on Q, a mono
+  vibrato runs on through silence, no sub in Sync mode, an unclamped pan
+  angle): fit 290 of 384, factory presets 22 of 79, held out 15 of 58.
+  segno-analog-fit9 (41 renders) reads the vibrato and LFOs across notes,
+  a reused voice's oscillators, Live's event timing and mono stretch.
 - A voice of two saw chains through LP24 costs 0.9 us per millisecond on
   the dev machine, four unison copies 3.7, the formant filter 1.0. A
   device holds 40 copies (229 KB).

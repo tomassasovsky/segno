@@ -73,6 +73,7 @@ typedef struct le_analog_chain {
   double lfo_ph;
   float lfo, lfo_sh, lfo_sh_prev, lfo_amp, lfo_wait;
   float gl, gr, gl_step, gr_step; /* the amp's gains but the envelope, ramped across a tick */
+  int32_t g_fresh;                /* the gains take their first values at once */
   float noise_lp;
   float ring[LE_ANALOG_BL_RING]; /* the oscillator's output, LE_ANALOG_BL_HALF samples late */
   int32_t ring_at;               /* the slot of the current sample */
@@ -131,6 +132,8 @@ typedef struct le_analog {
   int32_t age; /* samples rendered since init, saturating (the amps' start ramp) */
   /* each device voice's free LFOs, carried from one note to the next */
   double lv_ph[LE_ANALOG_DEVICE_VOICES][LE_ANALOG_COPIES][2];
+  float lv_sh[LE_ANALOG_DEVICE_VOICES][LE_ANALOG_COPIES][2][2]; /* the random waves' held values */
+  double lv_vib[LE_ANALOG_DEVICE_VOICES];                       /* a mono voice's vibrato phase */
   int32_t lv_quiet[LE_ANALOG_DEVICE_VOICES]; /* the age it went quiet or was taken over */
   uint8_t lv_used[LE_ANALOG_DEVICE_VOICES];
   le_aas_env lv_fenv[LE_ANALOG_DEVICE_VOICES][LE_ANALOG_COPIES][2]; /* the filter envelopes, carried on */
