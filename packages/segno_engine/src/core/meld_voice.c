@@ -215,6 +215,7 @@ int32_t le_meld_init(le_meld* d, int32_t sample_rate) {
   for (int32_t p = 0; p < LE_MELD_PARAMS; ++p) d->values[p] = param_def(p).def;
   const float rate = (float)sample_rate;
   for (int32_t i = 0; i < LE_MELD_VOICE_SLOTS; ++i) {
+    d->voices[i].born = -1;
     for (int32_t c = 0; c < LE_MELD_COPIES; ++c) {
       le_meld_copy* cp = &d->voices[i].c[c];
       cp->rng = 0x9e3779b9u ^ (uint32_t)((i * LE_MELD_COPIES + c + 1) * 2654435761u);
@@ -795,17 +796,20 @@ static void engine_start(le_meld* d, le_meld_voice* v, le_meld_copy* cp, int32_t
     }
   }
   en->glide_to = target;
-  /* the oscillator's phase */
-  float phase = 0.0f;
-  if (!ei(d, e, LE_MELD_E_RESET)) {
-    phase = xs_unit(&cp->rng);
-  } else if (ei(d, e, LE_MELD_E_RESET_OFFSET)) {
-    /* the copy's position, not scaled by Spread (fit: the unison renders) */
-    const float f = 6.0f * cp->position;
-    phase = f - truncf(f);
-    if (phase < 0.0f) phase += 1.0f;
+  /* the oscillator's phase: a note on a silent voice starts it as Reset
+   * does, Reset or not [measured] (reset-off: both notes start at the
+   * sine render's phase); Reset off lets a legato restart of a ringing
+   * voice run on [Segno] */
+  if (ei(d, e, LE_MELD_E_RESET) || !v->legato) {
+    float phase = 0.0f;
+    if (ei(d, e, LE_MELD_E_RESET_OFFSET)) {
+      /* the copy's position, not scaled by Spread (fit: the unison renders) */
+      const float f = 6.0f * cp->position;
+      phase = f - truncf(f);
+      if (phase < 0.0f) phase += 1.0f;
+    }
+    le_meld_osc_reset(&en->osc, phase);
   }
-  le_meld_osc_reset(&en->osc, phase);
   /* envelopes and LFOs */
   base_rates(d, en, e);
   const env_def a = amp_def(d, e, en->amp_dx, en->amp_sustain);
@@ -822,18 +826,37 @@ static void engine_start(le_meld* d, le_meld_voice* v, le_meld_copy* cp, int32_t
     env_start(&en->mod, &m);
   }
   en->mod_prev = 0.0f;
+  /* LFOs that do not retrigger run on from the voice's first note at the
+   * free rate, whether the voice sounds or not. [measured] (free1-, free2-
+   * mono and -poly: a 2 Hz LFO into pitch over notes at 0, 1.25 and 2.6 s
+   * with silences between plays phases 0, 0.5 and 0.2 at their starts; the
+   * training phrase, where Poly takes a voice that never played for each
+   * new note: Werkstuecktraeger tf 6.56 to 2.82, Rich N Reich 6.13 to 2.75,
+   * Key Ups 3.95 to 2.22 dB) The draws as one per cycle [Segno] */
+  const int64_t free_t = (int64_t)d->now - v->born;
   if (ei(d, e, LE_MELD_E_LFO1_RETRIGGER)) {
     lfo1_reset(&en->lfo1);
   } else {
     for (int i = 0; i < 2; ++i) en->lfo1.t[i].t = 0.0f, en->lfo1.t[i].trig = 0.0f;
+    /* a free LFO runs from the voice's first note on, sounding or not */
+    const double c1 = (double)lfo_rate(d, e, 0, 0.0f) * (double)free_t / (double)d->sample_rate;
+    en->lfo1.ph = c1 - floor(c1);
+    en->lfo1.step = (int32_t)floor(c1);
+    en->lfo1.draw = (int32_t)floor(c1);
+    en->lfo1.quarter = -1;
   }
   if (ei(d, e, LE_MELD_E_LFO2_RETRIGGER)) {
     en->lfo2_ph = 0.0;
     en->lfo2_draw = 0;
     en->lfo2_sh = kSampleHold[0];
   }
+  else {
+    const double c2 = (double)lfo_rate(d, e, 1, 0.0f) * (double)free_t / (double)d->sample_rate;
+    en->lfo2_ph = c2 - floor(c2);
+    en->lfo2_draw = (int32_t)floor(c2);
+    en->lfo2_sh = kSampleHold[en->lfo2_draw % 60];
+  }
   en->gl = en->gr = -1.0f; /* set at the first tick without a ramp */
-  (void)v;
 }
 
 /* Starts `v` for `note`; the slot keeps its oscillators, filters and LFO
@@ -842,6 +865,7 @@ static void start_voice(le_meld* d, le_meld_voice* v, uint32_t origin, int32_t n
                         uint64_t serial, float glide_from, int32_t position_index,
                         int32_t position_count) {
   v->state = LE_MELD_VOICE_HELD;
+  if (v->born < 0) v->born = (int64_t)d->now;
   v->note = note;
   v->origin = origin;
   v->serial = serial;
@@ -1053,6 +1077,7 @@ int32_t le_meld_note_on(le_meld* d, uint32_t origin, int32_t note, int32_t veloc
         n->lfo2_sh = o->lfo2_sh;
       }
     }
+    v->born = victims[0]->born;
   }
   const int32_t pos = free_position(d, v);
   v->position_no = pos;
@@ -1513,4 +1538,5 @@ void le_meld_render(le_meld* d, float* left, float* right, int32_t frames) {
     le_meld_voice* v = &d->voices[i];
     if (v->state != LE_MELD_VOICE_FREE) render_voice(d, v, left, right, frames);
   }
+  d->now += (uint64_t)frames;
 }

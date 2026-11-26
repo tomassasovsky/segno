@@ -112,9 +112,11 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   21 presets (from 333 of the same 559). Round 9 settled the Filther's
   settled start and, with the training phrase, Mono's LFO hand-over: 493
   of 573 fit renders, 13 of 21 presets, 15 of 84 held-out (tf mean 5.07
-  to 4.32 dB). Round 10 is requested (free LFOs across silent gaps, Noise
-  Loop per note and instance, the Filther under a loud chord, eleven
-  held-out kinds on the training phrase).
+  to 4.32 dB). Round 10 measured free LFOs running from their voice's
+  first note through silences, a silent voice's oscillator starting as
+  Reset does, and Bitgrunge's skips (now a table): 503 of 594 fit
+  renders, 13 of 21 presets, 17 of 84 held-out (tf mean 4.2 dB). Live's
+  Noise Loop is a fixed noise sequence, not yet measured.
 - A voice with both engines on a Basic Shapes saw and SVF 12 costs 1.8 us
   per millisecond on the dev machine; MS2 6.8, a Swarm 3.7, three unison
   copies 5.6.

@@ -830,7 +830,13 @@ Chip at min(rate, 10.05 kHz), all read back through a 4-point Hermite.
   f 2^(4 M1 - 2), 6 octaves wide down to coincident, then resonant, with a
   level that compensates. **[code]**
 - Bitgrunge: the parity of counter bits a..b, a square or a Walsh pattern
-  with 1 % glitches, the same on every note. Crackle: Poisson noise bursts,
+  whose counter skips a count at fixed counts, the same on every note and
+  in every instance: a table of the 161 skips Live makes in 3 s at Macro 2
+  1 (osc-20-1010 at C3 and grunge-notes at C4 give the same counts;
+  scratchpad `meldfit/meas/grunge.py`). **[measured]** Past those 12550
+  counts the table starts over, and below Macro 2 1 a share 2 M2 - 1 of
+  the skips is kept, picked by a golden-ratio sequence. **[Segno]**
+  (osc-20-1010 strict tf 4.61 to 2.05 dB) Crackle: Poisson noise bursts,
   20..2000 a second, band-passed around the note, driven and clipped below.
   Rain: eight lanes of Poisson drops into resonant band-passes scattered
   about the note, over pink noise swelling at 0.1 Hz. Bubble: 64 decaying,
@@ -981,15 +987,27 @@ third-octave band, the MS2 pair within 2.6 short of full drive. **[measured]**
   LFO that does not retrigger runs on from the note before. **[measured]**
   (the training phrase: Death Kicks, LFO 2 into Pan, passes with it,
   stereo 5.7 dB without; Chords R Us tf 5.83 to 2.65, its held-out phrase
-  9.2 to 2.9) A Poly note on a voice that never played starts its free
-  LFO at phase 0 (Detuned String Machine's training phrase: tf 1.12 dB
-  that way, 2.33 with the LFO running since the device was built).
-  **[measured]** Round 10 asks whether a free LFO runs on while no voice
-  sounds.
+  9.2 to 2.9)
+- An LFO that does not retrigger runs from its voice's first note on, at
+  its free rate while the voice is silent: free1- and free2-mono and -poly
+  (a 2 Hz LFO into pitch, notes at 0, 1.25 and 2.6 s with silence between)
+  start the notes at phases 0, 0.5 and 0.2, Mono and Poly, LFO 1 and LFO 2
+  alike; a voice that never played starts at 0, so Poly's fresh voices
+  start there. **[measured]** Its phase at a note is the free rate times
+  the voice's age: Key Ups (Mod envelope into LFO 2's rate) is tf 2.22 dB
+  that way, 5.23 when the modulated rate carries over from the voice's
+  earlier notes. **[measured]** (training phrase: Werkstuecktraeger 6.56 to
+  2.82, Rich N Reich 6.13 to 2.75, Key Ups 3.95 to 2.22; held-out Dusty
+  Chords, Death Kicks, Whley, Rich N Reich each 1 to 2.5 dB down) Its
+  draws count one per cycle of that age. **[Segno]**
 - Spread positions: copies at symmetric positions in [-1, 1]; a single
   copy takes its note's arrival slot among the voice count.
   ResetToVoiceOffset starts the phase at frac(6 x the position), unscaled
   by Spread. **[code]** **[measured]**
+- A note on a silent voice starts the oscillator as Reset does, Reset on
+  or off: reset-off's two notes start at the sine render's phase in Live.
+  **[measured]** Reset off lets a legato restart of a ringing voice run
+  on. **[Segno]**
 - The drive (two tanh stages after up to 18 dB in) and the limiter (4:1
   above -6 dBFS, 10 ms attack, 100 ms release, at the device's level) run
   per copy. **[code]** **[measured]** (where the limiter listens)
@@ -1082,6 +1100,15 @@ failures, the four presets with Noise Loop (Elizabethan Gloom, Gotta
 Catchem, The Rhythm, PolyPlucks) render identically in Live's three
 instances while Segno's Noise Loop draws per instance: Live's noise
 buffers are deterministic. **[measured]**
+
+Round 10: free LFOs run through silences (above). Live's Noise Loop
+plays the same samples on every note and in every instance at Macro 1 0
+(no refresh within a note), and the same per instance but not per note
+at Macro 1 0.5 (refreshes carry on from note to note): its noise is a
+fixed sequence, which would have to be measured sample by sample through
+the loop's crossfading heads and high-pass; not done. The Filther at 20
+kHz under a loud chord matches at three input levels, so Happy Chords'
+0.55 dB is not the Filther. Bitgrunge's skips are a table (above).
 
 ## Decisions
 

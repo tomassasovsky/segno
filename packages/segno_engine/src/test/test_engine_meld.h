@@ -524,6 +524,26 @@ static void test_meld_measured(void) {
   CHECK(fabsf(en->lfo1.gen + 0.998f) < 1e-3f);
   le_meld_render(&g_meld, l, r, 12000);
   CHECK(fabsf(en->lfo1.gen - 0.974f) < 1e-3f);
+  /* a free LFO 2 (no retrigger) at 2 Hz runs on through the silence
+   * between notes: a note 1.25 s after the first starts it at phase 0.5
+   * (free2-poly) */
+  meld_reference(&g_meld);
+  meld_eng(&g_meld, 0, LE_MELD_E_LFO2_WAVE, 0.0f);
+  meld_eng(&g_meld, 0, LE_MELD_E_LFO2_RATE, 2.0f);
+  meld_eng(&g_meld, 0, LE_MELD_E_LFO2_RETRIGGER, 0.0f);
+  meld_eng(&g_meld, 0, LE_MELD_E_AMP_RELEASE, 0.05f);
+  CHECK(le_meld_note_on(&g_meld, 1, 60, 127, 0) == 0);
+  le_meld_render(&g_meld, l, r, 24000);
+  le_meld_note_off(&g_meld, 1);
+  le_meld_render(&g_meld, l, r, 24000);
+  le_meld_render(&g_meld, l, r, 12000); /* 1.25 s */
+  CHECK(le_meld_note_on(&g_meld, 2, 60, 127, 0) == 0);
+  v = NULL;
+  for (int32_t i = 0; i < LE_MELD_VOICE_SLOTS; ++i) {
+    if (g_meld.voices[i].state != 0) v = &g_meld.voices[i];
+  }
+  CHECK(v != NULL);
+  CHECK(fabs(v->c[0].e[0].lfo2_ph - 0.5) < 1e-3);
   /* Fold FM at Macro 1 squared = 3/7, on 7 semitones alone: a line at G4
    * (1.498 f0), none at 1.26 f0 where the neighbouring 4 semitones would
    * sit */

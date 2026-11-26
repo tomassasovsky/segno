@@ -987,6 +987,18 @@ static float shepard_tick(le_meld_osc* o) {
 
 /* ---- Bitgrunge ---- */
 
+/* Macro 2 above 0.5 makes the counter skip: Live's skips come at the same
+ * counts on every note and in every instance, at C3 as at C4. [measured]
+ * The counts that come twice at Macro 2 1, from the 3 s of osc-20-1010
+ * (and grunge-notes, five notes alike), scratchpad meldfit/meas/grunge.py;
+ * past the measured span the pattern starts over, and below Macro 2 1 a
+ * share 2 M2 - 1 of them is kept, picked by a golden-ratio sequence.
+ * [Segno] */
+#define MO_GRUNGE_SPAN 12550
+static const uint16_t kGrungeGlitch[161] = {1, 3, 194, 374, 460, 499, 517, 521, 552, 585, 636, 683, 747, 756, 896, 943, 951, 961, 1039, 1104, 1249, 1268, 1562, 1575, 1683, 1775, 1851, 1855, 2173, 2236, 2474, 2485, 2799, 2857, 2947, 3064, 3181, 3270, 3484, 3569, 3820, 3846, 3877, 3913, 3998, 4087, 4153, 4278, 4302, 4414, 4446, 4477, 4481, 4520, 4627, 4649, 4757, 4853, 4923, 4990, 5045, 5230, 5236, 5364, 5414, 5479, 5829, 5951, 5991, 6134, 6181, 6205, 6208, 6250, 6343, 6348, 6384, 6525, 6573, 6646, 6650, 6743, 6815, 6881, 6889, 6897, 6938, 6964, 6992, 7012, 7109, 7345, 7383, 7392, 7414, 7593, 7607, 7610, 7654, 7669, 7695, 7838, 7883, 7888, 7954, 7989, 8357, 8523, 8573, 8676, 8774, 8852, 9022, 9046, 9059, 9219, 9260, 9336, 9369, 9394, 9438, 9600, 9636, 9708, 9727, 9908, 9918, 10036, 10187, 10455, 10671, 10783, 10789, 10814, 10837, 10931, 11106, 11116, 11168, 11248, 11290, 11362, 11399, 11403, 11418, 11449, 11472, 11572, 11621, 11629, 11680, 11690, 11694, 11919, 11926, 12067, 12179, 12324, 12352, 12442, 12513};
+
+#define MO_GRUNGE_N ((int32_t)(sizeof(kGrungeGlitch) / sizeof(kGrungeGlitch[0])))
+
 static float grunge_tick(le_meld_osc* o) {
   const int a = (int)(9.0f * (1.0f - o->m1));
   int b = (int)(o->m2 * (float)(a + 1) + 16.0f * (1.0f - o->m2));
@@ -997,7 +1009,13 @@ static float grunge_tick(le_meld_osc* o) {
   while (o->s.grunge.frac >= 1.0) {
     o->s.grunge.frac -= 1.0;
     o->s.grunge.count++;
-    if (o->m2 > 0.5f && mo_uniform(&o->rng) < 0.01f * (2.0f * o->m2 - 1.0f)) o->s.grunge.count++;
+    const int32_t s = (int32_t)(o->s.grunge.step++ % MO_GRUNGE_SPAN);
+    if (s == 0) o->s.grunge.gi = 0;
+    while (o->s.grunge.gi < MO_GRUNGE_N && kGrungeGlitch[o->s.grunge.gi] < s) o->s.grunge.gi++;
+    if (o->m2 > 0.5f && o->s.grunge.gi < MO_GRUNGE_N && kGrungeGlitch[o->s.grunge.gi] == s) {
+      const double g = 0.6180339887498949 * (double)o->s.grunge.gi;
+      if (o->m2 >= 1.0f || g - floor(g) < 2.0 * o->m2 - 1.0) o->s.grunge.count++;
+    }
   }
   if (o->s.grunge.count != before || o->s.grunge.out == 0.0f) {
     /* the parity of counter bits a .. b - 1 */
@@ -1208,7 +1226,8 @@ void le_meld_osc_reset(le_meld_osc* o, float phase) {
       o->s.grunge.count = 0;
       o->s.grunge.frac = phase;
       o->s.grunge.out = 0.0f;
-      o->rng = 0x6d2b79f5u; /* the same glitches on every note */
+      o->s.grunge.step = 0;
+      o->s.grunge.gi = 0;
       break;
     case LE_MELD_OSC_BUBBLE:
       memset(o->s.bubble.amp, 0, sizeof(o->s.bubble.amp));

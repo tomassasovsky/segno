@@ -123,6 +123,7 @@ typedef struct le_meld_voice {
   int32_t position_no; /* the lowest number no other held note had */
   float fade;      /* stolen or cut: 1 -> 0 */
   int32_t legato;  /* restarting in place for a legato key */
+  int64_t born;    /* d->now at the slot's first note, -1 before */
   le_meld_copy c[LE_MELD_COPIES];
 } le_meld_voice;
 
@@ -135,6 +136,7 @@ typedef struct le_meld_route {
 typedef struct le_meld {
   int32_t sample_rate;
   uint64_t serial;
+  uint64_t now; /* samples rendered since the device was built */
   float bpm;
   float values[LE_MELD_PARAMS];
   /* instrument-wide expression: bend -1..1, modulation and pressure 0..1 */
