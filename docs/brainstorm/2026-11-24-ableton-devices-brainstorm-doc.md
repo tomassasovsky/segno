@@ -1,6 +1,6 @@
 # Ableton Live device presets on the pedal — brainstorm
 
-<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance kModBy kCarriers Celesta transconductances Bandpass Bitgrunge Csound Drivetime Extratone Filther Lofi Lowpass Megatripolis Minnaert Sawstyle Starchestra Quantizer autocorrelation tfz unmeasured retriggered isolations -->
+<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance kModBy kCarriers Celesta transconductances Bandpass Bitgrunge Csound Drivetime Extratone Filther Lofi Lowpass Megatripolis Minnaert Sawstyle Starchestra Quantizer autocorrelation tfz unmeasured retriggered isolations pul meldfit -->
 
 **Date:** 2026-11-24
 **Issue:** SEG-109 (related: SEG-57, Segno's own instrument voices)
@@ -795,13 +795,13 @@ Chip at min(rate, 10.05 kHz), all read back through a 4-point Hermite.
   matches Live's renders exactly. **[Segno]** **[measured]**
 - Fold FM: the Harmonic FM core at position M1^2 and amount 4 M1, through
   tanh at 1 + 7.7 M2, phase-modulating a parabolic sine that is folded at
-  1 + 2 M2. **[code]** **[measured]** (the parabolic sine) The ratio list
-  is not Harmonic FM's: Live's renders at Macro 1 0.25, 0.5 and 0.75 hold
-  modulators at 2^(2/12) and 2^(3/12), 2^(5/12), and 2^(11/12) of the
-  note, semitone intervals, which Segno's list does not have; a sweep of
-  Macro 1 in tenths moves through 2, 3, 5, 7, 11, 12 and 15 semitones,
-  crossfading neighbours. **[measured]** **[open]** (the list and its
-  position law)
+  1 + 2 M2. **[code]** **[measured]** (the parabolic sine) Its modulator
+  list is its own: the equal-tempered intervals 2, 3, 5, 7, 11, 12, 15
+  and 19 semitones, M1^2 crossing them evenly (position 7 M1^2) with
+  neighbours crossfaded. **[measured]** (round 8's fold128-000..127, Macro
+  1 at each of its 128 steps, scratchpad `meldfit/meas/fold_law.py`: with
+  this law every step's lines sit within 0.05 to 1.1 dB, mean, of Live's,
+  and the best crossfade at each step is the law's within 0.05)
 - Squelch: an FM bass two octaves down with a self-modulated triangle and a
   triangle 32 times higher as modulators. Simple FM: one sine pair, index
   0.01..4 cycles, ratio 8 M2^2. **[code]**
@@ -835,13 +835,14 @@ Chip at min(rate, 10.05 kHz), all read back through a 4-point Hermite.
   note's major scale (13 types: triad, seventh, add9, the sixth, sus4 and
   sus2 families, add10, by Macro 1), at two inversions crossfaded equal
   power by Macro 2, x 0.3; a three-tone chord's fourth voice doubles its
-  lowest tone two octaves up at 0.8. **[code]** **[measured]** (the fourth
-  voice; four-tone chords match Live's renders exactly) A note's tones
-  start in phase at the note's own frequencies and macros, so a tone both
-  chords share sums at full level. **[measured]** Between two inversions
-  Live's octave-related tones of the two chords combine with signs Segno's
-  saws do not reproduce (a shared tone's second harmonic cancels where
-  Segno's adds); M2 0.25 and 0.75 stay 2 and 6 dB rms off. **[open]**
+  lowest tone an octave up, at the others' level. **[code]** **[measured]**
+  (the fourth voice, from each line of the triad renders as the saws'
+  harmonics sum: at inversion 0 C4, C5 and C6 at -29, -26 and -32 dB as
+  in Live, and halfway to inversion 1 E4 cancels, E3's second harmonic
+  against the doubled E4, -64 dB in Live; scratchpad
+  `meldfit/meas/chord_lines.py`) A note's tones start in phase at the
+  note's own frequencies and macros, so a tone both chords share sums at
+  full level. **[measured]**
 - Use Scale has nothing to quantize to: Segno sends no scale, as Live with
   no clip or Set scale. **[code]**
 
@@ -909,8 +910,15 @@ third-octave band, the MS2 pair within 2.6 short of full drive. **[measured]**
   as Live's does. **[measured]**
 - LFO 1: six generators (Basic Shapes, Ramp, Wander, Alternate, Euclid,
   Pulsate) and two of 19 transformers in series; LFO 2: six plain waves.
-  Their random draws restart with the phase, the same on every note.
-  Free rates in Hz, Tempo divisions as Drift's; Retrigger restarts the
+  Their random draws restart with the phase, the same on every note and
+  in every instance: Pulsate's heights and the rolls its chances are
+  compared with, per quarter cycle (120 quarters), Wander's targets (30
+  cycles) and S&H's steps (60 cycles) are tables measured from Live's
+  renders, read as pitch (round 8: pul-c100/080/050/020, wander-step,
+  sh-8hz with sh-2hz the same; scratchpad `meldfit/meas/lfo_tables.py`).
+  **[measured]** A roll is the middle of the bracket its four chances
+  leave, a sequence past its measured length starts over, and the Wander
+  walk steps by its target's sign. **[Segno]** Free rates in Hz, Tempo divisions as Drift's; Retrigger restarts the
   phase. **[code]** **[measured]** (rates, phase offset, shapes) The
   Quantizer rounds to steps of 1/(n - 1), symmetric about 0 (at 0.8 it
   plays 0, +-0.5 and +-1). **[measured]**
@@ -928,9 +936,17 @@ third-octave band, the MS2 pair within 2.6 short of full drive. **[measured]**
 - Scales, each measured on a render: Detune 1 semitone per unit, Pitch Mod
   48, Pitch Quant 48 rounded to whole semitones, the macros 1, Filter Freq
   10 octaves, Tone and Pan 2 (their knobs' ranges), the times and free LFO
-  rates through their knobs' position (a time is 40 s x pos^3, a rate
+  rates through their knobs' position (a time is 40 s x pos^4, a rate
   79.5 Hz x pos^3.036: +0.1 at 2 Hz is 2.4122 times, -0.1 0.2879 times),
-  Tempo rates 22 divisions.
+  Tempo rates 22 divisions. The times' law is measured on the Amp
+  Release: velocity at 0.109 into 0.05 s gives 0.12 and 0.26 s at 90 and
+  120 in Live (pos^4 0.119 and 0.265, a cube 0.144 and 0.345), 0.25 into
+  1 s at 127 7.2 s (pos^4 7.04, a cube 6.38); the Attack and Decay renders
+  at 0.5 s + 0.25 ramp 4 % slower than a cube's, as pos^4 does.
+- The engines' output gains (volume, the Volume target, pan) follow the
+  matrix through a one-pole of 4.8 ms. **[measured]** (Detuned String
+  Machine's LFO 1, gated into Volume: strict tf 2.51 dB with a 16-sample
+  ramp, 0.17 with 4.8 ms, 1.0 at 2.7 ms, 0.6 at 6.3 ms)
 - The semitone targets track the key a semitone per semitone at an amount
   of 1: Detune reads the note source as it is, Pitch Mod and Pitch Quant a
   quarter of it (the C6 render). Into Filter Freq the note source is the
@@ -949,7 +965,10 @@ third-octave band, the MS2 pair within 2.6 short of full drive. **[measured]**
   and without a victim it is dropped. So in Mono without legato a three-key
   chord plays its second key, or its first when the key before still
   rings in its release; Mono legato restarts a voice still ringing after
-  its key was let go in place, without a fade. **[code]** **[measured]**
+  its key was let go in place, without a fade, its envelopes' attacks
+  starting from where the envelopes are. **[code]** **[measured]** (the
+  Mod envelope: mono-leg-after-rel's filter sweep starts from the
+  released level, Live's to the hertz; the Amp envelope alike **[Segno]**)
   (the held-out round: Fatal Bass plays C4, Acid Kick, Bassic and Happy
   Chords E4)
   Glide: portamento in semitones over Glide Time, Glissando by whole steps,
@@ -1005,15 +1024,33 @@ from elsewhere), and that a retriggered LFO 1 draws the same values on
 every note: Live's Pulsate plays +0.97, -0.49, -0.12, -0.24 at the starts
 of each note's cycles, every note alike, and a second instance plays the
 same; Detuned String Machine (Pulsate and LFO 2's S&H) renders identically
-in three instances. Segno's LFO 1 and LFO 2 S&H draws restart with their
-phase (at a retrigger, or at the voice's construction) from Segno's own
-seeds, so they repeat on every note but are not Live's values: whether
-measured Live values may be used is the owner's call. **[measured]**
-**[Segno]** (the seeds) The per-copy Random source and the Swarm's phases
-and drift differ from instance to instance in Live too.
+in three instances. **[measured]** The per-copy Random source and the
+Swarm's phases and drift differ from instance to instance in Live too.
 The held-out round (84 presets, three phrases each) found the voice
 stealing above. With the random sources now read through LE_SEED (a
 scratch seed patch), the strict score passes 16 of 21 factory presets.
+
+The owner allowed values measured from Live's renders (2026-11-25), and
+rounds 7 and 8 measured them: Pulsate's, Wander's and S&H's sequences and
+Fold FM's interval list (above), the times' fourth-power law and the Mod
+envelope's legato restart. Pulsate into pitch, LFO 2's S&H and the
+retriggered LFOs now play Live's values to the sample in pitch
+(pul-c100, sh-8hz), and with the triad's octave doubling, the 4.8 ms
+gain smoothing and these, the strict score passes 484 of 559 fit renders
+(from 333 with the same rounds) and 13 of 21 presets: every Fold FM step
+(128 renders, tf 1.6 to 12.9 dB down to 0.3 at most), the chord crossfades,
+the velocity-stretched releases (Vertical Bass's case), the legato
+restart, Detuned String Machine (tf 2.51 to 0.17); Happy Chords drops out
+on level alone (0.54 dB, every band alike, with tf 1.24 to 0.82). The
+held-out round stays at 13 of 84 (Vertical Bass passes, Glitter's stereo
+goes 0.85 to 1.25), its tf mean 5.07 to 4.53 dB. Open, with round 9
+requested: whether Bitgrunge's glitches repeat on every note (Live's come
+at about 1.2 % of the counts, Segno's 0.7 %), the Swarm's lanes resolved
+on C6 at three Macro 1 values in three instances (Plastic Lead's Swarm
+level varies 5 dB across Segno's seeds against 1.4 in Live), Vertical
+Bass's A5 sidebands at +-360, 520 and 720 Hz, Woozy Bass's 1.7 dB of
+extra side, and Happy Chords' and Chords R Us's engines alone (both
+0.5 to 0.7 dB loud in Segno at every band).
 
 ## Decisions
 

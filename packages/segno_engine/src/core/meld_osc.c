@@ -405,11 +405,15 @@ static void chord_retune(le_meld_osc* o) {
   if (io > 7) io = 7;
   const float top = 0.45f * o->rate;
   const int n = chord_tones(type);
-  /* fit: a three-tone chord's fourth voice doubles its lowest tone two
-   * octaves up, at 0.8 (the triad renders at all eight inversions) */
+  /* a three-tone chord's fourth voice doubles its lowest tone an octave
+   * up, at the others' level. [measured] from the triad renders, each line
+   * as the saws' harmonics sum: at inversion 0 C4 -29, C5 -26 and C6 -32
+   * dB in Live (a doubling two octaves up gives -29, -28 and -29), and
+   * halfway to inversion 1 E4 cancels (E3's second harmonic against the
+   * doubled E4), -64 dB in Live (scratchpad meldfit/meas/chord_lines.py) */
   for (int t = 0; t < 4; ++t) {
-    const float sa = t < n ? chord_tone(type, ie, t) : chord_tone(type, ie, 0) + 24.0f;
-    const float sb = t < n ? chord_tone(type, io, t) : chord_tone(type, io, 0) + 24.0f;
+    const float sa = t < n ? chord_tone(type, ie, t) : chord_tone(type, ie, 0) + 12.0f;
+    const float sb = t < n ? chord_tone(type, io, t) : chord_tone(type, io, 0) + 12.0f;
     o->s.chord.inc[t] = fminf(o->hz * exp2f(sa / 12.0f), top) / o->rate;
     o->s.chord.inc[4 + t] = fminf(o->hz * exp2f(sb / 12.0f), top) / o->rate;
   }
@@ -425,14 +429,11 @@ static float chord_tick(le_meld_osc* o) {
   const float tw = fminf(fabsf(p - 2.0f * floorf(p / 2.0f + 0.5f)), 1.0f);
   const float wa = cosf(tw * (float)(MO_PI / 2.0));
   const float wb = sinf(tw * (float)(MO_PI / 2.0));
-  int type = (int)(12.0f * o->m1);
-  if (type > MO_CHORDS - 1) type = MO_CHORDS - 1;
-  const float fourth = chord_tones(type) == 3 ? 0.8f : 1.0f;
   float y = 0.0f;
   for (int t = 0; t < LE_MELD_CHORD_TONES; ++t) {
     const float dt = o->s.chord.inc[t];
     if (dt <= 0.0f) continue;
-    y += (t < 4 ? wa : wb) * ((t & 3) == 3 ? fourth : 1.0f) * mo_saw(o->s.chord.ph[t], dt);
+    y += (t < 4 ? wa : wb) * mo_saw(o->s.chord.ph[t], dt);
     o->s.chord.ph[t] = mo_wrap(o->s.chord.ph[t] + dt);
   }
   return 0.3f * y;
@@ -569,26 +570,39 @@ static float extratone_internal(le_meld_osc* o) {
 /* ---- the FM types (44.1 kHz) ---- */
 
 /* Harmonic FM's modulator ratios, Segno's set: simple fractions, unity,
- * the ratios between 1 and 2, then the integers to 10. Fold FM uses the
- * same set. */
+ * the ratios between 1 and 2, then the integers to 10. */
 #define MO_HFM_RATIOS 18
 static const float kHfmRatios[MO_HFM_RATIOS] = {
     0.25f, 1.0f / 3.0f, 0.5f, 2.0f / 3.0f, 0.75f, 1.0f, 1.25f, 4.0f / 3.0f, 1.5f,
     2.0f,  3.0f,        4.0f, 5.0f,        6.0f,  7.0f, 8.0f,  9.0f,        10.0f,
 };
 
-/* Two FM pairs at the neighbouring ratios of position `pos` (0..1),
- * crossfaded; `amount` in cycles, each pair's index capped so that the
- * carrier, the modulator and the deviation stay below 0.4 of the rate. */
-static float fm_pairs(le_meld_osc* o, float pos, float amount) {
+/* Fold FM's modulator ratios: the intervals 2, 3, 5, 7, 11, 12, 15 and
+ * 19 semitones, Macro 1 squared crossing them evenly with neighbours
+ * crossfaded. [measured] from the fold128-000..127 renders (Macro 1 at
+ * each of its 128 steps), scratchpad meldfit/meas/fold_law.py: the lines
+ * sit at the equal-tempered ratios (5 semitones' third sideband at 4.005
+ * f0), and this law gives every step's spectrum within 0.05 to 1.1 dB
+ * mean over its lines, the best crossfade at each step within 0.05 of
+ * it. */
+#define MO_FOLD_RATIOS 8
+static const float kFoldRatios[MO_FOLD_RATIOS] = {
+    1.1224620f, 1.1892071f, 1.3348399f, 1.4983071f, 1.8877486f, 2.0f, 2.3784142f, 2.9966142f,
+};
+
+/* Two FM pairs at the neighbouring ratios of `ratios` at position `pos`
+ * (0..1), crossfaded; `amount` in cycles, each pair's index capped so that
+ * the carrier, the modulator and the deviation stay below 0.4 of the
+ * rate. */
+static float fm_pairs(le_meld_osc* o, const float* ratios, int n, float pos, float amount) {
   const double dc = o->hz / o->irate;
-  const float p = mo_clamp(pos, 0.0f, 1.0f) * (float)(MO_HFM_RATIOS - 1);
+  const float p = mo_clamp(pos, 0.0f, 1.0f) * (float)(n - 1);
   int a = (int)p;
-  if (a > MO_HFM_RATIOS - 2) a = MO_HFM_RATIOS - 2;
+  if (a > n - 2) a = n - 2;
   const float fr = p - (float)a;
   float y = 0.0f;
   for (int k = 0; k < 2; ++k) {
-    const float r = kHfmRatios[a + k];
+    const float r = ratios[a + k];
     const float cap = fmaxf(0.0f, (0.4f - (float)dc - (float)dc * r) / (float)fmax(dc, 1e-9));
     const float index = fminf(amount, cap);
     const float yk = sinf((float)(MO_TWO_PI * (o->s.fm.c + index * mo_sine(o->s.fm.m[k]))));
@@ -610,10 +624,12 @@ static float simple_fm_internal(le_meld_osc* o) {
   return y;
 }
 
-static float harmonic_fm_internal(le_meld_osc* o) { return fm_pairs(o, o->m2, o->m1); }
+static float harmonic_fm_internal(le_meld_osc* o) {
+  return fm_pairs(o, kHfmRatios, MO_HFM_RATIOS, o->m2, o->m1);
+}
 
 static float fold_fm_internal(le_meld_osc* o) {
-  const float x = fm_pairs(o, o->m1 * o->m1, 4.0f * o->m1);
+  const float x = fm_pairs(o, kFoldRatios, MO_FOLD_RATIOS, o->m1 * o->m1, 4.0f * o->m1);
   const float G = 1.0f + 7.7f * o->m2;
   const float u = tanhf(G * x + 0.4f) - 0.37994896f;
   const float d = 0.08f * o->m1 / G;

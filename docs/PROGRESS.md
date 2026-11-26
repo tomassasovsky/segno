@@ -1,4 +1,4 @@
-<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Quantizer autocorrelation tfz unmeasured retriggered isolations -->
+<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Quantizer autocorrelation tfz unmeasured retriggered isolations pul meldfit -->
 # Segno — Progress & Roadmap
 
 <!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs multicore smarttune -->
@@ -104,8 +104,14 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   held-out round's lesson (stealing counts fading voices and drops a note
   with no victim): 13 of 84 held-out presets, from 8. A fifth round
   confirmed the stealing on five fit renders and showed the LFOs' random
-  draws repeat on every note and instance, as Segno's now do with its own
-  seeds.
+  draws repeat on every note and instance. Measured from Live's renders
+  (rounds 7 and 8, allowed by the owner): the Pulsate, Wander and S&H
+  sequences, Fold FM's eight intervals at position 7 M1^2, the times'
+  fourth-power law, the triad's octave doubling, a 4.8 ms gain smoothing
+  and the Mod envelope's legato restart: 484 of 559 fit renders and 13 of
+  21 presets (from 333 of the same 559), 13 of 84 held-out (tf mean 5.07
+  to 4.53 dB). Round 9 is requested (Bitgrunge per note, the Swarm's
+  lanes, three presets' engines alone).
 - A voice with both engines on a Basic Shapes saw and SVF 12 costs 1.8 us
   per millisecond on the dev machine; MS2 6.8, a Swarm 3.7, three unison
   copies 5.6.

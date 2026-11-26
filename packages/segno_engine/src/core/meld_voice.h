@@ -74,7 +74,7 @@ typedef struct le_meld_lfo1 {
   float pulse, pulse_left;
   int32_t quarter;
   le_meld_fx t[2];
-  uint32_t rng; /* the generators' draws, restarted with the phase */
+  int32_t draw; /* Wander's targets drawn since the phase restarted */
 } le_meld_lfo1;
 
 typedef struct le_meld_engine {
@@ -84,7 +84,7 @@ typedef struct le_meld_engine {
   le_meld_lfo1 lfo1;
   double lfo2_ph;
   float lfo2, lfo2_sh;
-  uint32_t lfo2_rng; /* Random S&H's draws, restarted with the phase */
+  int32_t lfo2_draw; /* Random S&H's steps since the phase restarted */
   /* the note in semitones and its glide */
   float pitch, glide_to, glide_step;
   int32_t glide_left;
@@ -95,8 +95,8 @@ typedef struct le_meld_engine {
   float mod_prev; /* the Mod envelope's value at the last tick (0 at the note) */
   /* the tone filter: a low-pass and a high-pass one-pole */
   float tone_lp, tone_hp, tone_glp, tone_ghp;
-  /* the output gains, ramped across a tick */
-  float gl, gr, gl_step, gr_step;
+  /* the output gains and the targets they follow */
+  float gl, gr, gl_to, gr_to;
 } le_meld_engine;
 
 typedef struct le_meld_copy {
@@ -122,6 +122,7 @@ typedef struct le_meld_voice {
   int32_t wait;    /* samples until a note that stole a voice starts */
   int32_t position_no; /* the lowest number no other held note had */
   float fade;      /* stolen or cut: 1 -> 0 */
+  int32_t legato;  /* restarting in place for a legato key */
   le_meld_copy c[LE_MELD_COPIES];
 } le_meld_voice;
 
