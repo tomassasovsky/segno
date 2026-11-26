@@ -19905,13 +19905,16 @@ static void test_track_stereo_peaks_follow_fader(void) {
   CHECK(fabsf(s.tracks[0].peak - 1.0f) < 1e-6f); /* the dry content */
   CHECK(fabsf(s.tracks[0].peak_l - 0.5f) < 1e-6f);
   CHECK(s.tracks[0].peak_r == 0.0f);
-  /* Muted: nothing routes, the stereo peaks read 0, the dry peak stays. */
+  /* Muted: nothing routes, so the stereo meter only falls from 0.5 (SEG-114,
+   * le_meter_publish); the dry peak stays. */
   CHECK(le_engine_set_lane_mute(e, 0, 0, 1) == LE_OK);
   drain(e);
   le_engine_process(e, out, zin, LOOP_N);
   le_engine_get_snapshot(e, &s);
   CHECK(fabsf(s.tracks[0].peak - 1.0f) < 1e-6f);
-  CHECK(s.tracks[0].peak_l == 0.0f);
+  CHECK(fabsf(s.tracks[0].peak_l - 0.5f * le_meter_fall_gain(LOOP_N, 48000)) <
+        1e-6f);
+  CHECK(s.tracks[0].peak_l < 0.5f);
   le_engine_destroy(e);
 }
 
@@ -19957,6 +19960,41 @@ static void test_meters_read_only_what_routes(void) {
   le_engine_get_snapshot(e, &s);
   CHECK(s.tracks[0].peak_r > 0.0f);
   CHECK(fabsf(s.monitor_peaks[1] - 0.7f) < 1e-6f);
+  le_engine_destroy(e);
+}
+
+/* The meters' ballistics (SEG-114, le_meter_publish): a block peak shows at
+ * once, a level that stops falls 20 dB in 1.7 s, a louder block cuts through
+ * the fall, and a meter left in silence reaches 0. */
+static void test_meter_rises_at_once_and_falls_at_its_rate(void) {
+  printf("test_meter_rises_at_once_and_falls_at_its_rate\n");
+  enum { N = 480 };
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 2, 2, N);
+  drain(e);
+  static float in[2 * N], out[2 * N];
+  le_snapshot s;
+  for (int i = 0; i < N; ++i) in[2 * i] = (i == N / 2) ? 0.5f : 0.0f;
+  le_engine_process(e, out, in, N);
+  le_engine_get_snapshot(e, &s);
+  CHECK(fabsf(s.input_peaks[0] - 0.5f) < 1e-6f); /* at once */
+  CHECK(fabsf(s.input_peak - 0.5f) < 1e-6f);
+  memset(in, 0, sizeof in);
+  for (int k = 0; k < 170; ++k) le_engine_process(e, out, in, N); /* 1.7 s */
+  le_engine_get_snapshot(e, &s);
+  const float down20 = 20.0f * log10f(s.input_peaks[0] / 0.5f);
+  CHECK(fabsf(down20 - -20.06f) < 0.05f); /* 11.8 dB/s x 1.7 s */
+  /* A louder block shows at once over the fall. */
+  in[0] = 0.25f;
+  le_engine_process(e, out, in, N);
+  le_engine_get_snapshot(e, &s);
+  CHECK(fabsf(s.input_peaks[0] - 0.25f) < 1e-6f);
+  /* Silence: under -120 dBFS the meter reads 0 (20 s from 0.25). */
+  memset(in, 0, sizeof in);
+  for (int k = 0; k < 2000; ++k) le_engine_process(e, out, in, N);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.input_peaks[0] == 0.0f);
+  CHECK(s.input_peak == 0.0f);
   le_engine_destroy(e);
 }
 
@@ -21121,7 +21159,11 @@ static void test_mix_meter_is_pre_output_fold(void) {
   }
   CHECK(le_engine_set_track_solo(e, 1, 1) == LE_OK); drain(e);
   le_engine_process(e, out, in, LOOP_N); le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[0].peak_l == 0 && s.tracks[0].peak_r == 0);
+  /* Another track soloed: nothing of track 0 routes, so its meter only falls
+   * from .2 (SEG-114). */
+  CHECK(s.tracks[0].peak_l == 0);
+  CHECK(fabsf(s.tracks[0].peak_r - .2f * le_meter_fall_gain(LOOP_N, 48000)) <
+        1e-6f);
   le_engine_destroy(e);
 }
 
@@ -40297,6 +40339,7 @@ int main(void) {
   SHARD(test_monitor_pan_and_wide_inputs);
   SHARD(test_track_stereo_peaks_follow_fader);
   SHARD(test_meters_read_only_what_routes);
+  SHARD(test_meter_rises_at_once_and_falls_at_its_rate);
   SHARD(test_undo_across_lanes);
   SHARD(test_lazy_lane_allocation);
   SHARD(test_lane_phase_lock_matches_baseline);

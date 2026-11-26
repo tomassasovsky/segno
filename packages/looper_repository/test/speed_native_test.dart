@@ -8,6 +8,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno_engine/segno_engine.dart' show PumpedNativeEngine;
 
+import 'helpers/output_peak.dart';
+
 void main() {
   late PumpedNativeEngine engine;
   late LooperRepository repository;
@@ -58,12 +60,12 @@ void main() {
     });
     await Future<void>.delayed(Duration.zero);
     expect(completed, isFalse); // queue acceptance is not the outcome
-    engine.pump(frames: 2);
+    final peak = pumpOutputPeak(engine, frames: 2);
     expect(await half, EngineResult.ok);
     await completion;
     // 128 frames is shorter than two turn windows, so the step snaps: the
     // second frame at 1/2x reads index 36.5, the interpolated half step.
-    expect(engine.snapshot().outputPeaks[0], closeTo(36.5 / 128, 1e-6));
+    expect(peak, closeTo(36.5 / 128, 1e-6));
     ticks.add(null);
     expect(repository.state.speed, SpeedFactor.half);
     expect(engine.snapshot().tracks[0].headRate, 0.5);

@@ -12102,22 +12102,26 @@ LE_AUDIO_HOT_AT(0) void le_engine_process(le_engine* e, float* output, const flo
   const uint32_t total_out = frames * (uint32_t)ch_out;
   store_f32(&e->a_in_rms_bits,
             total_in ? sqrtf(in_sumsq / (float)total_in) : 0.0f);
-  store_f32(&e->a_in_peak_bits, in_peak);
+  /* The meters (SEG-114): each block peak held against the meter's fall, so
+   * a poll between blocks sees the loudest recent peak and a falling level
+   * moves smoothly (le_meter_publish). */
+  const float meter_fall = le_meter_fall_gain(frames, sr);
+  le_meter_publish(&e->a_in_peak_bits, in_peak, meter_fall);
   /* Per-channel meters (slice 3): the channels the device has; configure
    * zeroed every entry, so nothing stale survives a smaller device. */
   for (int c = 0; c < ch_in && c < LE_MAX_CHANNELS; ++c) {
-    store_f32(&e->a_in_peak_ch_bits[c], in_peak_ch[c]);
-    store_f32(&e->monitors[c].a_peak_bits, mon_peak[c]);
+    le_meter_publish(&e->a_in_peak_ch_bits[c], in_peak_ch[c], meter_fall);
+    le_meter_publish(&e->monitors[c].a_peak_bits, mon_peak[c], meter_fall);
   }
   for (int c = LE_INSTRUMENT_SOURCE_BASE; c < LE_MAX_SOURCES; ++c) {
-    store_f32(&e->monitors[c].a_peak_bits, mon_peak[c]);
+    le_meter_publish(&e->monitors[c].a_peak_bits, mon_peak[c], meter_fall);
   }
   for (int c = 0; c < ch_out && c < LE_MAX_CHANNELS; ++c) {
-    store_f32(&e->a_out_peak_ch_bits[c], out_peak_ch[c]);
+    le_meter_publish(&e->a_out_peak_ch_bits[c], out_peak_ch[c], meter_fall);
   }
   store_f32(&e->a_out_rms_bits,
             total_out ? sqrtf(out_sumsq / (float)total_out) : 0.0f);
-  store_f32(&e->a_out_peak_bits, out_peak);
+  le_meter_publish(&e->a_out_peak_bits, out_peak, meter_fall);
   tuner_tap_block(e, in, frames, ch_in, sr);
   for (int t = 0; t < tc; ++t) {
     /* Lane buffers are mono: one loop sample accumulated per frame. The shared
@@ -12149,14 +12153,16 @@ LE_AUDIO_HOT_AT(0) void le_engine_process(le_engine* e, float* output, const flo
     }
     store_f32(&e->tracks[t].a_trk_rms_bits,
               frames ? sqrtf(trk_sumsq[t] / (float)frames) : 0.0f);
-    store_f32(&e->tracks[t].a_trk_peak_bits, trk_peak[t]);
+    le_meter_publish(&e->tracks[t].a_trk_peak_bits, trk_peak[t], meter_fall);
     if (!e->tracks[t].pending_record &&
         !(e->launch_action[t] != 0)) {
       e->tracks[t].pending_image.revision = 0;
       e->tracks[t].pending_capture_shadow = 0;
     }
-    store_f32(&e->tracks[t].a_trk_peak_l_bits, trk_lpeak[t]);
-    store_f32(&e->tracks[t].a_trk_peak_r_bits, trk_rpeak[t]);
+    le_meter_publish(&e->tracks[t].a_trk_peak_l_bits, trk_lpeak[t],
+                     meter_fall);
+    le_meter_publish(&e->tracks[t].a_trk_peak_r_bits, trk_rpeak[t],
+                     meter_fall);
     /* The track's own playhead: the write head while its take is still being
      * defined (no length to play against yet), the mixer's read index
      * otherwise — see le_track_snapshot.position_frames. */

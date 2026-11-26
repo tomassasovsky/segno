@@ -43,6 +43,25 @@ Future<MixSettingsOutcome> _drive(
   return await operation;
 }
 
+/// One more block at [input], and the absolute peak of each of its two output
+/// channels, read from the audio it played: the snapshot's output peaks are
+/// meters that fall instead of dropping (SEG-114).
+({double left, double right}) _playedPeaks(
+  PumpedNativeEngine engine, {
+  required double input,
+}) {
+  const frames = 64;
+  final out = Float32List(2 * frames);
+  engine.pump(frames: frames, input: input, output: out);
+  var left = 0.0;
+  var right = 0.0;
+  for (var i = 0; i < frames; i++) {
+    if (out[2 * i].abs() > left) left = out[2 * i].abs();
+    if (out[2 * i + 1].abs() > right) right = out[2 * i + 1].abs();
+  }
+  return (left: left, right: right);
+}
+
 void main() {
   test(
     'settings coordinator pan reaches live monitor and track output',
@@ -91,8 +110,9 @@ void main() {
         input: .25,
       );
       expect(inputPan.isOk, isTrue);
-      expect(engine.snapshot().outputPeaks[0], greaterThan(.2));
-      expect(engine.snapshot().outputPeaks[1], 0);
+      final monitor = _playedPeaks(engine, input: .25);
+      expect(monitor.left, greaterThan(.2));
+      expect(monitor.right, 0);
 
       engine
         ..setMonitorInputEnabled(input: 0, enabled: false)
@@ -113,8 +133,9 @@ void main() {
         input: 0,
       );
       expect(trackPan.isOk, isTrue);
-      expect(engine.snapshot().outputPeaks[0], 0);
-      expect(engine.snapshot().outputPeaks[1], greaterThan(.2));
+      final track = _playedPeaks(engine, input: 0);
+      expect(track.left, 0);
+      expect(track.right, greaterThan(.2));
     },
   );
 }
