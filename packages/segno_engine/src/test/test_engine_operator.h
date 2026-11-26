@@ -483,6 +483,30 @@ static void test_operator_round8_fits(void) {
   CHECK(opr_component(l + N / 2, N / 2, opr_note_hz(60)) > 0.9);
 }
 
+/* Round 10: each of Spread's two voices draws its own random pan, so the
+ * two channels' power summed over a note varies from note to note (with
+ * one pan for both it would stay put). */
+static void test_operator_round10_fits(void) {
+  printf("test_operator_round10_fits\n");
+  enum { N = 2400 };
+  static float l[N], r[N];
+  double lo = 1e30, hi = 0.0;
+  opr_reference(&g_opr);
+  opr_set(&g_opr, LE_OPERATOR_SPREAD, 100.0f);
+  opr_set(&g_opr, LE_OPERATOR_PAN_RANDOM, 100.0f);
+  for (int k = 0; k < 12; ++k) {
+    CHECK(le_operator_note_on(&g_opr, 1, 60, 127, 0) == 0);
+    le_operator_render(&g_opr, l, r, N);
+    double p = 0.0;
+    for (int32_t i = N / 2; i < N; ++i) p += (double)l[i] * l[i] + (double)r[i] * r[i];
+    lo = p < lo ? p : lo;
+    hi = p > hi ? p : hi;
+    le_operator_note_off(&g_opr, 1);
+    le_operator_render(&g_opr, l, r, N);
+  }
+  CHECK(hi / lo > 1.5);
+}
+
 /* Voice bookkeeping: a mono legato note whose held voice was taken still
  * sounds; glide starts only while a voice sounds; fading a Spread note
  * reports its two voices; a Trigger-mode voice frees once it is silent,
@@ -645,6 +669,7 @@ static void run_operator_tests(void) {
   test_operator_voice_bookkeeping();
   test_operator_strict_fits();
   test_operator_round8_fits();
+  test_operator_round10_fits();
   test_engine_operator_slot_matches_offline();
   test_engine_operator_params_and_switching();
   test_engine_operator_midi();
