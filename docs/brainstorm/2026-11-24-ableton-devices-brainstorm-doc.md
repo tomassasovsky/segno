@@ -822,6 +822,10 @@ Chip at min(rate, 10.05 kHz), all read back through a 4-point Hermite.
   regenerates each stretch from a seeded hash instead of recording it
   (Live's three 100 ms buffers start full of unfiltered noise, which Segno
   plays until a tap's first refresh). **[measured]**
+- The Filther's DC blocker starts settled on its saturator's bias, so a
+  note through it rises from silence (woozy-a: Live's Square 5th through
+  the Filther rises over its attack; unsettled, the blocker stepped to
+  0.08 at the first sample). **[measured]**
 - Filtered Noise: white noise through a low-pass and a high-pass around
   f 2^(4 M1 - 2), 6 octaves wide down to coincident, then resonant, with a
   level that compensates. **[code]**
@@ -973,6 +977,15 @@ third-octave band, the MS2 pair within 2.6 short of full drive. **[measured]**
   Chords E4)
   Glide: portamento in semitones over Glide Time, Glissando by whole steps,
   from the newest key held. **[code]**
+- Mono plays one voice: a note that steals it takes over its LFOs, so an
+  LFO that does not retrigger runs on from the note before. **[measured]**
+  (the training phrase: Death Kicks, LFO 2 into Pan, passes with it,
+  stereo 5.7 dB without; Chords R Us tf 5.83 to 2.65, its held-out phrase
+  9.2 to 2.9) A Poly note on a voice that never played starts its free
+  LFO at phase 0 (Detuned String Machine's training phrase: tf 1.12 dB
+  that way, 2.33 with the LFO running since the device was built).
+  **[measured]** Round 10 asks whether a free LFO runs on while no voice
+  sounds.
 - Spread positions: copies at symmetric positions in [-1, 1]; a single
   copy takes its note's arrival slot among the voice count.
   ResetToVoiceOffset starts the phase at frac(6 x the position), unscaled
@@ -1051,6 +1064,24 @@ level varies 5 dB across Segno's seeds against 1.4 in Live), Vertical
 Bass's A5 sidebands at +-360, 520 and 720 Hz, Woozy Bass's 1.7 dB of
 extra side, and Happy Chords' and Chords R Us's engines alone (both
 0.5 to 0.7 dB loud in Segno at every band).
+
+Round 9 answered: Bitgrunge's glitches are the same on every note and in
+every instance, at the same counts at C3 and C4 (161 in 3 s at Macro 2 1,
+1.28 % of the counts; scratchpad `meldfit/meas/grunge.py`), not yet a
+table in Segno. The Swarm's lanes spread as Live's (0.09, 0.8 and 6.2 %
+of the note at Macro 1 0, 0.34 and 1, levels moving alike), so its
+randomness is Live's kind. Woozy Bass's engines pass alone (A once the
+Filther starts settled); together its stereo stays 1.7 dB off. Happy
+Chords' engines are each 0.55 dB loud alone, both through the Filther at
+20 kHz, which isolated renders do not cover (round 10). Vertical Bass's
+A5 lines at +-160 and +-360 Hz about each harmonic come from engine B's
+Sub alone: a 40 Hz pattern Segno's Sub lacks. With the Filther and the
+mono LFO hand-over the strict score passes 493 of 573 fit renders (13 of
+21 presets) and 15 of 84 held-out (tf mean 4.32 dB). Of the held-out
+failures, the four presets with Noise Loop (Elizabethan Gloom, Gotta
+Catchem, The Rhythm, PolyPlucks) render identically in Live's three
+instances while Segno's Noise Loop draws per instance: Live's noise
+buffers are deterministic. **[measured]**
 
 ## Decisions
 

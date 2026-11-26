@@ -341,6 +341,10 @@ void le_meld_filter_reset(le_meld_filter* f) {
   memset(&f->s, 0, sizeof(f->s));
   if (f->type == LE_MELD_FILTER_LOWPASS) f->s.ms2.s[6] = 1.0f; /* the second OTA's gain */
   if (f->type == LE_MELD_FILTER_HIGHPASS) f->s.ms2.s[3] = f->s.ms2.s[4] = 1.0f;
+  /* the Filther's DC blocker starts settled on its bias: a note's first
+   * samples rise from silence (woozy-a: Live's Square 5th through it rises
+   * over its attack, where an unsettled blocker steps to 0.08) [measured] */
+  if (f->type == LE_MELD_FILTER_FILTHER) f->s.filther.dc_x = 0.25f * sinf(0.05f * MF_PI);
   f->gin = f->gin_to;
   f->gout = f->gout_to;
   for (int i = 0; i < 3; ++i) f->w[i] = f->w_to[i];
