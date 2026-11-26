@@ -1880,14 +1880,22 @@ Tags as for Meld. Segno's implementation is `analog_voice.c`.
 - The device has as many voices as the Voices setting, and some state
   stays with a voice from one note to the next: a free LFO (one that does
   not retrigger) and a filter envelope with Legato on. A note takes the
-  stolen voice, or the lowest idle one. A free LFO runs from the device's
-  start, three quarters of Phase into its cycle there, until its voice's
-  first note, and from then on while the voice plays and for 52 ms after
-  it goes quiet (segno-analog-fit6 Nasal Mod Lead's triad on fresh voices
-  from 8.6 to 3.8 dB, Glass High Strings Pad from 7.5 to 5.9, Organ
-  Octaves Slow's stereo from 4.2 to 1.4; lfo-free's second voice enters
-  within 0.013 cycle of that phase); a free random wave's held values stay
-  with the voice too. A Legato filter envelope
+  stolen voice, else one that went quiet less than 0.06 s ago, else the
+  lowest idle one: a voice quiet for less than 0.1125 s is not idle, so a
+  mono or poly note 0.1 s after the last takes the next device voice and
+  one 0.15 s or more after takes the first back. A free LFO runs from the
+  device's first note (wherever that falls), 0.07 + 0.648 Phase cycles in
+  there, until its voice's first note, and from then on while the voice
+  plays, for 0.1125 s after it goes quiet, and whenever another voice of
+  the device sounds. (segno-analog-fit8 lvr-gap: one mono voice's LFO
+  advances by the note and 0.1125 s whatever the gap from 0.15 to 0.8 s,
+  by the note, the release and 0.1125 s with a 0.4 release; lvr-gap100
+  alternates two voices, the first running through the second's note;
+  segno-analog-fit9 lfo9-late's one note at 1.3 s starts where a note at
+  0 s does. The lvr renders from 10 to 1.2 to 2.3 dB, lv-overlap4 from 13
+  to 0.9, lv-steal from 10 to 1.3, Nasal Mod Lead from 3.8 to 1.5.) A
+  free random wave's held values stay with the voice too. A Legato filter
+  envelope
   carries its value into the voice's next note, its release run on for
   0.1 s after the voice went quiet and then held (fleg-on, fleg-on-mono,
   fleg-on-pos fit best between 0.08 and 0.12 s; running the release
@@ -1910,7 +1918,15 @@ Tags as for Meld. Segno's implementation is `analog_voice.c`.
 - Unison: the copies sit 0, +1, -1, +2 steps from the note, a step of
   ExpZ(0.001, 1) octaves on 127 times the stored value (0.379 semitone at
   0.5, an octave at 1); copy k starts k times ExpZ(0.002, 0.1) s after
-  the note (uni4-dly-100's copies enter at 0.1, 0.2 and 0.3 s). A copy's
+  the note (uni4-dly-100's copies enter at 0.1, 0.2 and 0.3 s) and
+  releases as many samples after the gate's end. It does not start where
+  a fresh copy would: its oscillator starts 4 (kD + 13) / P cycles on, P
+  its period (segno-analog-fit8's ud8 sines, C-1 with two copies at ten
+  delays and four at three, separated copy by copy: 4 kD / P to within
+  0.02 cycle; the ud8 sines from 5 to 23 dB to 0.2 to 3, the saws from 8
+  to 0.3 to 1.6). The round-4 saws at C3 fit 2 D / P instead, so the
+  factor is not settled away from the oscillator octave of -3 those
+  renders use. A copy's
   offset goes through the engine's cubic 2^x (exact at whole octaves, up
   to 1.3 cents sharp between), which puts the lower copy 0.3 cent sharp
   as the renders show. Vibrato: Lin(0.25, 10) Hz, each cycle's rate off by
@@ -2265,6 +2281,54 @@ Square Percussive Bass on a phrase of their own (with Live copies of the
 random ones); a sine at the held-out, round-6 and that phrase's note
 times (Live's event timing); Q driven below 0.01; Keyboard Stretch on mono
 and poly voices.
+
+Rounds 8 and 9, exported and scored with five seeds: fit 312 to 325 of
+461 (rounds 8 and 9 alone 19 to 29 of 77), factory presets 24 to 25 of
+79; held out 16 of 58 (15 at three seeds before; Nasal Mod Lead now
+passes). Strings Detuned Pad gets worse with the copies' lead (round 6
+from 4.2 to 5.2 dB), the one preset where it does:
+
+- The unison delay length is ExpZ(0.002, 0.1) as read: separating the ud8
+  sines' copies puts each where it says. What was wrong is the copy's
+  start, 4 (kD + 13) / P cycles on, and its release, k delays late (both
+  above). The round-4 saws at C3 fit 2 D / P, so the factor is settled
+  only at the oscillator octave of -3.
+- The steal order is the oldest first, as Segno has it: steal-tri-2v,
+  steal-seq-2v and steal-rel-2v lose the key Segno drops. Their pitch
+  metric reads 570 cents on the remaining dyad's subharmonic while tf is
+  0.4 and 0.95. Kick Complex Perc's C4, C5, dyad and triad fail on the
+  phase between its two swept sines, which is the oscillator start phase
+  question above, not the steal.
+- The free LFO's run-on, the device voice a note takes, and the clock from
+  the device's first note: above. lvr-gap100's and lfo-free's alternation
+  is two device voices, the first one's LFO running through the second's
+  note.
+- Vibrato across notes: a poly voice's vibrato in vib9-poly-gap and
+  vib9-poly-reuse is neither restarted at each note nor free; it moves by
+  0.006 and 0.1 cycle between notes 1 s apart. A mono voice's runs for
+  about 0.1 s after each note (vib9-mono-gap: 0.602 s of every second),
+  but modelling that breaks Fourths Lead's phrase (1.95 to 2.7 dB), so
+  the mono vibrato stays free from the device's first note.
+- A mono key change restarts a retriggered LFO at its Phase (lfo9-mono-
+  phase: 0.500 at the hand-over); what fails there is the hand-over's
+  click, in Live's earlier note-off.
+- A reused voice's rectangle, saw and sine (osc9) carry no DC in Live,
+  and the synced, pulse-width-modulated rectangle through Asym 3 drive
+  carries the same DC in both. Dual OSC Buzz Lead's DC (p9-buzz, -0.23
+  from the first sample of its 1.4 s note at 100, in both copies) is not
+  that; open.
+- Square Percussive Bass: chain levels within 0.5 dB per band and side to
+  mid within 1 dB on p9-sqperc, so not the chains' balance; Live's
+  tracked pitch sits at chain 1's plus Keyboard Error, Segno's mix about
+  1.5 cents below. Keyboard Stretch is the poly law on a mono voice too
+  (st9-mono, st9-mono-rect: within 0.03 cent).
+- Live's event timing (ev9): the first note lands 4 samples late, every
+  later note-on 12, 28 or 44 samples early (a 16-sample grid), at the
+  same times in every render, and ev-offs puts 1.0 s at 44 where ev9-fit6
+  puts it at 28, so the offset depends on the sequence, not the time.
+  No fixed harness lead helps across the renders; the harness places
+  events where they are.
+- Q below 0.01: q9-neg-saw-v127 passes at 0.17 dB with no floor.
 
 
 ## Decisions

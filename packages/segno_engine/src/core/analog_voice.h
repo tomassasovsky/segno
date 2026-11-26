@@ -65,6 +65,7 @@ typedef struct le_analog_chain {
   float inc, inc_m;    /* per-sample increments: oscillator (slave), master */
   float per, per_step; /* the oscillator's period in samples (0: not set), its ramp */
   int32_t otick;       /* samples left in the oscillator's tick */
+  float ph_lead;       /* a delayed copy's start: samples of four times its pitch to lead by */
   float penv;          /* the pitch envelope, 1 -> 0 */
   float penv_step;
   le_aas_filter f;     /* the filter */
@@ -84,6 +85,7 @@ typedef struct le_analog_copy {
   le_analog_chain ch[2];
   float detune;   /* octaves: the copy's unison offset */
   int32_t delay;  /* samples before the copy starts */
+  int32_t rel_at; /* the voice age its delayed release falls on, -1 none */
   float noise_lp;
   float noise_ring[LE_ANALOG_BL_RING]; /* the noise, as late as the oscillators */
   int32_t noise_at;
@@ -126,6 +128,7 @@ typedef struct le_analog {
   uint32_t held_origin[LE_ANALOG_HELD_MAX];
   float last_pitch;
   int32_t played;
+  int32_t first_age; /* the age of the device's first note */
   int32_t voice_limit;
   uint32_t stolen;
   uint32_t rng;
