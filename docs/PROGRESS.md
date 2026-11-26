@@ -1,4 +1,4 @@
-<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Metalic Perc retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations -->
+<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Metalic Perc retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations penv Unisono -->
 # Segno — Progress & Roadmap
 
 <!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs multicore smarttune -->
@@ -106,9 +106,20 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   is the device's, the free LFO runs from the device's start, Keyboard
   Error is uniform: 240 of 307 fit renders, 13 of 58 held out. Live's
   later note events land 8 to 68 samples early, beyond any in-block snap.
+  After round 6 (scored with per-note alignment, from 239 of 345 and 10 of
+  58 held out): the oscillator's 40-sample pitch tick with its period
+  ramp and the pitch envelope 3.5 % longer (Kick Complex Perc from 26 to
+  0.4 dB), the cubic 2^x on the keyboard pitch, Free Run ignoring the
+  release (Zap 25 to 9), a free LFO and a Legato filter envelope kept per
+  device voice (Rhythmic Octaves Bass 17 to 10), no glide between a
+  chord's keys in Const mode: 246 of 345 fit renders, 17 of 79 factory
+  presets, 10 of 58 held out (median 3.89 dB). Left: Live's onset hump on
+  fast upward sweeps, the LFO rate's dips, the random sources;
+  segno-analog-fit7 (39 renders) isolates the first two and the per-voice
+  state.
 - A voice of two saw chains through LP24 costs 0.9 us per millisecond on
   the dev machine, four unison copies 3.7, the formant filter 1.0. A
-  device holds 40 copies (88 KB).
+  device holds 40 copies (229 KB).
 
 ## November 2026 The Meld device plays on an instrument slot (SEG-109 P8)
 
