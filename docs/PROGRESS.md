@@ -1,4 +1,4 @@
-<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Metalic Wurli MKII Perc halvings retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations penv Unisono pul meldfit Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penvd rndpan Bassic Bitgrunge's Catchem Filther's Kaneda Werkstuecktraeger Whley Whley's filt nloop avel fleg unmodulated Basscycle spr prewarping prewarp -->
+<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Metalic Wurli MKII Perc halvings retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations penv Unisono pul meldfit Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penvd rndpan Bassic Bitgrunge's Catchem Filther's Kaneda Werkstuecktraeger Whley Whley's filt nloop avel fleg unmodulated Basscycle spr prewarping prewarp Floot Halfstep -->
 # Segno — Progress & Roadmap
 
 <!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs multicore smarttune -->
@@ -369,6 +369,15 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   reset and at a retriggered note, the starting lane taking lane 0's
   values). Strict score 354 of 390 (round 22 included); round 23 is
   built for Stereo voice pairing.
+- A silent voice in a running block runs its whole chain: its filters
+  keep the state its turning oscillators give them, a note on it starts
+  from that state (from rest with Reset Oscillator Phase on), and a
+  released voice keeps sounding below its threshold until the block
+  stops. Toy Helicopter, Transistor Reeds, Wave Pad, Echo Bells, 80s
+  Tape, Darkened and Slow Roll Strings and others now pass. Strict score
+  363 of 390, factory presets 4 of 5 (Clob Bass); held-out 61 of 89,
+  from 48. Round 24 is built: the filter state of a stopped block,
+  audio-rate cutoff modulation, Metallic Swell Pad.
 
 ## November 2026 Drift's filter II as an MS-20 circuit model (SEG-109 P4, round 4)
 
