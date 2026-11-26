@@ -748,19 +748,17 @@ static void derive(le_drift* d) {
   x->glide = glide_coefficient(vf(d, LE_DRIFT_GLIDE), d->rate);
   x->fade_step = 1000.0f / (LE_DRIFT_FADE_MS * d->rate);
   x->pending_fall = powf(LE_DRIFT_SILENT, 1.0f / (LE_DRIFT_PENDING_MS * 0.001f * d->rate));
-  /* a voice never played turns at A4 with its own drift (tick) */
+  /* a voice never played runs as A4 with its own drift while its block
+   * runs (tick), its LFO in Ratio mode at Ratio x A4: measured, a free
+   * LFO's phase at a fresh voice's first note */
   const float w = vf(d, LE_DRIFT_DRIFT_DEPTH) / 0.58f;
   for (int32_t i = 0; i < LE_DRIFT_VOICES; ++i) {
     le_drift_voice* v = &d->voices[i];
     if (v->played) continue;
-    const float f =
-        440.0f * exp2f(w * (d->key_cents[69] + d->voice_cents[i]) / 1200.0f);
-    v->dt1 = fminf(f * x->osc1_ratio / d->rate, 0.4999999f);
-    v->dt2 = fminf(f * x->osc2_ratio * exp2f(w * d->osc2_cents[i] / 1200.0f) /
-                       d->rate,
-                   0.4999999f);
-    /* and its LFO, in Ratio mode, at Ratio x A4: measured, a free LFO's
-     * phase at a fresh voice's first note */
+    v->pitch = v->pitch_target = 440.0f;
+    v->ratio = exp2f(w * (d->key_cents[69] + d->voice_cents[i]) / 1200.0f);
+    v->osc2_drift = exp2f(w * d->osc2_cents[i] / 1200.0f);
+    v->ref_ratio = exp2f(w * d->key_cents[69] / 1200.0f);
     v->lfo_inc = fminf(x->lfo_ratio * 440.0f / d->rate, 0.49999988f);
   }
 }
@@ -969,8 +967,15 @@ static void begin_note(le_drift* d, le_drift_voice* v, int was_silent) {
      * voices start together (Live's Stereo pair at Drift 0 is mono), and
      * once voices are reused a Stereo note's lanes start apart. */
     if (vi(d, LE_DRIFT_RESET_OSC_PHASE)) v->ph1 = v->ph2 = 0.0f;
-    clear_lowpass(d, v, vi(d, LE_DRIFT_FILTER_TYPE));
-    memset(v->hp, 0, sizeof(v->hp));
+    /* The filters keep the state the voice's silent run left them in
+     * (tick); Reset Oscillator Phase starts them from rest. Measured: the
+     * held-out presets' notes on silent voices (Toy Helicopter's triad
+     * after its D2, Transistor Reeds, Wave Pad), and round 19's filter II
+     * notes with Reset on, which start from rest. */
+    if (vi(d, LE_DRIFT_RESET_OSC_PHASE)) {
+      clear_lowpass(d, v, vi(d, LE_DRIFT_FILTER_TYPE));
+      memset(v->hp, 0, sizeof(v->hp));
+    }
   }
   const int32_t shape = vi(d, LE_DRIFT_LFO_SHAPE);
   /* Retrigger (and a one-shot shape) restarts the voice's LFO: Sine and
@@ -1611,8 +1616,6 @@ static void voice_sample(le_drift* d, le_drift_voice* v, float* out_l,
   const float f2 = base * x->osc2_ratio * v->osc2_drift * exp2f(add_detune);
   const float dt1 = fminf(f1 / rate, 0.4999999f);
   const float dt2 = fminf(f2 / rate, 0.4999999f);
-  v->dt1 = dt1; /* kept for while the voice is silent (tick) */
-  v->dt2 = dt2;
   v->ph1 += dt1;
   if (v->ph1 >= 1.0f) v->ph1 -= 1.0f;
   v->ph2 += dt2;
@@ -1676,24 +1679,37 @@ static void voice_sample(le_drift* d, le_drift_voice* v, float* out_l,
   if (v->state == LE_DRIFT_VOICE_FADING) {
     amp *= v->fade;
     v->fade -= x->fade_step;
-    if (v->fade <= 0.0f) v->state = LE_DRIFT_VOICE_FREE;
+    if (v->fade <= 0.0f) {
+      v->state = LE_DRIFT_VOICE_FREE;
+      v->env1 = v->env2 = 0.0f;
+      v->stage1 = v->stage2 = STAGE_IDLE;
+    }
   }
   y *= amp;
   *out_l += y * v->gain_l;
   *out_r += y * v->gain_r;
+  /* below the threshold the voice is free for a new note, but while its
+   * block runs both envelopes keep falling and it keeps sounding (tick) */
   if (v->stage1 == STAGE_RELEASE && v->env1 < LE_DRIFT_SILENT) {
     v->state = LE_DRIFT_VOICE_FREE;
-    v->stage1 = v->stage2 = STAGE_IDLE;
   }
 }
 
 /* One output sample at the device's internal rate: every live voice. */
-/* The voices run in blocks of four. A silent voice in a block where any
- * voice sounds keeps turning its oscillators at the rate it last had (a
- * voice never played: A4 with its own drift), and every silent voice's
- * LFO keeps running. Fitted: in Live a Stereo note on a fresh pair starts
- * its lanes together only when that pair's block was idle; once a block
- * runs, its idle lanes drift apart. */
+/* The voices run in blocks of four. While any voice in a block sounds,
+ * every voice of the block runs its whole chain: a free voice's
+ * oscillators keep turning at its last note's pitch (a voice never played:
+ * A4 with its own drift) into its filters, its envelopes keep falling (a
+ * released voice keeps sounding below the threshold that freed it), and
+ * a new note on it starts from that state. A block with no voice sounding
+ * stops (its state held) and runs only its LFOs. Fitted: in Live a Stereo
+ * note on a fresh pair starts its lanes together only when that pair's
+ * block was idle; once a block runs, its idle lanes drift apart.
+ * Measured: notes on silent voices in the held-out presets start from
+ * their filters' running state (Toy Helicopter tf 3.0 to 0.5, Transistor
+ * Reeds 2.5 to 0.2), and a voice released early in a long attack keeps
+ * its tail below 0.001 while the block runs (Darkened and Slow Roll
+ * Strings 2.5 to 0.5). */
 static void tick(le_drift* d, float* l, float* r) {
   *l = 0.0f;
   *r = 0.0f;
@@ -1721,18 +1737,13 @@ static void tick(le_drift* d, float* l, float* r) {
     }
     for (int32_t i = b; i < b + 4; ++i) {
       le_drift_voice* v = &d->voices[i];
-      if (v->state != LE_DRIFT_VOICE_FREE) {
+      if (busy) {
         voice_sample(d, v, l, r);
         continue;
       }
-      if (busy) {
-        v->ph1 += v->dt1;
-        if (v->ph1 >= 1.0f) v->ph1 -= 1.0f;
-        v->ph2 += v->dt2;
-        if (v->ph2 >= 1.0f) v->ph2 -= 1.0f;
-      }
-      /* at the rate it last had (its LFO Rate modulation included), its
-       * Sample & Hold and Wander generator stepping as it goes */
+      /* an idle block's LFOs, at the rate each last had (its LFO Rate
+       * modulation included), the Sample & Hold and Wander generator
+       * stepping as it goes */
       lfo_random_tick(v, d->d.lfo_shape);
       lfo_advance(v, d->d.lfo_mode == RATE_RATIO
                          ? v->lfo_inc
