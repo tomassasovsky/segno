@@ -2497,7 +2497,7 @@ round 8 31 of 37), 44 of the 67 factory-preset renders; held-out 77 of 107
 (Electric Basic Bass and Meow Keys now pass).
 
 Then: the vibrato's Error (above), and the host's offset on later notes'
-unison copies moved into the fit harness. Round 9 (53 renders,
+unison copies moved into the fit harness. Round 9 (57 renders,
 `segno-tension-fit9`) asks: Strings Quartet's bow with its finger, its
 gated damper, its positions and inharmonicity taken out one at a time,
 its exciter on the reference string with each part added back, and
@@ -2505,10 +2505,24 @@ Ensemble Strings and Wow Pad, whose first block already differs; Upright
 Ambient Bass at C2, the held-out note (round 8 tried C1 and C4), and its
 hammer on the reference; a mono string struck by a chord while it still
 rings, varied (damper, filter, envelope, body, held, order, priority,
-exciter, a dyad and one key); unison copies on notes off the 1 ms grid.
+exciter, a dyad and one key); unison copies on notes off the 1 ms grid;
+vibrato's phase on notes after the first.
 With both: 281 of 322 fit renders pass, 44 of the 67 factory-preset
 renders; held-out 80 of 107 (12 String Chorus Guitar, Ice Ballad Keys and
 New Age String now pass).
+The held-out near misses that need no round, looked at one by one:
+Reverse Guitar fails on two cells (the bright electric guitar preset
+with the same damper shows the same)
+where Live, about 230 ms after a release with a gated damper, starts a
+fast decay (about 480 dB/s, as at the voice cut of round 6's gated
+reference, 139 blocks after its release) that Segno lacks: the voice
+cut's open rule again. Wood Bass, Robot Voice and String Delay Pad
+match their first note to -30 dB and their later notes only in level:
+their vibrato's phase on a later note leads Segno's by 60 to 100 degrees
+(Wood Bass's phrase, both rounds), neither a reset nor a free-running
+phase; round 9's vibrato renders ask. Clean Chorus Guitar is within
+0.04 dB of its limit, its spread Segno's own (its resting damper makes
+a 1e-6 change show).
 
 ## Decisions
 
