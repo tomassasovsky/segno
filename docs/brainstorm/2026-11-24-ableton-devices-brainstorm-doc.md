@@ -2351,9 +2351,15 @@ Meld. Segno's implementation is `collision_voice.c`.
 
 - The mallet: one impulse through a critically damped low-pass at
   Exp(2, 5000) Hz (moved by its routes), scaled so the pulse's peak holds
-  whatever the stiffness; its noise, high-passed at Noise Color, multiplies
-  the pulse by (1 - w) + w noise, w = (atan(a)/pi + 1/2)^3, a =
-  Lin(-4, 4). **[code]**
+  whatever the stiffness; its noise, high-passed at Noise Color (Q 0.7,
+  the angle held below 2.9919932, so colour 1 passes almost nothing),
+  multiplies the pulse by (1 - w) + w noise, w = (atan(a)/pi + 1/2)^3, a =
+  Lin(-4, 4). **[code]** The noise term is 0.8 of that. **[measured]**
+  (round 6: the difference of Live's copies, the random part alone, on the
+  plain beam at Noise Amount 1 and nine colours, at Amount 0.5, and into a
+  beam at its shortest decay, is 1.9 dB below Segno's at every colour
+  within 1 dB, with the cutoff where the reading puts it; the earlier 0.45
+  of the rate clamp let 14 dB more through at colour 1)
 - The noise source: white noise through a low-pass, high-pass, band-pass
   (of constant skirt: its peak gain is Q) or a low-pass and high-pass pair
   a width apart, under a linear ADSR, its cutoff moved by the envelope
@@ -2477,13 +2483,13 @@ Meld. Segno's implementation is `collision_voice.c`.
 
 ### The fits so far
 
-Five rounds of Live renders (single changes around a plain
+Six rounds of Live renders (single changes around a plain
 mallet-on-beam reference, the 33 factory presets, the matrix units, the
 pitch envelope, Off Decay, pipes across the keyboard, Live copies of the
 random renders, the noise excitation through a dense 70-mode membrane,
 presets playing a held-out-like phrase with copies, the limiter's
-release, and round 5 below), scored by the strict score with three Segno
-seeds and Live's own spread where copies exist: 130 of 174 pass, 20 of the
+release, rounds 5 and 6 below), scored by the strict score with three Segno
+seeds and Live's own spread where copies exist: 135 of 186 pass, 20 of the
 33 factory presets (104 of 152 before the measured limiter and bleed). The
 held-out round (every preset, a quiet C3, a loud C4 triad and a hard C5,
 with Live's copies) passes 11 of 33.
@@ -2522,13 +2528,11 @@ held-out stereo failures sit in bands 25 to 40 dB below the loudest
 2 dB off).
 
 Where Segno's seeds spread wider than Live's copies: the hit offset is
-not the cause (above); the mallet's noise is. The difference between two
-Live copies is the random part alone, and on the plain beam (cp-mnoise-05,
-Noise Color 0.5) it matches Segno's above 5 kHz but is 2 to 10 dB weaker
-from 300 Hz to 4 kHz, as if Live's noise high-pass sat 1.35 times higher
-(1.2 times at colour 0.63, Marimba Glassy; more than 2 at 0.29, Bells
-Glass, where no cutoff alone fits). Those three do not give one curve, so
-the knob's range is unchanged. **[measured]** Neither a leak through the
+not the cause (above); the mallet's noise was 1.9 dB too strong (above).
+stiff-0, whose noise term is nearly zero (Noise Amount 0) and whose
+highs are all noise, is worse for the 0.8 (tf 2.68 to 3.17), so the
+factor may not hold at the smallest amounts; round 6 has none below 0.5.
+Neither a leak through the
 low-pass nor one through the band-pass output fits the noise source's
 high-pass floor: the leak would have to fall from 0.16 at a 970 Hz cutoff
 to 0.028 at 3.1 kHz and to 0.07 at Q 0.2.

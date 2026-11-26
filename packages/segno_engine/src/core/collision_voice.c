@@ -412,17 +412,6 @@ static float bq_tick(le_collision_bq* q, float x) {
   return y;
 }
 
-/* RBJ low-pass, high-pass and band-pass (constant skirt: its peak gain is
- * q) at f Hz, quality q. */
-static void bq_filter(le_collision_bq* bq, int32_t type, float f, float q, float rate) {
-  f = clampf(f, 0.0003f * rate, 0.45f * rate);
-  q = clampf(q, 0.05f, 100.0f);
-  const float w = 2.0f * CV_PI * f / rate, c = cosf(w), s = sinf(w), a = s / (2.0f * q);
-  if (type == 0) bq_set(bq, (1.0f - c) / 2.0f, 1.0f - c, (1.0f - c) / 2.0f, 1.0f + a, -2.0f * c, 1.0f - a);
-  else if (type == 1) bq_set(bq, (1.0f + c) / 2.0f, -(1.0f + c), (1.0f + c) / 2.0f, 1.0f + a, -2.0f * c, 1.0f - a);
-  else bq_set(bq, s / 2.0f, 0.0f, -s / 2.0f, 1.0f + a, -2.0f * c, 1.0f - a);
-}
-
 /* ---- the matrix ---- */
 
 /* fit: a chooser's amount moves a resonator's pitch by an eighth of an
@@ -709,7 +698,15 @@ static void start_voice(le_collision* d, le_collision_voice* v, uint32_t origin,
     bq_set(&v->pulse, K * (1.0f - c) / 2.0f, K * (1.0f - c), K * (1.0f - c) / 2.0f, 1.0f + a, -2.0f * c, 1.0f - a);
     v->pulse_in = k_exp(d, LE_COLLISION_MALLET_VOLUME, 0.001f, 1.0f) *
                   exp2f(0.9685f * v->dest[LE_COLLISION_D_MALLET_VOLUME]);
-    bq_filter(&v->mnoise, 1, k_exp(d, LE_COLLISION_MALLET_NOISE_COLOR, 250.0f, 25000.0f), 0.7f, rate);
+    /* its noise's high-pass: RBJ at Noise Color, Q 0.7, its angle held below
+     * 2.9919932 as the pulse's (fit: so Noise Color 1 lets almost no noise
+     * through, as Live's mn6-c100 copies show; 0.45 of the rate let 14 dB
+     * more through) */
+    {
+      const float th = fminf(2.0f * CV_PI * k_exp(d, LE_COLLISION_MALLET_NOISE_COLOR, 250.0f, 25000.0f) / rate, 2.9919932f);
+      const float nc = cosf(th), na = sinf(th) / 1.4f;
+      bq_set(&v->mnoise, (1.0f + nc) / 2.0f, -(1.0f + nc), (1.0f + nc) / 2.0f, 1.0f + na, -2.0f * nc, 1.0f - na);
+    }
     v->pulse_len = (int32_t)(4.0f * rate / fs);
   } else {
     v->pulse_len = 0;
@@ -1128,7 +1125,9 @@ static void render_voice(le_collision* d, le_collision_voice* v, float* left, fl
         const float p = bq_tick(&v->pulse, v->pulse_in);
         v->pulse_in = 0.0f;
         const float nz = bq_tick(&v->mnoise, 2.0f * (float)((v->rng = v->rng * 1664525u + 1013904223u) >> 8) / 16777216.0f - 1.0f);
-        x = p * ((1.0f - w_noise) + w_noise * nz);
+        /* fit: the noise term 0.8 of the reading's (1.9 dB down), at every
+         * colour and amount (the copy differences of round 6) */
+        x = p * ((1.0f - w_noise) + 0.8f * w_noise * nz);
       }
       if (noise && v->env_seg != ENV_IDLE) {
         /* the envelope: attack to 1, decay to sustain, hold, release */
