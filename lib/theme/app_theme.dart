@@ -49,6 +49,43 @@ const _muteMeterColors = <LooperMeterState, Color>{
   LooperMeterState.muted: Color(0xFFFFFFFF),
 };
 
+/// The Tracks view's meter gradients (SEG-114), after the Looper X's level
+/// meter as the #891 rig renders it: #42E700 at the top of the fill to
+/// #217500 at its foot, half the top's brightness in each channel. Playing
+/// takes those greens; every other state keeps its meter colour at the top
+/// and falls to half of it at the foot.
+const _stageMeterGradients = <LooperMeterState, MeterGradient>{
+  LooperMeterState.empty: (top: Color(0xFF6E6E73), bottom: Color(0xFF37373A)),
+  LooperMeterState.recording: (
+    top: Color(0xFFFF1744),
+    bottom: Color(0xFF800C22),
+  ),
+  LooperMeterState.overdubbing: (
+    top: Color(0xFFFF1744),
+    bottom: Color(0xFF800C22),
+  ),
+  LooperMeterState.playing: (top: Color(0xFF42E700), bottom: Color(0xFF217500)),
+  LooperMeterState.stopped: (top: Color(0xFFFFFFFF), bottom: Color(0xFF808080)),
+  LooperMeterState.muted: (top: Color(0xFFFFFFFF), bottom: Color(0xFF808080)),
+};
+
+/// The high-contrast theme's stage meter: solid, the HC meter colours at both
+/// ends, so the foot of a bar clears the same contrast as its top.
+const _hcStageMeterGradients = <LooperMeterState, MeterGradient>{
+  LooperMeterState.empty: (top: Color(0xFF6E6E6E), bottom: Color(0xFF6E6E6E)),
+  LooperMeterState.recording: (
+    top: Color(0xFFFF5470),
+    bottom: Color(0xFFFF5470),
+  ),
+  LooperMeterState.overdubbing: (
+    top: Color(0xFFFF5470),
+    bottom: Color(0xFFFF5470),
+  ),
+  LooperMeterState.playing: (top: Color(0xFF6EE77F), bottom: Color(0xFF6EE77F)),
+  LooperMeterState.stopped: (top: Color(0xFFFFFFFF), bottom: Color(0xFFFFFFFF)),
+  LooperMeterState.muted: (top: Color(0xFFFFFFFF), bottom: Color(0xFFFFFFFF)),
+};
+
 /// Track meter (peak bar) colors per meter state in the **high-contrast**
 /// theme: the empty/idle tone clears the 3:1 non-text threshold (1.4.11)
 /// against the brighter tile, and play/record stay vivid.
@@ -137,6 +174,7 @@ abstract final class AppTheme {
         recordColor: Color(0xFFFF1744),
         recordMeterColors: _recordMeterColors,
         muteMeterColors: _muteMeterColors,
+        stageMeterGradients: _stageMeterGradients,
         toolbarIconColor: Colors.white70,
       ),
     );
@@ -185,6 +223,7 @@ abstract final class AppTheme {
         recordColor: Color(0xFFFF5470),
         recordMeterColors: _hcRecordMeterColors,
         muteMeterColors: _hcMuteMeterColors,
+        stageMeterGradients: _hcStageMeterGradients,
         // SurfaceTheme.highContrast.textSecondary — brighter than the neon
         // theme's white70 to clear the HC contrast threshold.
         toolbarIconColor: Color(0xFFD8D8D8),

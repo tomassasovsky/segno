@@ -300,6 +300,50 @@ void main() {
     });
   });
 
+  group('PeakMeterBar fill', () {
+    Widget bar({Color? bottom}) => PeakMeterBar(
+      peak: 0.5,
+      color: const Color(0xFF42E700),
+      bottomColor: bottom,
+      hasContent: true,
+      frozen: false,
+    );
+
+    testWidgets('is a gradient from the colour to the foot colour', (
+      tester,
+    ) async {
+      seed(const LooperState());
+      await pumpLeaf(tester, bar(bottom: const Color(0xFF217500)));
+      final fill = tester.widget<Container>(
+        find.byKey(const Key('meter_gradient_fill')),
+      );
+      final gradient =
+          (fill.decoration! as BoxDecoration).gradient! as LinearGradient;
+      expect(gradient.colors, const [Color(0xFF42E700), Color(0xFF217500)]);
+      expect(gradient.begin, Alignment.topCenter);
+      expect(gradient.end, Alignment.bottomCenter);
+      // The gradient spans the fill, which keeps the leaf's full width.
+      expect(
+        tester.getSize(find.byKey(const Key('meter_gradient_fill'))).width,
+        100,
+      );
+    });
+
+    testWidgets('is solid without a foot colour', (tester) async {
+      seed(const LooperState());
+      await pumpLeaf(tester, bar());
+      expect(find.byKey(const Key('meter_gradient_fill')), findsNothing);
+      final fill =
+          tester
+                  .widget<FractionallySizedBox>(
+                    find.byType(FractionallySizedBox),
+                  )
+                  .child!
+              as Container;
+      expect(fill.color, const Color(0xFF42E700));
+    });
+  });
+
   group('TrackProgressBar', () {
     // The playhead is read from the repository's live playheads by channel,
     // not from the looper state (#1563).

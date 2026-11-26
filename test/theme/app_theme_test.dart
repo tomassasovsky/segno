@@ -243,6 +243,29 @@ void main() {
       }
     });
 
+    test('the top of every stage meter gradient clears 3:1 on the track tile '
+        '(SEG-114)', () {
+      // The level is read where the bar ends, and that is the gradient's top.
+      for (final theme in [AppTheme.neon, AppTheme.highContrast]) {
+        final looper = theme.extension<LooperTheme>()!;
+        for (final state in LooperMeterState.values) {
+          expect(
+            ratio(looper.stageMeterGradient(state).top, looper.tileBackground),
+            greaterThanOrEqualTo(3),
+            reason: '$state',
+          );
+        }
+      }
+    });
+
+    test('the high-contrast stage meter is solid', () {
+      final looper = AppTheme.highContrast.extension<LooperTheme>()!;
+      for (final state in LooperMeterState.values) {
+        final g = looper.stageMeterGradient(state);
+        expect(g.bottom, g.top, reason: '$state');
+      }
+    });
+
     test('the HC empty-meter tone clears 3:1 on the track tile', () {
       final looper = AppTheme.highContrast.extension<LooperTheme>()!;
       // WCAG 1.4.11: the empty-meter groove is the dimmest non-text

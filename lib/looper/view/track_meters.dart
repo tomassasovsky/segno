@@ -44,6 +44,7 @@ class TrackPeakMeter extends StatelessWidget {
     required this.color,
     required this.hasContent,
     required this.frozen,
+    this.bottomColor,
     this.clipColor,
     this.source = MeterSource.playback,
     super.key,
@@ -56,8 +57,13 @@ class TrackPeakMeter extends StatelessWidget {
   /// [hasContent] and [frozen] do not apply to a bar that reads it.
   final MeterSource source;
 
-  /// The bar fill colour (the track's meter-state colour).
+  /// The bar fill colour (the track's meter-state colour), at the top of the
+  /// fill when [bottomColor] is set.
   final Color color;
+
+  /// The fill's colour at its foot; `null` fills solid in [color]. See
+  /// [PeakMeterBar.bottomColor].
+  final Color? bottomColor;
 
   /// Whether the track holds recorded audio (an empty track shows no bar).
   final bool hasContent;
@@ -85,6 +91,7 @@ class TrackPeakMeter extends StatelessWidget {
       builder: (context, peak) => PeakMeterBar(
         peak: peak,
         color: color,
+        bottomColor: bottomColor,
         hasContent: source != MeterSource.playback || hasContent,
         frozen: source == MeterSource.playback && frozen,
         clipColor: clipColor,
@@ -244,6 +251,11 @@ Track? trackOf(LooperState state, int channel) {
 /// glance takes. The hold is evaluated on each level tick rather than by a
 /// timer of its own — a stopped (frozen) track never shows it, since a stale
 /// cap on a silent track would be a lie.
+///
+/// A [bottomColor] fills the bar with a vertical gradient from [color] at the
+/// top of the fill to [bottomColor] at its foot (SEG-114, the Looper X's
+/// level meter). The gradient spans the fill, so a quiet bar is as bright at
+/// its top as a loud one.
 class PeakMeterBar extends StatefulWidget {
   /// Creates a [PeakMeterBar].
   const new({
@@ -251,6 +263,7 @@ class PeakMeterBar extends StatefulWidget {
     required this.color,
     required this.hasContent,
     required this.frozen,
+    this.bottomColor,
     this.clipColor,
     super.key,
   });
@@ -258,8 +271,12 @@ class PeakMeterBar extends StatefulWidget {
   /// The track's current peak level (`0..1`).
   final double peak;
 
-  /// The bar fill colour (the track's meter-state colour).
+  /// The bar fill colour (the track's meter-state colour), at the top of the
+  /// fill when [bottomColor] is set.
   final Color color;
+
+  /// The fill's colour at its foot; `null` fills solid in [color].
+  final Color? bottomColor;
 
   /// Whether the track holds recorded audio (an empty track shows no bar).
   final bool hasContent;
@@ -351,7 +368,21 @@ class _PeakMeterBarState extends State<PeakMeterBar> {
           alignment: Alignment.bottomCenter,
           child: FractionallySizedBox(
             heightFactor: _fill,
-            child: Container(color: widget.color),
+            child: switch (widget.bottomColor) {
+              null => Container(color: widget.color),
+              // A Container, like the solid fill: childless, it takes the
+              // width it is given, where a bare DecoratedBox would be 0 wide.
+              final bottom => Container(
+                key: const Key('meter_gradient_fill'),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [widget.color, bottom],
+                  ),
+                ),
+              ),
+            },
           ),
         ),
         if (clipping)
