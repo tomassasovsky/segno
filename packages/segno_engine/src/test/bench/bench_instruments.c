@@ -157,6 +157,7 @@ static stats run_drift(const bench_opts* o, int32_t mode, int32_t voices,
   v[LE_DRIFT_VOICE_COUNT] = 4.0f; /* 32 */
   v[LE_DRIFT_ENV1_SUSTAIN] = 1.0f;
   v[LE_DRIFT_NOISE_ON] = 1.0f; /* every block of the voice runs */
+  v[LE_DRIFT_FILTER_TYPE] = 1.0f; /* filter II, the heavier of the two */
   v[LE_DRIFT_NOISE_GAIN] = 0.2f;
   v[LE_DRIFT_LFO_AMOUNT] = 1.0f;
   v[LE_DRIFT_FILTER_MOD_AMOUNT2] = 0.2f;

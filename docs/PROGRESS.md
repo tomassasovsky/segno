@@ -1,4 +1,4 @@
-<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP -->
+<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance retriggered isolations Bellatine Keystrike Numan uncentred dfit Grimer Floot Halfstep restruck Cardano baselined prewarped -->
 # Segno — Progress & Roadmap
 
 <!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs multicore smarttune -->
@@ -65,6 +65,204 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
 
 ---
 
+## November 2026 Drift against Live's strict score (SEG-109 P4, round 5)
+
+- A stricter score (third-octave x 50 ms cells, the attack, stereo width,
+  pitch) showed what still differed. Fixed from Live's renders: a free
+  LFO starts at its shape's start phase when the voice blocks reset and
+  runs while idle; Reset Oscillator Phase makes a note on a sounding voice
+  wait 1 ms while it falls silent, then restart (Mono legato too); glide
+  moves in hertz (0.144 x Glide); filter II starts at rest (no -43 dB
+  transient at note start) with its diode slope at 2.21; the filter path
+  gains (0.15 and 0.37 dB high); Sample & Hold starts on a drawn step;
+  Shark Tooth runs backwards in time, with narrower top widths.
+- Strict score: 164 of 224 fit renders before, 171 of 200 after (the
+  scorer's round 2 sets aside renders named `-r<n>`); factory presets 0
+  to 1 of 5 (Euphoria Lead).
+- What still fails is Drift Depth (Segno's tuning values are its own by
+  rule; with Live's table in a scratch check the drift renders passed) and
+  random sources (noise, Sample & Hold) that no render can match draw for
+  draw. Round 16: key tracking is a blend in hertz ((1 - t) + t f / 440,
+  which fixed Bloom Pad's filter peak), and Live's drift is the same in
+  every instance. Strict score 207 of 244 with round 16; held-out 8 of 89.
+- Round 17: Drift Depth now uses Segno's own tables with the statistics
+  measured on Live (per key: mean +1.18, spread 3.63 cents per unit,
+  neighbours correlated 0.53; per voice: mean +2.26, spread 7.2,
+  independent), and Unison's lanes run sharpest first as the code orders
+  them. Strict score 204 of 263 (presets 0 of 5); with measured values in
+  a scratch build 245 of 263: 41 renders fail only on the exact drift
+  values, pending the owner's decision on measured per-key values.
+  Held-out: 8 of 89 (14 of 89 with the measured values).
+- The owner allowed values measured from Live's rendered audio: Drift
+  Depth uses the measured per-key and per-voice tables (round 17). Strict
+  score 247 of 263, factory presets 3 of 5 (Bloom Pad, Euphoria Lead,
+  80s Tape).
+- Round 18 (51 renders): keys outside C1..B5 carry no drift offset, the
+  per-voice offset does not depend on the key, the per-key offset follows
+  the key played, and C1..F#1 are remeasured (round 17's windows were too
+  short there). A Ratio-mode LFO follows a Mono lane's octave (Crunch
+  Arcade: pitch an octave off before, tf 11.8 to 3.1), and the cycling
+  envelope in Ratio mode on a pitch slot is phase modulation (Bellatine:
+  336 cents sharp before, tf 15.7 to 2.9). Strict score 252 of 296 before
+  and after with round 18 included, factory presets 3 of 5; held-out 14 of
+  89 (Bellatine and Crunch Arcade much closer, still failing).
+- Round 19 (39 renders): Osc 2 has its own per-voice drift offset on top
+  of Osc 1's (tape-chord's stereo 1.87 to 0.04 dB); the voice's output
+  clip is 0.35 and the filter input's negative side runs on to -1.6 (hot
+  inputs into either filter within 1.7 dB rms, from up to 8.4); the
+  cycling envelope's phase modulation is centred on its middle; the Ratio
+  rates follow the per-key drift. The Key source, Pulse's shape clamp and
+  when a releasing voice is free already matched. Strict score 300 of 335
+  (round 19 included; 264 of the 296 scored before, from 252), factory
+  presets 3 of 5; held-out 45 of 89, from 14.
+- Round 20 (16 renders): Drift Depth's per-voice tables follow the
+  preset's SerialNumber (clamped to 0..8388607; each serial its own
+  values, the per-key table shared). Segno carries the measured tables of
+  the factory presets' serials (0, 2217915, 8388607) and serial 0's for
+  any other; SerialNumber is a new device parameter
+  (`LE_DRIFT_SERIAL_NUMBER`), which the preset reader must pass. Monday
+  Morning, Synth on Screen, Grimer Bass and Game Console now pass. Strict
+  score 318 of 351 (rounds 19 and 20 included), factory presets 3 of 5;
+  held-out 47 of 89.
+- Filter I's resonance shaper drive fitted (self-oscillation level within
+  0.2 dB, the long-open f1-1k-r1): 319 of 351; held-out 49 of 89 with
+  five Live copies per random preset (17 of its 40 failures random, 23
+  deterministic, most in time structure: beating, Stereo side, release
+  tails, Mono). Round 21 is built for Mono note handoff.
+- Round 21 (19 renders): Mono's handoff already matched (every synthetic
+  render passes); a Mono lane an octave or two down keys as the note it
+  plays (key tracking, Key source, per-key drift): Rogue tf 3.2 to 1.8,
+  Sol Bass 4.5 to 4.2, held-out Gear Shift passes, AG Bass, Rogue and
+  Sol Bass close. Strict score 335 of 370 (round 21 included), factory
+  presets 3 of 5; held-out 50 of 89.
+- Round 22: the oscillators' start phases already match Live's. Sample &
+  Hold and Wander now follow the reader's description of Live's
+  generator and its stepping (every voice tick, two steps at a block
+  reset and at a retriggered note, the starting lane taking lane 0's
+  values). Strict score 354 of 390 (round 22 included); round 23 is
+  built for Stereo voice pairing.
+- A silent voice in a running block runs its whole chain: its filters
+  keep the state its turning oscillators give them, a note on it starts
+  from that state (from rest with Reset Oscillator Phase on), and a
+  released voice keeps sounding below its threshold until the block
+  stops. Toy Helicopter, Transistor Reeds, Wave Pad, Echo Bells, 80s
+  Tape, Darkened and Slow Roll Strings and others now pass. Strict score
+  363 of 390, factory presets 4 of 5 (Clob Bass); held-out 61 of 89,
+  from 48. Round 24 is built: the filter state of a stopped block,
+  audio-rate cutoff modulation, Metallic Swell Pad.
+- Filter I's output saturates softly (y / sqrt(1 + 2 y^2)): every
+  oscillator at Gain 1 through an open filter I was 0.2 to 0.35 dB loud
+  while Gain 0.25 matched. Metallic Swell Pad, FM Halfstep Sticks,
+  Bellatine, Echo Pulse and Monday Morning now pass. Strict score 364 of
+  390, factory presets 4 of 5; held-out 66 of 89 (with the scorer's five
+  seeds: 366 of 390 and 67 of 89, Star Talk Pad passing). Round 24 grew to 50
+  renders (Mono glide in a chord, two rectangles hot into filter II).
+- Round 24 (50 renders) confirmed the silent-voice model and two more
+  changes: in Mono a voice glides from its last note even after it ended,
+  and the filter input's negative side stays linear to -1.6 (no knee).
+  Strict score with five seeds 408 of 440 (round 24 included), factory
+  presets 4 of 5; held-out 69 of 89. Open: filter I at resonance 1 with a
+  loud saw, a Square LFO on the cutoff at audio rate, a stopped block's
+  high-pass state.
+- Round 25 (scorer round 8: ten seeds for random renders; baseline 408
+  of 440 fit, 70 of 89 held-out): filter I rebuilt from a closer reading
+  of its code, the resonance shaped at the output node inside the
+  zero-delay loop (no more ringing peak with a loud saw at resonance 1),
+  and a stopped block that starts again starts its low-passes from rest
+  while its high-passes keep their state. Strict score 416 of 440 fit,
+  none lost, factory presets 4 of 5; held-out 77 of 89 (Seventy Two
+  Bass, Gentle Pulse Pad, Floot, Airfare and Sol Bass, Vanguard Brass,
+  Arcade Split). Open: Metallic Strings and Numan Keystrike (Saturated
+  oscillator in Unison, shape at audio rate), the Square LFO at the
+  note's frequency (the LFO read one sample behind the oscillator:
+  evidence, not adopted), Crunch Arcade, the random presets' onset.
+
+## November 2026 Drift's filter II as an MS-20 circuit model (SEG-109 P4, round 4)
+
+- A second reading of Live's filter II found each section to be a
+  component-level Sallen-Key model of the later MS-20 low-pass: two
+  integrators, a saturating transconductance, clipping buffers, DC-blocked
+  ends and a diode curve in the resonance path. Segno builds that model
+  itself (its own diode curve) in place of the fitted MS-20 style loop.
+  Filter renders and presets: 1.7 dB rms on average (from 2.0); the
+  resonant peaks 1.3 dB (from 1.5).
+- Five presets, octave bands Segno minus Live: Euphoria Lead, Chirp Pluck
+  and Clob Bass within about 1 dB, 80s Tape within 1.2 everywhere, Bloom
+  Pad within 1.1 up to 2 kHz (+2.4 before). Levels within 0.7 dB.
+- Costs more: a filter II voice takes 7 us per period at 96 kHz on the dev
+  machine (filter I 3.2); the engine's voice budget fades the excess. The
+  console benchmark (hardware) sets the device's voice limit.
+- The voices run at the host rate: Live 12.2.7's renders are bit-identical
+  with HiQuality on and off and match Segno without oversampling, so the
+  2x path and its decimator are gone (half the cost at 48 kHz) and
+  HiQuality is stored without effect. Every filter and oscillator test
+  0.93 dB rms (from 1.28); Euphoria Lead's top octave within 0.2 dB.
+
+## November 2026 Drift fitted against Live renders (SEG-109 P4, round 3)
+
+- Rounds 10 to 13 of Live renders, a scoring harness over every filter
+  test and a reading of Live's voice allocation. Filter II is now two
+  MS-20 style sections with the resonance split 1.15 / 0.75 between them
+  (Live's narrow peaks); filter I follows the code reading (base damping
+  cancelled by the resonance, a cubic in the feedback); the filters' input
+  clip has Live's hard edge; Shark Tooth plays inverted, which only the
+  asymmetric clip reveals; voices run in blocks of four (idle voices in a
+  running block keep turning, idle LFOs run), and each block's noise
+  generators start alike, so chords share their noise across blocks as
+  Live's do. Voice counts are 4, 8, 16, 24, 32.
+- Five factory presets, octave bands Segno minus Live: Euphoria Lead and
+  Chirp Pluck within 0.5 dB, Clob Bass within 1.6 dB (width -10.3 against
+  -8.4 dB, from -16), 80s Tape within 1.2 dB up to 2 kHz and -2 dB above
+  4 kHz, Bloom Pad within 1 dB up to 1 kHz and +2.4 dB at 2 to 4 kHz.
+  Levels within 0.7 dB. A Drift voice costs 3.2 us per period at 96 kHz.
+- Still open: Bloom Pad's unison beats (Segno's drift values are its own),
+  both filters' open top octave, Clob Bass's width.
+
+## November 2026 Drift fitted against Live renders (SEG-109 P4, round 2)
+
+- Six more rounds of Live renders and a second reading of Live's LFO and
+  oscillator code. Fixed: the LFO and cycling envelope's Mode order (Time
+  and Ratio were swapped) and the Sync table (slowest first); Ratio mode
+  follows the transposed note and, routed to pitch, phase-modulates both
+  oscillators; the LFO keeps a phase per voice and restarts at the shape's
+  peak; Shark Tooth's width by shape (it was inverted, and its window did
+  not wrap, which left a DC offset); the filters' input clip and the
+  bypass gain; filter II's open top octave; Glide; Drift Depth as a fixed
+  offset per key plus one per voice; a note reuses the voice allocated last
+  and, with Reset Oscillator Phase off, the phase that voice left.
+- Five factory presets, octave bands Segno minus Live: Euphoria Lead,
+  Chirp Pluck and 80s Tape within about 1 dB; Clob Bass within 1.5 dB up to
+  4 kHz; Bloom Pad within 1.5 dB up to 1 kHz. Every level test within
+  0.1 dB.
+- Still open: filter II near a strong resonant peak (Bloom Pad +4.5 dB at
+  2 to 4 kHz), Clob Bass's phrase width (narrower than Live's; one note
+  matches), the voice-count table.
+
+## November 2026 Drift fitted against Live renders (SEG-109 P4, round 1)
+
+- Live 12.2.7 renders of controlled patches (one setting changed per render
+  from a plain saw or white noise, exported unnormalised) against Segno's
+  renders of the same patches settled most of P3's provisional values. The
+  brainstorm's "Open items and the fits" lists each with its measurement.
+  Fitted: the Volume curve (linear), the noise level and both filters'
+  path gains (every level test within 0.2 dB), Stereo's pan law (no
+  detune), Unison's equal-power pan, filter I (one section; damping from a
+  soft knee at resonance 0 to a +29 dB peak at 1), filter II's resonance
+  curve (interpolated through five measured points), and Drift Depth (a
+  fixed offset per key and per lane, so a Stereo pair is decorrelated).
+  Confirmed as P3 had them: the envelope mapping, filter modulation depth,
+  key tracking about A4, the high-pass, the voices' starting phase.
+- Five factory presets, Segno minus Live: levels -1.9 to +0.3 dB (were
+  -8.7 to -0.8), Euphoria Lead's spectrum within about 1 dB per octave, 80s
+  Tape's stereo width within 0.7 dB.
+- Still open: the Saturated oscillator under shape modulation and the
+  LFO's Time mode and per-voice phase (Clob Bass dark and narrow), filter
+  II close to resonance 1 with bright sources (Bloom Pad), Glide, the
+  voice-count and Sync tables.
+- Resonance at 1 rings without oscillating, as Live's does; modulated past
+  1 both filters self-oscillate (filter II now injects the same tiny noise
+  as filter I to start).
+
 ## November 2026 The Drift device plays on an instrument slot (SEG-109 P3)
 
 - `drift_voice.c` implements the brainstorm's "Drift: behavior" section:
@@ -79,8 +277,10 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   steals the oldest, glide and legato, Segno's own per-key tuning table and
   the ISO 226 note gain. Parameters land on a 32-frame grid, so a render is
   the same at any block size; everything else runs every sample.
-- HiQuality runs the voices at 2x with a 31-tap half-band FIR below
-  88.2 kHz and at the host rate above it (the appliance), as approved.
+- HiQuality ran the voices at 2x with a 31-tap half-band FIR below
+  88.2 kHz and at the host rate above it (the appliance), as approved. P4
+  round 4 removed it: Live's renders are bit-identical with HiQuality on
+  and off and match the voices at the host rate.
 - A slot plays a patch or a device: `le_engine_set_instrument_device` and
   `le_engine_set_instrument_device_param` take the values in the units a
   Live preset stores (`le_drift_param`). Notes, chords, sustain, the MIDI

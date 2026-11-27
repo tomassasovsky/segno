@@ -39,9 +39,6 @@ extern "C" {
 #define LE_DRIFT_CHUNK 32
 #define LE_DRIFT_SUSTAIN_MAX 16
 #define LE_DRIFT_MONO_STACK 16
-/* HiQuality's 2x stream is decimated by a 31-tap half-band FIR (every other
- * tap zero but the centre). */
-#define LE_DRIFT_HB_TAPS 31
 
 /* Modulation sources, in the stored order. */
 enum {
@@ -81,15 +78,21 @@ typedef struct le_drift_voice {
   int32_t lane;    /* 0..3 within its note's group */
   float velocity;  /* 0..1 */
   float key;       /* (note - 69) / 120 */
-  /* pitch: the glided note frequency and the voice's fixed ratio (voice
-   * mode detune, per-key tuning) */
-  float hz;
-  float hz_target;
+  /* pitch: the glided note frequency and its target in Hz (a glide moves
+   * evenly in hertz), and the voice's fixed ratio (voice mode detune,
+   * per-key tuning) */
+  float pitch;
+  float pitch_target;
   float ratio;
+  float ref_ratio; /* the lane's ratio the Ratio rate modes follow */
+  float osc2_drift; /* Osc 2's extra drift ratio */
   /* the voice mode's gains */
   float gain_l, gain_r;
-  /* oscillators and noise */
+  /* oscillators and noise, and whether the voice ever played */
   float ph1, ph2;
+  int32_t played;
+  float pm_prev; /* the last phase-modulation offset (its change widens the
+                  * band-limiting, as a faster phase would) */
   uint32_t rng;
   /* envelopes: level, stage, and the attack's per-sample step, set at the
    * note's start from the level it starts at */
@@ -99,13 +102,23 @@ typedef struct le_drift_voice {
   /* the cycling envelope and the LFO */
   float cyc_ph;
   float lfo_ph;
-  float lfo_hold, lfo_from, lfo_to; /* S&H and Wander */
+  float lfo_inc;                    /* the LFO's last increment (Ratio) */
+  float lfo_mod;                    /* its last rate modulation factor */
+  /* Sample & Hold and Wander: the lane's generator (two words), its held
+   * value or Wander base, Wander's delta, and the last half-cycle phase */
+  uint32_t lfo_gx, lfo_gy;
+  float lfo_b, lfo_d, lfo_qprev;
   int32_t lfo_done;                 /* a one-shot LFO shape ended */
-  /* filters: the low-pass (type II uses all four), the high-pass */
-  float lp[4];
+  /* filters: the low-pass (type I three states, type II twelve: two
+   * sections of four capacitor states and two secant gains), the high-pass */
+  float lp[12];
+  int32_t lp_kind; /* the filter type lp holds the state of */
   float hp[2];
-  /* fade (stolen, struck again, cut, device change) */
+  /* fade (stolen, cut, device change) */
   float fade;
+  /* Reset Oscillator Phase: a note struck on a sounding voice waits while
+   * the voice's envelopes fall fast, then starts from silence */
+  int32_t pending;
 } le_drift_voice;
 
 /* Everything a chunk's samples read, derived from the stored values,
@@ -132,12 +145,15 @@ typedef struct le_drift_derived {
   float bend_ratio; /* pitch bend and Transpose */
   float glide;      /* the glide's one-pole coefficient */
   float fade_step;
+  float pending_fall; /* per sample, a pending voice's envelopes */
 } le_drift_derived;
 
 typedef struct le_drift {
   int32_t sample_rate;
-  int32_t oversample; /* 1, or 2 with HiQuality below 88.2 kHz */
-  float rate;         /* sample_rate * oversample */
+  /* the voices run at the host's rate: Live's HiQuality changes nothing in
+   * its renders (bit-identical with it on and off), so the stored value has
+   * no effect here either */
+  float rate;
   uint64_t serial;
   int32_t chunk_left;
   float bpm;
@@ -149,26 +165,33 @@ typedef struct le_drift {
   uint32_t sustain[LE_DRIFT_SUSTAIN_MAX];
   int32_t sustain_n;
   uint32_t sustain_refused;
-  /* the last note's frequency, where a glide starts */
-  float last_hz;
   /* Mono: the held notes, newest last, for last-note priority */
   int32_t mono_n;
   int32_t mono_note[LE_DRIFT_MONO_STACK];
   uint32_t mono_origin[LE_DRIFT_MONO_STACK];
   float mono_velocity[LE_DRIFT_MONO_STACK];
-  /* per note: the loudness compensation and the per-key tuning in cents,
+  /* per note: the loudness compensation and the per-key tuning in cents;
+   * per voice: its own tuning in cents and Osc 2's extra (Drift Depth),
    * filled at init */
   float note_gain[128];
   float key_cents[128];
+  float voice_cents[LE_DRIFT_VOICES];
+  float osc2_cents[LE_DRIFT_VOICES];
+  int32_t tuning_set; /* which serial's per-voice tables are loaded */
+  /* filter II's state at rest, where a voice's filter starts */
+  float f2_rest[12];
+  /* the voice mode the blocks were last reset for (-1: not yet) */
+  int32_t block_mode;
   /* Poly allocation: where the round robin starts */
   int32_t next_voice;
   int32_t voice_limit; /* sounding voices allowed (the engine's overload) */
   uint32_t stolen;
   le_drift_voice voices[LE_DRIFT_VOICES];
-  /* HiQuality's decimator: the last LE_DRIFT_HB_TAPS 2x samples per side */
-  float hb_taps[LE_DRIFT_HB_TAPS];
-  float hb_l[LE_DRIFT_HB_TAPS], hb_r[LE_DRIFT_HB_TAPS];
-  int32_t hb_pos;
+  /* the noise: one generator per voice, run per block of four (tick), and
+   * this sample's value per voice */
+  uint32_t noise_rng[LE_DRIFT_VOICES];
+  int32_t block_ran[LE_DRIFT_VOICES / 4]; /* each block ran last sample */
+  float lane_noise[LE_DRIFT_VOICES];
 } le_drift;
 
 /* The default value of each parameter (an initialised device), and its
@@ -180,8 +203,7 @@ float le_drift_clamp(int32_t param, float value);
 int32_t le_drift_init(le_drift* d, int32_t sample_rate);
 
 /* Sets every parameter (LE_DRIFT_PARAMS values, clamped), applied from the
- * next chunk; a HiQuality change takes effect at once and clears the
- * decimator. */
+ * next chunk. HiQuality is stored without effect. */
 void le_drift_set_values(le_drift* d, const float* values);
 
 /* Starts `note` at `velocity` (1..127) for `origin`. A held note of the same

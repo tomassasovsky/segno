@@ -5365,6 +5365,9 @@ typedef enum le_drift_param {
   LE_DRIFT_TRANSPOSE,          /* semitones, -48..48 */
   LE_DRIFT_RESET_OSC_PHASE,    /* 0/1 */
   LE_DRIFT_HIQUALITY,          /* 0/1 */
+  LE_DRIFT_SERIAL_NUMBER,      /* 0..8388607: the preset's SerialNumber,
+                                * which picks Drift Depth's per-voice
+                                * tuning */
   LE_DRIFT_PARAMS
 } le_drift_param;
 

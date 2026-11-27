@@ -127,7 +127,9 @@ int le_instruments_create(le_engine* e) {
   }
   for (int k = 0; k < LE_MAX_INSTRUMENTS; ++k) {
     le_drift_init(&e->drift[k], 48000); /* configure re-initialises it */
+    e->drift_used[k] = 0;
   }
+  e->drift_rate = 48000;
   ring_init(&e->inst_ring, e->inst_ring_storage, LE_INST_EVENT_CAPACITY);
   ring_init(&e->inst_release_ring, e->inst_release_storage,
             LE_INST_RELEASE_CAPACITY);
@@ -168,7 +170,15 @@ void le_instruments_reset(le_engine* e, int32_t sample_rate) {
     store_i32(&e->a_inst_patch[k], -1);
     store_i32(&e->a_inst_voices[k], 0);
     store_f32(&e->a_inst_peak_bits[k], 0.0f);
-    le_drift_init(&e->drift[k], sample_rate);
+    /* A Drift no slot was given since its last init at this rate is still
+     * what that init left: only a slot playing it reaches its state (notes,
+     * parameters, render, the voice budget), and a cut on it writes what is
+     * already there. The voice limit, which LE_CMD_SET_VOICE_LIMIT sets on
+     * every instance, is restored on each. */
+    if (e->drift_used[k] || sample_rate != e->drift_rate) {
+      le_drift_init(&e->drift[k], sample_rate);
+      e->drift_used[k] = 0;
+    }
     le_drift_set_voice_limit(&e->drift[k], LE_INST_DEFAULT_VOICE_LIMIT);
     e->inst_device[k] = LE_INST_DEVICE_NONE;
     e->inst_device_requested[k] = LE_INST_DEVICE_NONE;
@@ -177,6 +187,7 @@ void le_instruments_reset(le_engine* e, int32_t sample_rate) {
     store_i32(&e->a_dev_param_device[k], LE_INST_DEVICE_NONE);
     store_i32(&e->a_inst_device[k], LE_INST_DEVICE_NONE);
   }
+  e->drift_rate = sample_rate;
   store_i32(&e->a_voice_limit, LE_INST_DEFAULT_VOICE_LIMIT);
   atomic_store_explicit(&e->a_voices_stolen, 0u, memory_order_relaxed);
   atomic_store_explicit(&e->a_voices_stolen_hard, 0u, memory_order_relaxed);
@@ -517,6 +528,14 @@ LE_EXPORT int32_t le_engine_set_instrument_routes(le_engine* engine,
 /* The Drift device slot k plays, or NULL when it plays a patch or nothing. */
 static le_drift* slot_drift(le_engine* e, int32_t k) {
   return e->inst_device[k] == LE_INST_DEVICE_DRIFT ? &e->drift[k] : NULL;
+}
+
+/* Slot k's Drift when the slot was given it since its last init
+ * (drift_used), the only way it can hold, fade or steal a voice; NULL (no
+ * voices, le_drift_active and le_drift_fading give 0) otherwise, so the
+ * per-block scans never touch an unused instance. */
+static le_drift* used_drift(le_engine* e, int32_t k) {
+  return e->drift_used[k] ? &e->drift[k] : NULL;
 }
 
 /* Whether slot k plays anything (a patch or a device). */
@@ -886,6 +905,7 @@ static void apply_event(le_engine* e, le_synth* s, const le_inst_event* ev) {
       le_synth_set_instrument(s, ev->slot, -1);
       store_i32(&e->a_inst_patch[ev->slot], -1);
       le_drift* d = &e->drift[ev->slot];
+      e->drift_used[ev->slot] = 1; /* the next configure re-initialises it */
       /* a device given again starts over: its voices fade */
       le_drift_cut(d);
       e->inst_device[ev->slot] = ev->note;
@@ -934,7 +954,7 @@ static void enforce_voice_budget(le_engine* e, le_synth* s) {
   int32_t total = le_synth_active(s, -1);
   int32_t active[LE_MAX_INSTRUMENTS];
   for (int k = 0; k < LE_MAX_INSTRUMENTS; ++k) {
-    active[k] = le_drift_active(&e->drift[k]);
+    active[k] = le_drift_active(used_drift(e, k));
     total += active[k];
   }
   while (total > s->voice_limit) {
@@ -968,7 +988,8 @@ void le_instruments_render(le_engine* e, uint32_t frames) {
   int any = le_synth_fading(s) > 0;
   for (int k = 0; k < LE_MAX_INSTRUMENTS && !any; ++k) {
     any = (s->inst[k].patch >= 0 && le_synth_active(s, k) > 0) ||
-          le_drift_active(&e->drift[k]) > 0 || le_drift_fading(&e->drift[k]) > 0;
+          le_drift_active(used_drift(e, k)) > 0 ||
+          le_drift_fading(used_drift(e, k)) > 0;
   }
   if (!any) {
     /* Nothing sounds: no render and no cost; a bus that last carried audio
@@ -1014,8 +1035,8 @@ void le_instruments_render(le_engine* e, uint32_t frames) {
     /* A device renders in stereo on top of whatever patch voices of the
      * slot are still fading out; a device that was ended fades out the
      * same way. */
-    le_drift* d = &e->drift[k];
-    if (le_drift_active(d) > 0 || le_drift_fading(d) > 0) {
+    le_drift* d = used_drift(e, k);
+    if (d != NULL && (le_drift_active(d) > 0 || le_drift_fading(d) > 0)) {
       if (bpm > 0.0f) le_drift_set_tempo(d, bpm);
       float dl[256], dr[256];
       for (uint32_t f0 = 0; f0 < frames; f0 += 256) {
@@ -1036,10 +1057,12 @@ void le_instruments_render(le_engine* e, uint32_t frames) {
     }
     store_f32(&e->a_inst_peak_bits[k], peak);
     store_i32(&e->a_inst_voices[k],
-              le_synth_active(s, k) + le_drift_active(&e->drift[k]));
+              le_synth_active(s, k) + le_drift_active(d));
   }
   uint32_t stolen = s->stolen;
-  for (int k = 0; k < LE_MAX_INSTRUMENTS; ++k) stolen += e->drift[k].stolen;
+  for (int k = 0; k < LE_MAX_INSTRUMENTS; ++k) {
+    if (e->drift_used[k]) stolen += e->drift[k].stolen;
+  }
   atomic_store_explicit(&e->a_voices_stolen, stolen, memory_order_relaxed);
   atomic_store_explicit(&e->a_voices_stolen_hard, s->stolen_hard,
                         memory_order_relaxed);
