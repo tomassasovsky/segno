@@ -5284,6 +5284,7 @@ LE_EXPORT int32_t le_engine_instrument_sustain(le_engine* engine, int32_t slot,
 #define LE_INST_DEVICE_DRIFT 1
 #define LE_INST_DEVICE_OPERATOR 2
 #define LE_INST_DEVICE_MELD 3
+#define LE_INST_DEVICE_ANALOG 4
 
 typedef enum le_drift_param {
   LE_DRIFT_OSC1_TYPE = 0,      /* 0..6: Sine, Triangle, Shark Tooth, Saturated,
@@ -5615,14 +5616,137 @@ typedef enum le_meld_param {
 #define LE_MELD_MOD_AMOUNT(e, target, source) \
   (LE_MELD_MOD + ((e) * LE_MELD_MOD_TARGETS + (target)) * LE_MELD_MOD_SOURCES + (source))
 
+/* Analog (docs/brainstorm/2026-11-24-ableton-devices-brainstorm-doc.md,
+ * "Analog: behavior"): two chains, each an oscillator, a filter with drive,
+ * an amplifier, an LFO and a filter and an amp envelope, plus noise, glide,
+ * vibrato and unison, in the values its presets store: knob positions 0..1
+ * (bipolar amounts -1..1), switches 0/1 and enum indices in Live's order.
+ * The parameters are the device's own, then two chain blocks
+ * (LE_ANALOG_CHAIN). */
+
+enum {
+  LE_ANALOG_ENV_EXP = 0,      /* 0/1: exponential segments */
+  LE_ANALOG_ENV_LOOP,         /* 0..3 */
+  LE_ANALOG_ENV_FREE_RUN,     /* 0/1 */
+  LE_ANALOG_ENV_LEGATO,       /* 0/1 */
+  LE_ANALOG_ENV_ATTACK_VEL,   /* 0..1: velocity shortens the attack */
+  LE_ANALOG_ENV_ATTACK,       /* 0..1: 5 ms .. 15 s */
+  LE_ANALOG_ENV_DECAY,
+  LE_ANALOG_ENV_VEL,          /* 0..1: velocity scales the levels */
+  LE_ANALOG_ENV_SUSTAIN,      /* 0..1 */
+  LE_ANALOG_ENV_SUSTAIN_TIME, /* 0..1: 0.1 s .. held */
+  LE_ANALOG_ENV_RELEASE,
+  LE_ANALOG_ENV_FIELDS
+};
+
+/* One chain's fields. */
+enum {
+  LE_ANALOG_OSC_ON = 0,         /* 0/1 */
+  LE_ANALOG_OSC_SHAPE,          /* 0..3: Sine, Saw, Rectangle, Noise */
+  LE_ANALOG_OSC_OCT,            /* -3..3 */
+  LE_ANALOG_OSC_SEMI,           /* -12..12 */
+  LE_ANALOG_OSC_MODE,           /* 0: Sub, 1: Sync */
+  LE_ANALOG_OSC_ENV_TIME,       /* 0..1: the pitch envelope's time */
+  LE_ANALOG_OSC_DETUNE,         /* 0..1, 0.5 in tune */
+  LE_ANALOG_OSC_MOD1,           /* 0..1: pitch tracking, 0.5 = 1 */
+  LE_ANALOG_OSC_PW,             /* 0..1 */
+  LE_ANALOG_OSC_SUB,            /* 0..1: sub level or sync ratio */
+  LE_ANALOG_OSC_BALANCE,        /* 0..1: filter 2 .. filter 1 */
+  LE_ANALOG_OSC_ENV_AMOUNT,     /* -1..1: the pitch envelope's depth */
+  LE_ANALOG_OSC_LFO_PITCH,      /* -1..1 */
+  LE_ANALOG_OSC_LFO_PW,         /* -1..1 */
+  LE_ANALOG_OSC_LEVEL,          /* 0..1 */
+  LE_ANALOG_FILTER_ON,          /* 0/1 */
+  LE_ANALOG_FILTER_TYPE,        /* 0..9: LP12, LP24, BP6, BP12, Notch2, Notch4,
+                                 * HP12, HP24, Formant6, Formant12 */
+  LE_ANALOG_FILTER_DRIVE,       /* 0..6: Off, Sym 1..3, Asym 1..3 */
+  LE_ANALOG_FILTER_KEY_CUTOFF,  /* -1..1 */
+  LE_ANALOG_FILTER_CUTOFF,      /* 0..1: 30 Hz .. 22 kHz */
+  LE_ANALOG_FILTER_KEY_Q,       /* -1..1 */
+  LE_ANALOG_FILTER_Q,           /* 0..1: Q 0.1 .. 120 */
+  LE_ANALOG_FILTER_LFO_CUTOFF,  /* -1..1 */
+  LE_ANALOG_FILTER_ENV_CUTOFF,  /* -1..1 */
+  LE_ANALOG_FILTER_LFO_Q,       /* -1..1 */
+  LE_ANALOG_FILTER_ENV_Q,       /* -1..1 */
+  LE_ANALOG_AMP_ON,             /* 0/1 */
+  LE_ANALOG_AMP_KEY_VOL,        /* -1..1 */
+  LE_ANALOG_AMP_LEVEL,          /* 0..1 */
+  LE_ANALOG_AMP_KEY_PAN,        /* -1..1 */
+  LE_ANALOG_AMP_PAN,            /* 0..1, 0.5 centre */
+  LE_ANALOG_AMP_LFO_VOL,        /* -1..1 */
+  LE_ANALOG_AMP_LFO_PAN,        /* -1..1 */
+  LE_ANALOG_AMP_ENV_PAN,        /* -1..1 */
+  LE_ANALOG_LFO_ON,             /* 0/1 */
+  LE_ANALOG_LFO_WAVE,           /* 0..4: Sine, Triangle, Rectangle, S&H, Noise */
+  LE_ANALOG_LFO_SYNC,           /* 0..23: tempo division */
+  LE_ANALOG_LFO_SYNC_ON,        /* 0/1 */
+  LE_ANALOG_LFO_GATE_RESET,     /* 0/1: each note restarts it */
+  LE_ANALOG_LFO_PW,             /* 0..1 */
+  LE_ANALOG_LFO_SPEED,          /* 0..1: 0.05 .. 16.7 Hz */
+  LE_ANALOG_LFO_PHASE,          /* 0..1 */
+  LE_ANALOG_LFO_DELAY,          /* 0..1 */
+  LE_ANALOG_LFO_FADE,           /* 0..1 */
+  LE_ANALOG_FILTER_ENV,         /* LE_ANALOG_ENV_FIELDS fields */
+  LE_ANALOG_AMP_ENV = LE_ANALOG_FILTER_ENV + LE_ANALOG_ENV_FIELDS,
+  LE_ANALOG_CHAIN_LINK = LE_ANALOG_AMP_ENV + LE_ANALOG_ENV_FIELDS,
+                                /* chain 1: filter 1 into filter 2, 0..1;
+                                 * chain 2: filter 2 follows filter 1, 0/1 */
+  LE_ANALOG_CHAIN_FIELDS
+};
+
+typedef enum le_analog_param {
+  LE_ANALOG_POLYPHONY = 0,      /* 0..9: Mono, 2, 4, 8, 12 .. 32 */
+  LE_ANALOG_BEND_RANGE,         /* octaves, 0..1 */
+  LE_ANALOG_VOLUME,             /* 0..1 */
+  LE_ANALOG_NOTE_BEND_RANGE,    /* semitones, 0..48 (MPE, stored) */
+  LE_ANALOG_PRESSURE_TARGET1,   /* 0..45 (stored) */
+  LE_ANALOG_PRESSURE_AMOUNT1,
+  LE_ANALOG_PRESSURE_TARGET2,
+  LE_ANALOG_PRESSURE_AMOUNT2,
+  LE_ANALOG_SLIDE_TARGET1,
+  LE_ANALOG_SLIDE_AMOUNT1,
+  LE_ANALOG_SLIDE_TARGET2,
+  LE_ANALOG_SLIDE_AMOUNT2,
+  LE_ANALOG_OCTAVE,             /* -3..3 */
+  LE_ANALOG_TRANSPOSE,          /* -12..12 */
+  LE_ANALOG_FINE_TUNE,          /* 0..1, 0.5 in tune */
+  LE_ANALOG_UNISON_ON,          /* 0/1 */
+  LE_ANALOG_UNISON,             /* 0: 2 voices, 1: 4 */
+  LE_ANALOG_UNISON_DETUNE,      /* 0..1 */
+  LE_ANALOG_UNISON_DELAY,       /* 0..1 */
+  LE_ANALOG_PRIORITY,           /* 0..2: High, Low, Last */
+  LE_ANALOG_STRETCH,            /* 0..1 (stored) */
+  LE_ANALOG_ERROR,              /* 0..1 (stored) */
+  LE_ANALOG_VIBRATO_ON,         /* 0/1 */
+  LE_ANALOG_VIBRATO_SPEED,      /* 0..1 */
+  LE_ANALOG_VIBRATO_FADE,
+  LE_ANALOG_VIBRATO_AMOUNT,
+  LE_ANALOG_VIBRATO_ERROR,
+  LE_ANALOG_VIBRATO_DELAY,
+  LE_ANALOG_VIBRATO_WHEEL,
+  LE_ANALOG_GLIDE_ON,           /* 0/1 */
+  LE_ANALOG_GLIDE_TIME,         /* 0..1 */
+  LE_ANALOG_GLIDE_MODE,         /* 0: Const, 1: Prop */
+  LE_ANALOG_GLIDE_LEGATO,       /* 0/1 */
+  LE_ANALOG_NOISE_ON,           /* 0/1 */
+  LE_ANALOG_NOISE_COLOR,        /* 0..1: 20 Hz .. 22 kHz */
+  LE_ANALOG_NOISE_BALANCE,      /* 0..1: filter 2 .. filter 1 */
+  LE_ANALOG_NOISE_LEVEL,        /* 0..1 */
+  LE_ANALOG_CHAINS,             /* two LE_ANALOG_CHAIN_FIELDS blocks */
+  LE_ANALOG_PARAMS = LE_ANALOG_CHAINS + 2 * LE_ANALOG_CHAIN_FIELDS
+} le_analog_param;
+
+/* Chain `c` (0, 1), field `field`. */
+#define LE_ANALOG_CHAIN(c, field) (LE_ANALOG_CHAINS + (c) * LE_ANALOG_CHAIN_FIELDS + (field))
+
 /* The most parameters any device takes. */
 #define LE_INST_DEVICE_MAX_PARAMS LE_MELD_PARAMS
 
-/* Gives `slot` device `device` (LE_INST_DEVICE_DRIFT or
- * LE_INST_DEVICE_OPERATOR) with `values` (the device's parameter count of
- * them: LE_DRIFT_PARAMS in le_drift_param order, LE_OPERATOR_PARAMS in
- * le_operator_param order; NULL: the device's defaults; each clamped to its
- * range). Ends a patch or device the slot
+/* Gives `slot` device `device` (LE_INST_DEVICE_DRIFT, _OPERATOR, _MELD or
+ * _ANALOG) with `values` (the device's parameter count of them, in its
+ * le_<device>_param order: LE_DRIFT_PARAMS, LE_OPERATOR_PARAMS,
+ * LE_MELD_PARAMS or LE_ANALOG_PARAMS; NULL: the device's defaults; each
+ * clamped to its range). Ends a patch or device the slot
  * played (its voices fade). Returns LE_OK, LE_ERR_INVALID (a bad slot,
  * device or NaN value), LE_ERR_CAPACITY (the note-on ring is full: nothing
  * changed, retry) or LE_ERR_NOT_RUNNING before configure. */

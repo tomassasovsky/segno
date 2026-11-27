@@ -2032,11 +2032,11 @@ external int le_engine_set_instrument(
   ffi.Pointer<ffi.Float> params,
 );
 
-/// Gives `slot` device `device` (LE_INST_DEVICE_DRIFT or
-/// LE_INST_DEVICE_OPERATOR) with `values` (the device's parameter count of
-/// them: LE_DRIFT_PARAMS in le_drift_param order, LE_OPERATOR_PARAMS in
-/// le_operator_param order; NULL: the device's defaults; each clamped to its
-/// range). Ends a patch or device the slot
+/// Gives `slot` device `device` (LE_INST_DEVICE_DRIFT, _OPERATOR, _MELD or
+/// _ANALOG) with `values` (the device's parameter count of them, in its
+/// le_<device>_param order: LE_DRIFT_PARAMS, LE_OPERATOR_PARAMS,
+/// LE_MELD_PARAMS or LE_ANALOG_PARAMS; NULL: the device's defaults; each
+/// clamped to its range). Ends a patch or device the slot
 /// played (its voices fade). Returns LE_OK, LE_ERR_INVALID (a bad slot,
 /// device or NaN value), LE_ERR_CAPACITY (the note-on ring is full: nothing
 /// changed, retry) or LE_ERR_NOT_RUNNING before configure.
@@ -4099,6 +4099,126 @@ external int le_wav_patch_sizes(
   ffi.Pointer<ffi.Uint64> kept,
 );
 
+const int LE_ANALOG_AMP_ENV = 55;
+
+const int LE_ANALOG_AMP_ENV_PAN = 33;
+
+const int LE_ANALOG_AMP_KEY_PAN = 29;
+
+const int LE_ANALOG_AMP_KEY_VOL = 27;
+
+const int LE_ANALOG_AMP_LEVEL = 28;
+
+const int LE_ANALOG_AMP_LFO_PAN = 32;
+
+const int LE_ANALOG_AMP_LFO_VOL = 31;
+
+const int LE_ANALOG_AMP_ON = 26;
+
+const int LE_ANALOG_AMP_PAN = 30;
+
+const int LE_ANALOG_CHAIN_FIELDS = 67;
+
+const int LE_ANALOG_CHAIN_LINK = 66;
+
+const int LE_ANALOG_ENV_ATTACK = 5;
+
+const int LE_ANALOG_ENV_ATTACK_VEL = 4;
+
+const int LE_ANALOG_ENV_DECAY = 6;
+
+const int LE_ANALOG_ENV_EXP = 0;
+
+const int LE_ANALOG_ENV_FIELDS = 11;
+
+const int LE_ANALOG_ENV_FREE_RUN = 2;
+
+const int LE_ANALOG_ENV_LEGATO = 3;
+
+const int LE_ANALOG_ENV_LOOP = 1;
+
+const int LE_ANALOG_ENV_RELEASE = 10;
+
+const int LE_ANALOG_ENV_SUSTAIN = 8;
+
+const int LE_ANALOG_ENV_SUSTAIN_TIME = 9;
+
+const int LE_ANALOG_ENV_VEL = 7;
+
+const int LE_ANALOG_FILTER_CUTOFF = 19;
+
+const int LE_ANALOG_FILTER_DRIVE = 17;
+
+const int LE_ANALOG_FILTER_ENV = 44;
+
+const int LE_ANALOG_FILTER_ENV_CUTOFF = 23;
+
+const int LE_ANALOG_FILTER_ENV_Q = 25;
+
+const int LE_ANALOG_FILTER_KEY_CUTOFF = 18;
+
+const int LE_ANALOG_FILTER_KEY_Q = 20;
+
+const int LE_ANALOG_FILTER_LFO_CUTOFF = 22;
+
+const int LE_ANALOG_FILTER_LFO_Q = 24;
+
+const int LE_ANALOG_FILTER_ON = 15;
+
+const int LE_ANALOG_FILTER_Q = 21;
+
+const int LE_ANALOG_FILTER_TYPE = 16;
+
+const int LE_ANALOG_LFO_DELAY = 42;
+
+const int LE_ANALOG_LFO_FADE = 43;
+
+const int LE_ANALOG_LFO_GATE_RESET = 38;
+
+const int LE_ANALOG_LFO_ON = 34;
+
+const int LE_ANALOG_LFO_PHASE = 41;
+
+const int LE_ANALOG_LFO_PW = 39;
+
+const int LE_ANALOG_LFO_SPEED = 40;
+
+const int LE_ANALOG_LFO_SYNC = 36;
+
+const int LE_ANALOG_LFO_SYNC_ON = 37;
+
+const int LE_ANALOG_LFO_WAVE = 35;
+
+const int LE_ANALOG_OSC_BALANCE = 10;
+
+const int LE_ANALOG_OSC_DETUNE = 6;
+
+const int LE_ANALOG_OSC_ENV_AMOUNT = 11;
+
+const int LE_ANALOG_OSC_ENV_TIME = 5;
+
+const int LE_ANALOG_OSC_LEVEL = 14;
+
+const int LE_ANALOG_OSC_LFO_PITCH = 12;
+
+const int LE_ANALOG_OSC_LFO_PW = 13;
+
+const int LE_ANALOG_OSC_MOD1 = 7;
+
+const int LE_ANALOG_OSC_MODE = 4;
+
+const int LE_ANALOG_OSC_OCT = 2;
+
+const int LE_ANALOG_OSC_ON = 0;
+
+const int LE_ANALOG_OSC_PW = 8;
+
+const int LE_ANALOG_OSC_SEMI = 3;
+
+const int LE_ANALOG_OSC_SHAPE = 1;
+
+const int LE_ANALOG_OSC_SUB = 9;
+
 const int LE_AUDITION_MAX_BUFFERS = 2;
 
 const int LE_AUDITION_MAX_SECONDS = 120;
@@ -4142,6 +4262,8 @@ const int LE_FX_WORKERS_MAX = 3;
 const int LE_INSTRUMENT_SOURCE_BASE = 32;
 
 const int LE_INST_CHORD_NOTES = 8;
+
+const int LE_INST_DEVICE_ANALOG = 4;
 
 const int LE_INST_DEVICE_DRIFT = 1;
 
@@ -4436,6 +4558,145 @@ const int LE_SYNTH_PATCHES = 19;
 const int LE_VIZ_POINTS = 512;
 
 const int LE_XRUN_KINDS = 4;
+
+enum le_analog_param {
+  /// 0..9: Mono, 2, 4, 8, 12 .. 32
+  LE_ANALOG_POLYPHONY(0),
+
+  /// octaves, 0..1
+  LE_ANALOG_BEND_RANGE(1),
+
+  /// 0..1
+  LE_ANALOG_VOLUME(2),
+
+  /// semitones, 0..48 (MPE, stored)
+  LE_ANALOG_NOTE_BEND_RANGE(3),
+
+  /// 0..45 (stored)
+  LE_ANALOG_PRESSURE_TARGET1(4),
+  LE_ANALOG_PRESSURE_AMOUNT1(5),
+  LE_ANALOG_PRESSURE_TARGET2(6),
+  LE_ANALOG_PRESSURE_AMOUNT2(7),
+  LE_ANALOG_SLIDE_TARGET1(8),
+  LE_ANALOG_SLIDE_AMOUNT1(9),
+  LE_ANALOG_SLIDE_TARGET2(10),
+  LE_ANALOG_SLIDE_AMOUNT2(11),
+
+  /// -3..3
+  LE_ANALOG_OCTAVE(12),
+
+  /// -12..12
+  LE_ANALOG_TRANSPOSE(13),
+
+  /// 0..1, 0.5 in tune
+  LE_ANALOG_FINE_TUNE(14),
+
+  /// 0/1
+  LE_ANALOG_UNISON_ON(15),
+
+  /// 0: 2 voices, 1: 4
+  LE_ANALOG_UNISON(16),
+
+  /// 0..1
+  LE_ANALOG_UNISON_DETUNE(17),
+
+  /// 0..1
+  LE_ANALOG_UNISON_DELAY(18),
+
+  /// 0..2: High, Low, Last
+  LE_ANALOG_PRIORITY(19),
+
+  /// 0..1 (stored)
+  LE_ANALOG_STRETCH(20),
+
+  /// 0..1 (stored)
+  LE_ANALOG_ERROR(21),
+
+  /// 0/1
+  LE_ANALOG_VIBRATO_ON(22),
+
+  /// 0..1
+  LE_ANALOG_VIBRATO_SPEED(23),
+  LE_ANALOG_VIBRATO_FADE(24),
+  LE_ANALOG_VIBRATO_AMOUNT(25),
+  LE_ANALOG_VIBRATO_ERROR(26),
+  LE_ANALOG_VIBRATO_DELAY(27),
+  LE_ANALOG_VIBRATO_WHEEL(28),
+
+  /// 0/1
+  LE_ANALOG_GLIDE_ON(29),
+
+  /// 0..1
+  LE_ANALOG_GLIDE_TIME(30),
+
+  /// 0: Const, 1: Prop
+  LE_ANALOG_GLIDE_MODE(31),
+
+  /// 0/1
+  LE_ANALOG_GLIDE_LEGATO(32),
+
+  /// 0/1
+  LE_ANALOG_NOISE_ON(33),
+
+  /// 0..1: 20 Hz .. 22 kHz
+  LE_ANALOG_NOISE_COLOR(34),
+
+  /// 0..1: filter 2 .. filter 1
+  LE_ANALOG_NOISE_BALANCE(35),
+
+  /// 0..1
+  LE_ANALOG_NOISE_LEVEL(36),
+
+  /// two LE_ANALOG_CHAIN_FIELDS blocks
+  LE_ANALOG_CHAINS(37),
+  LE_ANALOG_PARAMS(171);
+
+  final int value;
+  const le_analog_param(this.value);
+
+  static le_analog_param fromValue(int value) => switch (value) {
+    0 => LE_ANALOG_POLYPHONY,
+    1 => LE_ANALOG_BEND_RANGE,
+    2 => LE_ANALOG_VOLUME,
+    3 => LE_ANALOG_NOTE_BEND_RANGE,
+    4 => LE_ANALOG_PRESSURE_TARGET1,
+    5 => LE_ANALOG_PRESSURE_AMOUNT1,
+    6 => LE_ANALOG_PRESSURE_TARGET2,
+    7 => LE_ANALOG_PRESSURE_AMOUNT2,
+    8 => LE_ANALOG_SLIDE_TARGET1,
+    9 => LE_ANALOG_SLIDE_AMOUNT1,
+    10 => LE_ANALOG_SLIDE_TARGET2,
+    11 => LE_ANALOG_SLIDE_AMOUNT2,
+    12 => LE_ANALOG_OCTAVE,
+    13 => LE_ANALOG_TRANSPOSE,
+    14 => LE_ANALOG_FINE_TUNE,
+    15 => LE_ANALOG_UNISON_ON,
+    16 => LE_ANALOG_UNISON,
+    17 => LE_ANALOG_UNISON_DETUNE,
+    18 => LE_ANALOG_UNISON_DELAY,
+    19 => LE_ANALOG_PRIORITY,
+    20 => LE_ANALOG_STRETCH,
+    21 => LE_ANALOG_ERROR,
+    22 => LE_ANALOG_VIBRATO_ON,
+    23 => LE_ANALOG_VIBRATO_SPEED,
+    24 => LE_ANALOG_VIBRATO_FADE,
+    25 => LE_ANALOG_VIBRATO_AMOUNT,
+    26 => LE_ANALOG_VIBRATO_ERROR,
+    27 => LE_ANALOG_VIBRATO_DELAY,
+    28 => LE_ANALOG_VIBRATO_WHEEL,
+    29 => LE_ANALOG_GLIDE_ON,
+    30 => LE_ANALOG_GLIDE_TIME,
+    31 => LE_ANALOG_GLIDE_MODE,
+    32 => LE_ANALOG_GLIDE_LEGATO,
+    33 => LE_ANALOG_NOISE_ON,
+    34 => LE_ANALOG_NOISE_COLOR,
+    35 => LE_ANALOG_NOISE_BALANCE,
+    36 => LE_ANALOG_NOISE_LEVEL,
+    37 => LE_ANALOG_CHAINS,
+    171 => LE_ANALOG_PARAMS,
+    _ => throw ArgumentError('Unknown value for le_analog_param: $value'),
+  };
+}
 
 final class le_audition_state extends ffi.Struct {
   /// bumps at configure and at every reopen

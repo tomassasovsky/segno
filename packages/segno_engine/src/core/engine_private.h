@@ -49,6 +49,7 @@ typedef enum le_midi_dispatch_kind {
                                 * LE_MAX_CHANNELS / LE_MAX_TRACKS / LE_MAX_LANES
                                 * / LE_MAX_MONITORED_INPUTS / LE_FX_MAX /
                                 * LE_FX_PARAMS / LE_VIZ_POINTS */
+#include "instrument_devices.h" /* LE_INST_DEVICE_COUNT */
 #include "miniaudio.h"         /* ma_device, ma_context, ma_device_id */
 #include "perf_log_ring.h"     /* le_perf_log_ring (performance event log) */
 
@@ -57,11 +58,6 @@ extern "C" {
 #endif
 
 #define LE_RING_CAPACITY 256u
-
-/* The instrument devices (SEG-109), LE_INST_DEVICE_DRIFT onwards: an
- * instance's index in per-device arrays is its LE_INST_DEVICE_* minus
- * LE_INST_DEVICE_DRIFT. */
-#define LE_INST_DEVICE_COUNT (LE_INST_DEVICE_MELD - LE_INST_DEVICE_DRIFT + 1)
 
 /* MIDI clock output ring (C1, D15): audio-thread producer, drained by
  * whichever consumer forwards the bytes to le_midi_out_send (a native test's
@@ -2776,15 +2772,12 @@ struct le_engine {
    * Allocated with the engine. */
   struct le_synth* synth;
   float* inst_bus;
-  /* SEG-109: one Drift device per slot, LE_MAX_INSTRUMENTS of them in one
-   * allocation, like `synth` (a slot renders its own only while it plays
-   * the device) */
-  struct le_drift* drift;
-  /* and one Operator device per slot */
-  struct le_operator* op;
-  struct le_meld* meld;
-  /* Whether slot k's instance of a device (index: the device's
-   * LE_INST_DEVICE_* minus LE_INST_DEVICE_DRIFT) may differ from a freshly
+  /* SEG-109: each device of le_inst_devices (instrument_devices.h) keeps
+   * one instance per slot, LE_MAX_INSTRUMENTS of them in one allocation,
+   * like `synth`; dev[i] is entry i's. A slot renders a device while it
+   * plays it, and while the voices it leaves at a change fade. */
+  void* dev[LE_INST_DEVICE_COUNT];
+  /* Whether slot k's instance of entry i may differ from a freshly
    * initialised one: set on the audio thread when the slot is given that
    * device (a plain store; nothing reaches an instance's state before
    * that), cleared by the reset that re-initialises it. Only an instance

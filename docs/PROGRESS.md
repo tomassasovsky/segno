@@ -1,4 +1,4 @@
-<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Quantizer autocorrelation tfz unmeasured retriggered isolations pul meldfit Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Perc Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penv penvd rndpan Bassic Bitgrunge's Catchem Filther's Kaneda Werkstuecktraeger Whley Whley's filt nloop Basscycle spr Floot Halfstep Gametal Plucks Neurotimbre fenv restruck fmdrive oscvol unsmoothed colfm circ nornd Cardano baselined prewarped unnormalized -->
+<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Metalic Perc retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations penv Unisono pul meldfit Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penvd rndpan Bassic Bitgrunge's Catchem Filther's Kaneda Werkstuecktraeger Whley Whley's filt nloop avel fleg unmodulated Basscycle spr prewarping prewarp Floot Halfstep Gametal Plucks Neurotimbre sqperc fenv restruck fmdrive oscvol unsmoothed colfm circ nornd retunes Detuned Cardano baselined prewarped unnormalized -->
 # Segno — Progress & Roadmap
 
 <!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs multicore smarttune -->
@@ -61,9 +61,101 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
 | SEG-22 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track and lane chains) is #1729 | build | needs-plan-approval | `claude/fx-multicore-1515-p1b` |
 | SEG-107 | Save As failed with Out of Memory: the mixdown asked for the LCM of two Song-mode tracks (24.7 GB); it now spans the longest lane past 600 s, and the save refuses a length no loop can hold | in-review | needs-hardware | `claude/save-oom-SEG-107` |
 | SEG-63 | Console WiFi against an ASUS RT-AX89X with 802.11ax on: firmware already matches Pi OS; brcmfmac options aligned with Pi OS and a troubleshooting note; failure not reproduced, issue stays open until it recurs | in-review | agent-merges | `claude/wifi-firmware-1816` |
-| SEG-109 | Ableton Live device presets on the pedal, Drift first: presets read from the user's own copy; Drift's behavior learned with rea + Ghidra from Live 12.2.7 and reimplemented, no Ableton code or presets in the repo. Plan approved 2026-11-25 (P1-P6); P1 stereo buses, P2 preset reader, P3 the Drift device and P4 its fit in review; the Operator device (P7) and the Meld device (P8) in review | in-review | needs-merge | `claude/ableton-devices-SEG-109`, `claude/ableton-operator-SEG-109-p7`, `claude/ableton-meld-SEG-109-p8` |
+| SEG-109 | Ableton Live device presets on the pedal, Drift first: presets read from the user's own copy; Drift's behavior learned with rea + Ghidra from Live 12.2.7 and reimplemented, no Ableton code or presets in the repo. Plan approved 2026-11-25 (P1-P6); P1 stereo buses, P2 preset reader, P3 the Drift device and P4 its fit in review; the Operator (P7), Meld (P8) and Analog (P9) devices in review | in-review | needs-merge | `claude/ableton-devices-SEG-109`, `claude/ableton-operator-SEG-109-p7`, `claude/ableton-meld-SEG-109-p8`, `claude/ableton-analog-SEG-109-p9` |
 
 ---
+
+## November 2026 The Analog device plays on an instrument slot (SEG-109 P9)
+
+- Live 12.2.7's Analog read with rea + Ghidra from its AAS engine (the
+  device, then its formant filter) and written as "Analog: behavior" in the
+  Ableton devices brainstorm; `analog_voice.c` is written from it.
+  `LE_INST_DEVICE_ANALOG` takes an Analog preset's 171 values
+  (`le_analog_param`: the device's own, then two chain blocks of 67).
+- Two chains per voice, each an oscillator (sine, saw, rectangle, noise,
+  sub or sync), a filter (all ten types, the formants among them) with its
+  drive, an amp, an LFO and two looping envelopes, plus noise, glide with
+  key priority, vibrato and unison of 2 or 4 copies.
+- The slots reach every device through one table of functions
+  (`instrument_devices.c`), so a device is one entry; each keeps its own
+  instances, so a device change still fades the old voices out under the
+  new ones.
+- Fitted against 178 Live renders: levels, routing, pan, envelopes and
+  loops, the LFO waves, glide, the filters and drive within 0.1 to 2.5 dB
+  rms (round totals 1.9, 1.4, 1.9). Measured where the reading was silent:
+  the balance's direction, the sustain stage and loops, the glide time's
+  curve, the unison offsets' pattern, the LFO triangle's start and the
+  noise ramp; the unison detune is ExpZ(0.001, 1) octaves (Tension's
+  reading of the shared unison: copies an octave apart at full detune);
+  the filter envelope's depth is 16 u^4 octaves (Tension's reading of the
+  shared filter), which brought the factory presets from 13.5 to 5.3 dB.
+- 23 factory presets, octave bands rms: 13 within 2.2 dB; Kick Complex
+  Perc (26.5) is the open one.
+- The strict score (third-octave x 50 ms cells, the attack, stereo, f0,
+  level, onset) passes 171 of 201 renders (from 91), 5 of the 23 factory
+  presets (from 0): the oscillators start and band-limit as Live's do,
+  13 samples late, the rectangle without its DC offset (most of the
+  presets' 2 to 6 dB excess), the amp envelope per sample with a start
+  ramp, the tempo divisions and LFO depths on the amp, the mono
+  retrigger. Round 4 added Keyboard Stretch and Error, the pan's knob law
+  and free LFO starts: 206 of 266 fit renders, 14 of 41 presets, 10 of 58
+  on the held-out round (from 8). Left: Live's early note-ons (most of the
+  held-out failures), the unison delay, the pitch envelope at full depth;
+  segno-analog-fit5 isolates event timing, velocity, chords, range and
+  Live's own spread on the random sources. Round 5: the amps' start ramp
+  is the device's, the free LFO runs from the device's start, Keyboard
+  Error is uniform: 240 of 307 fit renders, 13 of 58 held out. Live's
+  later note events land 8 to 68 samples early, beyond any in-block snap.
+  After round 6 (scored with per-note alignment, from 239 of 345 and 10 of
+  58 held out): the oscillator's 40-sample pitch tick with its period
+  ramp and the pitch envelope 3.5 % longer (Kick Complex Perc from 26 to
+  0.4 dB), the cubic 2^x on the keyboard pitch, Free Run ignoring the
+  release (Zap 25 to 9), a free LFO and a Legato filter envelope kept per
+  device voice (Rhythmic Octaves Bass 17 to 10), no glide between a
+  chord's keys in Const mode: 246 of 345 fit renders, 17 of 79 factory
+  presets, 10 of 58 held out (median 3.89 dB). Left: Live's onset hump on
+  fast upward sweeps, the LFO rate's dips, the random sources;
+  segno-analog-fit7 (39 renders) isolates the first two and the per-voice
+  state.
+  Round 7 (segno-analog-fit7): the pitch envelope's length per time knob
+  and a 0.1 s run-on of a Legato filter envelope after its voice goes
+  quiet: 248 of the 345 earlier fit renders (281 of 384 with round 7), 18 of 79 factory presets; round 7 itself 33 of 39 (the free LFO's run-on between
+  notes is left), 10 of 58 (median 3.89 dB) held out. Analog keeps velocity / 127 (its
+  renders fit it better than the other AAS devices' (velocity - 1) / 126),
+  and its release tails end at the release's end, with no early cut.
+  Judged against Live's own copies (segno-analog-val3, val4): 11 of 58
+  held out; the unison delay is behind four of the deterministic failures.
+  Copy k of a unison voice now starts k delays in, as uni4-dly-100 shows
+  (fit 286 of 384 before and after); segno-analog-fit8 (40 renders) reads
+  the delay itself, the free LFO's run-on, the steal order and the Kick's
+  and Saw Pure Muted Bass's higher notes. Seven shared causes found by sorting
+  the held-out failures and fitted on fit renders (a free S&H holds 0 for
+  its first cycle, a fresh voice's free LFO runs from the device's start,
+  a mono key change restarts retriggered LFOs, no floor on Q, a mono
+  vibrato runs on through silence, no sub in Sync mode, an unclamped pan
+  angle): fit 290 of 384, factory presets 22 of 79, held out 15 of 58.
+  Rounds 8 and 9 (77 renders, five seeds): a delayed unison copy starts
+  4 (kD + 13) / P cycles on and releases k delays late; a device voice
+  stays busy 0.1125 s after it goes quiet, its free LFOs running then and
+  while another voice sounds, and fresh voices' LFOs run from the
+  device's first note: fit 312 to 325 of 461, factory presets 24 to 25,
+  held out 16 of 58. The steal order (oldest first), the mono LFO restart,
+  Q without a floor and the stretch law on mono voices are confirmed.
+  Round 10 (no new renders): the oscillators as a reader described Live
+  starting them (segno-re-findings an-03): a 41-sample pitch tick with a
+  40-sample period ramp, no phase reset at a note, a fresh voice starting
+  at C4, the saw without latency, a voice's oscillators running on 0.101 s
+  and then standing still, delayed unison copies at the last pitch until
+  their note; measured: a poly note takes the voice that last played its
+  key, else a fresh one, and a sync saw restarts at its master's impulse.
+  The scratch harness places Live's events as its export does. Fit 333 to
+  366 of 461 and factory presets 25 to 37 (round-7 rule); 326 to 364 and 26
+  to 36 of 79, held out 16 to 18 of 58 (round-8 rule). Kick Complex Perc, Strings Detuned Pad
+  and Dual OSC Rubber Bass pass on their own notes; Dual OSC Buzz Lead's
+  silent sync rectangle is open.
+- A voice of two saw chains through LP24 costs 0.9 us per millisecond on
+  the dev machine, four unison copies 3.7, the formant filter 1.0. A
+  device holds 40 copies (313 KB).
 
 ## November 2026 The Meld device plays on an instrument slot (SEG-109 P8)
 

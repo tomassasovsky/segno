@@ -6,6 +6,11 @@
 
 #include "drift_voice.h"
 
+/* Slot k's Drift instance in engine e. */
+static le_drift* eng_drift(le_engine* e, int32_t k) {
+  return (le_drift*)le_instruments_device(e, LE_INST_DEVICE_DRIFT, k);
+}
+
 #define DRIFT_SR 48000
 
 static le_drift g_drift;
@@ -968,15 +973,15 @@ static void test_engine_drift_params_and_switching(void) {
   CHECK(le_engine_instrument_note_on(e, 2, 2, 64, 100) == LE_OK);
   drift_run(e, N, 64, 2, l, r);
   CHECK(memcmp(l, r, sizeof(l)) != 0); /* Stereo */
-  CHECK(e->drift[2].values[LE_DRIFT_VOICE_MODE] == 2.0f);
+  CHECK(eng_drift(e, 2)->values[LE_DRIFT_VOICE_MODE] == 2.0f);
   /* clamped to its range */
   CHECK(le_engine_set_instrument_device_param(e, 2, LE_DRIFT_FILTER_FREQ, 1e6f) == LE_OK);
   drift_run(e, 64, 64, 2, NULL, NULL);
-  CHECK(e->drift[2].values[LE_DRIFT_FILTER_FREQ] == 20000.0f);
+  CHECK(eng_drift(e, 2)->values[LE_DRIFT_FILTER_FREQ] == 20000.0f);
   CHECK(le_engine_instrument_note_off(e, 1) == LE_OK);
   CHECK(le_engine_instrument_note_off(e, 2) == LE_OK);
   drift_run(e, 64, 64, 2, NULL, NULL);
-  CHECK(!le_drift_held(&e->drift[2], ins_origin(1)));
+  CHECK(!le_drift_held(eng_drift(e, 2), ins_origin(1)));
   /* a patch ends the device */
   CHECK(le_engine_instrument_note_on(e, 2, 3, 60, 100) == LE_OK);
   CHECK(le_engine_set_instrument(e, 2, syn_patch("pad"), NULL) == LE_OK);
@@ -985,7 +990,7 @@ static void test_engine_drift_params_and_switching(void) {
   le_engine_get_snapshot(e, &snap);
   CHECK(snap.instrument_device[2] == LE_INST_DEVICE_NONE);
   CHECK(snap.instrument_patch[2] == syn_patch("pad"));
-  CHECK(le_drift_active(&e->drift[2]) == 0 && le_drift_fading(&e->drift[2]) == 0);
+  CHECK(le_drift_active(eng_drift(e, 2)) == 0 && le_drift_fading(eng_drift(e, 2)) == 0);
   CHECK(le_engine_set_instrument_device_param(e, 2, LE_DRIFT_VOLUME, 0.5f) ==
         LE_ERR_NO_INSTRUMENT);
   /* and a device ends the patch */
@@ -1018,10 +1023,10 @@ static void test_engine_drift_voice_budget(void) {
   CHECK(le_engine_instrument_note_on(e, 2, 31, 76, 100) == LE_OK);
   drift_run(e, 64, 64, 0, NULL, NULL);
   const int32_t total = le_synth_active((le_synth*)e->synth, -1) +
-                        le_drift_active(&e->drift[0]) + le_drift_active(&e->drift[1]);
+                        le_drift_active(eng_drift(e, 0)) + le_drift_active(eng_drift(e, 1));
   CHECK(total == 8);
   CHECK(le_synth_active((le_synth*)e->synth, 2) == 2);
-  CHECK(le_drift_active(&e->drift[0]) == 3 && le_drift_active(&e->drift[1]) == 3);
+  CHECK(le_drift_active(eng_drift(e, 0)) == 3 && le_drift_active(eng_drift(e, 1)) == 3);
   le_snapshot snap;
   le_engine_get_snapshot(e, &snap);
   CHECK(snap.voices_stolen >= 6);
@@ -1032,7 +1037,7 @@ static void test_engine_drift_voice_budget(void) {
   drift_run(e, 960, 64, 0, NULL, NULL);
   CHECK(le_engine_instrument_note_on(e, 0, 40, 60, 100) == LE_OK);
   drift_run(e, 64, 64, 0, NULL, NULL);
-  CHECK(le_drift_active(&e->drift[0]) == 2);
+  CHECK(le_drift_active(eng_drift(e, 0)) == 2);
   le_engine_destroy(e);
 }
 
@@ -1047,7 +1052,7 @@ static void test_engine_drift_refusals(void) {
   CHECK(le_engine_set_instrument_device(e, LE_MAX_INSTRUMENTS, LE_INST_DEVICE_DRIFT, NULL) ==
         LE_ERR_INVALID);
   CHECK(le_engine_set_instrument_device(e, 0, LE_INST_DEVICE_NONE, NULL) == LE_ERR_INVALID);
-  CHECK(le_engine_set_instrument_device(e, 0, LE_INST_DEVICE_MELD + 1, NULL) == LE_ERR_INVALID);
+  CHECK(le_engine_set_instrument_device(e, 0, LE_INST_DEVICE_ANALOG + 1, NULL) == LE_ERR_INVALID);
   float values[LE_DRIFT_PARAMS];
   for (int p = 0; p < LE_DRIFT_PARAMS; ++p) values[p] = le_drift_default(p);
   values[LE_DRIFT_GLIDE] = NAN;
@@ -1079,99 +1084,44 @@ static void test_engine_drift_midi(void) {
   drift_run(e, 64, 64, 1, NULL, NULL);
   ins_send(&cap, 0x90, 60, 100);
   drift_run(e, 64, 64, 1, NULL, NULL);
-  CHECK(le_drift_active(&e->drift[1]) == 1);
+  CHECK(le_drift_active(eng_drift(e, 1)) == 1);
   ins_send(&cap, 0xB0, 64, 127); /* sustain */
   ins_send(&cap, 0x80, 60, 0);
   drift_run(e, 64, 64, 1, NULL, NULL);
-  CHECK(e->drift[1].voices[0].state == 3); /* sustained */
+  CHECK(eng_drift(e, 1)->voices[0].state == 3); /* sustained */
   ins_send(&cap, 0xB0, 64, 0);
   drift_run(e, 64, 64, 1, NULL, NULL);
-  CHECK(e->drift[1].voices[0].state == 2); /* released */
+  CHECK(eng_drift(e, 1)->voices[0].state == 2); /* released */
   ins_send(&cap, 0x90, 62, 100);
   ins_send(&cap, 0xE0, 0, 127); /* bend up: (16256 - 8192) / 8192 */
   drift_run(e, 64, 64, 1, NULL, NULL);
-  CHECK(fabsf(e->drift[1].bend - 0.984375f) < 1e-6f);
+  CHECK(fabsf(eng_drift(e, 1)->bend - 0.984375f) < 1e-6f);
   CHECK(le_engine_cut_sound(e) == LE_OK);
   drift_run(e, 960, 64, 1, NULL, NULL);
-  CHECK(le_drift_active(&e->drift[1]) == 0 && le_drift_fading(&e->drift[1]) == 0);
+  CHECK(le_drift_active(eng_drift(e, 1)) == 0 && le_drift_fading(eng_drift(e, 1)) == 0);
   le_engine_destroy(e);
 }
 
 /* ---- configure re-initialises only the device instances a slot used ---- */
 
-#include "operator_voice.h"
-#include "meld_voice.h"
-
-/* Every instrument device, as the reset test drives it. */
-typedef struct cfg_device {
-  int32_t id;   /* LE_INST_DEVICE_* */
-  size_t size;  /* bytes of one instance */
-  int32_t (*init)(void* d, int32_t sample_rate);
-  void (*set_voice_limit)(void* d, int32_t limit);
-  void (*render)(void* d, float* left, float* right, int32_t frames);
-  int32_t (*active)(const void* d);
-  float (*def)(int32_t param);
-  int32_t param; /* one set away from its default, to `value` */
-  float value;
-} cfg_device;
-
-static int32_t cfg_drift_init(void* d, int32_t sr) { return le_drift_init(d, sr); }
-static void cfg_drift_limit(void* d, int32_t n) { le_drift_set_voice_limit(d, n); }
-static void cfg_drift_render(void* d, float* l, float* r, int32_t n) {
-  le_drift_render(d, l, r, n);
-}
-static int32_t cfg_drift_active(const void* d) { return le_drift_active(d); }
-static int32_t cfg_op_init(void* d, int32_t sr) { return le_operator_init(d, sr); }
-static void cfg_op_limit(void* d, int32_t n) { le_operator_set_voice_limit(d, n); }
-static void cfg_op_render(void* d, float* l, float* r, int32_t n) {
-  le_operator_render(d, l, r, n);
-}
-static int32_t cfg_op_active(const void* d) { return le_operator_active(d); }
-static int32_t cfg_meld_init(void* d, int32_t sr) { return le_meld_init(d, sr); }
-static void cfg_meld_limit(void* d, int32_t n) { le_meld_set_voice_limit(d, n); }
-static void cfg_meld_render(void* d, float* l, float* r, int32_t n) {
-  le_meld_render(d, l, r, n);
-}
-static int32_t cfg_meld_active(const void* d) { return le_meld_active(d); }
-
-static const cfg_device kCfgDevices[LE_INST_DEVICE_COUNT] = {
-    {LE_INST_DEVICE_DRIFT, sizeof(le_drift), cfg_drift_init, cfg_drift_limit,
-     cfg_drift_render, cfg_drift_active, le_drift_default, LE_DRIFT_FILTER_FREQ,
-     900.0f},
-    {LE_INST_DEVICE_OPERATOR, sizeof(le_operator), cfg_op_init, cfg_op_limit,
-     cfg_op_render, cfg_op_active, le_operator_default, LE_OPERATOR_ALGORITHM,
-     3.0f},
-    {LE_INST_DEVICE_MELD, sizeof(le_meld), cfg_meld_init, cfg_meld_limit,
-     cfg_meld_render, cfg_meld_active, le_meld_default, LE_MELD_UNISON, 2.0f},
-};
-
-/* Slot k's instance of device entry i. */
-static void* cfg_instance(le_engine* e, int i, int32_t k) {
-  switch (kCfgDevices[i].id) {
-    case LE_INST_DEVICE_DRIFT: return &e->drift[k];
-    case LE_INST_DEVICE_OPERATOR: return &e->op[k];
-    default: return &e->meld[k];
-  }
-}
-
 /* The largest device instance, for the byte copies below. */
 static size_t cfg_largest(void) {
   size_t n = 0;
   for (int i = 0; i < LE_INST_DEVICE_COUNT; ++i) {
-    if (kCfgDevices[i].size > n) n = kCfgDevices[i].size;
+    if (le_inst_devices[i].size > n) n = le_inst_devices[i].size;
   }
   return n;
 }
 
-/* Whether slot k's instance of device entry i is, byte for byte, what a
+/* Whether slot k's instance of table entry i is, byte for byte, what a
  * fresh init at `sr` with the engine's default voice limit gives. The init
  * runs in place, as the engine's does: an instance may point into itself
  * (Operator's user waves), so a fresh one anywhere else differs. It leaves
  * the instance freshly initialised either way. */
 static int cfg_fresh(le_engine* e, int i, int32_t k, int32_t sr,
                      unsigned char* save) {
-  const cfg_device* dv = &kCfgDevices[i];
-  void* d = cfg_instance(e, i, k);
+  const le_inst_device* dv = &le_inst_devices[i];
+  void* d = le_instruments_device(e, dv->id, k);
   memcpy(save, d, dv->size);
   CHECK(dv->init(d, sr) == 0);
   dv->set_voice_limit(d, 32);
@@ -1189,6 +1139,21 @@ static int cfg_all_fresh(le_engine* e, int32_t sr, unsigned char* save) {
   return same;
 }
 
+/* A parameter of `dv` that can leave its default, and a value for it. */
+static int32_t cfg_param(const le_inst_device* dv, float* value) {
+  for (int32_t p = 0; p < dv->params; ++p) {
+    const float def = dv->def(p);
+    for (int s = -1; s <= 1; s += 2) {
+      const float v = dv->clamp(p, def + (float)s);
+      if (v != def) {
+        *value = v;
+        return p;
+      }
+    }
+  }
+  return -1;
+}
+
 /* A configure at the same rate re-initialises only the device instances a
  * slot was given (le_instruments_reset); for every device, every instance
  * afterwards is what a fresh init gives: the played one with no voice held
@@ -1203,20 +1168,23 @@ static void test_engine_devices_configure_reinitialises_used(void) {
   CHECK(save != NULL);
   if (save == NULL) return;
   for (int i = 0; i < LE_INST_DEVICE_COUNT; ++i) {
-    const cfg_device* dv = &kCfgDevices[i];
-    CHECK(dv->def(dv->param) != dv->value);
+    const le_inst_device* dv = &le_inst_devices[i];
+    float value = 0.0f;
+    const int32_t param = cfg_param(dv, &value);
+    CHECK(param >= 0);
     le_engine* e = ins_engine(INS_SR);
     CHECK(cfg_all_fresh(e, INS_SR, save));
     CHECK(le_engine_set_voice_limit(e, 8) == LE_OK); /* every instance's */
     CHECK(le_engine_set_instrument_device(e, 2, dv->id, NULL) == LE_OK);
-    CHECK(le_engine_set_instrument_device_param(e, 2, dv->param, dv->value) == LE_OK);
     CHECK(le_engine_instrument_note_on(e, 2, 1, 57, 100) == LE_OK);
     CHECK(le_engine_instrument_sustain(e, 2, 2, 1) == LE_OK);
     drift_run(e, N, 64, 2, l, r);
     CHECK(drift_peak(l, N) > 0.0f);
-    CHECK(dv->active(cfg_instance(e, i, 2)) > 0);
+    CHECK(dv->active(le_instruments_device(e, dv->id, 2)) > 0);
+    CHECK(le_engine_set_instrument_device_param(e, 2, param, value) == LE_OK);
+    drift_run(e, 64, 64, 2, NULL, NULL);
     for (int j = 0; j < LE_INST_DEVICE_COUNT; ++j) {
-      CHECK(e->inst_dev_used[2][j] == (j == dv->id - LE_INST_DEVICE_DRIFT));
+      CHECK(e->inst_dev_used[2][j] == (j == i));
       CHECK(e->inst_dev_used[0][j] == 0);
     }
     CHECK(le_engine_cut_sound(e) == LE_OK); /* a cut reaches every instance */
@@ -1225,12 +1193,12 @@ static void test_engine_devices_configure_reinitialises_used(void) {
     for (int k = 0; k < LE_MAX_INSTRUMENTS; ++k) {
       for (int j = 0; j < LE_INST_DEVICE_COUNT; ++j) CHECK(e->inst_dev_used[k][j] == 0);
     }
-    CHECK(dv->active(cfg_instance(e, i, 2)) == 0);
+    CHECK(dv->active(le_instruments_device(e, dv->id, 2)) == 0);
     CHECK(cfg_all_fresh(e, INS_SR, save));
     /* an unused instance of every device renders silence (in place; the
      * init after it leaves it fresh) */
     for (int j = 0; j < LE_INST_DEVICE_COUNT; ++j) {
-      kCfgDevices[j].render(cfg_instance(e, j, 5), l, r, N);
+      le_inst_devices[j].render(le_instruments_device(e, le_inst_devices[j].id, 5), l, r, N);
       CHECK(drift_peak(l, N) == 0.0f && drift_peak(r, N) == 0.0f);
       cfg_fresh(e, j, 5, INS_SR, save);
     }

@@ -53,6 +53,7 @@ const _enums = {
   'le_drift_param',
   'le_operator_param',
   'le_meld_param',
+  'le_analog_param',
 };
 
 Future<void> main() async {

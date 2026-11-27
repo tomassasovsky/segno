@@ -58,6 +58,8 @@ add_library(segno_engine SHARED
   core/meld_voice.c          # the Meld device (meld_voice.h, SEG-109)
   core/meld_osc.c            # Meld's oscillators
   core/meld_filter.c         # Meld's filters
+  core/analog_voice.c        # the Analog device (analog_voice.h, SEG-109)
+  core/instrument_devices.c  # the device table (instrument_devices.h)
   # The miniaudio device backend (le_device_backend.h), compiled unconditionally
   # — the only device backend this build ships; another backend slots in behind
   # le_select_backend.
