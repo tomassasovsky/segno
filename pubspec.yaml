@@ -77,7 +77,7 @@ dev_dependencies:
   analyzer: ^14.7.0
   bloc_lint: ^0.4.1
   bloc_test: ^10.0.0
-  bloc_tools: ^0.1.0-dev.25
+  bloc_tools: ^0.1.0-dev.26
   # Data packages used directly by the test suite only (fakes + integration
   # tests import them); production code reaches them transitively via the
   # repositories, so they are dev-only here.
