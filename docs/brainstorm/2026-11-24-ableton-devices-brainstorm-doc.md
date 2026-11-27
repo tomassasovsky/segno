@@ -1,6 +1,6 @@
 # Ableton Live device presets on the pedal — brainstorm
 
-<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance retriggered isolations Bellatine Keystrike Numan uncentred dfit Grimer Floot Halfstep restruck Cardano baselined prewarped -->
+<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalized Clob Sallen linearised transconductance kModBy kCarriers Celesta transconductances autocorrelation tfz unmeasured retriggered isolations Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Perc Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penv penvd rndpan Basscycle spr Floot Halfstep fenv unnormalized restruck fmdrive oscvol unsmoothed circ nornd Cardano baselined prewarped -->
 
 **Date:** 2026-11-24
 **Issue:** SEG-109 (related: SEG-57, Segno's own instrument voices)
@@ -516,7 +516,7 @@ written from it.
 ### Open items and the fits (P4)
 
 Settled by rendering Live 12.2.7 (a Live Set built by script, exported
-per track, unnormalised, 48 kHz) against Segno's render of the same
+per track, unnormalized, 48 kHz) against Segno's render of the same
 patch and notes, one setting changed per render from a plain saw or white
 noise. Fitted 2026-11-25, three rounds:
 
@@ -791,6 +791,669 @@ What the strict score still fails, and why **[measured]**:
   instance: three Live renders of one Drift Depth patch, each a fresh
   device, correlate 1.0000. And Bloom Pad's filter peak came from key
   tracking (now a blend in hertz, above); its Env 2 modulation matched.
+
+## Operator: behavior
+
+Learned 2026-11-25 from Live 12.2.7 (four parallel reads: the operators and
+FM, the envelopes, the filter and shaper, the LFO, routing and voices), then
+measured against 255 Live renders of single-change patches and ten factory
+presets. Tags as for Drift; **[measured]** marks what the renders settled
+where the reading was silent or disagreed. Segno's implementation is
+`operator_voice.c`.
+
+### Structure
+
+- Four operators A..D, each a single-cycle table of 4096 samples read by a
+  phase accumulator in table indices; a voice computes D, C, B, A in that
+  order each sample, and an operator's input is the sum of its modulators'
+  outputs of the same sample. **[code]**
+- Each sample the phase advances first and the table is read at the new
+  phase, so a note's first sample reads its start plus one increment.
+  **[code]** (op-05 4.2) **[measured: Live's sine at C6 lies −92 dB from a
+  sine one sample ahead of the note and −17 dB from one starting at it]**
+- Lookup truncates unless Interpolation is on (linear). Antialias runs the
+  whole operator engine at twice the rate, reads band-limited copies of the
+  tables, and decimates with a polyphase allpass half-band. **[code]**
+- One mono filter and the shaper per voice, then the voice's gain pair
+  (volume and pan) into the stereo sum. With the filter off, the shaper is
+  bypassed too. **[code]** **[measured]**
+- Parameters apply per 16-sample chunk, ramped across it; the operators,
+  envelopes, filter and shaper run every sample. **[measured]** Nebulae
+  Keys, whose 509 Hz sample-and-hold LFO moves operator A's volume, misses
+  12 dB at 1.6 kHz with 32-sample chunks and matches with 16 (round 8 and
+  11's copies 2.9 dB to 1.2; 8 samples 2.2, 4 samples 2.8, every sample
+  or held steps worse). The voice end keeps a 32-sample grid (below).
+  Round 12 confirms it per destination: a 1.1 kHz sine LFO into Volume,
+  an operator's volume, Pan and FM Drive puts its images around 3 kHz and
+  6 kHz (one block of 16 samples), Live's and Segno's matching to the dB
+  (tf 0.01 to 0.35), and into the pitch it acts every sample (0.02).
+  **[measured: round 12 cr-vol, -oscvol, -pan, -fmdrive, -pitch]**
+
+### Waveforms
+
+- 0 Sine; 1 and 2 Sine 4 and 8 Bit (the sine truncated to 8 or 128 steps a
+  unit); 3..9 Saw 3, 4, 6, 8, 16, 32, 64 (the first N harmonics at 2/(πk));
+  10 Saw D (a drawn ramp from +1 to -1); 11..17 Square 3..64 (the first N
+  odd harmonics at 4/(πk)); 18 Square D (drawn); 19 Triangle (the first 8
+  odd harmonics, alternating, 8/(π²k²)); 20 Noise Looped (a fixed noise
+  table repeating at f/64); 21 Noise White; 22 User. **[code]**
+  **[measured: every waveform's harmonics]** Noise White is a fresh
+  uniform random value every engine sample: Live's never repeats (its
+  autocorrelation stays under 0.02 at every lag to 32768), so a stepped
+  4096-sample table, which repeats 12 times a second, is not it.
+  **[measured]** Noise Looped's table is fixed: the generator
+  s ← 1664525 s + 1013904223 (mod 2³²) seeded with 0x275B6ACF and stepped
+  once before each of its 4096 samples, each sample (s mod 2²³)/2²² − 1
+  from the low 23 bits, built once per process and shared by every
+  instance and voice; no filter and no band-limited copies, peak-normalized
+  with the peak (0.99973) kept as its gain. It is read like any periodic
+  table, 64 table samples a period, the phase modulation at 2 whole loops
+  per unit. **[code]** (op-05) **[measured: Live's wave-20 render correlates
+  1.000 with it sample by sample, its first samples within 3·10⁻⁸; tf 2.33
+  to 0.09]** The reading describes Noise White as the same kind of table
+  read one sample a step, but Live's White does not repeat at 4096 samples
+  (autocorrelation −0.002 there in wave-21), so Segno keeps its fresh value
+  per sample. **[measured]**
+- An additive table is scaled to a peak of 1 and played with its old
+  peak as its gain, so its level is the plain sum (Saw 3 peaks at 0.92,
+  Square 3 at 1.19, exactly as Live's renders). **[code]** **[measured]**
+- User: 16, 32 or 64 drawn harmonics, a slider v giving 10^((48v − 48)/20)
+  (−48..0 dB, 0 is silent); expansion modes repeat the drawing across the
+  spectrum with a 1/(1 + c(k − 1)) roll-off (c 0.25, 0.5, 1, 3, 4);
+  Normalize sets the peak to 1. **[code]**
+- Band-limited copies keep 1024, 512 ... 1 harmonics (only those below the
+  wave's own top harmonic); the richest copy whose top harmonic times the
+  whole part of the phase increment stays under half the table is read.
+  **[code]**
+
+### Tuning, phase, level
+
+- Ratio: Coarse (0 is 0.5) × (1 + Fine/1000); velocity adds
+  16 × VelCoarse × velocity, rounded when quantized (Live rounds: a ratio of
+  4 at velocity 40 with 50 %). **[code]** **[measured]**
+- Fixed: Frequency × 0, 0.001, 0.01, 0.1, 1 or 10; it follows Spread's
+  detune but not the note, transpose or bend. **[code]** **[measured]**
+- Voice pitch: note (or glide) + Spread's detune + Transpose + bend × range,
+  in semitones from A4 = 440 Hz. **[code]**
+- Phase: Retrigger on starts at Phase % of a cycle; off, at a random phase
+  each note. **[code]**
+- Level: Volume (linear) × 4((v − 0.5)s + 0.5)² for VelScale s ×
+  2^(k(note − 60)/12) for KeyScale k, × the waveform's gain. One sine at
+  0 dB with the global Volume at 0 dB peaks at 1.0 per channel at the
+  centre. **[code]** **[measured: within 0.1 dB]**
+
+### Algorithms and FM
+
+- The eleven algorithms (Segno's table, `kModBy` and `kCarriers`): 0 a
+  four-operator stack D→C→B→A; 1 (C + D)→B→A; 2 C→B, (B + D)→A; 3 D→B and C,
+  (B + C)→A; 4 D→C→A and B; 5 D→C→B and A alone; 6 (B + C + D)→A; 7 B→A and
+  D→C; 8 D→A, B and C; 9 D→C, with B and A alone; 10 all four alone.
+  Carriers are summed, not averaged. **[code]**
+- A modulator's output m moves its carrier's phase by −2 cycles per unit
+  after a one-pole low-pass set by Tone: 30 × (22000/30)^Tone Hz. **[code]**
+  **[measured: the sidebands of every FM render within 0.6 dB]** The
+  low-pass acts on the input's change, b0 (x[n] − x[n−2]) − a1 w[n−1],
+  and the carrier's phase accumulates it: with Tone fixed that is the
+  low-passed input, but a Tone that moves leaves its offset behind instead
+  of filtering the input afresh. **[code]** (op-01 4.3) **[measured: round
+  12 cr-tone, a 1.1 kHz LFO on Tone, every carrier line and sideband within
+  0.8 dB (12.8 dB rms to 0.3), the coefficient held per 16-sample block;
+  filtering the input itself, smoothed or not, puts Live's low sidebands
+  10 to 18 dB too weak and its high ones 11 to 18 too strong]**
+- Feedback exists only on operators nothing modulates: −2 × fb × (0.75
+  y[n−1] + 0.25 y[n−2]) cycles, fb = Feedback % / 300, without Tone's
+  low-pass. On a modulated operator the knob does nothing. **[code]**
+  **[measured]**
+
+### Envelopes
+
+- One engine for every envelope (each operator's, the filter's, the pitch
+  envelope's, the LFO's): initial level → attack → peak → decay → sustain,
+  release from the current value to the end level; times in ms, levels
+  linear (pitch levels in semitones, turned into frequency ratios first).
+  A minimal attack (0.1 ms) starts at the peak. **[code]** An operator's
+  or the LFO's level at its −70 dB floor (0.000316) is silence: an attack
+  from the floor starts at 0 and a release to it ends at 0. **[measured:
+  the EnvTime renders, 3·10⁻⁴ below Segno's old start; the onset within
+  0.02 ms]**
+- Slope 0 is linear; slope 1 a one-pole that comes within 10^−4.2 of its
+  target as the time runs out (its rate is ln(|span|/ε) over the
+  segment). **[code]** **[measured: within 0.02 at every point]** The
+  span is measured in the envelope's scaled output: an operator's
+  envelope runs on its level times the operator's amplitude (Volume,
+  velocity and key scaling), so a quiet operator's one-pole is slower
+  (Buzz Release Keys: a 4.5 s release at 0.1 volume, 8 dB apart after two
+  seconds without it). A release that starts before its attack or decay
+  arrives runs from where it is. **[measured: round 9 rel-in-attack,
+  rel-in-decay, within 0.34 dB]** The pitch envelope's one-pole keeps one
+  shape whatever its span: it reaches 10^−3.95 of the span as the time
+  runs out (the curve's constant). Falls and rises of 2 to 24 semitones
+  at amounts 0.5 to 1 each want that one rate (the span-based rule needs
+  0.44 to 0.66 of a ratio unit on every one of them); with it all ten
+  pitch envelope renders score 0.01 to 0.04 dB and Chorus Strings Sweep
+  Pad 5.7 to 1.4. **[measured: round 9's penvd renders]**
+- Every other slope (−1, −0.95 .. 0.5 measured) holds the segment's start
+  and jumps to its target at the end on an operator's envelope: that is
+  what Live 12.2.7 renders, whatever the reading suggests, so Segno does
+  the same; the LFO's envelope does the same (Segno's choice, unmeasured).
+  **[measured]** The filter and pitch envelopes follow the reading's
+  curve: (1 − |s|) of the straight line plus |s| of an exponential shape
+  reaching 10^−3.95, fast first for s > 0. **[code]** **[measured:
+  Analog Bouquet Brass, whose filter attack at slope 0.48 is 20 dB off
+  with hold-and-jump and within 3 with the curve]**
+- Loop modes: Loop (back to the initial level over LoopTime, then attack
+  again), Beat and Sync (the attack restarts from the current value every
+  RepeatTime, 1/48 to 4 bars), Trigger (note-off ignored, decay runs into
+  release). **[code]** Beat counts from the note; Sync's first retrigger
+  comes a period after the note, moved on to the next sixteenth of the
+  song, the rest a period apart (a note 0.1 s in retriggers at 0.25,
+  0.375 ..). Segno's grid is the device's own clock, samples rendered
+  since init (the fit harness starts it with the export). Sync and Beat
+  retrigger a modulator's envelope as a carrier's. **[measured: round 7's
+  sync and beat renders]** A Beat retrigger due after the note-off does
+  not restart the release, and a retrigger falls a whole period after its
+  start, so one due at the very sample of the note-off finds the release
+  begun (Segno had fired a sample early: round 7's sync and beat renders
+  0.69 dB to 0.14; held out, Pure Bell 8ths, whose triad's 12 s release
+  had started from a fresh peak, 6.0 to 0.1). **[measured: round 8's
+  beat-noteoff, round 7]** A
+  Loop's restart runs even a minimal attack (the note's own start skips
+  it), and each segment lasts its time rounded up to whole samples: a
+  0.1 + 13 + 50 ms loop repeats every 3029 samples, the first 3024
+  (Segno lost a sample to rounding in two segments). **[measured: round 8
+  Geigerzaehler Bleep, 3.0 dB to 1.3; round 9 loop-minatt, 7.6 to
+  0.8]**
+- Times scale by 2^(−8 TimeVel (vel − 70)/127) per envelope and by
+  2^(3 EnvTime − 6 EnvTimeKey (key − 70)/127) for all, attack included
+  whatever EnvTimeIncludeAttack says (Live scales the attack either way).
+  **[code]** **[measured]**
+- A voice ends when every sounding carrier's envelope has ended; a stolen
+  voice fades in 1 ms. **[code]** In its release an envelope has ended
+  once it falls below 10^−3 of full level (before the operator's own
+  amplitude), and the voice stops a block later, the check and the block on
+  a 32-sample grid whatever the chunk: a 50 ms release from
+  full level ends 1760 samples after the note-off, from 0.25 at 1648,
+  from full level at volume 0.1 at 2296 (Segno within 1 to 17 samples
+  now; it ran each release out). **[measured: sine, env-loop-1, round 9's
+  rel-in-* and osr-self renders]**
+
+### LFO and pitch envelope
+
+- Types 0 Sine, 1 Square, 2 Triangle (from −1, rising), 3 Saw Up, 4 Saw
+  Down, continuous (Live's slow LFOs rise smoothly, without the 512 steps
+  the reading's table suggested: 5 cents at rate 2) and smoothed by a
+  one-pole at max(16 f, 200 Hz); 5 Sample & Hold (a new value twice a
+  cycle); 6 Noise (white noise through a one-octave band-pass at max(f,
+  5 Hz)). **[code]** **[measured: the triangle's start, the smooth
+  shapes]** The saws ramp exactly and turn back over the last 1/256 of a
+  cycle, linearly, as an interpolated table whose last step holds the
+  wrap would: Live's Saw Up on the pitch at 8.7 Hz starts its fall about
+  20 samples before a hard wrap and averages 1/256 low over a cycle, while
+  the slow saws of round 2 ramp exactly; with it the multiplier through
+  zero needs no other law (1 + L, from −1 to 3 at amount 1). **[measured:
+  round 12 lfo-zero-a60, -a80, -a100, 0.72, 1.44 and 1.55 dB to 0.39,
+  0.63 and 0.61; Live's carrier phase followed sample by sample within
+  0.014 of a cycle over six LFO cycles]** The Saw Down's mirror image is
+  Segno's choice (round 13's lz-sd-a100 asks).
+- Rate: a note number, f = 440 × 2^((n − 69)/12), Low 104 semitones below
+  High, key scaling about C4; Sync: 1/48 to 4 bars. Retrigger off starts
+  each note from one free-running phase. **[code]** **[measured]** In
+  Live's renders that phase counts from the export's start (the fit
+  harness sets it so): a note 0.5 s in matches within 1°. Notes in the
+  very first block do not: 0.30 of a cycle off at 1.9 Hz, 0.17 at 6.5 Hz,
+  Bells Brushed Hits' first chord 0.39. The offset does not repeat from
+  one Live instance to the next: three copies of one render put the
+  same note at −111°, −39° and −1° (the last on the export clock), so it
+  is Live's own per-instance draw, judged against Live's spread.
+  **[measured: lfofree-single and its round 8 copies]**
+- Amount: 2 Amount² × A%, × 4(0.5 + VelScale (v − 0.5))², × the LFO
+  envelope. Destination A multiplies an operator's phase increment by
+  (1 + L) (linear pitch) and adds 24 semitones per unit to the cutoff
+  through a smoother. **[code]** **[measured: pitch within 0.003]** The
+  LFO's route into Filter Freq passes the same smoother, so an audio-rate
+  LFO leaves the cutoff still (Live's 1.1 kHz LFO there makes no
+  sidebands: 9.8 dB to passing). Its route into Tone is not smoothed: the
+  difference Live shows there is how Tone's low-pass sits in the phase
+  (above, Algorithms and FM). **[measured: round 12 cr-filter, cr-tone]**
+- Pitch envelope: its levels in semitones × Amount × A%, as frequency
+  ratios, multiply the increments of the operators that take it. **[code]**
+  **[measured]** With LFO PitchEnv on, the same ratio (linear in ratio
+  across a segment) multiplies the LFO's rate: Wobbly Flag Bass's LFO
+  speeds up through its decay from 29 to −45 semitones as Live's does
+  (14.6 dB to 5.4, pitch 6.8 cents to 1.4). **[measured: round 8,
+  Wobbly Flag Bass and lfo-penv-rate]**
+
+### Modulation routes **[measured]**
+
+- Each source has a bipolar value s and a unipolar one u = (s + 1)/2:
+  velocity s = 2v − 1, the key s = (key − neutral)/63.5 (exact at neutral
+  48 and 60), pitch bend its value, the LFO its output, the pitch envelope
+  its level / 48 semitones. Aftertouch and the mod wheel have s = u = their
+  value, resting at 0.
+- An adding destination takes a × s: Filter Freq 48 semitones per unit, Pan
+  one unit, Time 3 octaves of envelope time, Fixed Frequency 63 semitones.
+  Aftertouch at rest moves no filter and no envelope time (Buzz Release
+  Keys, mod wheel +100 % on Time); velocity 64 and the neutral key move
+  nothing.
+- LFO Rate (8 octaves per unit) and the A/C and B/D crossfades take a ×
+  (2u − 1): aftertouch and the mod wheel at rest count as −1 there. +20 %
+  at rest slows the LFO 1.6 octaves (OP Bass, 1.3 to 0.43 Hz), −20 %
+  speeds it 1.6; the mod wheel's +58 % on the A/C crossfade gives C 0.42
+  and A 1.58 at rest (Analog Bouquet Brass, its C and D alone 7.5 dB too
+  loud without it). **[measured]**
+- A gain destination only attenuates, by 1 − a⁺ + a u (a⁺ the amount's
+  positive part): the operators' volumes, FM Drive, LFO Amount, the
+  filter envelope's amount (velocity +50 % leaves it whole at 127), Volume
+  and Tone (which scales the Tone value). +100 % from aftertouch at rest
+  silences, −100 % leaves full level; velocity −50 % gives 0.5 at 127 and
+  0.75 at 64; the pitch envelope at 0 semitones gives 0.5, at +24 0.75.
+  Volume scales the voice's output, after the filter and the shaper, and
+  leaves the modulators whole: Creep Bass (velocity on Volume) drives its
+  shaper as hard at velocity 64 as at 127 and keeps its FM sidebands
+  (4.4 dB to 1.4), Bells Classic Basic 2.1 to 0.05, Smack Kick 2.4 to
+  2.0 (FM Piano Classic, its LFO on Volume, 2.4 to 1.1). **[measured:
+  round 8; round 9's vel-vol-shaper and vel-vol-fm, 0.39 and 0.06 dB]**
+  Filter Res, Filter Drive and Aux Env (the pitch envelope's amount) are
+  gain destinations too: the mod wheel at rest with +50 % halves the
+  resonance, −50 % leaves it, +100 % opens none (Harsh FM Bass 4.7 to
+  1.9), takes all of a 6 dB drive and silences the pitch envelope.
+  **[measured: round 9 mw-res-p50, -m50, mw-fdrive (5.1 to 0.1),
+  mw-auxenv (0.8, attack 19.6, to 0.02); Wobbly Flag Bass, its pitch
+  envelope on Drive, 5.4 to 4.3]**
+- Feedback, Filter Morph and Shaper Drive move nothing with the mod wheel
+  at rest at +100 %, nor Shaper Drive with velocity 64 at +100 %, as
+  adding destinations would not; Segno does not route them (their units
+  are unmeasured), nor Filter Q (legacy). **[measured: round 9]**
+- The LFO's route is scaled by LFO Amount (linear: 0.5 gives half the
+  depth) and the pitch envelope's by its Amount; both are silent while
+  their LFO or envelope is off. The LFO Amount route scales both of the
+  LFO's destinations. The pitch envelope's route output moves linearly in
+  semitones, while the pitch it gives moves linearly in frequency ratio.
+- Velocity into Coarse, quantized, adds round(16 × amount × v) steps.
+- Every route test within 0.2 dB rms of Live.
+
+### Filter and shaper
+
+- Clean (every factory preset but 21): a linear trapezoidal state-variable
+  filter, q = 4r/(3r + 1) with resonance clamped at 0.9 (Q 18.5), 24 dB two
+  sections (the second at half the resonance); Morph sweeps LP → BP → HP →
+  Notch → LP. The cutoff: Frequency × 2^(S/12), S = key and velocity about
+  70, the filter envelope × 1.08 × Amount, the LFO and the routes; clamped
+  to 30 Hz .. min(0.48 fs, 18.5 kHz). **[code]** **[measured: Live's own
+  noise through Segno's Clean filter within 0.5 dB per third-octave]**
+- MS2: the section of Drift's filter II (`ms2_section.h`, shared), one for
+  12 dB and two for 24, the second at (0.4 + 0.2 r) of the loop gain, the
+  signal entering at 0.6 of Drift's level, drive on the input. **[code]**
+  **[fit]** Its high-pass (and SMP's) falls 12 dB an octave just below the
+  cutoff and 6 below c × cutoff: a linear state-variable section's high
+  output plus c × its band output, c 0.43 (SMP 0.49), damped by
+  0.37 + 1.26 (1 − q)^1.32 with q at most 1 (it does not self-oscillate),
+  the 24 dB second section at the low-pass's share of q. **[fit: the HP
+  renders at resonance 0, 0.5 and 1, third-octave bands within 1.3 to
+  1.6 dB of that shape]**
+- PRD: Segno's model of a four-stage ladder, each stage's input and output
+  through z (1 − z²/4 + |z|³/16) with a small offset of its own, feedback
+  0.8 × 4.04 q (the reading says 4.04 q; Live's resonance renders want
+  less, and below self-oscillation 10 % × (1 − q) more), the pass band
+  made up by (1 + k), the input at 0.5 × drive; 12 dB the second stage, 24
+  the fourth. **[code]** **[fit]**
+- OSR: Segno's model of a state-variable loop with both transconductances
+  saturating, damping 2 (1 − q) + 0.05 and a diode across the band node
+  (a 0.5 V knee, conductance 0.75 above it), so it rings at a bounded
+  level above resonance 1; the input stage barely saturates. The
+  transconductances' curve takes the node voltages at 0.145 per volt.
+  **[code]** **[fit: round 9's self-oscillation at resonance 1.25, 30 Hz
+  to 1 kHz, within 0.6 dB in level and 9 cents at 100 Hz and 1 kHz
+  (15 at 300 Hz, where the 262 Hz input pulls it); Tesseract 4.7 to 3.6]**
+  The damping is 2 (1 − q) + 0.05: at resonance 1 the circuit rings but
+  does not self-oscillate (Live's 30 Hz ring on Tesseract's triad is
+  20 dB under the self-oscillation the old −0.01 gave). In Morph mode
+  OSR takes no drive, as Clean takes none in any mode. **[measured: round
+  11 tess-res1 6.9 dB to 5.0, morph-osr-drive12 11.0 to 0.4, morph-drive0,
+  -12, -24 and clean-lp-drive12 all within 0.4]** Live's OSR adds even
+  harmonics Segno's does not (Tesseract's C2 at resonance 1, 6 dB short
+  at 147 and 292 Hz), and a loud input pulls its self-oscillation flat
+  less than Segno's (30.9 Hz for a 32 Hz cutoff under a triad, Segno
+  30.2). **[open]**
+- SMP: MS2's section with SMP's input constant and a feedback of 0.85 per
+  unit of q (the reading's 0.904 rings 1 to 2 dB too loud at resonance 0.5
+  to 1) (no factory preset uses it). **[fit]** PRD's high-pass is a core
+  of its own (not read, **[code]** only that it exists): Segno's model is a
+  ladder of four one-pole high-passes with feedback k from the fourth
+  around all four, 12 dB from the second stage and 24 dB from the fourth,
+  the pass band made up by (1 + k), the feedback through the stages' curve
+  so it rings at a bounded level from k = 4. At resonance 0 that is two
+  one-poles; with resonance its stop band rises by (1 + k), which is what
+  Live's does (6 to 7 dB more below the cutoff at 0.5 than a plain
+  resonant high-pass). k is 0.95 of the reading's 4.04 q for 12 dB and
+  1.37 of it for 24 dB, the cutoff 2 % up. **[fit: round 7's hp-prd-r0,
+  -r1, -f300, -24 and round 4's circ4-hp, third-octave bands of Live's
+  noise within 0.4 to 0.6 dB (1.5 at resonance 1), from 0.5 to 7.5 with
+  Clean's high-pass]** (no factory preset uses it)
+- Each circuit's renders within the noise renders' own spread (about 2 dB
+  rms per third-octave band, Live's white noise being its own draw); the drive
+  renders within 3 to 5.
+- The shaper: (1 − w)x + w 10^(−D/40) T(10^(D/20) x) at twice the rate:
+  Soft (linear to −3 dB, then a knee to 1), Hard (0.68 atan 10x), Sine (a
+  fold), 4-Bit (a triangle fold quantized to eighths). **[code]**
+  **[measured: within 0.5 dB, 4-Bit dry 1.8]**
+
+### Voices
+
+- Voices 1..8, 10, 12, 14, 16, 20, 24, 32 or 48; Spread plays each note
+  twice, ∓0.1 × Spread semitones, one voice on each channel at a single
+  voice's level, Spread in whole percent (0.5 % plays one voice, 1 % two).
+  **[code]** **[measured]**
+- Stealing: the oldest released note, then sustained, then held; Retrigger
+  Mode gives a repeated note its own voice back. With one voice and
+  Portamento on, a held voice glides to the new note without retriggering;
+  otherwise glide is constant-time and linear in semitones, from the last
+  note while a voice sounds, but not for a note that takes a sounding
+  voice's place (it waits for that voice in Live): OP Bass's mono notes
+  start at their own pitch over the release of the last. **[code]**
+  **[measured]** A legato glide keeps the first note's key for every key
+  scaling (operator level, filter, envelope times, LFO rate, the key
+  route). **[measured: diagnosed on a held-out preset, Electric FM Wow
+  Bass; round 8's legato-keyscale, legato-fltkey and legato-triad
+  confirm it, 0.1 to 0.75 dB]** A mono voice that has just taken a
+  sounding voice's place, and so starts at its own pitch, takes the same
+  instant's later chord notes at their pitch too, without gliding (Harsh
+  FM Bass, round 8 1.9 dB to 1.1, held out 2.2 to 1.2; neutral on Wobbly
+  Flag Bass). **[measured]**
+- A note that takes a sounding voice's place (the voice budget, or
+  Retrigger Mode's repeated note) waits until that voice has faded (1 ms),
+  then starts; a note taken before it sounded is dropped. A mono chord
+  plays its first note through the fade and its last 48 samples late, as
+  Live's pending queue does; Sync's retriggers stay on the song's grid
+  meanwhile. **[code]** (the queue, op-04) **[measured: Rhythmic Pong
+  Bass's triad, held out, 47 samples late in Live; its waveform error
+  -3 dB to -19, the round 8 copy 2.6 dB to 0.4; Smack Kick 1.8 to 1.6;
+  round 12's mono and two-voice triads and a Retrigger Mode repeat match
+  Live to the sample, -80 dB waveform error]**
+- Random pan and the random start phases do not repeat from one Live
+  instance to the next: two identical tracks draw different pans, and
+  every held-out preset's Live copies differ (Live against itself 0.8 to
+  13 dB over time). Segno draws its own: uniform over ±2 × Rnd, clipped
+  to the sides, as Live's draws are (48 at small amounts, standard
+  deviation 1.12 of Rnd; at 100 %, 56 % of 36 hard to a side, 50 %
+  expected). **[measured: rndpan-a, -b; the held-out copies; round 9
+  rndpan-100 and its copies]**
+- Pan is equal-power, unity at the centre (√2 cos and √2 sin); key and
+  random pan are latched at the note. **[code]** **[measured]** With
+  Spread, a fixed pan scales each one-channel voice by the same law
+  (+0.5: left −5.3 dB, right +2.3; ±1 silences a side), but each of the
+  two voices draws its own random pan: Live's per-note power over both
+  channels moves from −7.7 to +3 dB (a shared pan would hold it), and no
+  channel goes silent in 36 notes at 50 %. Fizzling Pad goes from 10.3 to
+  6.6 dB, Warble Rhythm Noise Pad from 6.5 to 4.8. **[measured: round 10
+  spr-pan-p05, -p1, -m1, spr-rndpan-50 and its copies]**
+
+### The fits so far
+
+Six rounds, 298 single-change renders (third-octave bands within 60 dB of
+each render's loudest): waveforms, tuning, FM, feedback, envelopes, LFO,
+glide, Spread, pan, Tone and the routes within 0.5 dB rms each, most within
+0.2; the filter circuits at the noise renders' spread. Ten factory presets
+(octave bands): Sub Sine Bass 0.0, Bells & Thin Pad 0.2, Acid Bass 0.4,
+Buzz Release Keys 0.5, Three Op Bass 0.6, Analog Bouquet Brass 1.4, Bells
+Brushed Hits 1.6, Metallic FM 2.3, OP Bass 3.1 within 40 dB of its loudest
+(+7 dB at 1.3 kHz as its filter LFO opens MS2, 7.5 counting the octave
+50 dB down), Celesta 4.2 (its partials match to the hertz). A voice costs
+2.7 µs per period at 48 kHz, 4.5 with Antialias.
+
+The strict score (third-octave × 50 ms cells, the first 150 ms in 5 ms
+cells, stereo, pitch, level and onset, against Segno's own spread between
+two noise seeds) passed 248 of the 298 renders and 4 of the 10 presets
+before these fits, and passes 277 and 6 after them (OP Bass and Buzz
+Release Keys added). What is left:
+
+- Randomness the score cannot match. Celesta, Bells Brushed Hits and
+  Metallic FM use random pan: Live's per-note pans (measured from its
+  renders) are a different draw from Segno's, and with Live's pans forced
+  Celesta passes over time (0.99 dB) and in its attack. Bells' free LFO
+  starts its first chord 0.39 of a cycle away from the export clock, its
+  later notes on it (with both forced, its attack passes). Analog Bouquet
+  Brass and Metallic FM start operators at random phases; the S&H and
+  noise LFO renders draw random pitches. Live's random pan does not repeat
+  from one Operator to the next (Celesta's and Bells' first draws differ).
+- Chaotic or table-bound sources: full feedback (fb-d-100) and Noise
+  Looped (Live's table is its own) match in their statistics (tfz 1.0)
+  but not cell by cell.
+- The circuits' drive renders (MS2 and SMP drive the shared MS-20 section
+  into its clipping: Live's spectra notch individual harmonics Segno does
+  not), PRD's high-pass and 24 dB slope, and the first 150 ms of MS2 at
+  resonance 0.5.
+
+Round 7 (52 renders, `segno-op-fit7`) confirmed the curved filter,
+pitch and LFO envelope slopes, the one-pole spans, glide into a releasing
+voice and the routes at rest into Time and the filter envelope, and
+showed Sync's grid, the bipolar LFO Rate and crossfade routes (Analog
+Bouquet Brass's 0.9 dB was its C at full level) and the MS2 high-pass's
+damping. With the scorer's round 2 (three seeds, Live's own spread where
+copies exist): 324 of 349 fit renders and 9 of 10 presets pass (from 314
+and 8), the held-out round 32 of 67 (from 29), before any held-out
+render was fitted. Still open: the free LFO's phase for notes in the
+first block, Metallic FM with its random sources off (3.8 dB: a fixed
+0 Hz carrier shaping a fixed 0.01 Hz modulator, Spread's side 6 dB too
+strong), PRD's high-pass, MS2's 24 dB high-pass.
+
+Round 8 (81 renders, `segno-op-fit8`) plays the 36 failing held-out
+preset kinds with another phrase (D2 at 64, an F4 triad at 90, A5 at
+120), with two Live copies of the 19 random ones, and isolates legato key
+scaling, a Beat retrigger at note-off, the pitch envelope on the LFO rate
+and copies of the first-block free LFO. It confirmed legato key scaling,
+the Beat note-off and a constant pitch envelope on the LFO rate, showed
+the free LFO's first-block offset to be Live's own per-instance draw,
+and through the presets: the pitch envelope's ratio on the LFO rate, the
+Volume route on the voice's output, Res taking controllers as bipolar and
+a loop's restart through a minimal attack. Round 8 then passed 13 of its
+41 renders (from 9), the fit rounds 335 of 390 with 8 of 10 presets, the
+held-out round 35 of 67 (from 32).
+
+Round 9 (31 renders, `segno-op-fit9`) settled what round 8 left: the
+pitch envelope's one-pole keeps one shape (all ten pitch envelope
+renders 0.01 to 0.04 dB, Chorus Strings Sweep Pad 5.7 to 1.4), Res,
+Filter Drive and Aux Env are gain destinations, Feedback, Morph and
+Shaper Drive do not move at rest, OSR's self-oscillation level and pitch
+(Tesseract 4.7 to 3.6), envelope segments in whole samples (loop-minatt
+7.6 to 0.8), and it confirmed the Volume route's place, releases that
+start inside an attack or decay, and Segno's random pan distribution.
+The fit rounds pass 363 of 419 (round 8 16 of 41, round 9 23 of 29), 8
+of 10 presets; the held-out round 36 of 67.
+
+Still open:
+
+After round 9, a pass over the held-out failures (14 deterministic, 17
+random) found the Beat and Sync retrigger a sample early (Pure Bell 8ths),
+the voice end at 10^−3, and the snap of a chord joining a taken voice
+(Harsh FM Bass): the fit rounds pass 365 of 419, the held-out round 38 of
+67. Of the random held-out failures, most fail on the attack, which
+scores only the first note, against Live's three copies: Live's own
+first-note pans differ from copy to copy (Bells Fifths +0.52, −0.32,
++0.03), so a small Live spread there (Pitchy Release Pluck +0.55, +0.49,
++0.59) is chance in three draws, which Segno's three seeds cannot match.
+
+With five Live copies of each random held-out preset (39 of 67 pass), the
+random failures split in two. Where Segno varies far more than Live
+(Fizzling Pad: Segno's seeds 12.5 dB apart, Live's copies 4.8; Warble
+Rhythm Noise Pad's attack 11.5 against 1.6), the cause is random pan
+with Spread: Segno pans each of Spread's two one-channel voices, so a
+draw near a side silences a channel (Segno's first Fizzling note −125 dB
+on the right), while Live's copies are never more than 13 dB apart.
+Placing each voice at ∓1 plus the pan brings Fizzling Pad to 3.6 dB with
+its seeds 2.5 apart, but leaves its stereo width 3.8 dB off, so neither
+law is Live's; round 10 (`segno-op-fit10`, 12 renders) pans Spread
+fixed, by key and at random. Where the spreads agree and the score does
+not (Nebulae Keys 2.6 against 0.9, Glass Wah Pad's stereo), the cause is
+deterministic. The deterministic Spread presets that fail on stereo
+(Major 3rd Lead, Full Perc Pluck, Tesseract) do so below 160 Hz only, in
+bands 40 to 60 dB under the loudest: onset and release transients, and
+Tesseract's self-oscillation, where Live's two voices ring less in phase
+than Segno's; round 10's three copies of it are identical, so Live's
+self-oscillation is not random. Basscycle Aftertouch's
+pitch error is the tracker on a 23 Hz fundamental beating with Spread
+(rounding its velocity Coarse down instead is 2.6 dB worse); Wobbly Flag
+Bass is MS2 driven at a 30 Hz cutoff, the open drive case.
+
+Round 11 (`segno-op-fit11`, 45 renders) settled the rest of the held-out
+questions. With random pan off, Fizzling Pad and Glass Wah Pad repeat
+exactly in Live's copies, so Spread draws nothing per voice beyond its
+pans; the variance left on the random presets is Segno's three seeds,
+whose first draws (0.77, −0.83, −0.98) all land near a side. The 509 Hz
+sample-and-hold LFO matches Live into pitch and into a filter; Nebulae
+Keys still misses 12 dB at 1.6 kHz with its LFO on (and matches with it
+off), where the LFO also moves operator A's volume at audio rate, which
+Segno evaluates per 32-sample chunk. Interpolation off: Live's truncated
+table read matches Segno's (saw at C4 and C6, sine at C6, FM, all within
+0.4 dB). Warble Rhythm Noise Pad with random pan off is deterministic in
+Live and misses 2.4 dB on its Noise Looped operator (Live's table is its
+own).
+
+A pass over the 28 failing held-out presets by kind found 17 random
+(random pan, random phases, sample-and-hold or noise) and 11 not. Of the
+random ones, eight fail only on the attack or on Segno's own spread, from
+the first note's pan: Segno's three seeds draw it at +0.77, -0.83 and
+-0.98 of the range, Live's five copies anywhere (Bells Fifths +0.93,
+-0.38, +0.16, +0.24, +0.12; FM Piano Simple +0.88, -0.69, +0.08, -0.54,
+-0.31), and a chord's notes draw apart in Live as in Segno. Two fixes came
+from the deterministic ones: a stolen voice's note waits for the fade
+(Rhythmic Pong Bass 1.72 dB to 0.4, its round 8 copy 2.6 to 0.4; Smack
+Kick 1.80 to 1.59, its copy 2.13 to 1.71), and
+the 16-sample control rate (Nebulae Keys 2.6 to 1.0, round 8 and 11's
+copies 2.9 to 1.2); the fit rounds pass 391 of 452 (from 387), the
+held-out round 41 of 67 (from 39); with the scorer's five seeds the fit
+rounds pass 399 and the held-out round 48.
+Release Bass, whose C5 opens a Clean
+filter from closed through 108 semitones of envelope, matches Live's
+onset better with the old 32-sample first block (1.1 dB against 1.5), so
+the filter's own control rate may differ from the gains'. **[open]**
+The fit rounds do not settle it: holding the filter's targets on a
+32-sample grid (the gains at 16) moves none of the 63 fit renders with a
+filter envelope or the filter LFO by more than 0.1 dB, and brings
+Release Bass to 1.2; round 12's fenv-onset renders isolate it.
+
+Sweep Wobble's pitch multiplier: the fit renders rule out a cap at 2.5,
+the value that holds the held-out render's match past the wrap. Noise
+Slow Sweep Pad's round 8 copies reach a multiplier of 3 at audio rate
+and match Live uncapped (a cap at 2.5 takes their pitch from 18 cents to
+115), and Synth Reso Sweep 16ths fails with it (1.50); a cap at 3 is
+neutral there, cannot reach the held-out render (its multiplier peaks at
+2.74) and brings the round 8 copy only from 2.16 to 1.92. So the wrap
+mismatch is not a plain limit; round 12's lfo-zero renders take the
+amount through 0.6, 0.8 and 1. **[open]**
+
+MS2 under a loud input (Wobbly Flag Bass, the circ2-saw renders; the fix
+belongs in `ms2_section.h`, shared with Drift). The section's linear
+response matches Live: white noise through it at resonance 0.25, 0.75 and
+24 dB stays within 0.4 dB per half-octave up to 11 kHz. A full-level Saw
+D at C3 through it at 1 kHz, resonance 0.5 and no drive (circ2-saw-r05)
+does not: the unfiltered wave matches to 0.1 dB at every harmonic
+(wave-10), while through the filter Segno's harmonics from 1.3 kHz up are
+too strong, +0.6 dB at the 10th, +2.1 at the 16th, +3.9 at the 20th, +5
+at the 22nd to 24th. Wobbly Flag Bass shows the same thing driven, 2 to 8
+dB too bright above 1 kHz on every note. So Live's section loses more of
+a loud waveform's top above the cutoff than Segno's does, while small
+signals pass alike. What was tried, on a copy: a linear transconductance
+(worse, +7.5 dB at the 24th), a linear diode (worse), wider buffer clips,
+six solver passes and 2x oversampling (no change, so it is not aliasing
+or convergence), a larger KAPPA (0.6 passes circ2-saw-r05 but takes
+circ2-r075 from passing to 3.1 dB) and a tanh transconductance (circ2-saw-d12
+4.8 to 3.1, the noise renders worse). What would need to change is the
+large-signal shape of the first integrator's transconductance, or what
+feeds it, without changing its small-signal slope: it has to compress
+the saw's edges (normalized input near 1.3) harder than the present
+z (1 - z^2/4 + |z|^3/16) does, while noise (normalized rms near 0.4)
+passes as now. Drift's filter II renders would have to confirm the same
+shape. **[open]**
+
+Round 12 (`segno-op-fit12`, 23 renders) asks Live: a 1.1 kHz sine LFO
+into Volume, an operator's volume, Pan, FM Drive, Filter Freq, Tone and
+the pitch (the images around multiples of the block rate give each
+destination's control rate); the 509 Hz sample-and-hold into operator A's
+volume alone, three copies; a mono and a two-voice triad and a Retrigger
+Mode repeat (the steal wait); a slow Saw Up on the pitch at amounts 0.6,
+0.8 and 1 (Sweep Wobble: Segno matches Live's first LFO cycle at -20 dB
+and loses it at the wrap, where the pitch multiplier reaches 2.7; capping
+it at 2.5 holds the match, so Live limits it somewhere); a closed filter
+opened by its envelope at a note's start, with and without the Hard
+shaper; five copies of random pan at 100 % (in round 9 all three copies
+put the first note hard right).
+
+What round 12 settled: the control rate per destination, the steal wait
+and the two filter routes (above). The 509 Hz sample-and-hold into
+operator A's volume alone passes within Live's own spread. The filter
+envelope's first block does not explain Release Bass: a closed Clean
+low-pass opened by its envelope at a C5's onset, with and without the
+Hard shaper, passes at 16 samples (0.46 and 0.69 dB) and holding the
+filter's targets for 32 changes it by under 0.1 dB. The five copies of
+random pan at 100 % start at +0.02, +1.00, -1.00, -0.05 and +0.90, so the
+first draw is not special (round 9's three hard-right starts were
+chance). The pitch multiplier through zero passes at amounts 0.6 and 0.8
+(multipliers up to 2.28) and misses at 1 (lfo-zero-a100, 1.55 dB, -1 to
+3): no limit fits (a cap at 2.5 gives 3.5 dB, a floor at 0 or -0.5 3.5
+and 2.5), the first 60 ms match best with the LFO 0.6 % faster (-29 dB
+waveform error against -12), and the match is lost at the saw's wrap
+whatever its smoother's cutoff or order. Sweep Wobble stays open with
+it. **[open]**
+With round 12 and five seeds the fit rounds pass 413 of 469 (the
+earlier rounds still 399 of 452, round 12 14 of 17: cr-tone, lfo-zero-a100
+and rndpan1st's attack fail), the held-out round 48 of 67.
+
+A pass over round 12's open questions. The LFO into Tone was never a
+smoother: Tone's low-pass acts on the modulator's change and the carrier's
+phase accumulates it (op-01 4.3), so a moving Tone leaves its offset
+behind; with that and no smoother, every carrier line and sideband of
+cr-tone lands within 0.8 dB (12.8 dB rms to 0.3; strict tf 5.9 to 1.5).
+The pitch through zero is the plain 1 + L: Live's carrier phase, followed
+sample by sample, matches it everywhere but at the saw's wraps, where
+Live's fall starts about 20 samples early and its cycles average 1/256
+low, as a saw whose last 1/256 of a cycle turns back linearly does; the
+reading's 200 Hz smoother stays (lfo-zero-a100 1.55 dB to 0.61, -a80 1.44
+to 0.63, -a60 0.72 to 0.39; t-sweep-wobble 2.16 to 1.88, still failing).
+PRD's high-pass is now a ladder of high-passes (Filter and shaper), from
+3.7, 5.9, 2.4 and 3.8 dB on circ4-hp, hp-prd-r1, -24 and -f300 to 1.8,
+2.2, 1.5 and 2.5. Warble Rhythm Noise Pad's Noise Looped table repeats
+from one Live Set to the next (the fine spectrum of round 11's
+warble-nornd correlates 0.99 with round 8's copies, Segno's 0.93), so a
+reader could describe Live's loop generator under the owner's rule for
+deterministic random generators. With the scorer's round 8 (ten
+seeds for random renders) the fit rounds pass 419 of 469 (from 415
+re-scored: cr-tone, lfo-zero-a100, circ4-hp and hp-prd-24 added, none
+lost), 9 of 10 presets; held out 50 of 67 (from 49: Sweep Wobble, 1.87 to
+1.43).
+
+Noise Looped from the reader's description of Live's generator (op-05):
+the table, its seed and its low-bit mapping, and the read at the advanced
+phase, which every operator shares (Live's sines read one increment ahead
+of the note too). wave-20 2.33 dB to 0.09, fm-b03 5.28 to 0.01, Acid
+Bass 1.19 to 0.71; held out Soft Warm Brass 1.07 to 0.57, Geigerzaehler
+Bleep 1.13 to 0.97, Rhythmic Pong Bass 0.44 to 0.28. Warble Rhythm Noise
+Pad does not move: its Noise Looped operator sits behind a 71 Hz Morph
+filter, 70 to 90 dB under the rest above 1.2 kHz, and its misses are in
+the low bands of the later notes. The fit rounds pass 423 of 470 (fm-b03-r2
+now scored on its own), held out 50 of 67.
+
+Round 13 (`segno-op-fit13`, 26 renders) asks Live: a square, a saw down,
+a smaller amount, two other rates, a sine and a triangle and a High-range
+saw on the pitch (the smoother alone, the saw's turn on both slopes and
+how it scales); Release Bass with random pan off and taken apart (its
+LFO, filter, pitch envelope, shaper); OSR at 300 Hz under a C2 sine at two
+levels and resonance 0, 0.5 and 1 (which stage adds the even harmonics);
+MS2's loud saw at half and quarter level and at resonance 0 (whether the
+diode's feedback brightens it).
+
+- OSR self-oscillating near its input's pitch (17 cents at a 300 Hz
+  cutoff on a 262 Hz sine; the input level moves the pull little and the
+  ringing level much).
+- Beat and Sync retrigger detail (Rhythmic Pong, Sweep Wobble, Noisy
+  Triple Beat, Full Perc Pluck), the free LFO's first-block chords, the
+  circuit drive renders, PRD's and MS2's high-passes.
+- Random renders whose seeds Segno draws differently: Pitchy Release
+  Pluck and Fizzling Pad put their first notes at the sides, so Segno's
+  spread exceeds 1.5 times Live's; rndpan-100's first note is hard right
+  in all three Live copies.
+- Wobbly Flag Bass (4.1 to 4.3 dB), Tesseract's stereo, Full Perc Pluck,
+  Creep Bass's release tail.
 
 ## Decisions
 

@@ -2032,9 +2032,11 @@ external int le_engine_set_instrument(
   ffi.Pointer<ffi.Float> params,
 );
 
-/// Gives `slot` device `device` (LE_INST_DEVICE_DRIFT) with `values`
-/// (LE_DRIFT_PARAMS of them, in le_drift_param order; NULL: the device's
-/// defaults; each clamped to its range). Ends a patch or device the slot
+/// Gives `slot` device `device` (LE_INST_DEVICE_DRIFT or
+/// LE_INST_DEVICE_OPERATOR) with `values` (the device's parameter count of
+/// them: LE_DRIFT_PARAMS in le_drift_param order, LE_OPERATOR_PARAMS in
+/// le_operator_param order; NULL: the device's defaults; each clamped to its
+/// range). Ends a patch or device the slot
 /// played (its voices fade). Returns LE_OK, LE_ERR_INVALID (a bad slot,
 /// device or NaN value), LE_ERR_CAPACITY (the note-on ring is full: nothing
 /// changed, retry) or LE_ERR_NOT_RUNNING before configure.
@@ -2053,7 +2055,7 @@ external int le_engine_set_instrument_device(
   ffi.Pointer<ffi.Float> values,
 );
 
-/// Sets parameter `param` (an le_drift_param) of the device `slot` plays to
+/// Sets parameter `param` (the device's le_*_param) of the device `slot` plays to
 /// `value` (clamped to its range), applied from the next block. Returns LE_OK,
 /// LE_ERR_INVALID, LE_ERR_NO_INSTRUMENT (the slot plays no device) or
 /// LE_ERR_NOT_RUNNING.
@@ -4143,7 +4145,11 @@ const int LE_INST_CHORD_NOTES = 8;
 
 const int LE_INST_DEVICE_DRIFT = 1;
 
+const int LE_INST_DEVICE_MAX_PARAMS = 507;
+
 const int LE_INST_DEVICE_NONE = 0;
+
+const int LE_INST_DEVICE_OPERATOR = 2;
 
 const int LE_INST_EVENT_CAPACITY = 256;
 
@@ -4192,6 +4198,86 @@ const int LE_MAX_SOURCES = 40;
 const int LE_MAX_TRACKS = 8;
 
 const int LE_MEM_RESERVE_BYTES = 536870912;
+
+const int LE_OPERATOR_DESTS = 24;
+
+const int LE_OPERATOR_ENV_ATTACK_LEVEL = 1;
+
+const int LE_OPERATOR_ENV_ATTACK_SLOPE = 2;
+
+const int LE_OPERATOR_ENV_ATTACK_TIME = 0;
+
+const int LE_OPERATOR_ENV_DECAY_LEVEL = 4;
+
+const int LE_OPERATOR_ENV_DECAY_SLOPE = 5;
+
+const int LE_OPERATOR_ENV_DECAY_TIME = 3;
+
+const int LE_OPERATOR_ENV_FIELDS = 14;
+
+const int LE_OPERATOR_ENV_LOOP_MODE = 10;
+
+const int LE_OPERATOR_ENV_LOOP_TIME = 11;
+
+const int LE_OPERATOR_ENV_RELEASE_LEVEL = 8;
+
+const int LE_OPERATOR_ENV_RELEASE_SLOPE = 9;
+
+const int LE_OPERATOR_ENV_RELEASE_TIME = 7;
+
+const int LE_OPERATOR_ENV_REPEAT = 12;
+
+const int LE_OPERATOR_ENV_SUSTAIN = 6;
+
+const int LE_OPERATOR_ENV_TIME_VEL = 13;
+
+const int LE_OPERATOR_OP_COARSE = 3;
+
+const int LE_OPERATOR_OP_ENV = 17;
+
+const int LE_OPERATOR_OP_FEEDBACK = 16;
+
+const int LE_OPERATOR_OP_FIELDS = 98;
+
+const int LE_OPERATOR_OP_FINE = 4;
+
+const int LE_OPERATOR_OP_FIXED_FREQ = 6;
+
+const int LE_OPERATOR_OP_FIXED_MULTI = 7;
+
+const int LE_OPERATOR_OP_FIXED_ON = 5;
+
+const int LE_OPERATOR_OP_KEY_SCALE = 15;
+
+const int LE_OPERATOR_OP_LFO_ON = 12;
+
+const int LE_OPERATOR_OP_ON = 0;
+
+const int LE_OPERATOR_OP_PHASE = 10;
+
+const int LE_OPERATOR_OP_PITCH_ENV_ON = 13;
+
+const int LE_OPERATOR_OP_RETRIGGER = 11;
+
+const int LE_OPERATOR_OP_USER_COUNT = 31;
+
+const int LE_OPERATOR_OP_USER_EXPANSION = 32;
+
+const int LE_OPERATOR_OP_USER_HARMONIC = 34;
+
+const int LE_OPERATOR_OP_USER_NORMALIZE = 33;
+
+const int LE_OPERATOR_OP_VEL_COARSE = 8;
+
+const int LE_OPERATOR_OP_VEL_COARSE_QUANTIZED = 9;
+
+const int LE_OPERATOR_OP_VEL_SCALE = 14;
+
+const int LE_OPERATOR_OP_VOLUME = 2;
+
+const int LE_OPERATOR_OP_WAVE = 1;
+
+const int LE_OPERATOR_ROUTE_SOURCES = 5;
 
 const double LE_PERF_ACTIVITY_DBFS = -40.0;
 
@@ -6354,6 +6440,242 @@ final class le_mix_settings extends ffi.Struct {
 
   @ffi.Array.multi([8])
   external ffi.Array<ffi.Int32> lane_count;
+}
+
+enum le_operator_param {
+  /// 0..10
+  LE_OPERATOR_ALGORITHM(392),
+
+  /// 0..15: 1..8, 10, 12, 14, 16, 20, 24, 32, 48
+  LE_OPERATOR_VOICES(393),
+
+  /// 0/1: a repeated note takes its own voice
+  LE_OPERATOR_RETRIGGER_MODE(394),
+
+  /// 0/1: linear wave lookup
+  LE_OPERATOR_INTERPOLATION(395),
+
+  /// 0/1
+  LE_OPERATOR_ANTIALIAS(396),
+
+  /// semitones, -48..48
+  LE_OPERATOR_TRANSPOSE(397),
+
+  /// semitones, 0..24
+  LE_OPERATOR_PITCH_BEND_RANGE(398),
+
+  /// linear, 0..1.995
+  LE_OPERATOR_VOLUME(399),
+
+  /// -1..1
+  LE_OPERATOR_PAN(400),
+
+  /// %, 0..100
+  LE_OPERATOR_PAN_KEY(401),
+
+  /// %, 0..100
+  LE_OPERATOR_PAN_RANDOM(402),
+
+  /// 0..1
+  LE_OPERATOR_TONE(403),
+
+  /// %, 0..100
+  LE_OPERATOR_SPREAD(404),
+
+  /// 0/1
+  LE_OPERATOR_GLIDE_ON(405),
+
+  /// ms, 0.1..10000
+  LE_OPERATOR_GLIDE_TIME(406),
+
+  /// 0/1
+  LE_OPERATOR_LFO_ON(407),
+
+  /// 0..6: Sine, Square, Triangle, Saw Up, Saw
+  /// Down, S&H, Noise
+  LE_OPERATOR_LFO_TYPE(408),
+
+  /// 0..2: Low, High, Sync
+  LE_OPERATOR_LFO_RANGE(409),
+
+  /// note-like 0..127
+  LE_OPERATOR_LFO_RATE(410),
+
+  /// 0..14: 1/48 .. 4 bars
+  LE_OPERATOR_LFO_SYNCED_RATE(411),
+
+  /// 0..1
+  LE_OPERATOR_LFO_RATE_KEY(412),
+
+  /// 0/1
+  LE_OPERATOR_LFO_RETRIGGER(413),
+
+  /// 0..1
+  LE_OPERATOR_LFO_AMOUNT(414),
+
+  /// %, 0..100
+  LE_OPERATOR_LFO_AMOUNT_A(415),
+
+  /// -1..1
+  LE_OPERATOR_LFO_AMOUNT_VEL(416),
+
+  /// 0/1: the rate follows the pitch envelope
+  LE_OPERATOR_LFO_PITCH_ENV_ON(417),
+
+  /// 0..23
+  LE_OPERATOR_LFO_DEST(418),
+
+  /// %, -100..100
+  LE_OPERATOR_LFO_DEST_AMOUNT(419),
+
+  /// LE_OPERATOR_ENV_FIELDS fields
+  LE_OPERATOR_LFO_ENV(420),
+  LE_OPERATOR_PITCH_ENV_ON(434),
+
+  /// -1..1
+  LE_OPERATOR_PITCH_ENV_AMOUNT(435),
+
+  /// %, 0..100
+  LE_OPERATOR_PITCH_ENV_AMOUNT_A(436),
+
+  /// 0..23
+  LE_OPERATOR_PITCH_ENV_DEST(437),
+
+  /// %, -100..100
+  LE_OPERATOR_PITCH_ENV_DEST_AMOUNT(438),
+
+  /// levels in semitones, -48..48
+  LE_OPERATOR_PITCH_ENV(439),
+  LE_OPERATOR_ENV_TIME(453),
+
+  /// %, -100..100
+  LE_OPERATOR_ENV_TIME_KEY(454),
+
+  /// 0/1, stored without effect: Live scales the
+  /// attack either way
+  LE_OPERATOR_ENV_TIME_ATTACK(455),
+
+  /// 0/1 (off bypasses the shaper too)
+  LE_OPERATOR_FILTER_ON(456),
+
+  /// 0..4: LP, HP, BP, Notch, Morph
+  LE_OPERATOR_FILTER_TYPE(457),
+
+  /// 0..4: Clean, OSR, MS2, SMP, PRD
+  LE_OPERATOR_FILTER_CIRCUIT_LPHP(458),
+
+  /// 0..1: Clean, OSR
+  LE_OPERATOR_FILTER_CIRCUIT_BPNOMO(459),
+
+  /// 0/1: 12 or 24 dB
+  LE_OPERATOR_FILTER_SLOPE(460),
+
+  /// Hz, 30..18500
+  LE_OPERATOR_FILTER_FREQ(461),
+
+  /// 0..1.25
+  LE_OPERATOR_FILTER_RES(462),
+
+  /// 0..1
+  LE_OPERATOR_FILTER_MORPH(463),
+
+  /// dB, 0..24
+  LE_OPERATOR_FILTER_DRIVE(464),
+
+  /// %, -100..100
+  LE_OPERATOR_FILTER_VEL(465),
+
+  /// %, -200..100
+  LE_OPERATOR_FILTER_KEY(466),
+
+  /// %, -100..100
+  LE_OPERATOR_FILTER_ENV_AMOUNT(467),
+
+  /// 0/1
+  LE_OPERATOR_FILTER_LFO_ON(468),
+
+  /// LE_OPERATOR_ENV_FIELDS fields
+  LE_OPERATOR_FILTER_ENV(469),
+  LE_OPERATOR_SHAPER_TYPE(483),
+
+  /// %, 0..100
+  LE_OPERATOR_SHAPER_DRY_WET(484),
+
+  /// dB, -12..12
+  LE_OPERATOR_SHAPER_DRIVE(485),
+
+  /// 0..127
+  LE_OPERATOR_ROUTE_NEUTRAL_KEY(486),
+
+  /// per source, two routes of (destination,
+  /// amount %), 20 fields
+  LE_OPERATOR_ROUTE(487),
+  LE_OPERATOR_PARAMS(507);
+
+  final int value;
+  const le_operator_param(this.value);
+
+  static le_operator_param fromValue(int value) => switch (value) {
+    392 => LE_OPERATOR_ALGORITHM,
+    393 => LE_OPERATOR_VOICES,
+    394 => LE_OPERATOR_RETRIGGER_MODE,
+    395 => LE_OPERATOR_INTERPOLATION,
+    396 => LE_OPERATOR_ANTIALIAS,
+    397 => LE_OPERATOR_TRANSPOSE,
+    398 => LE_OPERATOR_PITCH_BEND_RANGE,
+    399 => LE_OPERATOR_VOLUME,
+    400 => LE_OPERATOR_PAN,
+    401 => LE_OPERATOR_PAN_KEY,
+    402 => LE_OPERATOR_PAN_RANDOM,
+    403 => LE_OPERATOR_TONE,
+    404 => LE_OPERATOR_SPREAD,
+    405 => LE_OPERATOR_GLIDE_ON,
+    406 => LE_OPERATOR_GLIDE_TIME,
+    407 => LE_OPERATOR_LFO_ON,
+    408 => LE_OPERATOR_LFO_TYPE,
+    409 => LE_OPERATOR_LFO_RANGE,
+    410 => LE_OPERATOR_LFO_RATE,
+    411 => LE_OPERATOR_LFO_SYNCED_RATE,
+    412 => LE_OPERATOR_LFO_RATE_KEY,
+    413 => LE_OPERATOR_LFO_RETRIGGER,
+    414 => LE_OPERATOR_LFO_AMOUNT,
+    415 => LE_OPERATOR_LFO_AMOUNT_A,
+    416 => LE_OPERATOR_LFO_AMOUNT_VEL,
+    417 => LE_OPERATOR_LFO_PITCH_ENV_ON,
+    418 => LE_OPERATOR_LFO_DEST,
+    419 => LE_OPERATOR_LFO_DEST_AMOUNT,
+    420 => LE_OPERATOR_LFO_ENV,
+    434 => LE_OPERATOR_PITCH_ENV_ON,
+    435 => LE_OPERATOR_PITCH_ENV_AMOUNT,
+    436 => LE_OPERATOR_PITCH_ENV_AMOUNT_A,
+    437 => LE_OPERATOR_PITCH_ENV_DEST,
+    438 => LE_OPERATOR_PITCH_ENV_DEST_AMOUNT,
+    439 => LE_OPERATOR_PITCH_ENV,
+    453 => LE_OPERATOR_ENV_TIME,
+    454 => LE_OPERATOR_ENV_TIME_KEY,
+    455 => LE_OPERATOR_ENV_TIME_ATTACK,
+    456 => LE_OPERATOR_FILTER_ON,
+    457 => LE_OPERATOR_FILTER_TYPE,
+    458 => LE_OPERATOR_FILTER_CIRCUIT_LPHP,
+    459 => LE_OPERATOR_FILTER_CIRCUIT_BPNOMO,
+    460 => LE_OPERATOR_FILTER_SLOPE,
+    461 => LE_OPERATOR_FILTER_FREQ,
+    462 => LE_OPERATOR_FILTER_RES,
+    463 => LE_OPERATOR_FILTER_MORPH,
+    464 => LE_OPERATOR_FILTER_DRIVE,
+    465 => LE_OPERATOR_FILTER_VEL,
+    466 => LE_OPERATOR_FILTER_KEY,
+    467 => LE_OPERATOR_FILTER_ENV_AMOUNT,
+    468 => LE_OPERATOR_FILTER_LFO_ON,
+    469 => LE_OPERATOR_FILTER_ENV,
+    483 => LE_OPERATOR_SHAPER_TYPE,
+    484 => LE_OPERATOR_SHAPER_DRY_WET,
+    485 => LE_OPERATOR_SHAPER_DRIVE,
+    486 => LE_OPERATOR_ROUTE_NEUTRAL_KEY,
+    487 => LE_OPERATOR_ROUTE,
+    507 => LE_OPERATOR_PARAMS,
+    _ => throw ArgumentError('Unknown value for le_operator_param: $value'),
+  };
 }
 
 final class le_output_fx_snapshot extends ffi.Struct {

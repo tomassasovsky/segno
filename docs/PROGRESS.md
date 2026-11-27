@@ -1,4 +1,4 @@
-<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance retriggered isolations Bellatine Keystrike Numan uncentred dfit Grimer Floot Halfstep restruck Cardano baselined prewarped -->
+<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalized Clob Sallen linearised transconductance unmodulated autocorrelation tfz unmeasured retriggered isolations Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Perc Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penv penvd rndpan Basscycle spr Floot Halfstep fenv restruck fmdrive oscvol unsmoothed circ nornd Cardano baselined prewarped -->
 # Segno — Progress & Roadmap
 
 <!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs multicore smarttune -->
@@ -61,9 +61,110 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
 | SEG-22 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track and lane chains) is #1729 | build | needs-plan-approval | `claude/fx-multicore-1515-p1b` |
 | SEG-107 | Save As failed with Out of Memory: the mixdown asked for the LCM of two Song-mode tracks (24.7 GB); it now spans the longest lane past 600 s, and the save refuses a length no loop can hold | in-review | needs-hardware | `claude/save-oom-SEG-107` |
 | SEG-63 | Console WiFi against an ASUS RT-AX89X with 802.11ax on: firmware already matches Pi OS; brcmfmac options aligned with Pi OS and a troubleshooting note; failure not reproduced, issue stays open until it recurs | in-review | agent-merges | `claude/wifi-firmware-1816` |
-| SEG-109 | Ableton Live device presets on the pedal, Drift first: presets read from the user's own copy; Drift's behavior learned with rea + Ghidra from Live 12.2.7 and reimplemented, no Ableton code or presets in the repo. Plan approved 2026-11-25 (P1-P6); P1 stereo buses, P2 preset reader and P3 the Drift device in review | in-review | needs-merge | `claude/ableton-devices-SEG-109` |
+| SEG-109 | Ableton Live device presets on the pedal, Drift first: presets read from the user's own copy; Drift's behavior learned with rea + Ghidra from Live 12.2.7 and reimplemented, no Ableton code or presets in the repo. Plan approved 2026-11-25 (P1-P6); P1 stereo buses, P2 preset reader, P3 the Drift device and P4 its fit in review; the Operator device (P7, the next instrument) in review | in-review | needs-merge | `claude/ableton-devices-SEG-109`, `claude/ableton-operator-SEG-109-p7` |
 
 ---
+
+## November 2026 The Operator device plays on an instrument slot (SEG-109 P7)
+
+- Live 12.2.7's Operator read with rea + Ghidra (four readers: operators and
+  FM, envelopes, filter and shaper, LFO, routing and voices) and written as
+  "Operator: behavior" in the Ableton devices brainstorm; `operator_voice.c`
+  is written from it. `LE_INST_DEVICE_OPERATOR` takes an Operator preset's
+  507 values (`le_operator_param`: four operator blocks of 98, then the
+  device's own) through the same slot API as Drift.
+- Four table-lookup operators in the eleven algorithms, 23 waveforms (User
+  waves rebuilt on the audio thread, one operator a render call),
+  Antialias at 2x with band-limited tables, Tone, feedback on the
+  unmodulated operators, the shared envelope engine with its loop modes and
+  time scaling, the LFO and pitch envelope, the modulation routes, Spread,
+  glide, Retrigger Mode and the voice table up to 48.
+- Fitted against 255 Live renders: waveforms, FM, feedback, envelopes, LFO,
+  glide, Spread, pan, Tone and the routes within 0.5 dB rms each. Measured
+  where the reading was silent: an operator envelope's slopes other than 0
+  and 1 hold and jump (as Live renders them; the filter and pitch
+  envelopes curve), EnvTimeIncludeAttack changes nothing, the routes'
+  sources and units (gain destinations only attenuate).
+- The filters: Clean and Morph (Live's own noise through Segno's filter
+  within 0.5 dB), MS2 on the section Drift's filter II uses (now shared,
+  `ms2_section.h`; Drift renders bit-identical), and Segno's own models of
+  PRD (a four-stage ladder) and OSR (a state-variable loop with a diode
+  bounding its resonance), each fitted to Live's renders; SMP runs on
+  MS2's section with its own constants. MS2's and SMP's high-passes are
+  fitted shapes (damping fitted at resonance 0 to 1); PRD's is not read
+  yet: Clean's high-pass stands in.
+- The routes, measured in a fifth and sixth round: sources bipolar or
+  resting at 0, gain destinations attenuating by 1 - a+ + a u, the LFO's
+  and pitch envelope's routes scaled by their own amounts, the pitch
+  envelope moving in ratio and its route in semitones.
+- Ten factory presets, octave bands rms: seven within 1.6 dB (Sub Sine Bass
+  0.0 to Bells Brushed Hits 1.6), Metallic FM 2.3, OP Bass 3.1 within
+  40 dB of its loudest, Celesta 4.2 (its partials match).
+- The strict score: 277 of 298 renders and 6 of 10 factory presets pass
+  (from 248 and 4): curved filter and pitch envelope slopes, the
+  one-poles measured in scaled levels (an operator's amplitude, the pitch
+  envelope's ratios), the envelope floor as silence, random white noise,
+  continuous LFO shapes, MIDI routes slowing the LFO rate, the filter
+  envelope's amount as a gain destination, Spread in whole percent, no
+  glide into a stolen voice, the MS2 and SMP high-passes, SMP's and PRD's
+  resonance. Celesta, Bells Brushed Hits and Metallic FM are held by
+  Live's random pan and phases; round 7 (52 renders) isolates the rest.
+- Round 7 and the held-out round (scorer round 2): Sync on the song's
+  sixteenths, LFO Rate and the crossfades taking controllers as bipolar
+  (Analog Bouquet Brass now passes), the MS2 high-pass's damping, legato
+  keeping the first note's key scaling. 324 of 349 fit renders, 9 of 10
+  presets; held out 32 of 67 (from 29). Live's random pan and phases
+  differ between instances, so Segno draws its own. Round 8 (81 renders)
+  plays the failing held-out kinds with another phrase.
+- Round 8: the pitch envelope moves the LFO rate in ratio, the Volume
+  route scales the voice's output (not the modulators, after the
+  shaper), Res takes controllers as bipolar, a loop's restart runs a
+  minimal attack. 335 of 390 fit renders (round 8 13 of 41, from 9), 8 of
+  10 presets; held out 35 of 67 (from 32).
+- Round 9: the pitch envelope's one-pole keeps one shape whatever its
+  span, Res, Filter Drive and Aux Env are gain destinations, OSR's
+  self-oscillation refitted, envelope segments last whole samples. 363 of
+  419 fit renders (round 9 23 of 29), 8 of 10 presets; held out 36 of 67.
+- Held-out pass: Beat and Sync retrigger a whole period after their start,
+  a releasing envelope ends at 10^-3 and its voice a block later, a chord
+  joining a voice that took a sounding one's place does not glide. 365 of
+  419 fit renders, 8 of 10 presets; held out 38 of 67.
+- Round 10: each of Spread's two voices draws its own random pan (a fixed
+  pan scales them by one law). 371 of 427 fit renders, 8 of 10 presets;
+  held out 39 of 67 (five Live copies per random preset).
+- Round 11: OSR damped at resonance 1 (no self-oscillation there) and
+  without drive in Morph mode; Spread draws nothing per voice beyond its
+  pans, the truncated table read and the sample-and-hold LFO match Live.
+  387 of 452 fit renders, 8 of 10 presets; held out 39 of 67.
+- Held-out pass 2: a note that takes a sounding voice's place waits for
+  its 1 ms fade (Live's pending queue), and parameters apply per 16
+  samples (Nebulae Keys' audio-rate sample-and-hold), the voice end kept on
+  a 32-sample grid. 391 of 452 fit renders, 8 of 10 presets; held out 41
+  of 67 with three seeds; with the scorer's five, 399 of 452, 9 of 10
+  presets and held out 48 (seven random presets
+  had failed on three seeds drawing the first note's pan near the
+  sides). Round 12 (23 renders) asks
+  Live for each destination's control rate, the steal wait, the pitch
+  multiplier through zero and the first random pan.
+- Round 12 (17 renders and copies): gains, pan, FM Drive and the pitch
+  follow Live's 16-sample control rate to the dB, the steal wait matches
+  to the sample, the LFO's routes into Filter Freq and Tone pass smoothers
+  (the filter's own, and 200 Hz); the first random pan is not special.
+  Five seeds: 413 of 469 fit renders (the earlier rounds 399 of 452,
+  round 12 14 of 17), 9 of 10 presets; held out 48 of 67.
+- Round 12's open questions: Tone's low-pass acts on the modulator's
+  change and the phase accumulates it (an LFO on Tone needs no smoother),
+  the saw LFOs turn back over the last 1/256 of a cycle (the pitch through
+  zero is the plain 1 + L), and PRD's high-pass is a ladder of high-passes.
+  With the scorer's round 8: 419 of 469 fit renders (from 415
+  re-scored), 9 of 10 presets; held out 50 of 67 (from 49). Round 13 (26 renders) asks Live for the LFO shapes'
+  turns and smoother, Release Bass taken apart, OSR's even harmonics and
+  MS2's loud saw.
+- Noise Looped from a reader's description of Live's generator (a fixed
+  seed, so the same table in every instance), and every operator reads at
+  its advanced phase: 423 of 470 fit renders, held out 50 of 67.
+- A voice costs 2.7 us per period at 48 kHz on the dev machine, 4.5 with
+  Antialias (a Drift voice 7.1).
 
 ## November 2026 Drift against Live's strict score (SEG-109 P4, round 5)
 
@@ -241,7 +342,7 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
 ## November 2026 Drift fitted against Live renders (SEG-109 P4, round 1)
 
 - Live 12.2.7 renders of controlled patches (one setting changed per render
-  from a plain saw or white noise, exported unnormalised) against Segno's
+  from a plain saw or white noise, exported unnormalized) against Segno's
   renders of the same patches settled most of P3's provisional values. The
   brainstorm's "Open items and the fits" lists each with its measurement.
   Fitted: the Volume curve (linear), the noise level and both filters'

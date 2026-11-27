@@ -5282,6 +5282,7 @@ LE_EXPORT int32_t le_engine_instrument_sustain(le_engine* engine, int32_t slot,
 
 #define LE_INST_DEVICE_NONE 0
 #define LE_INST_DEVICE_DRIFT 1
+#define LE_INST_DEVICE_OPERATOR 2
 
 typedef enum le_drift_param {
   LE_DRIFT_OSC1_TYPE = 0,      /* 0..6: Sine, Triangle, Shark Tooth, Saturated,
@@ -5371,9 +5372,148 @@ typedef enum le_drift_param {
   LE_DRIFT_PARAMS
 } le_drift_param;
 
-/* Gives `slot` device `device` (LE_INST_DEVICE_DRIFT) with `values`
- * (LE_DRIFT_PARAMS of them, in le_drift_param order; NULL: the device's
- * defaults; each clamped to its range). Ends a patch or device the slot
+/* Operator (docs/brainstorm/2026-11-24-ableton-devices-brainstorm-doc.md,
+ * "Operator: behavior"): four operators in eleven algorithms, a filter, a
+ * shaper, an LFO and a pitch envelope, in the units its presets store (ms,
+ * Hz, linear gain, percent, semitones, enum indices in Live's order). The
+ * parameters are four operator blocks (LE_OPERATOR_OP), then the device's
+ * own. */
+
+/* One envelope's fields, in this order, wherever an Operator envelope sits. */
+enum {
+  LE_OPERATOR_ENV_ATTACK_TIME = 0, /* ms, 0.1..20000 */
+  LE_OPERATOR_ENV_ATTACK_LEVEL,    /* the initial level (linear) */
+  LE_OPERATOR_ENV_ATTACK_SLOPE,    /* -1..1 */
+  LE_OPERATOR_ENV_DECAY_TIME,      /* ms, 1..60000 */
+  LE_OPERATOR_ENV_DECAY_LEVEL,     /* the peak level */
+  LE_OPERATOR_ENV_DECAY_SLOPE,
+  LE_OPERATOR_ENV_SUSTAIN,
+  LE_OPERATOR_ENV_RELEASE_TIME,    /* ms, 1..60000 */
+  LE_OPERATOR_ENV_RELEASE_LEVEL,   /* the end level */
+  LE_OPERATOR_ENV_RELEASE_SLOPE,
+  LE_OPERATOR_ENV_LOOP_MODE,       /* 0..4: None, Loop, Beat, Sync, Trigger */
+  LE_OPERATOR_ENV_LOOP_TIME,       /* ms, 0.2..20000 */
+  LE_OPERATOR_ENV_REPEAT,          /* 0..14: 1/48 .. 4 bars */
+  LE_OPERATOR_ENV_TIME_VEL,        /* %, -100..100 */
+  LE_OPERATOR_ENV_FIELDS
+};
+
+/* One operator's fields. */
+enum {
+  LE_OPERATOR_OP_ON = 0,        /* 0/1 */
+  LE_OPERATOR_OP_WAVE,          /* 0..22: Sine .. Noise White, User */
+  LE_OPERATOR_OP_VOLUME,        /* linear, 0..1 */
+  LE_OPERATOR_OP_COARSE,        /* 0..48 (0 is a ratio of 0.5) */
+  LE_OPERATOR_OP_FINE,          /* thousandths of the ratio, 0..1000 */
+  LE_OPERATOR_OP_FIXED_ON,      /* 0/1 */
+  LE_OPERATOR_OP_FIXED_FREQ,    /* Hz, 1..1000 */
+  LE_OPERATOR_OP_FIXED_MULTI,   /* 0..5: x0, x0.001 .. x10 */
+  LE_OPERATOR_OP_VEL_COARSE,    /* %, -100..100 */
+  LE_OPERATOR_OP_VEL_COARSE_QUANTIZED, /* 0/1 */
+  LE_OPERATOR_OP_PHASE,         /* %, 0..100 */
+  LE_OPERATOR_OP_RETRIGGER,     /* 0/1 */
+  LE_OPERATOR_OP_LFO_ON,        /* 0/1 */
+  LE_OPERATOR_OP_PITCH_ENV_ON,  /* 0/1 */
+  LE_OPERATOR_OP_VEL_SCALE,     /* %, -100..100 */
+  LE_OPERATOR_OP_KEY_SCALE,     /* %, -100..100 */
+  LE_OPERATOR_OP_FEEDBACK,      /* %, 0..100 */
+  LE_OPERATOR_OP_ENV,           /* LE_OPERATOR_ENV_FIELDS fields */
+  LE_OPERATOR_OP_USER_COUNT = LE_OPERATOR_OP_ENV + LE_OPERATOR_ENV_FIELDS,
+                                /* 0..2: 16, 32, 64 drawn harmonics */
+  LE_OPERATOR_OP_USER_EXPANSION, /* 0..5 */
+  LE_OPERATOR_OP_USER_NORMALIZE, /* 0/1 */
+  LE_OPERATOR_OP_USER_HARMONIC,  /* 64 fields, 0..1 */
+  LE_OPERATOR_OP_FIELDS = LE_OPERATOR_OP_USER_HARMONIC + 64
+};
+
+/* Operator `op` (0..3: A..D), field `field`. */
+#define LE_OPERATOR_OP(op, field) ((op) * LE_OPERATOR_OP_FIELDS + (field))
+
+/* A modulation route's destination (LE_OPERATOR_LFO_DEST, the pitch
+ * envelope's, the MIDI routes'): 0 Off, 1..4 OSC Volume A..D, 5 Crossfade
+ * A/C, 6 Crossfade B/D, 7 Feedback, 8 Fixed Frequency, 9 FM Drive, 10 Filter
+ * Freq, 11 Filter Q (legacy), 12 Filter Res, 13 Filter Morph, 14 Filter
+ * Drive, 15 Filter Envelope Amount, 16 Shaper Drive, 17 LFO Rate, 18 LFO
+ * Amount, 19 Pitch Envelope Amount, 20 Volume, 21 Panorama, 22 Tone, 23 Time.
+ * The MIDI route sources, in order: velocity, key, aftertouch, pitch bend,
+ * mod wheel; two routes each. */
+#define LE_OPERATOR_DESTS 24
+#define LE_OPERATOR_ROUTE_SOURCES 5
+
+typedef enum le_operator_param {
+  LE_OPERATOR_ALGORITHM = 4 * LE_OPERATOR_OP_FIELDS, /* 0..10 */
+  LE_OPERATOR_VOICES,           /* 0..15: 1..8, 10, 12, 14, 16, 20, 24, 32, 48 */
+  LE_OPERATOR_RETRIGGER_MODE,   /* 0/1: a repeated note takes its own voice */
+  LE_OPERATOR_INTERPOLATION,    /* 0/1: linear wave lookup */
+  LE_OPERATOR_ANTIALIAS,        /* 0/1 */
+  LE_OPERATOR_TRANSPOSE,        /* semitones, -48..48 */
+  LE_OPERATOR_PITCH_BEND_RANGE, /* semitones, 0..24 */
+  LE_OPERATOR_VOLUME,           /* linear, 0..1.995 */
+  LE_OPERATOR_PAN,              /* -1..1 */
+  LE_OPERATOR_PAN_KEY,          /* %, 0..100 */
+  LE_OPERATOR_PAN_RANDOM,       /* %, 0..100 */
+  LE_OPERATOR_TONE,             /* 0..1 */
+  LE_OPERATOR_SPREAD,           /* %, 0..100 */
+  LE_OPERATOR_GLIDE_ON,         /* 0/1 */
+  LE_OPERATOR_GLIDE_TIME,       /* ms, 0.1..10000 */
+  LE_OPERATOR_LFO_ON,           /* 0/1 */
+  LE_OPERATOR_LFO_TYPE,         /* 0..6: Sine, Square, Triangle, Saw Up, Saw
+                                 * Down, S&H, Noise */
+  LE_OPERATOR_LFO_RANGE,        /* 0..2: Low, High, Sync */
+  LE_OPERATOR_LFO_RATE,         /* note-like 0..127 */
+  LE_OPERATOR_LFO_SYNCED_RATE,  /* 0..14: 1/48 .. 4 bars */
+  LE_OPERATOR_LFO_RATE_KEY,     /* 0..1 */
+  LE_OPERATOR_LFO_RETRIGGER,    /* 0/1 */
+  LE_OPERATOR_LFO_AMOUNT,       /* 0..1 */
+  LE_OPERATOR_LFO_AMOUNT_A,     /* %, 0..100 */
+  LE_OPERATOR_LFO_AMOUNT_VEL,   /* -1..1 */
+  LE_OPERATOR_LFO_PITCH_ENV_ON, /* 0/1: the rate follows the pitch envelope */
+  LE_OPERATOR_LFO_DEST,         /* 0..23 */
+  LE_OPERATOR_LFO_DEST_AMOUNT,  /* %, -100..100 */
+  LE_OPERATOR_LFO_ENV,          /* LE_OPERATOR_ENV_FIELDS fields */
+  LE_OPERATOR_PITCH_ENV_ON = LE_OPERATOR_LFO_ENV + LE_OPERATOR_ENV_FIELDS,
+  LE_OPERATOR_PITCH_ENV_AMOUNT,   /* -1..1 */
+  LE_OPERATOR_PITCH_ENV_AMOUNT_A, /* %, 0..100 */
+  LE_OPERATOR_PITCH_ENV_DEST,     /* 0..23 */
+  LE_OPERATOR_PITCH_ENV_DEST_AMOUNT, /* %, -100..100 */
+  LE_OPERATOR_PITCH_ENV,          /* levels in semitones, -48..48 */
+  LE_OPERATOR_ENV_TIME = LE_OPERATOR_PITCH_ENV + LE_OPERATOR_ENV_FIELDS,
+                                  /* %, -100..100 */
+  LE_OPERATOR_ENV_TIME_KEY,       /* %, -100..100 */
+  LE_OPERATOR_ENV_TIME_ATTACK,    /* 0/1, stored without effect: Live scales the
+                                   * attack either way */
+  LE_OPERATOR_FILTER_ON,          /* 0/1 (off bypasses the shaper too) */
+  LE_OPERATOR_FILTER_TYPE,        /* 0..4: LP, HP, BP, Notch, Morph */
+  LE_OPERATOR_FILTER_CIRCUIT_LPHP, /* 0..4: Clean, OSR, MS2, SMP, PRD */
+  LE_OPERATOR_FILTER_CIRCUIT_BPNOMO, /* 0..1: Clean, OSR */
+  LE_OPERATOR_FILTER_SLOPE,       /* 0/1: 12 or 24 dB */
+  LE_OPERATOR_FILTER_FREQ,        /* Hz, 30..18500 */
+  LE_OPERATOR_FILTER_RES,         /* 0..1.25 */
+  LE_OPERATOR_FILTER_MORPH,       /* 0..1 */
+  LE_OPERATOR_FILTER_DRIVE,       /* dB, 0..24 */
+  LE_OPERATOR_FILTER_VEL,         /* %, -100..100 */
+  LE_OPERATOR_FILTER_KEY,         /* %, -200..100 */
+  LE_OPERATOR_FILTER_ENV_AMOUNT,  /* %, -100..100 */
+  LE_OPERATOR_FILTER_LFO_ON,      /* 0/1 */
+  LE_OPERATOR_FILTER_ENV,         /* LE_OPERATOR_ENV_FIELDS fields */
+  LE_OPERATOR_SHAPER_TYPE = LE_OPERATOR_FILTER_ENV + LE_OPERATOR_ENV_FIELDS,
+                                  /* 0..4: Off, Soft, Hard, Sine, 4-Bit */
+  LE_OPERATOR_SHAPER_DRY_WET,     /* %, 0..100 */
+  LE_OPERATOR_SHAPER_DRIVE,       /* dB, -12..12 */
+  LE_OPERATOR_ROUTE_NEUTRAL_KEY,  /* 0..127 */
+  LE_OPERATOR_ROUTE,              /* per source, two routes of (destination,
+                                   * amount %), 20 fields */
+  LE_OPERATOR_PARAMS = LE_OPERATOR_ROUTE + LE_OPERATOR_ROUTE_SOURCES * 4
+} le_operator_param;
+
+/* The most parameters any device takes. */
+#define LE_INST_DEVICE_MAX_PARAMS LE_OPERATOR_PARAMS
+
+/* Gives `slot` device `device` (LE_INST_DEVICE_DRIFT or
+ * LE_INST_DEVICE_OPERATOR) with `values` (the device's parameter count of
+ * them: LE_DRIFT_PARAMS in le_drift_param order, LE_OPERATOR_PARAMS in
+ * le_operator_param order; NULL: the device's defaults; each clamped to its
+ * range). Ends a patch or device the slot
  * played (its voices fade). Returns LE_OK, LE_ERR_INVALID (a bad slot,
  * device or NaN value), LE_ERR_CAPACITY (the note-on ring is full: nothing
  * changed, retry) or LE_ERR_NOT_RUNNING before configure. */
@@ -5381,7 +5521,7 @@ LE_EXPORT int32_t le_engine_set_instrument_device(le_engine* engine,
                                                   int32_t slot, int32_t device,
                                                   const float* values);
 
-/* Sets parameter `param` (an le_drift_param) of the device `slot` plays to
+/* Sets parameter `param` (the device's le_*_param) of the device `slot` plays to
  * `value` (clamped to its range), applied from the next block. Returns LE_OK,
  * LE_ERR_INVALID, LE_ERR_NO_INSTRUMENT (the slot plays no device) or
  * LE_ERR_NOT_RUNNING. */

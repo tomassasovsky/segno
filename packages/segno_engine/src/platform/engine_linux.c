@@ -1063,18 +1063,33 @@ void le_platform_prefault_audio_code(void) {
     }
   }
   rewind(f);
+  /* the end of the last writable segment of a wanted object: the anonymous
+   * mapping that starts there is its .bss, which has no path in the maps */
+  uintptr_t data_end = 0;
   while (fgets(line, sizeof(line), f) != NULL) {
     unsigned long lo = 0, hi = 0;
     char perms[8] = {0};
     char path[256] = {0};
-    if (sscanf(line, "%lx-%lx %7s %*s %*s %*s %255s", &lo, &hi, perms, path) !=
-        4) {
+    const int fields =
+        sscanf(line, "%lx-%lx %7s %*s %*s %*s %255s", &lo, &hi, perms, path);
+    if (fields == 3 && lo == data_end && perms[0] == 'r' && perms[1] == 'w') {
+      /* a wanted object's .bss: its statics are written by the callback */
+      le_populate_range(lo, hi, 1);
+      if (le_lock_range(lo, hi)) {
+        locked += hi - lo;
+      } else if (refused == 0) {
+        refused = errno != 0 ? errno : -1;
+      }
+      data_end = 0;
       continue;
     }
+    data_end = 0;
+    if (fields != 4) continue;
     const int wanted = le_is_audio_library(path) ||
                        (engine_path[0] != '\0' && strcmp(path, engine_path) == 0);
     if (!wanted || perms[0] != 'r') continue; /* skip guard mappings */
     le_populate_range(lo, hi, perms[1] == 'w' && perms[3] == 'p');
+    if (perms[1] == 'w') data_end = hi;
     if (le_lock_range(lo, hi)) {
       locked += hi - lo;
     } else if (refused == 0) {

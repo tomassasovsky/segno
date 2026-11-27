@@ -5,6 +5,7 @@
  * that description.
  */
 #include "drift_voice.h"
+#include "ms2_section.h"
 
 #include <math.h>
 #include <string.h>
@@ -1441,96 +1442,10 @@ static float filter1(float* s, float x, float fc, float r, float rate,
   return lp / sqrtf(1.0f + 2.0f * lp * lp) * 2.915f;
 }
 
-/* Low-pass type II: two sections in series, each a Sallen-Key model of the
- * later MS-20 low-pass circuit (Segno's own model of it, from a reading of
- * Live's): a DC-blocked input drives a first integrator through a
- * transconductance that saturates; its capacitor's lower plate is the
- * feedback node X; a unity buffer follows each of the two integrators and
- * clips; the second buffer's output, DC-blocked, is the section's output
- * w, and the resonance feeds it back through a diode-like curve to X.
- * Small-signal Q is 1 / (2 - k) for a loop gain k, unity DC gain at every
- * resonance; the second section gets less of the resonance than the
- * first. The two nonlinear elements are linearised at the last estimate
- * and the loop solved in closed form, twice per sample. Levels are in the
- * circuit's volts: the voice signal enters at x 3 x 2.69 and leaves at
- * 2 / 9 of the passband. */
-
-/* The diode curve in the feedback: a slope of 2.21 at 0, a sharp knee near
- * 1, and a slope of 0.62 beyond, slightly larger above 0 than below.
- * Segno's own form, fitted to a description of Live's within 0.04; the
- * slope at 0 sets the small-signal resonance: fitted, filter II's
- * resonant peaks on noise within 0.3 dB of Live's at resonance 0.5 to 1. */
-static float f2_diode(float a) {
-  const float gm = a >= 0.0f ? 1.0449f : 1.1195f;
-  const float u = gm * a;
-  return 0.62f * a + 1.59f * a / sqrtf(sqrtf(1.0f + u * u * u * u));
-}
-
-/* The first integrator's transconductance z (1 - z^2/4 + |z|^3/16) on its
- * normalised input z (clamped to +-2), saturating at 1: its secant. */
-static float f2_ota_secant(float z) {
-  z = clampf(z, -2.0f, 2.0f);
-  const float az = fabsf(z);
-  return 1.0f - 0.25f * z * z + 0.0625f * az * az * az;
-}
-
-static float f2_diode_secant(float a) {
-  return fabsf(a) < 1e-4f ? 2.21f : f2_diode(a) / a;
-}
-
-#define F2_GI 2.69154f     /* into a section, in circuit volts */
-#define F2_KAPPA 0.4165f   /* the first integrator's input scale, per volt */
-#define F2_OTA_OFS 0.015f  /* its input offset (normalised) */
-#define F2_DIODE_OFS 0.009f
-#define F2_BUF_LO -4.987f  /* the buffers' clip */
-#define F2_BUF_HI 4.806f
-#define F2_X_LIM 5.1f
-
-/* One section; s holds s[0] the input coupling, s[1] the first integrator,
- * s[2] the second, s[3] the output coupling, and the last sample's secant
- * gains s[4] (the transconductance) and s[5] (the diode). */
-/* The per-sample coefficients both sections share. */
-typedef struct {
-  float g, he, c1, inv1g; /* g, 1/(1+gh), g/(1+g), 1/(1+g) */
-} f2_coef;
-
-static float filter2_section(float* s, float x, const f2_coef* c, float kfb) {
-  const float g = c->g, he = c->he, C1 = c->c1;
-  const float u = F2_GI * x;
-  const float vin = (u - s[0]) * he; /* the input coupling's high-pass */
-  float L = s[4], T = s[5];
-  float X = 0.0f, y1 = 0.0f, y2 = 0.0f, b1 = 0.0f, b2 = 0.0f, w = 0.0f;
-  for (int pass = 0; pass < 2; ++pass) {
-    if (pass == 1) {
-      L = f2_ota_secant(F2_KAPPA * (vin - b1) + F2_OTA_OFS);
-      T = f2_diode_secant(kfb * w + F2_DIODE_OFS);
-    }
-    /* y1 = A X + B, y2 = C1 y1 + C0, w = he y2 + F, X = P w + Q */
-    const float gl = g * L;
-    const float A = 1.0f / (1.0f + gl);
-    const float B = (gl * (vin + F2_OTA_OFS / F2_KAPPA) + s[1]) * A;
-    const float C0 = s[2] * c->inv1g;
-    const float F = -s[3] * he;
-    const float P = T * kfb;
-    const float Q = T * F2_DIODE_OFS;
-    X = (P * (he * (C1 * B + C0) + F) + Q) / (1.0f - P * he * C1 * A);
-    X = clampf(X, -F2_X_LIM, F2_X_LIM);
-    y1 = clampf(A * X + B, -21.0f, 21.0f);
-    b1 = clampf(y1, F2_BUF_LO, F2_BUF_HI);
-    y2 = clampf(C1 * b1 + C0, -21.0f, 21.0f);
-    b2 = clampf(y2, F2_BUF_LO, F2_BUF_HI);
-    w = he * b2 + F;
-  }
-  /* the next sample's first pass starts from this operating point */
-  s[4] = f2_ota_secant(F2_KAPPA * (vin - b1) + F2_OTA_OFS);
-  s[5] = f2_diode_secant(kfb * w + F2_DIODE_OFS);
-  /* trapezoidal state updates */
-  s[0] = 2.0f * (u - vin) - s[0];
-  s[1] = 2.0f * (y1 - X) - s[1];
-  s[2] = 2.0f * y2 - s[2];
-  s[3] = 2.0f * (b2 - w) - s[3];
-  return w / F2_GI;
-}
+/* Low-pass type II: two sections in series of Segno's MS-20 low-pass model
+ * (ms2_section.h); the second section gets less of the resonance than the
+ * first. The voice signal enters at x 3 and leaves at 2 / 9 of the
+ * passband. */
 
 /* With the same tiny injected noise as type I to start self-oscillation.
  * Resonance r maps to q = 4r / (3r + 1) + 4 (r - 1)^2 above 1; above 1 the
@@ -1538,25 +1453,16 @@ static float filter2_section(float* s, float x, const f2_coef* c, float kfb) {
 static float filter2(float* s, float x, float fc, float r, float rate,
                      uint32_t* rng) {
   const float fcs = fminf(fmaxf(fc, 1.0f), 0.48f * rate);
-  f2_coef c;
-  c.g = 1.02038f * prewarp(fminf(PI_F * fcs / rate, 1.54f));
-  c.he = 1.0f / (1.0f + PI_F * 1.5915f / rate); /* the 10 uF / 10 kOhm couplings */
-  c.inv1g = 1.0f / (1.0f + c.g);
-  c.c1 = c.g * c.inv1g;
-  float q = 4.0f * r / (3.0f * r + 1.0f);
-  if (r > 1.0f) q += 4.0f * (r - 1.0f) * (r - 1.0f);
-  const float lim = fminf(10000.0f / rate + 0.25f, 0.5f);
-  const float t = 1.0f - fminf(fc / rate, lim) / lim;
-  q = fminf(q, 1.0f + (fmaxf(q, 1.0f) - 1.0f) * t * t * t);
-  const float k1 = 0.91351f * q;
+  const le_ms2_coef c = le_ms2_coefs(prewarp(fminf(PI_F * fcs / rate, 1.54f)), rate);
+  const float k1 = LE_MS2_FEEDBACK * le_ms2_q(r, fc, rate);
   const float k2 = k1 * (0.5f + 0.2f * r);
   x = 3.0f * x + 2e-5f * rnd_bipolar(rng);
-  const float a = filter2_section(s, x, &c, k1);
+  const float a = le_ms2_section(s, x, &c, k1);
   /* the cascade's 2 / 9, and Segno's path gain around it (fitted: every
    * filter II render, the factory presets' isolations and the presets,
    * sixth-octave levels within 1.7 dB rms on average, the resonant peaks'
    * shape within 1.3 dB; a sine and a saw at every gain within 0.05 dB) */
-  return filter2_section(s + 6, a, &c, k2) * (2.0f / 9.0f) * 3.69f;
+  return le_ms2_section(s + LE_MS2_STATES, a, &c, k2) * (2.0f / 9.0f) * 3.69f;
 }
 
 /* Filter II at rest: the state its offsets settle to with no input (at DC
@@ -1565,18 +1471,18 @@ static float filter2(float* s, float x, float fc, float r, float rate,
  * from zero, which would step through the output coupling: measured, Live
  * starts its filter II notes without that transient. */
 static void f2_rest_state(float* s) {
-  memset(s, 0, 12 * sizeof(float));
-  s[4] = s[10] = 1.0f; /* the secants at small signal */
-  s[5] = s[11] = 2.21f;
+  memset(s, 0, 2 * LE_MS2_STATES * sizeof(float));
+  s[4] = s[LE_MS2_STATES + 4] = 1.0f; /* the secants at small signal */
+  s[5] = s[LE_MS2_STATES + 5] = LE_MS2_DIODE_SLOPE;
   /* fast coefficients settle the same equilibrium in few samples */
-  f2_coef c;
+  le_ms2_coef c;
   c.g = 4.0f;
   c.he = 0.5f;
   c.inv1g = 1.0f / (1.0f + c.g);
   c.c1 = c.g * c.inv1g;
   for (int i = 0; i < 400; ++i) {
-    const float a = filter2_section(s, 0.0f, &c, 0.5f);
-    filter2_section(s + 6, a, &c, 0.25f);
+    const float a = le_ms2_section(s, 0.0f, &c, 0.5f);
+    le_ms2_section(s + LE_MS2_STATES, a, &c, 0.25f);
   }
 }
 
