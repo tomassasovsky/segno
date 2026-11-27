@@ -845,7 +845,7 @@ where the reading was silent or disagreed. Segno's implementation is
   s ← 1664525 s + 1013904223 (mod 2³²) seeded with 0x275B6ACF and stepped
   once before each of its 4096 samples, each sample (s mod 2²³)/2²² − 1
   from the low 23 bits, built once per process and shared by every
-  instance and voice; no filter and no band-limited copies, peak-normalised
+  instance and voice; no filter and no band-limited copies, peak-normalized
   with the peak (0.99973) kept as its gain. It is read like any periodic
   table, 64 table samples a period, the phase modulation at 2 whole loops
   per unit. **[code]** (op-05) **[measured: Live's wave-20 render correlates
