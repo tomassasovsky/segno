@@ -1,6 +1,6 @@
 # Ableton Live device presets on the pedal — brainstorm
 
-<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance kModBy kCarriers Celesta transconductances Bandpass Bitgrunge Csound Drivetime Extratone Filther Lofi Lowpass Megatripolis Minnaert Sawstyle Starchestra polyBLEP Metalic Formant formants Barney Asym quintic Perc retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations penv Unisono pul meldfit Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penvd rndpan Bassic Bitgrunge's Catchem Filther's Kaneda Werkstuecktraeger Whley Whley's filt nloop avel fleg unmodulated Basscycle spr prewarping Floot Halfstep Gametal Plucks Neurotimbre sqperc unnormalized fenv restruck fmdrive oscvol unsmoothed colfm circ nornd retunes Detuned Cardano baselined prewarped -->
+<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance kModBy kCarriers Celesta transconductances Bandpass Bitgrunge Csound Drivetime Extratone Filther Lofi Lowpass Megatripolis Minnaert Sawstyle Starchestra polyBLEP Metalic Formant formants Barney Asym quintic Wurli MKII Perc halvings retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations penv Unisono pul meldfit Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penvd rndpan Bassic Bitgrunge's Catchem Filther's Kaneda Werkstuecktraeger Whley Whley's filt nloop avel fleg unmodulated Basscycle spr prewarping Floot Halfstep Gametal Plucks Neurotimbre sqperc unnormalized fenv restruck fmdrive oscvol unsmoothed colfm rand elwork circ nornd retunes Detuned Cardano baselined prewarped -->
 
 **Date:** 2026-11-24
 **Issue:** SEG-109 (related: SEG-57, Segno's own instrument voices)
@@ -2329,6 +2329,158 @@ and Segno cannot do:
 - The LFO's rate at 0.5 runs 0.4 % slow and its depth on pitch at 0.25
   0.6 % small against the curves, while the rate at 0.75 matches exactly;
   the Live round segno-analog-fit4 sweeps both.
+
+## Electric: behavior
+
+Learned 2026-11-25 from Live 12.2.7's Electric engine (an AAS bundle, one
+reader), then measured against 69 Live renders: single-change patches
+around a centred reference, and all 17 factory presets, six of them also
+two octaves down or up. Tags as for Meld. Segno's implementation is
+`electric_voice.c`.
+
+### Structure
+
+- Per voice: a mallet pulse and a damper's noise burst excite a fork of
+  four resonators, whose sum goes through a pickup. The voices sum, then
+  Volume (2u^2) and the output stage, copied to both channels. **[code]**
+- The output stage is a soft clip: linear up to 0.7 of full scale, then
+  1 - 0.3 / (1 + (|x| - 0.7) / 0.9)^3, which meets the line in value and
+  slope at the knee and tends to full scale; Live multiplies by 4 after
+  it. Segno's voice levels already carry that 4, so Segno clips at 2.8
+  toward 4. **[code]** **[measured]** (the scale: a loud strike peaks at
+  3.85 in Live, where the unclipped voice reaches 6.4)
+- The engine moves in 1 ms blocks: a note strikes at the start of the
+  block after the one it arrives in. A key struck again while its voice
+  still rings fades that voice out across the block, then the fork and
+  pickup restart from rest. **[code]**
+- Knob positions follow the engine's 0..127 scale, as in Analog. The
+  linear controls whose centre is neutral (Noise Pitch, Tine < Key,
+  Damper Balance, Pickup Amp < Key, Keyboard Stretch) give exactly their
+  midpoint at 64, not 64/127 of the way: a centred Noise Pitch is
+  519.5 Hz, not 533.7. Force < Key and Force < Vel are plain lines.
+  **[code]** **[measured]** (the noise renders; whole knob steps fit the
+  presets worse than the stored fractions)
+
+### Mallet
+
+- Four one-pole stages, all the strike's energy put in at once: two at
+  the cutoff S 2^(k_key K - k_vel v), two 27 times higher. S =
+  Exp(10, 7593) Hz; the key and velocity amounts (4^(m/64) - 1)/3, so 1 at
+  the centre; velocity lowers the cutoff. **[code]**
+- The strike's size: Force (m/128 + 1/64) times 2^(2 (g_k P + g_v v)),
+  g_k = Lin(-0.5, 0.9) per octave of pitch, g_v = Lin(0, 3.5) per unit of
+  velocity. **[code]** (the 2 is the patch's fixed value)
+
+### Fork
+
+- Four constant-Q band-passes, reset at each strike: the tone bar at the
+  note (261.62 Hz at C4), the tine at 7.349 times the note, its partial
+  2.8169 times the tine, and the "mallet noise" at 367.31 Hz 2^N, which
+  does not follow the key. Their decay rates scale with the pitch.
+  **[code]** **[measured]** (the tine's ratio)
+- Levels and decays: Tone Bar Volume 10^(0.0109375 m - 1.1), Tine and
+  Noise 10^(0.021875 m - 2.5); the decays as halvings per second,
+  1024 e^(-(m/2 + 64)/14) for the tone bar, e^(-(m/2 + 32)/14) for the
+  tines (the partial at 0.7 of it), e^(-m/28) for the noise.
+  **[code]**
+- Tine Color is the tines' key exponent (m/32 - 1, 1 at the centre: no
+  key scaling) and Tine < Key their balance (cos and sin of a quarter
+  turn), the other way round from the controls' names. **[measured]**
+- Releasing the key switches the three tuned resonators to decay rates of
+  52.8, 38.3 and 26.8 per second over Release Time R = 2 x
+  10^(0.01171875 m - 1), at the pitch's scale, raising their tuning so
+  the damped ring stays at pitch. **[code]**
+
+### Damper and pickup
+
+- The damper fires at the strike and at the key's release, split between
+  them by Balance: a two-stage envelope at the Damper Tone (Exp(4, 3490)
+  Hz, following the key) over low-passed noise, into the fork only.
+  **[code]**
+- The pickup, latched at the strike. R (electromagnetic): the motion,
+  through a leaky integrator, sets a point on a softly saturating flux
+  profile; the output is the derivative of motion times flux. W
+  (electrostatic): the derivative of the motion times a profile peaking
+  near the rest point. Symmetry offsets the rest point (even harmonics),
+  Distance scales it; Amp In, Amp Out and Amp < Key set the levels.
+  **[code]**
+
+### Voices
+
+- 2 to 32 voices (Voices + 2); the oldest released voice is stolen first,
+  fading over 1 ms. A released voice ends after 10 ms below -100 dBFS.
+  Semitone and Detune shift the key by (S + D)/12 - 1.0417 octaves;
+  Keyboard Stretch only offsets every note by up to 7 cents (its scaling
+  input is unconnected in Live). **[code]** **[Segno]** (the voice end)
+
+### The fits so far
+
+69 renders (third-octave bands within 60 dB of each render's loudest,
+from the strike): total 1.09 dB rms after the first fit.
+
+The strict score (third-octave x 50 ms cells, the attack in 5 ms frames,
+level, onset, pitch; `strict.py`): 65 of 69 renders and 21 of the 23
+factory presets pass, from 63 and 22 before this round. The output
+stage brought full Force < Velocity from 7.1 dB to 0.03 and full Tone
+Bar Volume from 2.4 to 0.02; the midpoint rule brought the mallet noise
+render at full decay from 3.9 to 0.7 and the pitch error everywhere to
+0.00 cents. Live hands a note-off to the device at the start of the 1 ms
+block that holds it, and a note's end a hair before its time, so a note
+ending on a block boundary releases one block early: the fit harness
+does the same, which brought Organ Soft from 0.42 to 0.02, E-Piano MKII
+Old from 0.35 to 0.03 and Damper Balance 1 from 1.22 to 0.51.
+**[measured]**
+
+Live's whole output sits 16 samples later than Segno's (every render,
+strike and release alike, sample for sample once shifted): a fixed
+latency outside the device, which Segno does not copy. **[measured]**
+
+Still open, all where the damper's noise rings a resonance: Stiffness 0,
+Damper Balance 0, E-Piano MKII Bright (which passed before the release
+change: its release burst rings the tine partial and the 10.7 kHz mallet
+noise 3 and 6 dB weaker on average than Live's) and Vibes Soft two
+octaves up (its 4.2 kHz mallet noise 7 dB over Live's, at C6 only).
+A noise burst gives each resonance a random size per strike, so these
+renders differ between two Segno renders with different noise too: over
+eight noise seeds, Segno against Segno reaches tfz 3 to 8 on them, and
+the attack score 3 to 5. Stiffness 0 stands out: Live's tine there is
+20 dB below the mean of Segno's eight seeds. Repeated Live renders would
+settle whether that is chance. The E-Piano
+MKII presets lean 1 dB darker above 1 kHz. **[measured]**
+
+The damper's noise in Live is the C library's rand(): one generator that
+every voice and every instance in the process draws from, one value a
+sample while a voice runs, seeded from the clock (whole seconds) as each
+engine instance is created. **[code]** Segno gives each voice a generator
+of its own with the same distribution, uniform in [0, 1). **[Segno]**
+
+The held-out round's two random failures (Vibes Soft on attack, E-Piano
+MKII Hard on pitch) do not come from a wider draw. Over 80 noise seeds
+Vibes Soft's attack spread is 4.2 dB, against Live's 3.3 across its
+three Live Sets, and Live against Segno is 4.2 too, which is what two
+draws of one process give; over 40 seeds E-Piano MKII Hard's pitch
+spread is 3.1 cents against Live's 3.3, with Live against Segno 3.3. In
+every third-octave band of the strike the random part's power matches
+Live's within what five Live copies can resolve, and no partial is
+consistently more random on either side. Five seeds drawn at random
+pass E-Piano MKII Hard 89 % of the time and Vibes Soft 49 %; the
+scorer's five happen to fail both. **[measured]** (val1, val2, val4; the
+scripts are in the fit scratchpad's `elwork/spread`)
+
+On the noise-only renders (round 2, Mallet Stiffness 0, Damper Amount
+1) Live's three copies rang the tine at nearly one level and phase, where
+Segno's seeds scatter by 4.5 dB. Those copies share one Live Set. Rounds
+3 and 4 (segno-electric-fit3, -fit4) repeat them and four presets, two
+copies a round, in two more Sets: across Sets the tine's phase scatters
+freely (five copies from -73 to 99 degrees), and the size of the spread
+of every noise-driven partial (the tine at three damper tones, the tine
+partial, Stiffness 0's tine and partial over ten copies) is an ordinary
+draw from Segno's seeds (30 to 62 % likely, 100 % at Tone 0.75). Live's
+noise response is not fixed; the round-2 agreement was chance or draws
+shared within the Set. Live's noise-only tine and partial sit about 2 dB
+above Segno's mean power at Damper Amount 1 (5 to 12 % likely by chance
+for each), but not at Tone 0.25 or Stiffness 0; too weak to change the
+damper's level on. **[measured]**
 
 
 

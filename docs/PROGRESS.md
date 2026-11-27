@@ -1,4 +1,4 @@
-<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Metalic Perc retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations penv Unisono pul meldfit Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penvd rndpan Bassic Bitgrunge's Catchem Filther's Kaneda Werkstuecktraeger Whley Whley's filt nloop avel fleg unmodulated Basscycle spr prewarping prewarp Floot Halfstep Gametal Plucks Neurotimbre sqperc fenv restruck fmdrive oscvol unsmoothed colfm circ nornd retunes Detuned Cardano baselined prewarped unnormalized -->
+<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Metalic Wurli MKII Perc halvings retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations penv Unisono pul meldfit Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penvd rndpan Bassic Bitgrunge's Catchem Filther's Kaneda Werkstuecktraeger Whley Whley's filt nloop avel fleg unmodulated Basscycle spr prewarping prewarp Floot Halfstep Gametal Plucks Neurotimbre sqperc fenv restruck fmdrive oscvol unsmoothed colfm rand elwork circ nornd retunes Detuned Cardano baselined prewarped unnormalized -->
 # Segno — Progress & Roadmap
 
 <!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs multicore smarttune -->
@@ -61,9 +61,42 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
 | SEG-22 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track and lane chains) is #1729 | build | needs-plan-approval | `claude/fx-multicore-1515-p1b` |
 | SEG-107 | Save As failed with Out of Memory: the mixdown asked for the LCM of two Song-mode tracks (24.7 GB); it now spans the longest lane past 600 s, and the save refuses a length no loop can hold | in-review | needs-hardware | `claude/save-oom-SEG-107` |
 | SEG-63 | Console WiFi against an ASUS RT-AX89X with 802.11ax on: firmware already matches Pi OS; brcmfmac options aligned with Pi OS and a troubleshooting note; failure not reproduced, issue stays open until it recurs | in-review | agent-merges | `claude/wifi-firmware-1816` |
-| SEG-109 | Ableton Live device presets on the pedal, Drift first: presets read from the user's own copy; Drift's behavior learned with rea + Ghidra from Live 12.2.7 and reimplemented, no Ableton code or presets in the repo. Plan approved 2026-11-25 (P1-P6); P1 stereo buses, P2 preset reader, P3 the Drift device and P4 its fit in review; the Operator (P7), Meld (P8) and Analog (P9) devices in review | in-review | needs-merge | `claude/ableton-devices-SEG-109`, `claude/ableton-operator-SEG-109-p7`, `claude/ableton-meld-SEG-109-p8`, `claude/ableton-analog-SEG-109-p9` |
+| SEG-109 | Ableton Live device presets on the pedal, Drift first: presets read from the user's own copy; Drift's behavior learned with rea + Ghidra from Live 12.2.7 and reimplemented, no Ableton code or presets in the repo. Plan approved 2026-11-25 (P1-P6); P1 stereo buses, P2 preset reader, P3 the Drift device and P4 its fit in review; the Operator (P7), Meld (P8), Analog (P9) and Electric (P10) devices in review | in-review | needs-merge | `claude/ableton-devices-SEG-109`, `claude/ableton-operator-SEG-109-p7`, `claude/ableton-meld-SEG-109-p8`, `claude/ableton-analog-SEG-109-p9`, `claude/ableton-electric-SEG-109-p10` |
 
 ---
+
+## November 2026 The Electric device plays on an instrument slot (SEG-109 P10)
+
+- Live 12.2.7's Electric read with rea + Ghidra from its AAS engine and
+  written as "Electric: behavior" in the Ableton devices brainstorm;
+  `electric_voice.c` is written from it. `LE_INST_DEVICE_ELECTRIC` takes an
+  Electric preset's 33 values (`le_electric_param`), one more entry in the
+  device table.
+- Per voice a mallet pulse and a damper burst ring a fork of four
+  resonators (tone bar, tine, tine partial, a fixed-pitch "mallet noise"),
+  heard through the electromagnetic or the electrostatic pickup, in 1 ms
+  blocks as Live runs it.
+- Fitted against 69 Live renders: total 1.09 dB rms. Measured where the
+  reading was silent: the tine at 7.349 times the note, Tine Color and
+  Tine < Key the other way round from their names, the output level.
+- The 17 factory presets, at C4 and six of them also two octaves down or
+  up: 19 of 23 within 1.0 dB, twelve within 0.2; Vibes Soft 1.4 to 3.9.
+- Strict score (50 ms cells, attack, level, onset, pitch): 65 of 69
+  renders and 21 of 23 presets pass, from 63 and 22. New: Live's output
+  soft clip (linear to 2.8, toward 4 at Segno's scale), the exact midpoint
+  of the neutral-centred controls, and the fit harness releasing on
+  Live's block. Still failing: four renders where the damper's noise
+  rings a resonance by a random amount per strike.
+- With five noise seeds and Live's spread taken across Live Sets: 82 of
+  86 fit renders (the four noise-only renders fail) and 15 of 17
+  held-out presets. The two held-out failures, Vibes Soft and E-Piano
+  MKII Hard, are random presets the scorer's five seeds happen to fail:
+  over 40 to 80 seeds Segno's spread is Live's or within the limit, and
+  no random draw is wider than Live's (the doc's fit notes). Rounds 3
+  and 4 (cross-Set copies of the noise renders) show Live's noise
+  response is as random as Segno's, not fixed.
+- A voice costs 1.4 us per millisecond on the dev machine with the R
+  pickup, 0.9 with W. A device holds 40 voices (10 KB).
 
 ## November 2026 The Analog device plays on an instrument slot (SEG-109 P9)
 

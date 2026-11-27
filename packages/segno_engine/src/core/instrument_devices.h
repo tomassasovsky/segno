@@ -43,7 +43,7 @@ typedef struct le_inst_device {
 } le_inst_device;
 
 /* The devices; entry i is LE_INST_DEVICE_DRIFT + i. */
-#define LE_INST_DEVICE_COUNT 4
+#define LE_INST_DEVICE_COUNT 5
 extern const le_inst_device le_inst_devices[LE_INST_DEVICE_COUNT];
 
 /* The entry for `id`, or NULL when it names no device. */
