@@ -807,6 +807,10 @@ where the reading was silent or disagreed. Segno's implementation is
   phase accumulator in table indices; a voice computes D, C, B, A in that
   order each sample, and an operator's input is the sum of its modulators'
   outputs of the same sample. **[code]**
+- Each sample the phase advances first and the table is read at the new
+  phase, so a note's first sample reads its start plus one increment.
+  **[code]** (op-05 4.2) **[measured: Live's sine at C6 lies −92 dB from a
+  sine one sample ahead of the note and −17 dB from one starting at it]**
 - Lookup truncates unless Interpolation is on (linear). Antialias runs the
   whole operator engine at twice the rate, reads band-limited copies of the
   tables, and decimates with a polyphase allpass half-band. **[code]**
@@ -837,7 +841,19 @@ where the reading was silent or disagreed. Segno's implementation is
   uniform random value every engine sample: Live's never repeats (its
   autocorrelation stays under 0.02 at every lag to 32768), so a stepped
   4096-sample table, which repeats 12 times a second, is not it.
-  **[measured]**
+  **[measured]** Noise Looped's table is fixed: the generator
+  s ← 1664525 s + 1013904223 (mod 2³²) seeded with 0x275B6ACF and stepped
+  once before each of its 4096 samples, each sample (s mod 2²³)/2²² − 1
+  from the low 23 bits, built once per process and shared by every
+  instance and voice; no filter and no band-limited copies, peak-normalised
+  with the peak (0.99973) kept as its gain. It is read like any periodic
+  table, 64 table samples a period, the phase modulation at 2 whole loops
+  per unit. **[code]** (op-05) **[measured: Live's wave-20 render correlates
+  1.000 with it sample by sample, its first samples within 3·10⁻⁸; tf 2.33
+  to 0.09]** The reading describes Noise White as the same kind of table
+  read one sample a step, but Live's White does not repeat at 4096 samples
+  (autocorrelation −0.002 there in wave-21), so Segno keeps its fresh value
+  per sample. **[measured]**
 - An additive table is scaled to a peak of 1 and played with its old
   peak as its gain, so its level is the plain sum (Saw 3 peaks at 0.92,
   Square 3 at 1.19, exactly as Live's renders). **[code]** **[measured]**
@@ -1115,7 +1131,7 @@ where the reading was silent or disagreed. Segno's implementation is
   noise within 0.4 to 0.6 dB (1.5 at resonance 1), from 0.5 to 7.5 with
   Clean's high-pass]** (no factory preset uses it)
 - Each circuit's renders within the noise renders' own spread (about 2 dB
-  rms per third-octave band, Live's noise table being its own); the drive
+  rms per third-octave band, Live's white noise being its own draw); the drive
   renders within 3 to 5.
 - The shaper: (1 − w)x + w 10^(−D/40) T(10^(D/20) x) at twice the rate:
   Soft (linear to −3 dB, then a knee to 1), Hard (0.68 atan 10x), Sine (a
@@ -1405,6 +1421,17 @@ seeds for random renders) the fit rounds pass 419 of 469 (from 415
 re-scored: cr-tone, lfo-zero-a100, circ4-hp and hp-prd-24 added, none
 lost), 9 of 10 presets; held out 50 of 67 (from 49: Sweep Wobble, 1.87 to
 1.43).
+
+Noise Looped from the reader's description of Live's generator (op-05):
+the table, its seed and its low-bit mapping, and the read at the advanced
+phase, which every operator shares (Live's sines read one increment ahead
+of the note too). wave-20 2.33 dB to 0.09, fm-b03 5.28 to 0.01, Acid
+Bass 1.19 to 0.71; held out Soft Warm Brass 1.07 to 0.57, Geigerzaehler
+Bleep 1.13 to 0.97, Rhythmic Pong Bass 0.44 to 0.28. Warble Rhythm Noise
+Pad does not move: its Noise Looped operator sits behind a 71 Hz Morph
+filter, 70 to 90 dB under the rest above 1.2 kHz, and its misses are in
+the low bands of the later notes. The fit rounds pass 423 of 470 (fm-b03-r2
+now scored on its own), held out 50 of 67.
 
 Round 13 (`segno-op-fit13`, 26 renders) asks Live: a square, a saw down,
 a smaller amount, two other rates, a sine and a triangle and a High-range
