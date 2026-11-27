@@ -152,6 +152,35 @@ static void test_operator_fm_depth(void) {
   CHECK(fabs(s1 - j1) < 0.02);
 }
 
+/* Tone low-passes a modulator's change and the carrier's phase accumulates
+ * it, so an audio-rate LFO on Tone modulates the FM index at the low
+ * harmonics: C4 into a ratio-1 modulator at volume 0.5, Tone 0.5, a 1.1 kHz
+ * sine LFO on Tone at 50 %. Live's component at the LFO rate minus the
+ * fundamental stands 17 dB under the third harmonic (round 12 cr-tone);
+ * low-passing the input itself puts it 34 dB under. */
+static void test_operator_tone_route_accumulates(void) {
+  printf("test_operator_tone_route_accumulates\n");
+  enum { N = 48000 };
+  static float l[N], r[N];
+  opr_reference(&g_opr);
+  opr_set(&g_opr, LE_OPERATOR_TONE, 0.5f);
+  opr_op(&g_opr, 1, LE_OPERATOR_OP_ON, 1.0f);
+  opr_op(&g_opr, 1, LE_OPERATOR_OP_VOLUME, 0.5f);
+  opr_set(&g_opr, LE_OPERATOR_LFO_ON, 1.0f);
+  opr_set(&g_opr, LE_OPERATOR_LFO_TYPE, 0.0f);
+  opr_set(&g_opr, LE_OPERATOR_LFO_RANGE, 1.0f);
+  opr_set(&g_opr, LE_OPERATOR_LFO_RATE, 85.0f);
+  opr_set(&g_opr, LE_OPERATOR_LFO_AMOUNT, 1.0f);
+  opr_set(&g_opr, LE_OPERATOR_LFO_DEST, 22.0f);
+  opr_set(&g_opr, LE_OPERATOR_LFO_DEST_AMOUNT, 50.0f);
+  CHECK(le_operator_note_on(&g_opr, 1, 60, 127, 0) == 0);
+  le_operator_render(&g_opr, l, r, N);
+  const double f0 = opr_note_hz(60), fl = 440.0 * pow(2.0, (85 - 69) / 12.0);
+  const double side = opr_component(l + 9600, N - 9600, fl - f0);
+  const double h3 = opr_component(l + 9600, N - 9600, 3.0 * f0);
+  CHECK(side > 0.07 * h3 && side < 0.28 * h3);
+}
+
 /* Feedback acts only on operators nothing modulates: in algorithm 0, A's
  * feedback changes nothing, D's does; in algorithm 10, A's does. */
 static void test_operator_feedback_only_on_unmodulated(void) {
@@ -688,6 +717,7 @@ static void run_operator_tests(void) {
   test_operator_sine_level();
   test_operator_every_wave_and_algorithm();
   test_operator_fm_depth();
+  test_operator_tone_route_accumulates();
   test_operator_feedback_only_on_unmodulated();
   test_operator_envelope_slopes();
   test_operator_spread_pair();
