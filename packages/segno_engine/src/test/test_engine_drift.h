@@ -817,6 +817,67 @@ static void test_drift_filter1_output_saturates(void) {
   CHECK(f1 < f2 - 0.15f && f1 > f2 - 0.45f);
 }
 
+/* Filter I limits its resonance at the output node: a saw at resonance 1
+ * shows no ringing peak at the cutoff, only the broad plateau Live's
+ * renders have (round 24's f1s renders; the band-state shaper this
+ * replaces rang 20 dB above it at harmonic 31). */
+static void test_drift_filter1_no_ringing_peak(void) {
+  printf("test_drift_filter1_no_ringing_peak\n");
+  enum { N = 48000 };
+  static float l[N], r[N];
+  drift_init(&g_drift, DRIFT_SR);
+  drift_set(&g_drift, LE_DRIFT_OSC1_TYPE, 4.0f); /* saw */
+  drift_set(&g_drift, LE_DRIFT_FILTER_TYPE, 0.0f);
+  drift_set(&g_drift, LE_DRIFT_FILTER_FREQ, 2000.0f);
+  drift_set(&g_drift, LE_DRIFT_FILTER_RES, 1.0f);
+  CHECK(le_drift_note_on(&g_drift, 1, 36, 100, 0) == 0);
+  le_drift_render(&g_drift, l, r, N);
+  const double f0 = drift_hz(36);
+  double h[41];
+  for (int k = 1; k <= 40; ++k) {
+    double re = 0.0, im = 0.0;
+    for (int i = N / 2; i < N; ++i) {
+      const double w = 2.0 * M_PI * k * f0 * i / DRIFT_SR;
+      re += l[i] * cos(w);
+      im += l[i] * sin(w);
+    }
+    h[k] = 10.0 * log10(re * re + im * im + 1e-30);
+  }
+  double base = 0.0, top = -1e30;
+  for (int k = 18; k <= 22; ++k) base += h[k] / 5.0;
+  for (int k = 25; k <= 36; ++k) top = h[k] > top ? h[k] : top;
+  CHECK(top < base + 8.0);
+}
+
+/* A block that starts after it stopped starts its voices' low-pass from
+ * rest and keeps their high-pass state (round 24's fs-idle restrikes). */
+static void test_drift_stopped_block_restarts_lowpass(void) {
+  printf("test_drift_stopped_block_restarts_lowpass\n");
+  static float l[4800], r[4800];
+  static le_drift held;
+  drift_init(&g_drift, DRIFT_SR);
+  drift_set(&g_drift, LE_DRIFT_FILTER_TYPE, 1.0f);
+  drift_set(&g_drift, LE_DRIFT_FILTER_FREQ, 800.0f);
+  drift_set(&g_drift, LE_DRIFT_FILTER_HP_FREQ, 200.0f);
+  drift_set(&g_drift, LE_DRIFT_ENV1_RELEASE, 0.01f);
+  CHECK(le_drift_note_on(&g_drift, 1, 48, 100, 0) == 0);
+  le_drift_render(&g_drift, l, r, 4800);
+  le_drift_note_off(&g_drift, 1);
+  le_drift_render(&g_drift, l, r, 4800);
+  CHECK(g_drift.voices[0].state == 0);
+  const le_drift_voice* v = &g_drift.voices[0];
+  CHECK(memcmp(v->lp, g_drift.f2_rest, sizeof(v->lp)) != 0); /* held */
+  CHECK(v->hp[0] != 0.0f || v->hp[1] != 0.0f);
+  memcpy(&held, &g_drift, sizeof(held));
+  memcpy(held.voices[0].lp, held.f2_rest, sizeof(held.voices[0].lp));
+  CHECK(le_drift_note_on(&g_drift, 2, 48, 100, 0) == 0);
+  CHECK(le_drift_note_on(&held, 2, 48, 100, 0) == 0);
+  le_drift_render(&g_drift, l, r, 1);
+  float hl, hr;
+  le_drift_render(&held, &hl, &hr, 1);
+  CHECK(l[0] == hl && l[0] != 0.0f);
+}
+
 /* A Filter Type change while a note sounds starts the new filter from
  * rest: no jolt from the other filter's state, either way round. */
 static void test_drift_filter_type_switch_is_smooth(void) {
@@ -1185,6 +1246,8 @@ static void run_drift_tests(void) {
   test_drift_filter1_output_saturates();
   test_drift_mono_glides_from_ended_note();
   test_drift_filter_type_switch_is_smooth();
+  test_drift_filter1_no_ringing_peak();
+  test_drift_stopped_block_restarts_lowpass();
   test_engine_drift_slot_matches_offline();
   test_engine_drift_voice_budget();
   test_engine_drift_params_and_switching();
