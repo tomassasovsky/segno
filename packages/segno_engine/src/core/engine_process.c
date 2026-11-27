@@ -518,9 +518,16 @@ static void le_tempo_latch(le_engine* e) {
  * own (and its beat is analysed, #1936). A manual or tapped tempo was set on
  * purpose and survives (D6). The value is kept for a Clear Undo, which puts
  * the takes back on the tempo they were laid down at
- * (le_restore_track_clock). Not perf-logged, like Clear tempo. */
+ * (le_restore_track_clock). Not perf-logged, like Clear tempo.
+ * A count-in or a waiting Record on another track has committed to the
+ * tempo (le_tempo_locked, le_transport_edit_blocked): a clear does not end
+ * either, so the tempo stays for the take they start. */
 static void le_forget_derived_tempo(le_engine* e) {
   if (load_i32(&e->a_tempo_source) != LE_TEMPO_SOURCE_DERIVED) return;
+  if (e->count_in_total > 0) return;
+  for (int32_t t = 0; t < e->track_count; ++t) {
+    if (e->tracks[t].pending_record) return;
+  }
   e->cleared_bpm = load_f32(&e->a_tempo_bpm_bits);
   store_f32(&e->a_tempo_bpm_bits, 0.0f);
   store_i32(&e->a_tempo_source, LE_TEMPO_SOURCE_NONE);

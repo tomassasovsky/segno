@@ -6405,6 +6405,33 @@ static void test_tapped_tempo_survives_clear(void) {
   le_engine_destroy(e);
 }
 
+static void test_count_in_keeps_derived_tempo_through_clear(void) {
+  printf("test_count_in_keeps_derived_tempo_through_clear\n");
+  /* SEG-117 review: a count-in has committed to the tempo it counts. A clear
+   * that empties the rig while it runs keeps a derived tempo, so the take
+   * it starts records at the tempo the player heard. */
+  le_engine* e = tg_make_engine_cap(1000, 100000);
+  le_snapshot s;
+
+  tg_record_defining_loop(e, 4000); /* derives 120, 2 bars */
+  le_engine_stop_track(e, 0);
+  CHECK(record_start_count(e, 1) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_record(e, 1);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.counting_in == 1);
+
+  le_engine_clear(e, 0);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(fabsf(s.tempo_bpm - 120.0f) < 0.01f);
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_DERIVED);
+
+  le_engine_destroy(e);
+}
+
 /* ---- track length presets (A6, D17; song-mode-spec.md §1 matrix) ---- */
 
 static void test_length_preset_auto_click_off_unchanged(void) {
@@ -40758,6 +40785,7 @@ int main(void) {
   SHARD(test_loop_derives_tempo_from_none);
   SHARD(test_derive_only_from_none);
   SHARD(test_tapped_tempo_survives_clear);
+  SHARD(test_count_in_keeps_derived_tempo_through_clear);
   SHARD(test_length_preset_auto_click_off_unchanged);
   SHARD(test_length_preset_auto_click_on_derives_bars_only);
   SHARD(test_length_preset_auto_click_on_no_tempo_falls_back);
