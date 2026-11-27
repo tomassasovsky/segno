@@ -160,6 +160,9 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   re-scored), 9 of 10 presets; held out 50 of 67 (from 49). Round 13 (26 renders) asks Live for the LFO shapes'
   turns and smoother, Release Bass taken apart, OSR's even harmonics and
   MS2's loud saw.
+- Noise Looped from a reader's description of Live's generator (a fixed
+  seed, so the same table in every instance), and every operator reads at
+  its advanced phase: 423 of 470 fit renders, held out 50 of 67.
 - A voice costs 2.7 us per period at 48 kHz on the dev machine, 4.5 with
   Antialias (a Drift voice 7.1).
 

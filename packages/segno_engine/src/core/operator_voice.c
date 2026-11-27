@@ -327,15 +327,33 @@ static void build_drawn(le_operator_wave* w, float* store, int square) {
   build_copies(w, store, N_TABLE + 1, re, im, N_TABLE / 2);
 }
 
+/* Noise Looped's table: the generator above stepped once before each
+ * sample, its low 23 bits mapped to (s mod 2^23) / 2^22 - 1, seeded with
+ * 0x275B6ACF once per process (the same table in every instance and
+ * voice); no filter and no band-limited copies; peak-normalised with the
+ * peak (0.99973) kept as the gain, so it plays the generator's values
+ * (code: op-05 1 to 3; measured: Live's wave-20 render correlates 1.000
+ * with it, sample by sample). Noise White keeps its own source (below). */
+static float lcg_low23(uint32_t* s) {
+  return (float)(lcg(s) & 0x7fffffu) / 4194304.0f - 1.0f;
+}
 static void build_noise(le_operator_wave* w, float* store, uint32_t seed, int white) {
   uint32_t s = seed;
-  for (int32_t i = 0; i < N_TABLE; ++i) store[i] = lcg_bipolar(&s);
+  for (int32_t i = 0; i < N_TABLE; ++i) store[i] = white ? lcg_bipolar(&s) : lcg_low23(&s);
   store[N_TABLE] = store[0];
   w->level[0] = store;
   w->size[0] = N_TABLE;
   w->limit[0] = N_TABLE / 2;
   w->levels = 1;
   w->gain = 1.0f;
+  if (!white) {
+    float peak = 0.0f;
+    for (int32_t i = 0; i <= N_TABLE; ++i) peak = fmaxf(peak, fabsf(store[i]));
+    const float r = 1.0f / peak;
+    for (int32_t i = 0; i < N_TABLE; ++i) store[i] *= r;
+    store[N_TABLE] = store[0];
+    w->gain = peak;
+  }
   w->freq_mult = white ? 1.0f : 1.0f / 64.0f;
   w->white = white;
 }
@@ -376,7 +394,7 @@ static void tables_build(void) {
     amp[k] = (float)((j % 2 ? -8.0 : 8.0) / (OP_PI * OP_PI * k * k));
   }
   build_additive(&g_waves[19], g_wave_store[19], amp, 15, 1, 1);
-  build_noise(&g_waves[20], g_wave_store[20], 0x1234567u, 0);
+  build_noise(&g_waves[20], g_wave_store[20], 0x275B6ACFu, 0);
   build_noise(&g_waves[21], g_wave_store[21], 0x89abcdefu, 1);
 }
 
@@ -1855,6 +1873,19 @@ static float operators_tick(le_operator* d, le_operator_voice* v, const chunk_ct
       v->tone_pm[op] = pm;
       off = kpm * pm;
     }
+    /* the phase advances before the read: a note's first sample reads its
+     * start plus one increment (op-05 4.2; measured: Live's sine at C6
+     * -92 dB from a sine one sample ahead of the note, -17 from one at its
+     * start; Noise Looped's wave-20 correlates 1.000 read so, 0.96 read
+     * first) */
+    {
+      float inc = v->inc[op];
+      if (c->lfo_on[op]) inc *= lfo_mul;
+      if (c->penv_on[op]) inc *= penv_mul;
+      double ph = v->phase[op] + (double)inc;
+      if (ph >= N_TABLE || ph < 0.0) ph -= floor(ph / N_TABLE) * N_TABLE;
+      v->phase[op] = ph;
+    }
     const le_operator_wave* w = op_wave(d, op);
     float s;
     if (w->white) {
@@ -1868,12 +1899,6 @@ static float operators_tick(le_operator* d, le_operator_voice* v, const chunk_ct
     v->y2[op] = v->out[op];
     v->out[op] = y;
     if (kCarriers[c->alg] & (1u << op)) sum += y;
-    float inc = v->inc[op];
-    if (c->lfo_on[op]) inc *= lfo_mul;
-    if (c->penv_on[op]) inc *= penv_mul;
-    double ph = v->phase[op] + (double)inc;
-    if (ph >= N_TABLE || ph < 0.0) ph -= floor(ph / N_TABLE) * N_TABLE;
-    v->phase[op] = ph;
   }
   return sum;
 }
