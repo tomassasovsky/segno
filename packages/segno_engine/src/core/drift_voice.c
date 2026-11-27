@@ -1384,50 +1384,61 @@ static float filter_input(float x) {
   return -fminf(-x, 1.6f);
 }
 
-/* Filter I's feedback shaper: the cubic v - 2 (0.55032 v)^3, held flat past
- * its turning point. */
-static float cubic_clip(float v) {
-  const float n = 0.55032f, top = 0.7419f;
-  const float c = v > top ? top : v < -top ? -top : v;
-  const float m = n * c;
-  return c - 2.0f * m * m * m;
-}
-
-/* Low-pass type I: one 12 dB/oct section whose two unequal poles (a
- * capacitor ratio of 3.3) give a base damping ratio near 1.18, and whose
- * resonance feedback cancels that damping at resonance 1, through the
- * cubic shaper (applied from the previous sample's band state), which
- * bounds the ringing and self-oscillation past 1. Above resonance 1 the
- * resonance is pulled back as the cutoff rises past 0.075 of the rate.
- * Fitted on Live's filter I renders: base damping 1.12, the shaper's
- * input x1.7 (self-oscillation on noise at resonance 1 within 0.1 dB of
- * Live's level; it was x1.4, 0.64 dB loud), output gain 2.915 (a sine
- * within 0.1 dB); sixth-octave levels within 2.6 dB rms on average (the
- * fitted state-variable filter it replaces: 3.0). */
+/* Low-pass type I: two one-pole integrators with unequal capacitors (ratio
+ * C = 3.3, coefficients g / sqrt(C) and g sqrt(C) around the cutoff, so a
+ * 12 dB/oct slope with a soft knee, base damping ratio 1.18) and the
+ * resonance fed back from the output node v: subtracted at the first
+ * integrator's input and added at the second's, through the cubic
+ * v - v^3 / 3 (v held at +-1, its turning points). The feedback gain
+ * k = r (1 + 1 / C) cancels the damping at resonance 1; above 1 it is
+ * pulled back as the cutoff rises past 0.075 of the rate. The loop is
+ * zero-delay: v solves a cubic each sample, in closed form. A little noise
+ * (most at low cutoffs) lets self-oscillation start from silence. Input
+ * gain 2.5 / 1.5, output clamped at +-1. [code] (02-filters-mixer.md,
+ * "Low-pass type I", and the filter's process and coefficient functions it
+ * names). Segno's earlier fit put the shaper on the band state of a
+ * state-variable filter, which rang 14 to 22 dB above Live's broad plateau
+ * at resonance 1 with a loud saw (round 24's f1s renders, Seventy Two
+ * Bass); with the output node shaped, every f1s render and Seventy Two
+ * Bass pass, and the self-oscillation on noise stays within 0.2 dB. */
 static float filter1(float* s, float x, float fc, float r, float rate,
                      uint32_t* rng) {
+  const float in = 2.5f / 1.5f;
   const float g = prewarp(PI_F * fc / rate);
+  const float g1 = g * (1.0f / 1.8165902f), g2 = g * 1.8165902f; /* sqrt(3.3) */
+  const float G1 = clampf(g1 / (1.0f + g1), 1e-5f, 0.998f);
+  const float G2 = clampf(g2 / (1.0f + g2), 1e-5f, 0.998f);
   const float f = fc / rate;
   const float rp = fmaxf(
       0.001f, r / (1.0f + 3.0f * fmaxf(f - 0.075f, 0.0f) * fmaxf(r - 1.0f, 0.0f)));
-  const float k0 = 2.0f * 1.12f;
-  const float kr = k0 * rp; /* the resonance's share of the damping */
-  const float d = 1.7f;     /* into the shaper */
-  const float b = s[2];
-  x += 2e-5f * rnd_bipolar(rng);
-  x += kr * (cubic_clip(b * d) / d - b);
-  const float k = k0 - kr;
-  const float hp = (x - (k + g) * s[0] - s[1]) / (1.0f + k * g + g * g);
-  const float bp = g * hp + s[0];
-  const float lp = g * bp + s[1];
-  s[0] = bp + g * hp;
-  s[1] = lp + g * bp;
-  s[2] = bp;
-  /* the output saturates softly: measured, a sine into an open filter I
-   * is exact at Gain 0.25 and loses 0.28 dB at Gain 1 against filter II
+  const float k = rp * (1.0f + 1.0f / 3.3f);
+  const float K = k * G2 * (1.0f - G1); /* the loop's gain through the shaper */
+  /* the noise: uniform in Segno, scaled to the variance of the reading's
+   * Gaussian [Segno] */
+  const float rumble = 1.732f * 0.6f * fc / ((fc + 10.0f) * (fc + 10.0f));
+  const float u1 = in * x + rumble * rnd_bipolar(rng);
+  const float u2 = 0.1f * rumble * rnd_bipolar(rng);
+  const float u3 = 1.732f * 2e-5f * rnd_bipolar(rng);
+  /* the output with no feedback */
+  const float m = s[1] + u3 + G2 * (u2 + s[0] - s[1] + G1 * (u1 - s[0]));
+  /* v = m + K (v - v^3 / 3), i.e. v^3 + p v + q = 0 with p > 0 (K < 1): its
+   * one real root by Cardano, written without the cancellation of the
+   * usual A - p / (3A) */
+  const float p = 3.0f * (1.0f - K) / K, q = -3.0f * m / K;
+  const float A = cbrtf(0.5f * fabsf(q) + sqrtf(0.25f * q * q + p * p * p / 27.0f));
+  const float B = p / (3.0f * A);
+  const float v = clampf(-q / (A * A + A * B + B * B), -1.0f, 1.0f);
+  const float fb = k * (v - v * v * v / 3.0f);
+  const float a = s[0] + G1 * (u1 - fb - s[0]);
+  const float b = s[1] + G2 * (fb + u2 + a - s[1]);
+  s[0] = 2.0f * a - s[0];
+  s[1] = 2.0f * b - s[1];
+  /* the output saturates softly: measured, a sine into an open filter I is
+   * exact at Gain 0.25 and loses 0.28 dB at Gain 1 against filter II
    * (Live's sine and saw renders at Gain 0.25 to 2); with this, Gain 0.25
-   * to 1 within 0.07 dB, their tf 1.2 to 0.3 at Gain 1, and the
-   * hot-input renders tf 1.1 to 0.7 */
+   * to 1 within 0.07 dB, their tf 1.2 to 0.3 at Gain 1. Without it the
+   * hot saws at resonance 1 (f1s) come out 0.2 to 0.5 dB loud. */
+  const float lp = clampf(u3 + b, -1.0f, 1.0f) * (1.0f / in);
   return lp / sqrtf(1.0f + 2.0f * lp * lp) * 2.915f;
 }
 
@@ -1745,6 +1756,18 @@ static void tick(le_drift* d, float* l, float* r) {
                      : 0.0f;
       }
     }
+    /* A block that starts after it stopped starts its voices' low-pass
+     * filters from rest, while their high-pass keeps its state. Measured:
+     * round 24's restrikes on a stopped block (fs-idle, gaps 0.05 to 2.5 s,
+     * either filter) start from rest in Live, where the held state gave a
+     * jump; with the high-pass at 200 Hz Live jumps to +0.30 at once, its
+     * held state against a low-pass at rest (fs-idle-g030-hp, tf 2.3 to
+     * pass). Floot Bass, Airfare Bass, Vanguard Brass and Sol Bass then
+     * pass too. */
+    if (busy && !d->block_ran[b / 4]) {
+      for (int32_t i = b; i < b + 4; ++i) clear_lowpass(d, &d->voices[i], d->d.filter_type);
+    }
+    d->block_ran[b / 4] = busy;
     for (int32_t i = b; i < b + 4; ++i) {
       le_drift_voice* v = &d->voices[i];
       if (busy) {
