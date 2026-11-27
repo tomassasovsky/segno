@@ -1,4 +1,4 @@
-<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Metalic Perc retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations penv Unisono pul meldfit Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penvd rndpan Bassic Bitgrunge's Catchem Filther's Kaneda Werkstuecktraeger Whley Whley's filt nloop avel fleg unmodulated Basscycle spr prewarping prewarp Floot Halfstep Gametal Plucks Neurotimbre sqperc fenv restruck fmdrive oscvol unsmoothed colfm -->
+<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Metalic Perc retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations penv Unisono pul meldfit Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penvd rndpan Bassic Bitgrunge's Catchem Filther's Kaneda Werkstuecktraeger Whley Whley's filt nloop avel fleg unmodulated Basscycle spr prewarping prewarp Floot Halfstep Gametal Plucks Neurotimbre sqperc fenv restruck fmdrive oscvol unsmoothed colfm circ -->
 # Segno — Progress & Roadmap
 
 <!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs multicore smarttune -->
@@ -309,6 +309,14 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   (the filter's own, and 200 Hz); the first random pan is not special.
   Five seeds: 413 of 469 fit renders (the earlier rounds 399 of 452,
   round 12 14 of 17), 9 of 10 presets; held out 48 of 67.
+- Round 12's open questions: Tone's low-pass acts on the modulator's
+  change and the phase accumulates it (an LFO on Tone needs no smoother),
+  the saw LFOs turn back over the last 1/256 of a cycle (the pitch through
+  zero is the plain 1 + L), and PRD's high-pass is a ladder of high-passes.
+  With the scorer's round 8: 419 of 469 fit renders (from 415
+  re-scored), 9 of 10 presets; held out 50 of 67 (from 49). Round 13 (26 renders) asks Live for the LFO shapes'
+  turns and smoother, Release Bass taken apart, OSR's even harmonics and
+  MS2's loud saw.
 - A voice costs 2.7 us per period at 48 kHz on the dev machine, 4.5 with
   Antialias (a Drift voice 7.1).
 
