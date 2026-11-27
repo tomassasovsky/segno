@@ -76,6 +76,8 @@ abstract final class AppNoticeId {
   static const clickPanSettings = 'clickPanSettings';
   static const instrumentsSettings = 'instrumentsSettings';
   static const session = 'session';
+  static const sessionAudioDropped = 'sessionAudioDropped';
+  static const sessionAudioDroppedUndo = 'sessionAudioDropped_undo';
   static const sessionOpenSetup = 'session_openSetup';
   static const performance = 'performance';
   static const looperMode = 'looperMode';

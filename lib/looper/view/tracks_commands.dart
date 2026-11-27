@@ -4,6 +4,7 @@ import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
@@ -403,13 +404,32 @@ class TracksCommands {
 /// or unconvertible manifest version), falling back to the raw message
 /// otherwise. Wired as the `TracksView`'s session [BlocListener].
 void showSessionOutcome(BuildContext context, SessionState state) {
-  final notice = sessionOutcomeNotice(state);
-  if (notice != null) context.read<NoticesCubit>().show(notice);
+  final notices = context.read<NoticesCubit>();
+  // Read when it can be used: the Undo outlives the view that showed it.
+  final session = state.droppedAudio == DroppedAudio.undoable
+      ? context.read<SessionCubit>()
+      : null;
+  final notice = sessionOutcomeNotice(
+    state,
+    undoDroppedAudio: session == null
+        ? null
+        : () {
+            notices.clear(AppNoticeId.sessionAudioDropped);
+            unawaited(session.undoDroppedAudio());
+          },
+  );
+  if (notice != null) notices.show(notice);
 }
 
 /// The message for a settled session action, or null when the outcome is
 /// shown elsewhere (the Library's own result, a boot recovery).
-Notice? sessionOutcomeNotice(SessionState state) {
+///
+/// A Save that dropped the open session's audio (SEG-110) says so, with
+/// [undoDroppedAudio] as its Undo while the takes can still come back.
+Notice? sessionOutcomeNotice(
+  SessionState state, {
+  VoidCallback? undoDroppedAudio,
+}) {
   Notice confirm(NoticeText title, {NoticeText? body}) => Notice(
     id: AppNoticeId.session,
     tone: NoticeTone.success,
@@ -429,6 +449,23 @@ Notice? sessionOutcomeNotice(SessionState state) {
   switch (state.status) {
     case SessionStatus.success:
       switch (state.outcome) {
+        case SessionOutcome.saved when state.droppedAudio != null:
+          final undoable =
+              state.droppedAudio == DroppedAudio.undoable &&
+              undoDroppedAudio != null;
+          return Notice(
+            id: AppNoticeId.sessionAudioDropped,
+            tone: NoticeTone.warning,
+            title: (l10n) => l10n.sessionSavedWithoutAudio,
+            action: undoable
+                ? NoticeAction(
+                    key: const Key(AppNoticeId.sessionAudioDroppedUndo),
+                    icon: LucideIcons.undo2,
+                    label: (l10n) => l10n.sessionSavedWithoutAudioUndo,
+                    onPressed: undoDroppedAudio,
+                  )
+                : null,
+          );
         case SessionOutcome.saved:
           return confirm((l10n) => l10n.sessionSaved);
         // A quick Save with no open session names the session itself (plan

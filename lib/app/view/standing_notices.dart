@@ -287,8 +287,10 @@ class _StandingNoticesState extends State<StandingNotices> {
       BlocListener<LooperBloc, LooperState>(
         listenWhen: (previous, current) =>
             previous.clearAllUndoable && !current.clearAllUndoable,
-        listener: (context, _) =>
-            context.read<NoticesCubit>().clear(AppNoticeId.undoClearAll),
+        // The Undo on a Save that dropped the audio is the same undo.
+        listener: (context, _) => context.read<NoticesCubit>()
+          ..clear(AppNoticeId.undoClearAll)
+          ..clear(AppNoticeId.sessionAudioDropped),
       ),
       BlocListener<TracksCubit, TracksState>(
         listenWhen: (previous, current) => previous.names != current.names,

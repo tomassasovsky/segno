@@ -27,6 +27,8 @@
     "sessionMenuTooltip": "Sesión",
     "a11ySessionMenu": "Menú de sesión",
     "sessionSaved": "Sesión guardada",
+    "sessionSavedWithoutAudio": "Sesión guardada sin su audio",
+    "sessionSavedWithoutAudioUndo": "Deshacer",
     "sessionOpened": "{name} abierta",
     "sessionLoadedConverted": "Sesión convertida desde un Segno anterior",
     "sessionLoadedConvertedUnsaved": "Sesión convertida por ahora",

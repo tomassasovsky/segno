@@ -58,6 +58,19 @@ enum SessionOutcome {
   faceListChanged,
 }
 
+/// What a [SessionOutcome.saved] did to the open session's audio when it
+/// wrote a rig with none over a session that held some (SEG-110). A Save of
+/// an empty rig is allowed: it keeps a session's settings to loop live on.
+enum DroppedAudio {
+  /// Clear all can still be undone: [SessionCubit.undoDroppedAudio] puts the
+  /// takes back and saves them again.
+  undoable,
+
+  /// Nothing can bring the takes back: they were cleared another way, or a
+  /// new take retired the restore point.
+  gone,
+}
+
 /// A classified failure kind, so the UI can show a localized, human-readable
 /// message instead of a raw `toString()`.
 enum SessionError {
@@ -139,6 +152,7 @@ class SessionState extends Equatable {
     this.failureCount = 0,
     this.trackNamesNotSaved = false,
     this.keptSessionName,
+    this.droppedAudio,
   });
 
   /// The current action status.
@@ -201,6 +215,11 @@ class SessionState extends Equatable {
   /// [conversion].
   final String? keptSessionName;
 
+  /// Whether a Save wrote a rig with no audio over a session that held
+  /// some, and whether that can be undone, or null when it did not. A
+  /// per-transition result, like [conversion].
+  final DroppedAudio? droppedAudio;
+
   /// How many actions have failed so far. Durable: a later emit that only
   /// re-lists the catalog keeps it, so a view can tell a failure it has
   /// already seen from a new one.
@@ -210,7 +229,7 @@ class SessionState extends Equatable {
   ///
   /// The **result** fields ([outcome] / [error] / [errorMessage] /
   /// [failedSessionId] / [conversion] / [trackNamesNotSaved] /
-  /// [keptSessionName]) are
+  /// [keptSessionName] / [droppedAudio]) are
   /// per-transition: they default to `null` or false (cleared) unless passed,
   /// so a fresh status never carries a stale result. The **durable** fields
   /// ([currentSessionId] / [currentSessionName] / [sessions] / [folders] /
@@ -232,6 +251,7 @@ class SessionState extends Equatable {
     int? failureCount,
     bool trackNamesNotSaved = false,
     String? keptSessionName,
+    DroppedAudio? droppedAudio,
   }) => SessionState(
     status: status ?? this.status,
     outcome: outcome,
@@ -249,6 +269,7 @@ class SessionState extends Equatable {
     failureCount: failureCount ?? this.failureCount,
     trackNamesNotSaved: trackNamesNotSaved,
     keptSessionName: keptSessionName,
+    droppedAudio: droppedAudio,
   );
 
   @override
@@ -269,6 +290,7 @@ class SessionState extends Equatable {
     failureCount,
     trackNamesNotSaved,
     keptSessionName,
+    droppedAudio,
   ];
 }
 

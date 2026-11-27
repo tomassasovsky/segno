@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:operation_guards/operation_guards.dart';
+import 'package:segno/app/app_notices.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/tracks_commands.dart';
 import 'package:segno/notices/notices.dart';
@@ -39,6 +40,43 @@ void main() {
         tone: NoticeTone.success,
       ),
     );
+  });
+
+  group('a Save that dropped the open session\'s audio (SEG-110)', () {
+    const undoable = SessionState(
+      status: SessionStatus.success,
+      outcome: SessionOutcome.saved,
+      droppedAudio: DroppedAudio.undoable,
+    );
+
+    test('says so and offers Undo while the takes can come back', () {
+      var undone = 0;
+      final notice = sessionOutcomeNotice(
+        undoable,
+        undoDroppedAudio: () => undone++,
+      )!;
+      expect(notice.id, AppNoticeId.sessionAudioDropped);
+      expect(notice.tone, NoticeTone.warning);
+      expect(notice.title(l10n), 'Session saved without its audio');
+      final action = notice.action!;
+      expect(action.key, const Key(AppNoticeId.sessionAudioDroppedUndo));
+      expect(action.label(l10n), 'Undo');
+      action.onPressed();
+      expect(undone, 1);
+    });
+
+    test('offers no Undo when nothing can come back', () {
+      final notice = sessionOutcomeNotice(
+        const SessionState(
+          status: SessionStatus.success,
+          outcome: SessionOutcome.saved,
+          droppedAudio: DroppedAudio.gone,
+        ),
+        undoDroppedAudio: () {},
+      )!;
+      expect(notice.title(l10n), 'Session saved without its audio');
+      expect(notice.action, isNull);
+    });
   });
 
   test('an opened session is a confirmation that names it (#1910)', () {
