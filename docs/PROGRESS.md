@@ -1,4 +1,4 @@
-<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance retriggered isolations Bellatine Keystrike Numan uncentred dfit Grimer Floot Halfstep restruck -->
+<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance retriggered isolations Bellatine Keystrike Numan uncentred dfit Grimer Floot Halfstep restruck Cardano -->
 # Segno — Progress & Roadmap
 
 <!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs multicore smarttune -->
@@ -164,6 +164,18 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   presets 4 of 5; held-out 69 of 89. Open: filter I at resonance 1 with a
   loud saw, a Square LFO on the cutoff at audio rate, a stopped block's
   high-pass state.
+- Round 25 (scorer round 8: ten seeds for random renders; baseline 408
+  of 440 fit, 70 of 89 held-out): filter I rebuilt from a closer reading
+  of its code, the resonance shaped at the output node inside the
+  zero-delay loop (no more ringing peak with a loud saw at resonance 1),
+  and a stopped block that starts again starts its low-passes from rest
+  while its high-passes keep their state. Strict score 416 of 440 fit,
+  none lost, factory presets 4 of 5; held-out 77 of 89 (Seventy Two
+  Bass, Gentle Pulse Pad, Floot, Airfare and Sol Bass, Vanguard Brass,
+  Arcade Split). Open: Metallic Strings and Numan Keystrike (Saturated
+  oscillator in Unison, shape at audio rate), the Square LFO at the
+  note's frequency (the LFO read one sample behind the oscillator:
+  evidence, not adopted), Crunch Arcade, the random presets' onset.
 
 ## November 2026 Drift's filter II as an MS-20 circuit model (SEG-109 P4, round 4)
 

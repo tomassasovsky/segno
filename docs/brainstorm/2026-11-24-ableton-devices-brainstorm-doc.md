@@ -1,6 +1,6 @@
 # Ableton Live device presets on the pedal — brainstorm
 
-<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance retriggered isolations Bellatine Keystrike Numan uncentred dfit Grimer Floot Halfstep restruck -->
+<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance retriggered isolations Bellatine Keystrike Numan uncentred dfit Grimer Floot Halfstep restruck Cardano -->
 
 **Date:** 2026-11-24
 **Issue:** SEG-109 (related: SEG-57, Segno's own instrument voices)
@@ -201,15 +201,27 @@ written from it.
   trapezoidal prewarp, a cubic soft clip in the feedback solved in closed
   form each sample, resonance pulled back above resonance 1 at high
   cutoffs, and a tiny injected noise that lets self-oscillation start from
-  silence. Input gain about 1.67. **[code]** Fitted: the two poles give a
-  base damping ratio near 1.18 (1.12 fits best) and the resonance
-  feedback, r × (1 + 1/3.3), cancels it at resonance 1, so the section is
-  a state-variable low-pass with damping 1.12 (1 − r) plus the cubic in
-  the resonance path; sixth-octave levels within 1.4 dB rms on Live's
-  filter I renders. The cubic's input is the band state × 1.7
-  **[measured]**: self-oscillation on noise at resonance 1 within 0.2 dB
-  of Live's level (× 1.4 gave 0.64 dB loud), and two saws at Gain 2 into
-  resonance 0.7 (round 19) tf 2.0 to 1.8.
+  silence. Input gain about 1.67. **[code]** A closer reading of the
+  filter's process and coefficient functions (round 25) gives the
+  structure **[code]**: the two integrators are trapezoidal one-poles
+  with coefficients g / sqrt(3.3) and g sqrt(3.3) (g the prewarped
+  cutoff); the resonance is fed back from the output node v, subtracted
+  at the first integrator's input and added at the second's, through
+  v - v³/3 with v held at ±1; the loop is zero-delay, v solving the cubic
+  v = m + K (v - v³/3) each sample (m the output without feedback, K the
+  loop gain through both integrators). The feedback gain r (1 + 1/3.3)
+  cancels the base damping (1.18) at resonance 1; above 1 it is pulled
+  back by r / (1 + 3 (f - 0.075)₊ (r - 1)₊) for f = fc/fs; the output is
+  clamped at ±1. The injected noise is about 2e-5 at the output plus a
+  rumble term 0.6 fc / (fc + 10)² at the input (a tenth of it at the
+  second integrator). Segno solves the cubic in closed form and uses
+  uniform noise of the same variance **[Segno]**. Segno's earlier fit
+  put the cubic on the band state of a state-variable filter (× 1.7),
+  which rang at the cutoff with a loud saw at resonance 1: 14 to 22 dB
+  above Live's broad plateau at harmonics 30 to 32 (`f1s-*`, Seventy Two
+  Bass). With the output node shaped, every `f1s-*` render, `f1-1k-r1`
+  (self-oscillation on noise), the hot saws of round 19 and Seventy Two
+  Bass pass; held-out 68 to 70 of 89 with Gentle Pulse Pad.
 - Type II: two nonlinear sections in series with a diode-style shaper in
   each feedback path, two fixed iterations per sample, input gain × 3,
   resonance curve q = 4r/(3r + 1) + 4·max(r − 1, 0)² with a limiter at high
@@ -251,7 +263,11 @@ written from it.
   oscillators at Gain 1 within 0.07 dB, the sine at Gain 1 tf 1.15 to
   0.35, the Saturated oscillator 0.70 to 0.09, two saws at Gain 2 into
   resonance 0.7 (`drv-f1-g4-r07`) 1.8 to 1.2. Applied to the input
-  instead, the hot-input renders came out worse (1.6).
+  instead, the hot-input renders came out worse (1.6). The reading of
+  filter I's code (round 25) does not show this stage (the filter itself
+  is linear at resonance 0), yet it stays needed with the rebuilt filter:
+  without it the `f1s-*` renders and Seventy Two Bass come out 0.2 to 0.5
+  dB loud and fail.
 - Filter input: both types clip their input: linear to about +0.70 and
   -0.98, a soft knee, and a hard edge at +0.79 on the positive side. A sine
   at Gain 1 gets Live's harmonics 2 to 41 within 3 dB (the hard edge gives
@@ -372,7 +388,9 @@ written from it.
   (a voice never played runs as A4 with its own drift); with Reset
   Oscillator Phase on, the note starts both filters from rest. A block
   with no voice sounding stops with its state held, running only its
-  LFOs. Measured on the held-out presets: notes on silent voices start
+  LFOs; when it starts again its voices' low-pass filters start from
+  rest, while their high-pass keeps the state it held **[measured]**
+  (round 24, below). Measured on the held-out presets: notes on silent voices start
   from their filters' running state (Toy Helicopter's triad after its D2
   tf 3.0 to 0.5, Transistor Reeds 2.5 to 0.2, Wave Pad 3.1 to 0.6, Echo
   Bells 2.4 to 0.8), a free voice's Envelope 2 keeps releasing
@@ -383,14 +401,21 @@ written from it.
   either way only with the reset). Round 24 confirmed this on isolations:
   a never-played voice's filter state, a voice restruck after 0.05 to
   2.5 s with its block stopped, the same with the block running, filter
-  I, Reset on and the release tail below 0.001 all pass (`fs-*`). A
-  stopped block holds its state: letting the filters ring down with no
-  input changed none of those renders and took `fs-idle-g030-hp` from
-  tf 2.3 to 11. That render (high-pass at 200 Hz, restruck after 0.3 s)
-  is the one still failing: Live's restart jumps to +0.30 with a sharp
-  step, Segno's rises from +0.12. Clearing the high-pass at the note
-  made it worse (4.1). Airfare Bass, Floot Bass and Vanguard Brass stay
-  open.
+  I, Reset on and the release tail below 0.001 all pass (`fs-*`), all
+  but `fs-idle-g030-hp` (high-pass at 200 Hz, restruck after 0.3 s on a
+  stopped block): Live's restart jumps to +0.30 and falls, Segno's
+  rose from +0.12. The waveforms settle it: every restrike on a stopped
+  block (gaps 0.05 to 2.5 s, either filter) starts in Live from zero and
+  grows like a two-pole step response, where Segno's held low-pass state
+  gave a jump (-0.17 at C3), and Live's +0.30 with the high-pass is that
+  filter's held state against a low-pass at rest. So a restarting block
+  starts its low-passes from rest and keeps its high-passes
+  **[measured]**: every `fs-*` render passes (`fs-idle-g030-hp` tf 2.3
+  to pass), and Floot Bass, Airfare Bass, Vanguard Brass and Sol Bass
+  pass on the held-out round (Grimer Bass 2.22 to 1.91). Letting the
+  low-pass ring down with no input while the block is stopped scores
+  the same; resetting it is cheaper. The earlier ring-down candidate
+  also let the high-pass decay, which removed its jump.
 - With ResetOscillatorPhase on, a note on a sounding voice waits for a fast
   fade-out, then starts with reset phases; with it off, the note starts at
   once and the envelope continues from its level. **[code]** Measured: the
@@ -730,6 +755,38 @@ What the strict score still fails, and why **[measured]**:
   - Metallic Swell Pad: the triad and its version with velocity to
     cutoff off pass (`msp-tri*`); one note at four velocities fails on
     stereo and onset (`msp-vel`).
+- Round 25 (2026-11-26, no new renders; scorer round 8, ten seeds for
+  random renders): re-baselined at 408 of 440 fit and 70 of 89
+  held-out. Two changes, both above: filter I rebuilt from a closer
+  reading of its code (the shaper on the output node, solved in the
+  zero-delay loop; Filters), and a stopped block that starts again
+  starts its low-passes from rest and keeps its high-passes (Voices).
+  Strict score 416 of 440 fit (every `f1s-*` render, Seventy Two Bass
+  and Gentle Pulse Pad's copies, `fs-idle-g030-hp`; none lost) and 77
+  of 89 held-out (Seventy Two Bass, Gentle Pulse Pad, Floot Bass,
+  Airfare Bass, Vanguard Brass, Sol Bass, Arcade Split). Tried and not
+  kept:
+  - The LFO read after its phase advances, as the oscillators read
+    theirs. On `am-sq-*` Live's cutoff rises two samples before each saw
+    reset, which Segno's square (read one increment behind the
+    oscillator) misses; reading it after the advance takes `am-sq-f1`'s
+    attack from 0.95 to 0.06 and its level error from 0.46 to 0.04 dB
+    (`am-sq-f2` 0.26 to 0.07). Both still fail on tf (2.1, in the bands
+    below the note), and over every render the change loses Grimer
+    Bass's copy (1.53) and the held-out Kentucky Lead and gains only
+    Chirp Pluck's random renders, so the order stays as it was **[open]**.
+  - Smoothing the cutoff's modulation (a one-pole on the exponent) made
+    `am-sq-f1` worse at every time constant; Live's cutoff switches in
+    one sample.
+  Still failing: Metallic Strings (`ms-held` 5.2) and Numan Keystrike
+  (`nk-held` 4.7, 1.8 dB quiet across the spectrum, with time-varying
+  error in every band); both use the Saturated oscillator in Unison
+  with its shape modulated at audio rate, which no isolation covers
+  yet. Crunch Arcade (3.1), Lo-Fi Metal Hit, Grimer Bass (1.9), Dub
+  Techno Bass and AG Bass (1.8 to 1.9) on the held-out round; the
+  random presets Sweet Tooth (onset) and Star Dust Strings (pitch and
+  onset), where Segno's seeds spread more than Live's copies, and Chirp
+  Pluck's fit renders on pitch.
 - Round 16 settled two questions. Live's drift is the same in every
   instance: three Live renders of one Drift Depth patch, each a fresh
   device, correlate 1.0000. And Bloom Pad's filter peak came from key

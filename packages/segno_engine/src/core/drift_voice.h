@@ -190,6 +190,7 @@ typedef struct le_drift {
   /* the noise: one generator per voice, run per block of four (tick), and
    * this sample's value per voice */
   uint32_t noise_rng[LE_DRIFT_VOICES];
+  int32_t block_ran[LE_DRIFT_VOICES / 4]; /* each block ran last sample */
   float lane_noise[LE_DRIFT_VOICES];
 } le_drift;
 
