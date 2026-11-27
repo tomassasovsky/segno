@@ -5287,6 +5287,7 @@ LE_EXPORT int32_t le_engine_instrument_sustain(le_engine* engine, int32_t slot,
 #define LE_INST_DEVICE_ANALOG 4
 #define LE_INST_DEVICE_ELECTRIC 5
 #define LE_INST_DEVICE_TENSION 6
+#define LE_INST_DEVICE_COLLISION 7
 
 typedef enum le_drift_param {
   LE_DRIFT_OSC1_TYPE = 0,      /* 0..6: Sine, Triangle, Shark Tooth, Saturated,
@@ -5904,15 +5905,135 @@ typedef enum le_tension_param {
   LE_TENSION_PARAMS
 } le_tension_param;
 
+/* Collision (docs/brainstorm/2026-11-24-ableton-devices-brainstorm-doc.md,
+ * "Collision: behavior"): a mallet and a noise source strike two
+ * resonators (beam, marimba, string, membrane, plate, pipe, tube), with two
+ * LFOs and a modulation matrix, in the values its presets store, each in
+ * its own unit (semitones, cents, degrees, -5..5 amounts), in the presets'
+ * order: the exciters, two resonator blocks (LE_COLLISION_RES), the
+ * structure, two LFO blocks (LE_COLLISION_LFO), then the device's own. */
+
+/* One resonator's fields. */
+enum {
+  LE_COLLISION_R_ON = 0,             /* 0/1 */
+  LE_COLLISION_R_TYPE,               /* 0..6: Beam, Marimba, String, Membrane, Plate, Pipe, Tube */
+  LE_COLLISION_R_QUALITY,            /* 0..3: 4, 16, 30, 70 modes */
+  LE_COLLISION_R_TUNE,               /* -48..48 semitones */
+  LE_COLLISION_R_FINE,               /* -50..50 cents */
+  LE_COLLISION_R_TUNE_KEY,           /* -2..2 */
+  LE_COLLISION_R_PITCH_ENV,          /* -1..1 octaves */
+  LE_COLLISION_R_PITCH_ENV_VEL,      /* -5..5 */
+  LE_COLLISION_R_PITCH_ENV_TIME,     /* 0..1 */
+  LE_COLLISION_R_DECAY,              /* 0..1 */
+  LE_COLLISION_R_DECAY_VEL,          /* -5..5 */
+  LE_COLLISION_R_DECAY_KEY,          /* -2..2 */
+  LE_COLLISION_R_OFF_DECAY,          /* 0..1 */
+  LE_COLLISION_R_MATERIAL,           /* -1..1 */
+  LE_COLLISION_R_MATERIAL_VEL,       /* -5..5 */
+  LE_COLLISION_R_MATERIAL_KEY,       /* -2..2 */
+  LE_COLLISION_R_RADIUS,             /* 0..1 */
+  LE_COLLISION_R_RADIUS_VEL,         /* -5..5 */
+  LE_COLLISION_R_RADIUS_KEY,         /* -2..2 */
+  LE_COLLISION_R_RATIO,              /* 0..1 */
+  LE_COLLISION_R_BRIGHTNESS,         /* -1..1 */
+  LE_COLLISION_R_BLEED,              /* 0..1 */
+  LE_COLLISION_R_INHARMONICS,        /* -1..1 */
+  LE_COLLISION_R_INHARMONICS_VEL,    /* -5..5 */
+  LE_COLLISION_R_OPENING,            /* 0..1 */
+  LE_COLLISION_R_OPENING_VEL,        /* -5..5 */
+  LE_COLLISION_R_HIT,                /* 0..1 */
+  LE_COLLISION_R_HIT_RANDOM,         /* 0..1 */
+  LE_COLLISION_R_LISTEN_L,           /* 0..1 */
+  LE_COLLISION_R_LISTEN_R,           /* 0..1 */
+  LE_COLLISION_R_PAN,                /* -1..1 */
+  LE_COLLISION_R_PAN_KEY,            /* -1..1 */
+  LE_COLLISION_R_VOLUME,             /* 0..1 */
+  LE_COLLISION_R_FIELDS
+};
+
+/* One LFO's fields. */
+enum {
+  LE_COLLISION_L_ON = 0,             /* 0/1 */
+  LE_COLLISION_L_SHAPE,              /* 0..6: Sine, Square, Triangle, Ramp Up, Ramp Down, S&H, Random */
+  LE_COLLISION_L_RETRIGGER,          /* 0/1 */
+  LE_COLLISION_L_SYNC,               /* 0/1 */
+  LE_COLLISION_L_RATE,               /* 0..1: 0.01 .. 10 Hz */
+  LE_COLLISION_L_SYNC_RATE,          /* 0..21 */
+  LE_COLLISION_L_RATE_KEY,           /* -2..2 */
+  LE_COLLISION_L_PHASE,              /* 0..360 degrees */
+  LE_COLLISION_L_DEPTH,              /* 0..1 */
+  LE_COLLISION_L_DEPTH_VEL,          /* -5..5 */
+  LE_COLLISION_L_TARGET1,            /* 0..16 */
+  LE_COLLISION_L_AMOUNT1,            /* -5..5 */
+  LE_COLLISION_L_TARGET2,
+  LE_COLLISION_L_AMOUNT2,
+  LE_COLLISION_L_FIELDS
+};
+
+typedef enum le_collision_param {
+  LE_COLLISION_MALLET_ON = 0,        /* 0/1 */
+  LE_COLLISION_MALLET_VOLUME,        /* 0..1 */
+  LE_COLLISION_MALLET_VOLUME_VEL,    /* -5..5 */
+  LE_COLLISION_MALLET_VOLUME_KEY,    /* -2..2 */
+  LE_COLLISION_MALLET_STIFFNESS,     /* 0..1 */
+  LE_COLLISION_MALLET_STIFFNESS_VEL, /* -5..5 */
+  LE_COLLISION_MALLET_STIFFNESS_KEY, /* -2..2 */
+  LE_COLLISION_MALLET_NOISE,         /* 0..1 */
+  LE_COLLISION_MALLET_NOISE_VEL,     /* -5..5 */
+  LE_COLLISION_MALLET_NOISE_KEY,     /* -2..2 */
+  LE_COLLISION_MALLET_NOISE_COLOR,   /* 0..1 */
+  LE_COLLISION_NOISE_ON,             /* 0/1 */
+  LE_COLLISION_NOISE_VOLUME,         /* 0..1 */
+  LE_COLLISION_NOISE_VOLUME_VEL,     /* -5..5 */
+  LE_COLLISION_NOISE_VOLUME_KEY,     /* -2..2 */
+  LE_COLLISION_NOISE_FILTER,         /* 0..3: LP, HP, BP, LP+HP */
+  LE_COLLISION_NOISE_FREQ,           /* 0..1 */
+  LE_COLLISION_NOISE_FREQ_VEL,       /* -8..8 */
+  LE_COLLISION_NOISE_FREQ_KEY,       /* -2..2 */
+  LE_COLLISION_NOISE_FREQ_ENV,       /* -5..5 */
+  LE_COLLISION_NOISE_Q,              /* 0..1 */
+  LE_COLLISION_NOISE_ATTACK,         /* 0..1 */
+  LE_COLLISION_NOISE_DECAY,          /* 0..1 */
+  LE_COLLISION_NOISE_SUSTAIN,        /* 0..1 */
+  LE_COLLISION_NOISE_RELEASE,        /* 0..1 */
+  LE_COLLISION_RES1,                 /* two LE_COLLISION_R_FIELDS blocks */
+  LE_COLLISION_STRUCTURE = LE_COLLISION_RES1 + 2 * LE_COLLISION_R_FIELDS, /* 0: 1 > 2, 1: 1 + 2 */
+  LE_COLLISION_LFO1,                 /* two LE_COLLISION_L_FIELDS blocks */
+  LE_COLLISION_BEND_RANGE = LE_COLLISION_LFO1 + 2 * LE_COLLISION_L_FIELDS, /* 0..24 semitones */
+  LE_COLLISION_BEND_TARGET,          /* 0..17 */
+  LE_COLLISION_BEND_AMOUNT,          /* -5..5 */
+  LE_COLLISION_WHEEL_TARGET1,
+  LE_COLLISION_WHEEL_AMOUNT1,
+  LE_COLLISION_WHEEL_TARGET2,
+  LE_COLLISION_WHEEL_AMOUNT2,
+  LE_COLLISION_PRESSURE_TARGET1,
+  LE_COLLISION_PRESSURE_AMOUNT1,
+  LE_COLLISION_PRESSURE_TARGET2,
+  LE_COLLISION_PRESSURE_AMOUNT2,
+  LE_COLLISION_POLYPHONY,            /* 0..8: 2p voices (0: mono) */
+  LE_COLLISION_RETRIGGER,            /* 0/1 */
+  LE_COLLISION_VOLUME,               /* 0..1 */
+  LE_COLLISION_NOTE_BEND_RANGE,      /* 0..48 semitones (MPE, stored) */
+  LE_COLLISION_SLIDE_TARGET1,        /* (stored) */
+  LE_COLLISION_SLIDE_AMOUNT1,
+  LE_COLLISION_SLIDE_TARGET2,
+  LE_COLLISION_SLIDE_AMOUNT2,
+  LE_COLLISION_PARAMS
+} le_collision_param;
+
+/* Resonator `r` (0, 1), field `field`; LFO `l` (0, 1), field `field`. */
+#define LE_COLLISION_RES(r, field) (LE_COLLISION_RES1 + (r) * LE_COLLISION_R_FIELDS + (field))
+#define LE_COLLISION_LFO(l, field) (LE_COLLISION_LFO1 + (l) * LE_COLLISION_L_FIELDS + (field))
+
 /* The most parameters any device takes. */
 #define LE_INST_DEVICE_MAX_PARAMS LE_MELD_PARAMS
 
 /* Gives `slot` device `device` (LE_INST_DEVICE_DRIFT, _OPERATOR, _MELD,
- * _ANALOG, _ELECTRIC or _TENSION) with `values` (the device's parameter
- * count of them, in its le_<device>_param order: LE_DRIFT_PARAMS,
- * LE_OPERATOR_PARAMS, LE_MELD_PARAMS, LE_ANALOG_PARAMS,
- * LE_ELECTRIC_PARAMS or LE_TENSION_PARAMS; NULL: the device's defaults;
- * each clamped to its range). Ends a patch or device the slot
+ * _ANALOG, _ELECTRIC, _TENSION or _COLLISION) with `values` (the device's
+ * parameter count of them, in its le_<device>_param order:
+ * LE_DRIFT_PARAMS, LE_OPERATOR_PARAMS, LE_MELD_PARAMS, LE_ANALOG_PARAMS,
+ * LE_ELECTRIC_PARAMS, LE_TENSION_PARAMS or LE_COLLISION_PARAMS; NULL: the
+ * device's defaults; each clamped to its range). Ends a patch or device the slot
  * played (its voices fade). Returns LE_OK, LE_ERR_INVALID (a bad slot,
  * device or NaN value), LE_ERR_CAPACITY (the note-on ring is full: nothing
  * changed, retry) or LE_ERR_NOT_RUNNING before configure. */

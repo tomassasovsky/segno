@@ -2033,11 +2033,11 @@ external int le_engine_set_instrument(
 );
 
 /// Gives `slot` device `device` (LE_INST_DEVICE_DRIFT, _OPERATOR, _MELD,
-/// _ANALOG, _ELECTRIC or _TENSION) with `values` (the device's parameter
-/// count of them, in its le_<device>_param order: LE_DRIFT_PARAMS,
-/// LE_OPERATOR_PARAMS, LE_MELD_PARAMS, LE_ANALOG_PARAMS,
-/// LE_ELECTRIC_PARAMS or LE_TENSION_PARAMS; NULL: the device's defaults;
-/// each clamped to its range). Ends a patch or device the slot
+/// _ANALOG, _ELECTRIC, _TENSION or _COLLISION) with `values` (the device's
+/// parameter count of them, in its le_<device>_param order:
+/// LE_DRIFT_PARAMS, LE_OPERATOR_PARAMS, LE_MELD_PARAMS, LE_ANALOG_PARAMS,
+/// LE_ELECTRIC_PARAMS, LE_TENSION_PARAMS or LE_COLLISION_PARAMS; NULL: the
+/// device's defaults; each clamped to its range). Ends a patch or device the slot
 /// played (its voices fade). Returns LE_OK, LE_ERR_INVALID (a bad slot,
 /// device or NaN value), LE_ERR_CAPACITY (the note-on ring is full: nothing
 /// changed, retry) or LE_ERR_NOT_RUNNING before configure.
@@ -4242,6 +4242,104 @@ const double LE_CLIP_LEVEL = 0.9990000128746033;
 
 const int LE_CLIP_RUN = 4;
 
+const int LE_COLLISION_L_AMOUNT1 = 11;
+
+const int LE_COLLISION_L_AMOUNT2 = 13;
+
+const int LE_COLLISION_L_DEPTH = 8;
+
+const int LE_COLLISION_L_DEPTH_VEL = 9;
+
+const int LE_COLLISION_L_FIELDS = 14;
+
+const int LE_COLLISION_L_ON = 0;
+
+const int LE_COLLISION_L_PHASE = 7;
+
+const int LE_COLLISION_L_RATE = 4;
+
+const int LE_COLLISION_L_RATE_KEY = 6;
+
+const int LE_COLLISION_L_RETRIGGER = 2;
+
+const int LE_COLLISION_L_SHAPE = 1;
+
+const int LE_COLLISION_L_SYNC = 3;
+
+const int LE_COLLISION_L_SYNC_RATE = 5;
+
+const int LE_COLLISION_L_TARGET1 = 10;
+
+const int LE_COLLISION_L_TARGET2 = 12;
+
+const int LE_COLLISION_R_BLEED = 21;
+
+const int LE_COLLISION_R_BRIGHTNESS = 20;
+
+const int LE_COLLISION_R_DECAY = 9;
+
+const int LE_COLLISION_R_DECAY_KEY = 11;
+
+const int LE_COLLISION_R_DECAY_VEL = 10;
+
+const int LE_COLLISION_R_FIELDS = 33;
+
+const int LE_COLLISION_R_FINE = 4;
+
+const int LE_COLLISION_R_HIT = 26;
+
+const int LE_COLLISION_R_HIT_RANDOM = 27;
+
+const int LE_COLLISION_R_INHARMONICS = 22;
+
+const int LE_COLLISION_R_INHARMONICS_VEL = 23;
+
+const int LE_COLLISION_R_LISTEN_L = 28;
+
+const int LE_COLLISION_R_LISTEN_R = 29;
+
+const int LE_COLLISION_R_MATERIAL = 13;
+
+const int LE_COLLISION_R_MATERIAL_KEY = 15;
+
+const int LE_COLLISION_R_MATERIAL_VEL = 14;
+
+const int LE_COLLISION_R_OFF_DECAY = 12;
+
+const int LE_COLLISION_R_ON = 0;
+
+const int LE_COLLISION_R_OPENING = 24;
+
+const int LE_COLLISION_R_OPENING_VEL = 25;
+
+const int LE_COLLISION_R_PAN = 30;
+
+const int LE_COLLISION_R_PAN_KEY = 31;
+
+const int LE_COLLISION_R_PITCH_ENV = 6;
+
+const int LE_COLLISION_R_PITCH_ENV_TIME = 8;
+
+const int LE_COLLISION_R_PITCH_ENV_VEL = 7;
+
+const int LE_COLLISION_R_QUALITY = 2;
+
+const int LE_COLLISION_R_RADIUS = 16;
+
+const int LE_COLLISION_R_RADIUS_KEY = 18;
+
+const int LE_COLLISION_R_RADIUS_VEL = 17;
+
+const int LE_COLLISION_R_RATIO = 19;
+
+const int LE_COLLISION_R_TUNE = 3;
+
+const int LE_COLLISION_R_TUNE_KEY = 5;
+
+const int LE_COLLISION_R_TYPE = 1;
+
+const int LE_COLLISION_R_VOLUME = 32;
+
 const int LE_COUNT_IN_MAX_BARS = 4;
 
 const int LE_DIGEST_STATE_BYTES = 128;
@@ -4265,6 +4363,8 @@ const int LE_INSTRUMENT_SOURCE_BASE = 32;
 const int LE_INST_CHORD_NOTES = 8;
 
 const int LE_INST_DEVICE_ANALOG = 4;
+
+const int LE_INST_DEVICE_COLLISION = 7;
 
 const int LE_INST_DEVICE_DRIFT = 1;
 
@@ -5148,6 +5248,183 @@ final class le_cb_window_snapshot extends ffi.Struct {
   /// happens (#1515). Every late period is one of these too.
   @ffi.Uint64()
   external int over_share_periods;
+}
+
+enum le_collision_param {
+  /// 0/1
+  LE_COLLISION_MALLET_ON(0),
+
+  /// 0..1
+  LE_COLLISION_MALLET_VOLUME(1),
+
+  /// -5..5
+  LE_COLLISION_MALLET_VOLUME_VEL(2),
+
+  /// -2..2
+  LE_COLLISION_MALLET_VOLUME_KEY(3),
+
+  /// 0..1
+  LE_COLLISION_MALLET_STIFFNESS(4),
+
+  /// -5..5
+  LE_COLLISION_MALLET_STIFFNESS_VEL(5),
+
+  /// -2..2
+  LE_COLLISION_MALLET_STIFFNESS_KEY(6),
+
+  /// 0..1
+  LE_COLLISION_MALLET_NOISE(7),
+
+  /// -5..5
+  LE_COLLISION_MALLET_NOISE_VEL(8),
+
+  /// -2..2
+  LE_COLLISION_MALLET_NOISE_KEY(9),
+
+  /// 0..1
+  LE_COLLISION_MALLET_NOISE_COLOR(10),
+
+  /// 0/1
+  LE_COLLISION_NOISE_ON(11),
+
+  /// 0..1
+  LE_COLLISION_NOISE_VOLUME(12),
+
+  /// -5..5
+  LE_COLLISION_NOISE_VOLUME_VEL(13),
+
+  /// -2..2
+  LE_COLLISION_NOISE_VOLUME_KEY(14),
+
+  /// 0..3: LP, HP, BP, LP+HP
+  LE_COLLISION_NOISE_FILTER(15),
+
+  /// 0..1
+  LE_COLLISION_NOISE_FREQ(16),
+
+  /// -8..8
+  LE_COLLISION_NOISE_FREQ_VEL(17),
+
+  /// -2..2
+  LE_COLLISION_NOISE_FREQ_KEY(18),
+
+  /// -5..5
+  LE_COLLISION_NOISE_FREQ_ENV(19),
+
+  /// 0..1
+  LE_COLLISION_NOISE_Q(20),
+
+  /// 0..1
+  LE_COLLISION_NOISE_ATTACK(21),
+
+  /// 0..1
+  LE_COLLISION_NOISE_DECAY(22),
+
+  /// 0..1
+  LE_COLLISION_NOISE_SUSTAIN(23),
+
+  /// 0..1
+  LE_COLLISION_NOISE_RELEASE(24),
+
+  /// two LE_COLLISION_R_FIELDS blocks
+  LE_COLLISION_RES1(25),
+
+  /// 0: 1 > 2, 1: 1 + 2
+  LE_COLLISION_STRUCTURE(91),
+
+  /// two LE_COLLISION_L_FIELDS blocks
+  LE_COLLISION_LFO1(92),
+
+  /// 0..24 semitones
+  LE_COLLISION_BEND_RANGE(120),
+
+  /// 0..17
+  LE_COLLISION_BEND_TARGET(121),
+
+  /// -5..5
+  LE_COLLISION_BEND_AMOUNT(122),
+  LE_COLLISION_WHEEL_TARGET1(123),
+  LE_COLLISION_WHEEL_AMOUNT1(124),
+  LE_COLLISION_WHEEL_TARGET2(125),
+  LE_COLLISION_WHEEL_AMOUNT2(126),
+  LE_COLLISION_PRESSURE_TARGET1(127),
+  LE_COLLISION_PRESSURE_AMOUNT1(128),
+  LE_COLLISION_PRESSURE_TARGET2(129),
+  LE_COLLISION_PRESSURE_AMOUNT2(130),
+
+  /// 0..8: 2p voices (0: mono)
+  LE_COLLISION_POLYPHONY(131),
+
+  /// 0/1
+  LE_COLLISION_RETRIGGER(132),
+
+  /// 0..1
+  LE_COLLISION_VOLUME(133),
+
+  /// 0..48 semitones (MPE, stored)
+  LE_COLLISION_NOTE_BEND_RANGE(134),
+
+  /// (stored)
+  LE_COLLISION_SLIDE_TARGET1(135),
+  LE_COLLISION_SLIDE_AMOUNT1(136),
+  LE_COLLISION_SLIDE_TARGET2(137),
+  LE_COLLISION_SLIDE_AMOUNT2(138),
+  LE_COLLISION_PARAMS(139);
+
+  final int value;
+  const le_collision_param(this.value);
+
+  static le_collision_param fromValue(int value) => switch (value) {
+    0 => LE_COLLISION_MALLET_ON,
+    1 => LE_COLLISION_MALLET_VOLUME,
+    2 => LE_COLLISION_MALLET_VOLUME_VEL,
+    3 => LE_COLLISION_MALLET_VOLUME_KEY,
+    4 => LE_COLLISION_MALLET_STIFFNESS,
+    5 => LE_COLLISION_MALLET_STIFFNESS_VEL,
+    6 => LE_COLLISION_MALLET_STIFFNESS_KEY,
+    7 => LE_COLLISION_MALLET_NOISE,
+    8 => LE_COLLISION_MALLET_NOISE_VEL,
+    9 => LE_COLLISION_MALLET_NOISE_KEY,
+    10 => LE_COLLISION_MALLET_NOISE_COLOR,
+    11 => LE_COLLISION_NOISE_ON,
+    12 => LE_COLLISION_NOISE_VOLUME,
+    13 => LE_COLLISION_NOISE_VOLUME_VEL,
+    14 => LE_COLLISION_NOISE_VOLUME_KEY,
+    15 => LE_COLLISION_NOISE_FILTER,
+    16 => LE_COLLISION_NOISE_FREQ,
+    17 => LE_COLLISION_NOISE_FREQ_VEL,
+    18 => LE_COLLISION_NOISE_FREQ_KEY,
+    19 => LE_COLLISION_NOISE_FREQ_ENV,
+    20 => LE_COLLISION_NOISE_Q,
+    21 => LE_COLLISION_NOISE_ATTACK,
+    22 => LE_COLLISION_NOISE_DECAY,
+    23 => LE_COLLISION_NOISE_SUSTAIN,
+    24 => LE_COLLISION_NOISE_RELEASE,
+    25 => LE_COLLISION_RES1,
+    91 => LE_COLLISION_STRUCTURE,
+    92 => LE_COLLISION_LFO1,
+    120 => LE_COLLISION_BEND_RANGE,
+    121 => LE_COLLISION_BEND_TARGET,
+    122 => LE_COLLISION_BEND_AMOUNT,
+    123 => LE_COLLISION_WHEEL_TARGET1,
+    124 => LE_COLLISION_WHEEL_AMOUNT1,
+    125 => LE_COLLISION_WHEEL_TARGET2,
+    126 => LE_COLLISION_WHEEL_AMOUNT2,
+    127 => LE_COLLISION_PRESSURE_TARGET1,
+    128 => LE_COLLISION_PRESSURE_AMOUNT1,
+    129 => LE_COLLISION_PRESSURE_TARGET2,
+    130 => LE_COLLISION_PRESSURE_AMOUNT2,
+    131 => LE_COLLISION_POLYPHONY,
+    132 => LE_COLLISION_RETRIGGER,
+    133 => LE_COLLISION_VOLUME,
+    134 => LE_COLLISION_NOTE_BEND_RANGE,
+    135 => LE_COLLISION_SLIDE_TARGET1,
+    136 => LE_COLLISION_SLIDE_AMOUNT1,
+    137 => LE_COLLISION_SLIDE_TARGET2,
+    138 => LE_COLLISION_SLIDE_AMOUNT2,
+    139 => LE_COLLISION_PARAMS,
+    _ => throw ArgumentError('Unknown value for le_collision_param: $value'),
+  };
 }
 
 /// Command codes posted into the engine's SPSC ring.

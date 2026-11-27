@@ -4,6 +4,7 @@
 #include "instrument_devices.h"
 
 #include "analog_voice.h"
+#include "collision_voice.h"
 #include "drift_voice.h"
 #include "electric_voice.h"
 #include "meld_voice.h"
@@ -59,6 +60,7 @@ LE_DEVICE_FUNCTIONS(le_meld, le_meld)
 LE_DEVICE_FUNCTIONS(le_analog, le_analog)
 LE_DEVICE_FUNCTIONS(le_electric, le_electric)
 LE_DEVICE_FUNCTIONS(le_tension, le_tension)
+LE_DEVICE_FUNCTIONS(le_collision, le_collision)
 
 const le_inst_device le_inst_devices[LE_INST_DEVICE_COUNT] = {
     LE_DEVICE_ENTRY(LE_INST_DEVICE_DRIFT, le_drift, le_drift, LE_DRIFT_PARAMS),
@@ -67,15 +69,17 @@ const le_inst_device le_inst_devices[LE_INST_DEVICE_COUNT] = {
     LE_DEVICE_ENTRY(LE_INST_DEVICE_ANALOG, le_analog, le_analog, LE_ANALOG_PARAMS),
     LE_DEVICE_ENTRY(LE_INST_DEVICE_ELECTRIC, le_electric, le_electric, LE_ELECTRIC_PARAMS),
     LE_DEVICE_ENTRY(LE_INST_DEVICE_TENSION, le_tension, le_tension, LE_TENSION_PARAMS),
+    LE_DEVICE_ENTRY(LE_INST_DEVICE_COLLISION, le_collision, le_collision, LE_COLLISION_PARAMS),
 };
 
 _Static_assert((int)LE_DRIFT_PARAMS <= (int)LE_INST_DEVICE_MAX_PARAMS &&
                    (int)LE_OPERATOR_PARAMS <= (int)LE_INST_DEVICE_MAX_PARAMS &&
                    (int)LE_ANALOG_PARAMS <= (int)LE_INST_DEVICE_MAX_PARAMS &&
                    (int)LE_ELECTRIC_PARAMS <= (int)LE_INST_DEVICE_MAX_PARAMS &&
-                   (int)LE_TENSION_PARAMS <= (int)LE_INST_DEVICE_MAX_PARAMS,
+                   (int)LE_TENSION_PARAMS <= (int)LE_INST_DEVICE_MAX_PARAMS &&
+                   (int)LE_COLLISION_PARAMS <= (int)LE_INST_DEVICE_MAX_PARAMS,
                "LE_INST_DEVICE_MAX_PARAMS holds every device's parameters");
-_Static_assert(LE_INST_DEVICE_TENSION - LE_INST_DEVICE_DRIFT + 1 == LE_INST_DEVICE_COUNT,
+_Static_assert(LE_INST_DEVICE_COLLISION - LE_INST_DEVICE_DRIFT + 1 == LE_INST_DEVICE_COUNT,
                "one table entry per device");
 
 const le_inst_device* le_inst_device_find(int32_t id) {

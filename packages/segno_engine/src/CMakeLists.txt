@@ -61,6 +61,7 @@ add_library(segno_engine SHARED
   core/analog_voice.c        # the Analog device (analog_voice.h, SEG-109)
   core/electric_voice.c      # the Electric device (electric_voice.h, SEG-109)
   core/tension_voice.c       # the Tension device (tension_voice.h, SEG-109)
+  core/collision_voice.c     # the Collision device (collision_voice.h, SEG-109)
   core/instrument_devices.c  # the device table (instrument_devices.h)
   # The miniaudio device backend (le_device_backend.h), compiled unconditionally
   # — the only device backend this build ships; another backend slots in behind

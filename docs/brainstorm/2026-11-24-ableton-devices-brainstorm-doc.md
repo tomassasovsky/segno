@@ -1,6 +1,6 @@
 # Ableton Live device presets on the pedal — brainstorm
 
-<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance kModBy kCarriers Celesta transconductances Bandpass Bitgrunge Csound Drivetime Extratone Filther Lofi Lowpass Megatripolis Minnaert Sawstyle Starchestra polyBLEP Metalic Formant formants Barney Asym quintic Wurli MKII Schroeder Fretless Perc halvings Inharmonicity travelled retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations atan filt voicecut penv Unisono pul meldfit Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penvd rndpan Bassic Bitgrunge's Catchem Filther's Kaneda Werkstuecktraeger Whley Whley's filt nloop avel fleg unmodulated Basscycle spr ccg Clav restruck restrikes restrike prewarping Floot Halfstep Gametal Plucks Neurotimbre sqperc unnormalized fenv scalings fmdrive oscvol unsmoothed relc colfm rand elwork circ nornd retunes Detuned Cardano baselined prewarped -->
+<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance kModBy kCarriers Celesta transconductances Bandpass Bitgrunge Csound Drivetime Extratone Filther Lofi Lowpass Megatripolis Minnaert Sawstyle Starchestra polyBLEP Metalic Formant formants Barney Asym quintic Wurli MKII Schroeder Fretless Balafon Glockenspiel Perc halvings Inharmonicity travelled Inharmonics atan Freq bilinearly penv mvol retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations filt voicecut Unisono pul meldfit Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penvd rndpan Bassic Bitgrunge's Catchem Filther's Kaneda Werkstuecktraeger Whley Whley's filt nloop avel fleg unmodulated retunes Basscycle rvol mnoise lr spr ccg Clav restruck restrikes restrike prewarping Floot Halfstep Gametal Plucks Neurotimbre sqperc unstepped unnormalized fenv scalings fmdrive oscvol unsmoothed relc colfm rand elwork sidebands rescaling lphp circ nornd Detuned Cardano baselined prewarped -->
 
 **Date:** 2026-11-24
 **Issue:** SEG-109 (related: SEG-57, Segno's own instrument voices)
@@ -3386,6 +3386,386 @@ bow's speed switch and the filter's updates on notes off the 1 ms grid;
 the Strings Quartet damper's speed and mass; a mono string falling back
 to a held key; a mono string struck again on its key; Soft Buzz Bass's
 filter envelope off.
+
+
+## Collision: behavior
+
+Learned 2026-11-25 from Live 12.2.7's Collision engine (an AAS bundle, one
+reader), then measured against 92 Live renders: single changes around a
+plain mallet-on-beam reference, and all 33 factory presets. Tags as for
+Meld. Segno's implementation is `collision_voice.c`.
+
+### Values and the matrix
+
+- Presets store each value in its own unit (semitones, cents, degrees,
+  -5..5 amounts); a knob reaches the engine as one of 128 steps (a 0..1
+  knob by the 128 / 126 rule, Filter Q by 127 / 126, a ranged one by its
+  range; Fine Tune and the bipolar knobs with 0 at step 64, 63 steps up
+  and 63.5 down; Radius inverted), a matrix amount as is. The linear,
+  square and cube curves put step 64 at exactly their middle, the
+  exponential curve does not. **[code]** The master Volume, the LFOs'
+  free Rate, the Pitch Env. Time and each resonator's Volume are not taken
+  down to their step. **[measured]** (Vibes Basic's level; lfo-pitch's
+  rate, 0.641 Hz against 0.624 for the step; penv-t75's sweep, 1.3 to 0.3
+  dB; the resonator volumes the presets store as k / 126 below 0.5, which
+  left Digital String, Bells Mellow, Tube Harp and Bell Plate Long 0.2 to
+  0.33 dB under Live on every note, fit and held-out alike, and within 0.1
+  dB unstepped; taking every knob off its step instead moves the plain
+  pipe, tube and bleed renders from 0.0 to 0.6 dB)
+- A per-voice matrix sums amount x source into each destination: key
+  ((note - 60) / 12 with bend), velocity ((vel - 64) / 63), bend, mod
+  wheel, pressure, both LFOs. The "< Vel" and "< Key" knobs are fixed
+  routes; the LFO, bend, wheel and pressure choosers pick from 17
+  destinations, each in its own unit (an octave of cutoff, a doubling of
+  a gain, a rate or a depth, a unit of pan or hit). **[code]** A chooser's
+  amount moves a resonator's pitch by an eighth of an octave a unit.
+  **[measured]** (lfo-pitch: 0.25 swings 37.7 cents; Music Box Slide;
+  amounts 0.5, 1, 2.5 and -1, half depth and resonator 2 in round 2)
+
+### Exciters
+
+- The mallet: one impulse through a critically damped low-pass at
+  Exp(2, 5000) Hz (moved by its routes), scaled so the pulse's peak holds
+  whatever the stiffness; its noise, high-passed at Noise Color (Q 0.7,
+  the angle held below 2.9919932, so colour 1 passes almost nothing),
+  multiplies the pulse by (1 - w) + w noise, w = (atan(a)/pi + 1/2)^3, a =
+  Lin(-4, 4). **[code]** The noise term is 0.8 of that. **[measured]**
+  (round 6: the difference of Live's copies, the random part alone, on the
+  plain beam at Noise Amount 1 and nine colours, at Amount 0.5, and into a
+  beam at its shortest decay, is 1.9 dB below Segno's at every colour
+  within 1 dB, with the cutoff where the reading puts it; the earlier 0.45
+  of the rate clamp let 14 dB more through at colour 1)
+- The noise source: white noise through a low-pass, high-pass, band-pass
+  (of constant skirt: its peak gain is Q) or a low-pass and high-pass pair
+  a width apart, under a linear ADSR, its cutoff moved by the envelope
+  (Freq < Env octaves) and the routes. The filters are set at the strike
+  and when a knob moves, and step to the cutoff the envelope and the
+  routes give every 10 ms. **[code]** **[measured]** (Toy Piano Bells 14.5
+  to 7.7 dB, noise-env 12.2 to 10.3, against a ramp every 10 ms) Each
+  10 ms update restarts the filters from rest, their inputs and outputs
+  cleared, whether the cutoff moved or not (the update's condition holds
+  on the cutoff's route factor, which is 1); the restarts are the floor
+  far into the stopband that the high-pass and the low-pass showed.
+  **[code]** (the coefficient routine clears the four filter states when
+  called from the 10 ms update) In the LP + HP pair the low-pass runs
+  first. **[code]** The update runs every 480 samples from the strike.
+  **[measured]** (the reading counts 481 from the module's setup; 480
+  from the strike passes all seven dense-membrane high-pass renders,
+  dn-hp, dn-hp-f03, -f07, -q0, -q1, -att and -sus, six of which failed
+  without the restarts; 481 fails dn-hp-q0)
+
+### Resonators
+
+- Modal types: string (harmonic), beam (free-free, from cos b cosh b =
+  1), marimba (a tuned bar, 1 : 3.96 : 10.67 : 19.17 : 27, then sqrt 2
+  (k + 3/2) pi over the beam's first root), membrane and plate
+  (rectangular, side ratio Exp(1, 20), the lowest modes of a grid of m up
+  to floor(sqrt(N a)) + 1 and n up to floor(sqrt(N / a)) + 1). Quality
+  keeps 4, 16, 30 or 70 modes; Inharmonics raises each ratio to 1 + chi,
+  chi = clamp(I^3, -1, 1); modes above 0.4167 of the sample rate drop.
+  **[code]** **[measured]** (the marimba's 10.67, 19.17 and its sixth
+  partial at 37.3; type-3-r1)
+- A mode's shape at the hit and the two listening points is read off the
+  grid the engine samples it on: sin(k pi x) on N + 2 points along a bar
+  of N modes, read linearly; sin(m pi x) sin(n pi y) on G x G points for a
+  membrane or plate, G = floor(sqrt N) + 3, read bilinearly. High modes
+  of a coarse grid come out weaker or stronger than the exact sine.
+  **[code]** **[measured]** (q-0 1.0 to 0.02 dB, the membranes and plates
+  at every ratio)
+- Each mode decays as e^(-alpha t), alpha = (8/T) 2^e, where Material
+  tilts e towards long highs (metal) or long lows (wood); its two-pole
+  filter takes the exciter times the shape at the hit point and is heard
+  through the shapes at the two listening points, its level tilted by
+  Brightness about the mode at ratio 4. A heavily damped high-pass
+  resonance at the top mode stands in for the modes left out (Bleed).
+  **[code]** Its amount is Exp(0.001, 1) of the knob. **[measured]** (the
+  reading's Exp(0.01, 1) left the dense membrane's highs above 10 kHz 3
+  to 10 dB too strong at knob 0.5, dn-hp and dn-mnoise-0; Music Box Basic,
+  Noisy Pad and Marimba Classic move with it; a bright mallet on the dense
+  membrane passes at knob 0, 0.25, 0.75 and 1, bl-*) No mode rings longer than the knob's 35 s, and the decay
+  routes keep T 2^d within 10 ms and 35 s. **[Segno]** (a bound the
+  reading does not show; the metal presets with long highs fit it)
+- A pitch move retunes the modes at most every 200 samples (Segno: every
+  6 ticks of 32) and keeps their amplitude: each mode's newer state
+  scales by the old frequency over the new, its step from the older
+  state stays. **[code]**
+- Pipe and tube: two waveguide lines with Lagrange reads, the far end a
+  first-order reflection set by radius and opening; the pipe keeps every
+  harmonic, the tube (its reflection negated) the odd ones. Decay is e^-4
+  a round trip per T. Each line delays sr / (K f0) + 0.75 samples: the
+  sr / (K f0) - 0.75 the engine computes plus the 1.5 samples its 5-tap
+  read sits behind that point. **[code]** **[measured]** (Live's tube is
+  odd-only; the pipes were 27 cents flat without the 1.5 samples, the
+  tube at note 60 53 cents) The lines hold 4096 samples and a delay of at
+  least 3.5: note 0 at 48 kHz, about note 6 at 96 kHz, and the highest
+  pipe and tube notes share the top pitch. **[Segno]**
+- Decay Exp(0.05, 35) s; after the release T becomes 0.05 + (T - 0.05)
+  (1 - u)^3, u the Off Decay knob: 0 keeps the decay, 1 cuts it to 50 ms.
+  **[code]** **[measured]** (decay-1: Live's note falls 28 dB in 20 ms
+  after the release at Off Decay 1; the presets at 0 ring on) Pitch from
+  Tune, Fine and the key, with a pitch envelope that falls exponentially:
+  A (1.0314 e^(-3.49 t / T) - 0.0314), reaching 0 at its time T.
+  **[code]** **[measured]** (penv-1's pitch track) Pan by a balance law,
+  volume Sq(0, 2). In series resonator 2 hears resonator 1's outputs
+  summed, the bleed's included; in parallel the exciter. The hit position
+  is the knob plus the Hit destination, held to the knob's window, plus
+  the strike's random offset: a normal draw times 0.2 u^2 (u the Hit <
+  Random knob), its scale cut to the distance to the edge it heads for,
+  reflected back off that edge, then held within 0.02 of the ends.
+  **[code]** (Marimba Sustain's eight Live strikes, its only random
+  source: offsets read from their mode levels spread 0.036 against the
+  formula's 0.039 at u 0.44)
+
+### Voices and level
+
+- 2p voices (p = 0: mono); Retrigger strikes a sounding key's own voice
+  again, the modes ringing on at the same pitch. Two LFOs per voice, seven
+  shapes, free or synced; the synced lengths follow Live's menu, its note
+  values from the longest down: 8, 6, 4, 3, 2, 1.5, 1, 3/4, 1/2, 3/8, 1/3,
+  5/16, 1/4, 3/16, 1/6, 1/8, 1/12, 1/16, 1/24, 1/32, 1/48, 1/64 whole
+  notes. A strike reads each LFO at its start phase. A voice holds a
+  random value from the moment it is set up, so a Random LFO's first ramp
+  starts there, not at 0; later strikes start from the value the last one
+  ramped to. **[code]** (the LFO's setup draws twice; Vibes Modulated's
+  five held-out renders start at five different pans, two hard right, two
+  hard left) A released voice
+  ends after 50 ms below -100 dBFS, counted once the mallet's pulse and
+  both waveguides' round trips have passed; any voice, held or not, ends
+  at the first 512-sample block in which its resonators' outputs (before
+  their volumes) stay below 6e-6 with its exciters spent. **[code]**
+  **[measured]** (Bells Attack's synced pan, 21.7 to 3.9 dB; Live's held
+  notes stop at about -94 dBFS, at 512-sample steps, 6 dB higher with a
+  resonator or master volume of 1; a metal note, mat-1, stops about 12 dB
+  higher, which the output level does not explain) **[Segno]** (the
+  released voice's 50 ms)
+- The output is the voices' sum times Volume (Sq(0, 2)), then times 4.
+  The engine's output stage soft-clips above 0.7 of its scale (0.7 to 1,
+  then x4), as Analog's, Electric's and Tension's do. **[code]** In Live
+  that stage never acts on Collision: a peak limiter holds the output at
+  1, a quarter of the stage's ceiling, before it. The limiter looks 1 ms
+  ahead: the gain a sample needs (1 over its peak, at most 1) is taken as
+  the least over the next 1 ms and the last 1/3 ms; a released gain falls
+  at once to it and rises back towards 1 with a 5.3 ms time constant, and
+  is smoothed with a 0.225 ms one; a slow gain falls at once to the need
+  but never below -0.79 dB, and rises back with a 197 ms time constant;
+  the lower of the two applies. So a loud strike
+  recovers to within 0.8 dB in about 20 ms, then over a few hundred ms,
+  whether the overload lasted 7 ms or 2 s. The output lags the strike by
+  16 samples, and the limiter adds its 1 ms, which Live compensates and a
+  host can (`le_collision_latency`). **[measured]** (sample by sample
+  against the device without its limiter on lim-d0, lim-d1, lim-48,
+  lim-72, lim-rep, lim-rvol, mvol-08, mvol-09, serial-m03 and serial-m04:
+  the gain starts falling 1 ms before each peak, tracks every peak to
+  exactly 1, and keeps 0.6 to 0.8 dB of reduction after every overload; a
+  waveform error of -39 dB against -22 for the earlier 17-sample limiter;
+  the soft clip would bend the waveform, which Live's does not) Both
+  channels share one gain. **[measured]** (lim-lr, heard from two points:
+  its channels peak at 8.3 and 6.0 before the limiter and take the same
+  gain within 0.1 dB)
+- The Volume and Res 2 Input destinations ramp linearly across each
+  control tick (32 samples) from where the last tick left them; a slot's
+  first tick takes them at once. **[code]** (the mixer and the input gain
+  interpolate a control-rate gain across each block) Stepping them per
+  tick put a 1.5 kHz zipper on every tremolo: Vibes Mellow's and Tube
+  Harp's LFO on Volume left sidebands at k x 1.5 kHz +- the note 20 to
+  40 dB above Live's highs; with the ramp Vibes Mellow's 4 to 12 kHz band
+  falls as Live's within 3 dB. **[measured]**
+- Each resonator's volume and pan ramp to their values over 2 ms, from
+  where the voice's last note left them; a voice never played starts at
+  the knobs' own volume and pan, without the key's or the matrix's pan. A
+  full device restarts its oldest note's own voice, its states cleared;
+  only a cut of the engine's slot limit fades a voice. A note on a device
+  with a free slot takes, of its 2p slots, the one whose last note is the
+  oldest, a slot never played first, so an ended voice's slot waits its
+  turn. **[code]** **[measured]** (the ramp is read; the allocator cycles
+  its voices; Bell Plate Long's phrase, whose hard C5 takes over the C3's
+  hard-left voice, and Marimba Glassy's Pan < Key, whose first notes start
+  centred; Bells Attack's held-out phrase, whose hard C5 starts centred in
+  all five Live renders on a slot never played, where the lowest free slot,
+  the ended C3's, would start it hard left, 5.6 dB of side against Live's
+  1.5) With Retrigger on (the allocator's Smart mode) a note first takes the
+  free slot that last played its key. **[measured]** (va8-smart and va8-rr:
+  C2 and C6 alternating with Pan < Key, each voice ended before the next;
+  under Smart the repeated keys start at their own pan at once, under Round
+  Robin they ramp in from the centre on slots never played)
+- Each strike seeds its own random stream from the voice's serial through a
+  32-bit hash. **[Segno]** (the generator's first draws from seeds a
+  multiple of the serial apart came out alike: consecutive strikes drew Hit
+  < Random offsets of 1.13, 1.07 and 1.25 normal units, so a phrase's notes
+  shared one offset; Live's strikes draw from one running stream. With the
+  hash Balafon Brushed's hard C5 varies 6 dB over Segno's seeds against
+  Live's 9, where it varied 1)
+
+### The fits so far
+
+Seven rounds of Live renders (single changes around a plain
+mallet-on-beam reference, the 33 factory presets, the matrix units, the
+pitch envelope, Off Decay, pipes across the keyboard, Live copies of the
+random renders, the noise excitation through a dense 70-mode membrane,
+presets playing a held-out-like phrase with copies, the limiter's
+release, rounds 5 to 7 below), scored by the strict score with three Segno
+seeds and Live's own spread where copies exist: 148 of 206 pass, 19 of the
+33 factory presets (104 of 152 before the measured limiter and bleed). The
+held-out round (every preset, a quiet C3, a loud C4 triad and a hard C5,
+with Live's copies) passes 12 of 33. The unstepped resonator volume
+costs p-bell-airy, a random preset with one Live render, its level (0.64
+against 0.5) and gains Balafon Bright's held-out attack. Scored with five
+seeds and round 8 added: 154 of 223, 16 of the 33 factory presets, and
+17 of 33 held out (160, 22 and 14 before the hashed strike seeds and the
+Smart slot). The fit's loss is the draw: three salts of the hash give 154,
+155 and 159, and the seven rounds were fitted under the old draws; the
+held-out round gains acoustic-string, marimba-classic, marimba-glassy,
+resonant-casing, vibes-bright and xylophone-basic and loses air-of-dread,
+bells-glass and music-box-basic.
+
+Left: the noise source's high-pass passes 7 to 18 dB less than Live's
+between 125 and 250 Hz on the dense membrane (below its lowest mode), and
+neither the input minus the low-pass nor a constant leak fits it; an
+upward pitch sweep from an octave above leaves the beam's third mode 9 dB
+too strong and its fourth 9 dB too weak, the difference arising at the
+first retune 4 ms after the strike (no state rescaling of six tried
+fixes it; few presets sweep that far). The noise-excited beams
+(noise-lp, noise-env) now meet Live's copies on level, noise-env aside
+(Segno's eight seeds of noise-lp: mean -51.6 dB, spread 4.5; Live's four
+renders -51.5), but their pitch tracks wander more between Segno's seeds
+(24 to 47 cents) than between Live's renders (9 to 13). Still open
+besides: the MPE destinations.
+
+Round 5 (Live copies of the random presets, the bleed at four values,
+the limiter on two channels, the noise high-pass at two cutoffs and two
+Qs, failing held-out presets on other notes) settled the bleed and the
+limiter's link. Every random source in Live's engine draws from the C
+library's `rand()`, seeded from the clock when the bundle loads **[code]**,
+so Live's copies are independent draws and Segno's seeds stand for them.
+Below its cutoff Live's high-pass has a floor of its own: about -16 dB at
+a 970 Hz cutoff and Q 0.78, -31 dB at 3.1 kHz, -23 dB at Q 0.2, against
+RBJ's 12 dB per octave (dn-hp-f07, dn-hp-q0, dn-hp-q1; near the cutoff
+at 290 Hz, dn-hp-f03, it follows the high-pass); no form tried fits all
+five, and only Glockenspiel Detuned and Marimba Classic use the
+high-pass. The scratch harness places events as Live's host does: an
+event after 0 s that falls on a whole beat of the set's 120 bpm 48
+samples early against the device's 16-sample lag, one off the beat on
+time **[measured]** (2.0 s, 1.5 s and 3.5 s on every phrase and held-out
+render, 0.8 s on time); it moves no score by more than 0.02. The
+held-out stereo failures sit in bands 25 to 40 dB below the loudest
+(Bell Plate Long's 2 kHz side 4 dB high, Marimba Glassy's 5 and 13 kHz
+2 dB off).
+
+Where Segno's seeds spread wider than Live's copies: the hit offset is
+not the cause (above); the mallet's noise was 1.9 dB too strong (above).
+Round 7 holds the 0.8 at Noise Amount 0.05 to 0.3 too (the copy
+differences sit within 1 dB of Segno's at colours 0.29, 0.5 and 0.75);
+stiff-0 (tf 2.68 to 3.17 with it) stays unexplained. The noise high-pass's
+low floor is a steady property, not a strike's: held at full sustain or
+swelling in over 0.5 s, the dense membrane keeps it for the whole note,
+Live's level below 200 Hz falling about 7 dB an octave where Segno's
+falls 20. At an octave of sweep the beam's third and fourth modes stay 9
+dB off with the hit at the end of the bar too, while 0.9 of an octave
+lands within 3 dB and 0.75 leaves the fourth 6 dB low. Bell Plate Long's
+plate without its bleed has more side at 2 kHz in Live than with it,
+where Segno's bleed reaches only the top mode; its random hit makes one
+render each too few to tell.
+Neither a leak through the
+low-pass nor one through the band-pass output fits the noise source's
+high-pass floor: the leak would have to fall from 0.16 at a 970 Hz cutoff
+to 0.028 at 3.1 kHz and to 0.07 at Q 0.2.
+
+The 22 held-out presets that fail, by kind. Most are random in Live too,
+and most of those fail on level or stereo by less than 10 % over Live's
+own spread. The largest shared cause is the mallet's noise at a hard
+velocity: 20 presets raise Noise Amount through Noise < Vel (0.6 to 5),
+which no fit render isolates. On Balafon Brushed's hard C5 (a 2.3 kHz
+pulse, w 0.77) Live is 4 to 6 dB louder at 1 to 3 kHz and its resonator 2
+fundamental varies 10 dB over the copies, against 0.1 in Segno; on Vibes
+Mellow's (the pulse at the 20 kHz clamp) Segno's level varies more than
+Live's. The noise source's velocity routes are the next: Noisy Pad's
+highs (3 to 6 kHz) are 3 to 6 dB under Live's at the soft C3 and 3 to 4
+dB over at the hard C5 (Freq < Vel 2.25), which Slow Pad, with the same
+route, does not show. Two presets moved their pan wrong and now match on
+stereo: Bells Attack (the slot order above) and Vibes Modulated (the
+Random LFO's start above); both still fail on other metrics. Bell Plate
+Long's hard C5 ramps from the old voice's hard-left pan about 1/3 ms
+sooner in Live; starting the exciters 16 samples after the voice's
+controls, instead of delaying the whole output, passes it (stereo 1.27 to
+0.70) but fails ph-bell-plate-long and ph-marimba-glassy on stereo and
+moves the pitch-envelope renders both ways, so it is not taken. The two
+phrases differ in how the C5 gets its slot: in the fit round it steals the
+C3's sounding voice, where Segno's timing fits (8 samples of lead already
+take stereo from 0.85 to 1.13), and in the held-out round it takes the
+C3's slot after Segno has ended that voice, while Live's right channel
+still carries the C3 at about -120 dB. Whether a slot taken after its
+voice ended starts its pan sooner, or Live's voice had not ended, is left
+to round 8's slot renders. Tube Harp keeps more side than Live below its
+lowest mode at each strike (2 to 4 dB at 50 to 80 Hz) and 5 dB less mid
+there at the hard C5, where its mono tube adds to the string. A Live
+ramp that runs its 2 ms to the end before taking a new target, as read,
+made Bell Plate Long worse (1.27 to 1.57). Tube Harp sat 0.4 dB under
+Live at every note and velocity: the resonator volume's step (above). With
+three seeds the random renders' scores are a draw: taking the LFOs'
+start values from the strike's own stream moved p-xylophone-basic's tf
+from 1.17 to 6.11 and its floor from 2.1 to 6.3, so the start values come
+from a stream of their own. Round 8 (requested) puts the mallet noise
+through its velocity routes against the same values on the knobs, on a
+2.3 kHz and a 20 kHz pulse, Balafon Brushed's hard C5 without its hit
+randomness and without its noise source, a Random LFO's first value on
+pan and on the noise filter, the slot order and pan ramp under Retrigger
+on and off, the hit randomness at full amount, and the noise source's
+Freq < Vel and Volume < Vel.
+
+Round 8, as exported. Balafon Brushed's hard C5 alone on a fresh device
+(bb8-c5, without its hit randomness) matches Live within 1 dB per band,
+in level (-12.9 against -13.2 dB) and in its copies' spread; its held-out
+gap came from Segno's correlated strike seeds (the hash above), not the
+mallet. The mallet noise set on its knobs (mn8-knob) matches Live's
+copies in both the mean spectrum and the random part within 1 dB. Reached
+through Noise < Vel and Stiffness < Vel instead (mn8-vel) and at the 20 kHz
+clamp (mn8-s20k), Live's random part is 6 dB stronger against the strike
+than Segno's; a Noise < Vel unit of 1.2 instead of 0.9685 lost 12 fit
+renders and 7 factory presets, so the unit stays and the cause is open.
+The noise source's Freq < Vel and Volume < Vel act as modelled: against
+the plain dense-membrane render, nf8-v127, nf8-v50 and nv8-v127 match
+Live's bands above the cutoff within 1 dB with the octave unit (a quarter
+octave fits the level but leaves tf at 11.7 against 4.4). The low-pass, like
+the high-pass, has a floor of its own in Live, 2 to 9 dB above Segno's
+far into its stopband (nf8-v50, nv8-v127, dn-lp-env above 4 kHz).
+A Random LFO's first value (lfo8-pan, lfo8-nf) is the same in all three
+copies of one Live Set (a pan of -0.70, a noise filter about 0.6 octave
+down), and differs between Sets (Vibes Modulated's renders from three
+Sets start at three pans, the two of each Set alike); Live seeds the
+generator from the clock as each instance loads, so the instances of one
+Set share their first draws. Segno's random start stands; the held-out
+copies of one Set are not independent for those values, so Live's spread
+there understates its randomness (E-Piano Dreamy's attack). The hit
+randomness at its full amount (hr8-h0, hr8-h1) spreads the first mode's
+level over 12 Live strikes as over 20 of Segno's, with two Live strikes
+14 and 19 dB down at the bar's centre that Segno's draws reach less often;
+too few strikes to change the formula. va8-smart and va8-rr settle the
+slot order (above); their ramps from the centre onto a slot never played
+match Live's within 0.6 dB in every 0.5 ms step, but no strike there ramps
+between two pans, so Bell Plate Long's 1/3 ms stays open.
+
+After round 8, from the engine's code and the fit renders (no new round).
+Scored by the rule of round 7 (Live's spread only across Live Sets) the
+previous commit passes 157 of 223 fit renders, 16 of the 33 factory
+presets, and 16 of 33 held out. The noise source's restarts (above) pass
+the seven dense-membrane high-pass renders and dn-bp and lose dn-lp-env
+(attack 5.1 against 5.0) and noise-lphp (a pitch track on noise); the
+ramped voice gain removes the tremolo's zipper, which no score sees (its
+sidebands sit about 80 dB under the note). Now 162 of 223, 16 of the 33 factory
+presets, and 16 of 33 held out (Bell Airy in, Toy Piano Bells out on its
+pitch track's spread over Segno's seeds, 40.9 cents against Live's
+cap of 39.2). Tried and not taken: tuning the strike's modes before the
+pitch envelope with the envelope's pitch at the next retune (every
+pitch-envelope render 5 to 14 dB off in level); a pan ramp that runs to
+its end before taking a new target (no render moved); the mallet noise's
+high-pass bypassed (the round-8 copies' random part moved under 1 dB at
+the low bands). Left as before: the mallet noise reached through its
+velocity routes (mn8-vel, mn8-s20k: Live's copies differ 4 to 8 dB more
+than Segno's seeds while their mean spectra agree within 1 dB, and the
+code shows the routes entering the noise amount and the stiffness exactly
+as the knobs do, so the cause is not in the mallet's own computation),
+the octave pitch sweep (the retune's state rescaling reads as Segno's),
+Tube Harp's low side and Bell Plate Long's pan ramp.
 
 
 ## Decisions

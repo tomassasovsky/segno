@@ -1,4 +1,4 @@
-<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Metalic Wurli MKII Schroeder Fretless Perc halvings Inharmonicity travelled retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations atan filt voicecut penv Unisono pul meldfit Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penvd rndpan Bassic Bitgrunge's Catchem Filther's Kaneda Werkstuecktraeger Whley Whley's filt nloop avel fleg unmodulated Basscycle spr ccg Clav restruck restrikes restrike prewarping prewarp Floot Halfstep Gametal Plucks Neurotimbre sqperc fenv scalings fmdrive oscvol unsmoothed relc colfm rand elwork circ nornd retunes Detuned Cardano baselined prewarped unnormalized -->
+<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Metalic Wurli MKII Schroeder Fretless Balafon Glockenspiel Perc halvings Inharmonicity travelled Inharmonics atan Freq bilinearly penv mvol retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations filt voicecut Unisono pul meldfit Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penvd rndpan Bassic Bitgrunge's Catchem Filther's Kaneda Werkstuecktraeger Whley Whley's filt nloop avel fleg unmodulated retunes Basscycle rvol mnoise lr spr ccg Clav restruck restrikes restrike prewarping prewarp Floot Halfstep Gametal Plucks Neurotimbre sqperc unstepped fenv scalings fmdrive oscvol unsmoothed relc colfm rand elwork sidebands rescaling lphp circ nornd Detuned Cardano baselined prewarped unnormalized -->
 # Segno — Progress & Roadmap
 
 <!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs multicore smarttune -->
@@ -61,9 +61,46 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
 | SEG-22 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track and lane chains) is #1729 | build | needs-plan-approval | `claude/fx-multicore-1515-p1b` |
 | SEG-107 | Save As failed with Out of Memory: the mixdown asked for the LCM of two Song-mode tracks (24.7 GB); it now spans the longest lane past 600 s, and the save refuses a length no loop can hold | in-review | needs-hardware | `claude/save-oom-SEG-107` |
 | SEG-63 | Console WiFi against an ASUS RT-AX89X with 802.11ax on: firmware already matches Pi OS; brcmfmac options aligned with Pi OS and a troubleshooting note; failure not reproduced, issue stays open until it recurs | in-review | agent-merges | `claude/wifi-firmware-1816` |
-| SEG-109 | Ableton Live device presets on the pedal, Drift first: presets read from the user's own copy; Drift's behavior learned with rea + Ghidra from Live 12.2.7 and reimplemented, no Ableton code or presets in the repo. Plan approved 2026-11-25 (P1-P6); P1 stereo buses, P2 preset reader, P3 the Drift device and P4 its fit in review; the Operator (P7), Meld (P8), Analog (P9), Electric (P10) and Tension (P11) devices in review | in-review | needs-merge | `claude/ableton-devices-SEG-109`, `claude/ableton-operator-SEG-109-p7`, `claude/ableton-meld-SEG-109-p8`, `claude/ableton-analog-SEG-109-p9`, `claude/ableton-electric-SEG-109-p10`, `claude/ableton-tension-SEG-109-p11` |
+| SEG-109 | Ableton Live device presets on the pedal, Drift first: presets read from the user's own copy; Drift's behavior learned with rea + Ghidra from Live 12.2.7 and reimplemented, no Ableton code or presets in the repo. Plan approved 2026-11-25 (P1-P6); P1 stereo buses, P2 preset reader, P3 the Drift device and P4 its fit in review; the Operator (P7), Meld (P8), Analog (P9), Electric (P10), Tension (P11) and Collision (P12) devices in review | in-review | needs-merge | `claude/ableton-devices-SEG-109`, `claude/ableton-operator-SEG-109-p7`, `claude/ableton-meld-SEG-109-p8`, `claude/ableton-analog-SEG-109-p9`, `claude/ableton-electric-SEG-109-p10`, `claude/ableton-tension-SEG-109-p11`, `claude/ableton-collision-SEG-109-p12` |
 
 ---
+
+## November 2026 The Collision device plays on an instrument slot (SEG-109 P12)
+
+- Live 12.2.7's Collision read with rea + Ghidra from its AAS engine and
+  written as "Collision: behavior" in the Ableton devices brainstorm;
+  `collision_voice.c` is written from it. `LE_INST_DEVICE_COLLISION` takes
+  a Collision preset's 139 values (`le_collision_param`, each in its own
+  unit), one more entry in the device table.
+- Per voice a mallet and a noise source strike two resonators (beam,
+  marimba, string, membrane, plate as banks of up to 70 modes; pipe and
+  tube as waveguides) in series or parallel, with two LFOs and the
+  per-voice modulation matrix.
+- Fitted against 223 Live renders in eight rounds: 162 pass the strict
+  score with five seeds and Live's spread taken across Live Sets only (32
+  of 92 at the start), 16 of the 33 factory presets (1); the held-out
+  round passes 16 of 33. Measured: the
+  waveguides' read offset, the inverted Off Decay, the engine's grids for
+  the mode shapes, the synced LFO lengths, an exponential pitch envelope,
+  the chooser's pitch unit, a 1 ms look-ahead limiter at 1 after the
+  bundle's x4 with a fast and a slow release (its latency reported by
+  `le_collision_latency`), the bleed's Exp(0.001, 1) amount, the noise
+  filters stepping every 10 ms when modulated, the resonators' gains
+  ramping from the voice's last note, stolen voices restarted in place,
+  and held voices ending at about -94 dBFS. The limiter's 1 ms is the
+  device's only added latency. Each resonator's volume is not taken
+  down to its step. A new note takes the free slot whose last
+  note is the oldest (with Retrigger on, the one that last played the
+  key), a voice's Random LFO starts from a value it already holds, and
+  each strike's random stream is seeded through a hash. Read and
+  confirmed: the noise source's filters restarting from rest at every
+  10 ms update (their stopband floors), the voice gain and resonator 2's
+  input ramped across each control tick. Left: the mallet
+  noise reached through its velocity routes and at the 20 kHz clamp, an
+  upward pitch sweep of an octave,
+  small stereo differences in weak bands on the held-out presets.
+- A voice costs 0.8 us per millisecond on the dev machine, two 70-mode
+  resonators 1.4. A device holds 24 voices (1.7 MB).
 
 ## November 2026 The Tension device plays on an instrument slot (SEG-109 P11)
 

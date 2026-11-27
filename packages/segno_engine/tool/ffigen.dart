@@ -56,6 +56,7 @@ const _enums = {
   'le_analog_param',
   'le_electric_param',
   'le_tension_param',
+  'le_collision_param',
 };
 
 Future<void> main() async {
