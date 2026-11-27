@@ -38,9 +38,10 @@ extern "C" {
 #define LE_ANALOG_HELD_MAX 16
 #define LE_ANALOG_FADE_MS 1 /* a stolen or cut voice's fade */
 #define LE_ANALOG_DEVICE_VOICES 32 /* the most voices a patch plays */
-#define LE_ANALOG_BL_HALF 13   /* the band-limited step's half length, samples */
+#define LE_ANALOG_BL_HALF 13   /* the band-limited impulse's half length, samples */
 #define LE_ANALOG_BL_PHASES 512 /* its table's fractional positions */
-#define LE_ANALOG_BL_RING 32   /* the oscillator's output ring (a power of 2) */
+#define LE_ANALOG_BL_RING 32   /* the impulses an oscillator has still to play (a power of 2) */
+#define LE_ANALOG_BL_PENDING 8 /* a sync saw's own resets still ahead of it */
 
 
 /* What a chain's control tick holds until the next one (analog_voice.c). */
@@ -51,23 +52,39 @@ typedef struct le_analog_tick {
   float to_f1, to_f2;   /* the oscillator's levels into each filter */
   float n_f1, n_f2;     /* the noise's */
   float link;           /* filter 1 into filter 2 */
-  float f_osc, x_osc;   /* the oscillator's (sync slave's) frequency: f_osc times 2^x_osc and the
-                         * pitch envelope (Hz, octaves) */
+  float f_base;         /* the oscillator's own pitch, Hz (its octave, semitone and detune) */
+  float lfo_mul;        /* the LFO's pitch, a factor */
+  float k1;             /* the keyboard pitch's scale (Mod 1) */
+  float key, key_pre;   /* the oscillator's pitch input, octaves: the note's, and before a
+                         * delayed copy's note the device voice's last */
   float env_amt;        /* the pitch envelope's depth, octaves */
-  float f_lo, f_hi;     /* its frequency's range */
+  float f_hi;           /* the frequency's top */
 } le_analog_tick;
+
+/* A chain's oscillator. It stays with its device voice from one note to the
+ * next and stands still while the voice is idle (analog_voice.c). */
+typedef struct le_analog_osc {
+  double ph;            /* sine: the phase; saw: cycles to its next reset; rectangle: samples
+                         * into its segment */
+  double ph2;           /* sine: the sub's phase; sync: samples into the master's cycle */
+  float y;              /* saw and rectangle: the integrator, their output */
+  int32_t high;         /* rectangle: in its high segment */
+  int32_t sub_sign;     /* the sub's sign, turned over at each reset */
+  float per, per_m;     /* the period (a sync slave's) and a sync master's, samples (0: unset) */
+  float per_step, per_m_step, per_to, per_m_to;
+  int32_t ramp;         /* samples of the period's ramp left */
+  int32_t otick;        /* samples to the next pitch tick */
+  float penv, penv_dec; /* the pitch envelope, 1 -> 0, and its step a tick */
+  int32_t penv_n;       /* its ticks left */
+  float ring[LE_ANALOG_BL_RING]; /* impulses still to play, from the current sample on */
+  int32_t ring_at;
+  float pend[LE_ANALOG_BL_PENDING]; /* a sync saw's own resets scheduled ahead: samples to each */
+  int32_t npend;
+} le_analog_osc;
 
 /* One chain of one copy. */
 typedef struct le_analog_chain {
-  double ph, ph2;      /* the oscillator (or sync slave) and its sub/master */
-  int32_t sub_sign;    /* the sub square's level, toggled at each reset */
-  float dc;            /* the integrator's leak */
-  float inc, inc_m;    /* per-sample increments: oscillator (slave), master */
-  float per, per_step; /* the oscillator's period in samples (0: not set), its ramp */
-  int32_t otick;       /* samples left in the oscillator's tick */
-  float ph_lead;       /* a delayed copy's start: samples of four times its pitch to lead by */
-  float penv;          /* the pitch envelope, 1 -> 0 */
-  float penv_step;
+  le_analog_osc o;     /* the oscillator */
   le_aas_filter f;     /* the filter */
   float fc;            /* the modulated cutoff (filter 2 follows it) */
   le_aas_env fenv, aenv;
@@ -76,8 +93,6 @@ typedef struct le_analog_chain {
   float gl, gr, gl_step, gr_step; /* the amp's gains but the envelope, ramped across a tick */
   int32_t g_fresh;                /* the gains take their first values at once */
   float noise_lp;
-  float ring[LE_ANALOG_BL_RING]; /* the oscillator's output, LE_ANALOG_BL_HALF samples late */
-  int32_t ring_at;               /* the slot of the current sample */
   le_analog_tick t;    /* this tick's values */
 } le_analog_chain;
 
@@ -100,6 +115,8 @@ typedef struct le_analog_voice {
   float velocity; /* 0..1 */
   int32_t copies;
   float pitch, pitch_to; /* the keyboard pitch in octaves from C4, glided */
+  float pre;             /* the keyboard pitch its device voice played last (a delayed copy's
+                          * oscillators run at it until the copy's note) */
   float glide_c;         /* per-tick glide coefficient */
   int32_t glided;        /* the key that started or took back the voice glided */
   int32_t keyed_at;      /* the device's age then */
@@ -109,6 +126,9 @@ typedef struct le_analog_voice {
   int32_t tick_left;
   int32_t since;      /* samples since the note, saturating */
   int32_t lv;         /* the device voice it plays (LE_ANALOG_DEVICE_VOICES), -1 none */
+  int32_t osc_lv;     /* the device voice whose oscillators it runs, -1 none */
+  int32_t quiet_at;   /* the age its amp envelopes ended (its oscillators run on from there) */
+  int32_t amp_end;    /* the age an amp envelope last ended */
   int32_t fade_left;  /* stolen or cut: samples of fade left */
   int32_t fade_len;   /* samples a millisecond */
   le_analog_copy c[LE_ANALOG_COPIES];
@@ -140,9 +160,13 @@ typedef struct le_analog {
   int32_t lv_quiet[LE_ANALOG_DEVICE_VOICES]; /* the age it went quiet or was taken over */
   uint8_t lv_used[LE_ANALOG_DEVICE_VOICES];
   le_aas_env lv_fenv[LE_ANALOG_DEVICE_VOICES][LE_ANALOG_COPIES][2]; /* the filter envelopes, carried on */
+  le_analog_osc lv_osc[LE_ANALOG_DEVICE_VOICES][LE_ANALOG_COPIES][2]; /* the oscillators */
+  int32_t lv_note[LE_ANALOG_DEVICE_VOICES]; /* the note it played last, -1 none */
+  int32_t osc_quiet[LE_ANALOG_DEVICE_VOICES]; /* the age its oscillators were last handed back */
+  int32_t osc_steal; /* the oscillators of the voice the note being started takes over, -1 none */
   int32_t lv_last;  /* the device voice a note took last */
   int32_t lv_steal; /* the voice the note being started takes over, -1 none */
-  /* the band-limited step's residual (analog_voice.c) */
+  /* the band-limited impulse (analog_voice.c) */
   float bl[LE_ANALOG_BL_PHASES + 1][2 * LE_ANALOG_BL_HALF];
   le_analog_voice voices[LE_ANALOG_VOICE_SLOTS];
 } le_analog;

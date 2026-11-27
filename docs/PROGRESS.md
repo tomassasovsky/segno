@@ -260,9 +260,21 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   device's first note: fit 312 to 325 of 461, factory presets 24 to 25,
   held out 16 of 58. The steal order (oldest first), the mono LFO restart,
   Q without a floor and the stretch law on mono voices are confirmed.
+  Round 10 (no new renders): the oscillators as a reader described Live
+  starting them (segno-re-findings an-03): a 41-sample pitch tick with a
+  40-sample period ramp, no phase reset at a note, a fresh voice starting
+  at C4, the saw without latency, a voice's oscillators running on 0.101 s
+  and then standing still, delayed unison copies at the last pitch until
+  their note; measured: a poly note takes the voice that last played its
+  key, else a fresh one, and a sync saw restarts at its master's impulse.
+  The scratch harness places Live's events as its export does. Fit 333 to
+  366 of 461 and factory presets 25 to 37 (round-7 rule); 326 to 364 and 26
+  to 36 of 79, held out 16 to 18 of 58 (round-8 rule). Kick Complex Perc, Strings Detuned Pad
+  and Dual OSC Rubber Bass pass on their own notes; Dual OSC Buzz Lead's
+  silent sync rectangle is open.
 - A voice of two saw chains through LP24 costs 0.9 us per millisecond on
   the dev machine, four unison copies 3.7, the formant filter 1.0. A
-  device holds 40 copies (229 KB).
+  device holds 40 copies (313 KB).
 
 ## November 2026 The Meld device plays on an instrument slot (SEG-109 P8)
 
