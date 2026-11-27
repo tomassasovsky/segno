@@ -58,6 +58,11 @@ enum LooperMeterState {
   }
 }
 
+/// The two ends of a meter's vertical gradient: `top` at the top of the fill,
+/// `bottom` at its foot. The gradient spans the fill, not the meter, so a
+/// quiet bar is as bright at its top as a loud one.
+typedef MeterGradient = ({Color top, Color bottom});
+
 /// Segno-specific design tokens layered on top of [ThemeData] via a
 /// [ThemeExtension], so the looper grid and visualizer pick up per-mode colors
 /// (per-track accents, waveform stroke, tile surfaces) without hard-coding them
@@ -73,6 +78,7 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
     required this.recordColor,
     required this.recordMeterColors,
     required this.muteMeterColors,
+    required this.stageMeterGradients,
     required this.toolbarIconColor,
   });
 
@@ -110,6 +116,12 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
   /// Track-meter (peak bar) colors by [LooperMeterState] in mute mode.
   final Map<LooperMeterState, Color> muteMeterColors;
 
+  /// The Tracks view's track meter fill by [LooperMeterState] (SEG-114): each
+  /// state keeps its colour as a gradient that darkens toward the foot of the
+  /// bar, as the Looper X's level meter does. The other track meters (the
+  /// Mixer's) and the progress bar stay solid in [meterColor].
+  final Map<LooperMeterState, MeterGradient> stageMeterGradients;
+
   /// Icon color for the toolbar's unarmed/neutral icon buttons (Play/Stop
   /// All, Clear All, Signal, Settings, Session, and the
   /// unarmed performance-record button).
@@ -137,6 +149,14 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
       }[state] ??
       Colors.transparent;
 
+  /// The Tracks view's meter gradient for [state]. Transparent if the table
+  /// omits it. No per-mode split: the stage meter shows the track's state
+  /// alone, and the record and mute tables of [meterColor] agree on every
+  /// state.
+  MeterGradient stageMeterGradient(LooperMeterState state) =>
+      stageMeterGradients[state] ??
+      (top: Colors.transparent, bottom: Colors.transparent);
+
   /// The waveform color for [state]. Transparent if the table omits it.
   ///
   /// Unlike the meters there is no per-mode split: the waveform draws the
@@ -153,6 +173,7 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
     Color? recordColor,
     Map<LooperMeterState, Color>? recordMeterColors,
     Map<LooperMeterState, Color>? muteMeterColors,
+    Map<LooperMeterState, MeterGradient>? stageMeterGradients,
     Color? toolbarIconColor,
   }) => LooperTheme(
     tileBackground: tileBackground ?? this.tileBackground,
@@ -162,8 +183,21 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
     recordColor: recordColor ?? this.recordColor,
     recordMeterColors: recordMeterColors ?? this.recordMeterColors,
     muteMeterColors: muteMeterColors ?? this.muteMeterColors,
+    stageMeterGradients: stageMeterGradients ?? this.stageMeterGradients,
     toolbarIconColor: toolbarIconColor ?? this.toolbarIconColor,
   );
+
+  static Map<K, MeterGradient> _lerpGradientMap<K>(
+    Map<K, MeterGradient> a,
+    Map<K, MeterGradient> b,
+    double t,
+  ) => {
+    for (final MapEntry(:key, :value) in a.entries)
+      key: (
+        top: Color.lerp(value.top, b[key]?.top, t) ?? value.top,
+        bottom: Color.lerp(value.bottom, b[key]?.bottom, t) ?? value.bottom,
+      ),
+  };
 
   static Map<K, Color> _lerpColorMap<K>(
     Map<K, Color> a,
@@ -192,6 +226,11 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
         t,
       ),
       muteMeterColors: _lerpColorMap(muteMeterColors, other.muteMeterColors, t),
+      stageMeterGradients: _lerpGradientMap(
+        stageMeterGradients,
+        other.stageMeterGradients,
+        t,
+      ),
       toolbarIconColor:
           Color.lerp(toolbarIconColor, other.toolbarIconColor, t) ??
           toolbarIconColor,
