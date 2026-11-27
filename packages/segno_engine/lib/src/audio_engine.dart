@@ -719,8 +719,9 @@ abstract interface class EngineRouting {
 /// TEMPO LOCK (D6): while any track has content AND a grid exists ([setTempo]
 /// / [setTimeSignature] / [tapTempo] are accepted by the engine but IGNORED
 /// (a no-op on the published state) — only clearing every track releases the
-/// lock. The tempo value and its [TempoSource] survive the clear: a
-/// [TempoSource.derived] tempo outlives the loop that produced it.
+/// lock. A [TempoSource.manual] or [TempoSource.tapped] tempo survives the
+/// clear; a [TempoSource.derived] one goes with the loop that produced it
+/// (SEG-117), and comes back if the clear is undone.
 ///
 /// With every setting at its grid-off default (no tempo ever set, quantize
 /// div off, click mode off, count-in `0`) the engine behaves exactly like the

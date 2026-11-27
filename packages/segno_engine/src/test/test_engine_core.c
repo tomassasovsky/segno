@@ -6352,11 +6352,10 @@ static void test_loop_derives_tempo_from_none(void) {
 
 static void test_derive_only_from_none(void) {
   printf("test_derive_only_from_none\n");
-  /* D7's dead-tempo rule end to end: a derived tempo survives clear-all, and
-   * the NEXT defining loop rounds to the surviving grid instead of
-   * re-deriving. The 3000-frame second loop would re-derive to 80 bpm (the
-   * tie-break test above) — instead it must keep 120 and round to 2 bars
-   * (3000 / 2000 frames-per-bar = 1.5 -> 2). */
+  /* SEG-117: a derived tempo goes with its loop. Clear-all leaves no tempo,
+   * so the NEXT defining loop derives its own: the 3000-frame second loop
+   * reads 80 bpm in 1 bar (the tie-break test above), where the old dead
+   * tempo would have kept 120 and rounded it to 2 bars. */
   le_engine* e = tg_make_engine(1000);
   le_snapshot s;
 
@@ -6366,15 +6365,42 @@ static void test_derive_only_from_none(void) {
   le_engine_get_snapshot(e, &s);
   CHECK(s.master_length_frames == 0);
   CHECK(s.loop_bars == 0); /* the grid died with its loop... */
-  CHECK(fabsf(s.tempo_bpm - 120.0f) < 0.01f); /* ...the tempo did not */
-  CHECK(s.tempo_source == LE_TEMPO_SOURCE_DERIVED);
+  CHECK(s.tempo_bpm == 0.0f); /* ...and so did the tempo it derived */
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_NONE);
 
   tg_record_defining_loop(e, 3000);
   le_engine_get_snapshot(e, &s);
   CHECK(s.master_length_frames == 3000);
-  CHECK(fabsf(s.tempo_bpm - 120.0f) < 0.01f); /* never re-derived */
+  CHECK(fabsf(s.tempo_bpm - 80.0f) < 0.01f); /* derived afresh */
   CHECK(s.tempo_source == LE_TEMPO_SOURCE_DERIVED);
-  CHECK(s.loop_bars == 2);
+  CHECK(s.loop_bars == 1);
+
+  le_engine_destroy(e);
+}
+
+static void test_tapped_tempo_survives_clear(void) {
+  printf("test_tapped_tempo_survives_clear\n");
+  /* SEG-117 keeps D6 for a tempo the player set: a tapped tempo survives
+   * clear-all, as a manual one does (test_tempo_lock_with_content). */
+  le_engine* e = tg_make_engine(1000);
+  le_snapshot s;
+
+  le_engine_tap_tempo(e);
+  tg_advance(e, 500);
+  le_engine_tap_tempo(e); /* 500 frames at sr 1000: 120 bpm */
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(fabsf(s.tempo_bpm - 120.0f) < 0.5f);
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_TAPPED);
+  const float tapped = s.tempo_bpm;
+
+  tg_record_defining_loop(e, 4000);
+  le_engine_clear(e, 0);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_length_frames == 0);
+  CHECK(s.tempo_bpm == tapped);
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_TAPPED);
 
   le_engine_destroy(e);
 }
@@ -6912,6 +6938,49 @@ static void test_analysis_skips_set_tempo(void) {
   CHECK(s.tempo_settling == 0);
   CHECK(s.tempo_source == LE_TEMPO_SOURCE_MANUAL);
   CHECK(fabsf(s.tempo_bpm - 105.0f) < 0.01f);
+
+  free(x);
+  le_engine_destroy(e);
+}
+
+/* SEG-117: a take after a clear-all is analysed too. The first take's
+ * derived tempo goes with the clear, so a second free take at another tempo
+ * derives its own; a surviving 70 would have read it as 3 bars at 70. */
+static void test_analysis_after_clear(void) {
+  printf("test_analysis_after_clear\n");
+  const int sr = 48000;
+  le_engine* e = tg_make_engine_cap(sr, sr * 20);
+  float zero[512] = {0}, out[512];
+  le_snapshot s;
+  int len = 0;
+  float* x = ana_clicks(sr, 70.0, 2, &len);
+  le_engine_record(e, 0);
+  ana_feed(e, x, len);
+  le_engine_record(e, 0);
+  le_engine_process(e, out, zero, (uint32_t)(sr / 100));
+  CHECK(ana_wait_settled(e, 2000));
+  le_engine_get_snapshot(e, &s);
+  CHECK(fabsf(s.tempo_bpm - 70.0f) < 0.1f);
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_DERIVED);
+  free(x);
+
+  CHECK(le_engine_clear(e, 0) == LE_OK);
+  le_engine_process(e, out, zero, 64);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_NONE);
+
+  x = ana_clicks(sr, 95.0, 4, &len);
+  le_engine_record(e, 0);
+  ana_feed(e, x, len);
+  le_engine_record(e, 0);
+  le_engine_process(e, out, zero, (uint32_t)(sr / 100));
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tempo_settling == 1); /* analysed */
+  CHECK(ana_wait_settled(e, 2000));
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.loop_bars == 4);
+  CHECK(fabsf(s.tempo_bpm - 95.0f) < 0.1f);
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_DERIVED);
 
   free(x);
   le_engine_destroy(e);
@@ -7648,14 +7717,16 @@ static void test_clear_undo_restores_grid(void) {
   le_engine_get_snapshot(e, &s);
   CHECK(s.master_length_frames == 0);
   CHECK(s.loop_bars == 0);
-  CHECK(fabsf(s.tempo_bpm - 120.0f) < 0.01f); /* dead tempo survives */
+  CHECK(s.tempo_bpm == 0.0f); /* the derived tempo went with it (SEG-117) */
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_NONE);
 
   CHECK(le_engine_undo(e, 0) == LE_OK); /* restore the cleared take */
   tg_advance(e, 1);
   le_engine_get_snapshot(e, &s);
   CHECK(s.master_length_frames == 4000);
   CHECK(s.loop_bars == 2); /* the grid came back with the loop */
-  CHECK(fabsf(s.tempo_bpm - 120.0f) < 0.01f);
+  CHECK(fabsf(s.tempo_bpm - 120.0f) < 0.01f); /* and so did its tempo */
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_DERIVED);
 
   /* The restored grid is live: the beat advances again... */
   tg_advance(e, 700); /* restore reset the playhead; cross 500 -> beat 1 */
@@ -7754,7 +7825,8 @@ static void test_tap_pair_dies_with_clear(void) {
   /* Regression: a lone tap latched BEFORE the D6 lock engaged must not pair
    * with the first tap after clear-all releases it — the record+clear span
    * can land inside the valid 30..300 window and would publish a plausible-
-   * looking but meaningless TAPPED tempo over the surviving derived one. */
+   * looking but meaningless TAPPED tempo. The derived tempo itself goes with
+   * the clear (SEG-117), so a lone tap after it leaves no tempo at all. */
   le_engine* e = tg_make_engine(1000);
   le_snapshot s;
 
@@ -7771,8 +7843,8 @@ static void test_tap_pair_dies_with_clear(void) {
                            * stale pair survived the clear */
   tg_advance(e, 1);
   le_engine_get_snapshot(e, &s);
-  CHECK(fabsf(s.tempo_bpm - 300.0f) < 0.01f); /* unchanged */
-  CHECK(s.tempo_source == LE_TEMPO_SOURCE_DERIVED); /* not TAPPED */
+  CHECK(s.tempo_bpm == 0.0f); /* still none */
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_NONE); /* not TAPPED */
 
   le_engine_destroy(e);
 }
@@ -36727,10 +36799,12 @@ static void test_cut_sound_stops_tracks_and_clears_tails(void) {
     CHECK(entry.cmd.arg_i == 0);
   }
 
-  /* A count-in under way is cancelled by the cut. */
-  CHECK(le_engine_set_tempo(e, 120.0f) == LE_OK);
+  /* A count-in under way is cancelled by the cut. The tempo is set after
+   * the clear: one derived from the cleared loop goes with it (SEG-117). */
   CHECK(record_start_count(e, 1) == LE_OK);
   CHECK(le_engine_clear(e, 0) == LE_OK);
+  drain(e);
+  CHECK(le_engine_set_tempo(e, 120.0f) == LE_OK);
   drain(e);
   CHECK(le_engine_record(e, 0) == LE_OK);
   process_n(e, 0.0f, 64, cap);
@@ -40683,6 +40757,7 @@ int main(void) {
   SHARD(test_sync_off_keeps_free_form);
   SHARD(test_loop_derives_tempo_from_none);
   SHARD(test_derive_only_from_none);
+  SHARD(test_tapped_tempo_survives_clear);
   SHARD(test_length_preset_auto_click_off_unchanged);
   SHARD(test_length_preset_auto_click_on_derives_bars_only);
   SHARD(test_length_preset_auto_click_on_no_tempo_falls_back);
@@ -40700,6 +40775,7 @@ int main(void) {
   SHARD(test_analysis_chooses_bars);
   SHARD(test_analysis_no_beat);
   SHARD(test_analysis_first_take);
+  SHARD(test_analysis_after_clear);
   SHARD(test_analysis_skips_set_tempo);
   SHARD(test_scale_loop_bars);
   SHARD(test_analysis_live_estimate);
