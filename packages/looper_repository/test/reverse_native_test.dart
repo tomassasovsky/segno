@@ -8,6 +8,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno_engine/segno_engine.dart' show PumpedNativeEngine;
 
+import 'helpers/output_peak.dart';
+
 void main() {
   late PumpedNativeEngine engine;
   late LooperRepository repository;
@@ -59,13 +61,13 @@ void main() {
     });
     await Future<void>.delayed(Duration.zero);
     expect(completed, isFalse); // queue acceptance is not the outcome
-    engine.pump(frames: 1);
+    final peak = pumpOutputPeak(engine, frames: 1);
     expect(await toggled, EngineResult.ok);
     expect(await empty, EngineResult.invalid);
     await completion;
     // 128 frames is shorter than two turn windows, so the read snaps: the
     // toggle frame itself reads index 37, the index the turn continues from.
-    expect(engine.snapshot().outputPeaks[0], closeTo(37 / 128, 1e-6));
+    expect(peak, closeTo(37 / 128, 1e-6));
     expect(engine.snapshot().tracks[0].reversed, isTrue);
     ticks.add(null);
     expect(repository.state.tracks[0].reversed, isTrue);
@@ -172,9 +174,8 @@ void main() {
       engine.pump(frames: 0);
       // Reversed track 0 reads 127, 126, ...; forward track 1 reads 0, 1, ...
       for (var k = 0; k < 3; k++) {
-        engine.pump(frames: 1);
         expect(
-          engine.snapshot().outputPeaks[0],
+          pumpOutputPeak(engine, frames: 1),
           closeTo((127 - k) / 256 + .25 + k / 1024, 1e-5),
           reason: 'frame $k',
         );

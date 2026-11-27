@@ -8,6 +8,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno_engine/segno_engine.dart' show PumpedNativeEngine;
 
+import 'helpers/output_peak.dart';
+
 void main() {
   late PumpedNativeEngine engine;
   late LooperRepository repository;
@@ -86,7 +88,7 @@ void main() {
       expect(repository.undoClearAll(), EngineResult.ok);
       engine.pump(frames: 0); // acknowledge restored empty FX recipe
       ticks.add(null); // existing poll admits the waiting grouped audio Undo
-      engine.pump(frames: 1);
+      final peak = pumpOutputPeak(engine, frames: 1);
       final tracks = engine.snapshot().tracks;
       expect(tracks[0].state, TrackState.playing);
       expect(tracks[1].state, TrackState.stopped);
@@ -101,7 +103,7 @@ void main() {
       expect(tracks[1].muted, isTrue);
       expect(repository.laneMuted(1, 0), isTrue);
       expect(tracks[2].muted, isFalse);
-      expect(engine.snapshot().outputPeaks[0], closeTo(.125, 1e-6));
+      expect(peak, closeTo(.125, 1e-6));
       expect(engine.exportTrack(0), everyElement(.5));
     },
   );
@@ -123,10 +125,10 @@ void main() {
       expect(repository.undo(), EngineResult.ok);
       engine.pump(frames: 0);
       ticks.add(null);
-      engine.pump(frames: 1);
+      final peak = pumpOutputPeak(engine, frames: 1);
       expect(engine.snapshot().tracks[0].muted, isTrue);
       expect(repository.laneMuted(0, 0), isTrue);
-      expect(engine.snapshot().outputPeaks[0], 0);
+      expect(peak, 0);
     },
   );
 
@@ -161,9 +163,9 @@ void main() {
           generation: image.generation,
         ),
       );
-      engine.pump(frames: 1);
+      final peak = pumpOutputPeak(engine, frames: 1);
       expect(await installed, EngineResult.ok);
-      expect(engine.snapshot().outputPeaks[0], closeTo(.125, 1e-6));
+      expect(peak, closeTo(.125, 1e-6));
       expect(repository.state.tracks[0].volume, 1);
       expect(engine.exportTrack(0), everyElement(.5));
     },

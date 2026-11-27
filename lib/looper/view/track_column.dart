@@ -228,10 +228,13 @@ class TrackColumn extends StatelessWidget {
     );
 
     // The ring is always 2px; selection changes it from the card stroke to
-    // white. The meter bar color is one table lookup on the track's meter state
-    // (muted included; see LooperTheme.meterColors).
+    // white. The meter and the progress bar each take one lookup on the
+    // track's meter state (muted included): the meter's gradient from
+    // LooperTheme.stageMeterGradients (SEG-114), the progress bar's solid
+    // colour from LooperTheme.meterColor.
     final meterState = LooperMeterState.of(track.state, muted: track.muted);
     final barColor = looper.meterColor(meterState, mode: mode);
+    final meterGradient = looper.stageMeterGradient(meterState);
     // The meter shows what the track captures while it records, and what it
     // would capture while it is the empty track Record/Play records next: the
     // selected one, or one with a record arm waiting (#1936, D1). An overdub
@@ -369,7 +372,8 @@ class TrackColumn extends StatelessWidget {
                           // Live, by channel: [track]'s own `peak` is
                           // deliberately not read here — see [track]'s doc.
                           channel: track.channel,
-                          color: barColor,
+                          color: meterGradient.top,
+                          bottomColor: meterGradient.bottom,
                           hasContent: track.hasContent,
                           // A stopped track reports no live peak; hold the
                           // last fill so a loaded-but-paused loop keeps a

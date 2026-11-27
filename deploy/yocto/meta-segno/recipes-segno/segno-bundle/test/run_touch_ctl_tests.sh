@@ -18,7 +18,7 @@ setup() {
     work=$(mktemp -d "${TMPDIR:-/tmp}/touch-ctl-test.XXXXXX")
     mkdir -p "$work/bin" "$work/input/event4/device" "$work/input/event6/device" \
         "$work/input/event1/device" "$work/data" "$work/rules"
-    echo "wch.cn USB2IIC_CTP_CONTROL" > "$work/input/event4/device/name"
+    echo "WaveShare WS170120" > "$work/input/event4/device/name"
     echo "SiS HID Touch Controller" > "$work/input/event6/device/name"
     echo "Keyboard" > "$work/input/event1/device/name"
     cat > "$work/homescreen.toml" <<'TOML'
@@ -26,7 +26,7 @@ setup() {
   [view.output]
   drm_connector = 'HDMI-A-2'
   # The 7"'s controller.
-  touch_device = 'USB2IIC_CTP_CONTROL'
+  touch_device = 'WS170120'
 TOML
     : > "$work/udevadm-calls"
     cat > "$work/bin/udevadm" <<STUB
@@ -78,7 +78,7 @@ out=$(run_ctl set readout 1.1 0 -0.05 0 0.9 0.02)
 check "prints the matrix" '{"calibrated":true,"matrix":"1.1 0 -0.05 0 0.9 0.02"}' "$out"
 check "stored per screen" "1.1 0 -0.05 0 0.9 0.02" "$(cat "$work/data/readout")"
 check "the rule matches the readout's controller by name" yes \
-    "$(rule | has 'ATTRS{name}=="*USB2IIC_CTP_CONTROL*", ENV{LIBINPUT_CALIBRATION_MATRIX}="1.1 0 -0.05 0 0.9 0.02"')"
+    "$(rule | has 'ATTRS{name}=="*WS170120*", ENV{LIBINPUT_CALIBRATION_MATRIX}="1.1 0 -0.05 0 0.9 0.02"')"
 check "no rule for the uncalibrated main screen" no "$(rule | has 'ATTRS{name}!=')"
 check "rules reloaded" yes "$(calls | has 'control --reload-rules')"
 check "the readout's touchscreen is removed" yes "$(calls | has "trigger --action=remove $work/input/event4")"
@@ -97,7 +97,7 @@ check "the main rule comes first and matches every touchscreen" \
     'ACTION=="add|change", SUBSYSTEM=="input", ENV{ID_INPUT_TOUCHSCREEN}=="1", ENV{LIBINPUT_CALIBRATION_MATRIX}="0.98 0 0.01 0 1.02 -0.01"' \
     "$(rule | grep LIBINPUT | head -n1)"
 check "the readout's rule comes after it, so it wins for the 7\"" yes \
-    "$(rule | grep LIBINPUT | tail -n1 | has 'ATTRS{name}=="*USB2IIC_CTP_CONTROL*", ENV{LIBINPUT_CALIBRATION_MATRIX}="1 0 0 0 1 0"')"
+    "$(rule | grep LIBINPUT | tail -n1 | has 'ATTRS{name}=="*WS170120*", ENV{LIBINPUT_CALIBRATION_MATRIX}="1 0 0 0 1 0"')"
 check "only the main touchscreen is re-added" yes "$(calls | has "trigger --action=add $work/input/event6")"
 check "the readout's is not" no "$(calls | has "$work/input/event4")"
 teardown
@@ -120,7 +120,7 @@ run_ctl set main 1 0 0 0 1 0 >/dev/null
 : > "$work/udevadm-calls"
 check "prints uncalibrated" '{"calibrated":false,"matrix":""}' "$(run_ctl reset readout)"
 check "the 7\" falls back to the identity, not the main matrix" yes \
-    "$(rule | grep LIBINPUT | tail -n1 | has 'ATTRS{name}=="*USB2IIC_CTP_CONTROL*", ENV{LIBINPUT_CALIBRATION_MATRIX}="1 0 0 0 1 0"')"
+    "$(rule | grep LIBINPUT | tail -n1 | has 'ATTRS{name}=="*WS170120*", ENV{LIBINPUT_CALIBRATION_MATRIX}="1 0 0 0 1 0"')"
 check "the readout's touchscreen is re-added" yes "$(calls | has "trigger --action=add $work/input/event4")"
 run_ctl reset main >/dev/null
 check "no calibration, no rule file" no "$([ -e "$work/rules/98-segno-touch-calibration.rules" ] && echo yes || echo no)"
@@ -169,7 +169,7 @@ teardown
 
 echo "a touch_device udev would read as a pattern"
 setup
-sed -i.bak "s/USB2IIC_CTP_CONTROL/USB2IIC*/" "$work/homescreen.toml"
+sed -i.bak "s/WS170120/WS1701*/" "$work/homescreen.toml"
 check "is refused" "3" "$(run_ctl set readout 1 0 0 0 1 0 >/dev/null; echo $?)"
 teardown
 

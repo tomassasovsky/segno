@@ -74,7 +74,11 @@ files.
 content and deleted when it has none (every track empty or muted), so a
 re-save of an emptied rig never leaves audio the session no longer holds. A
 lane playing its heard image (#1713) is summed as that image, its two sides
-averaged; any other lane as its clean live layer.
+averaged; any other lane as its clean live layer. It spans the lanes' common
+period, the LCM of their lengths, so every loop closes in it. Lanes on
+independent clocks (Free and Song) can have an LCM of hours, so when the LCM
+is longer than any loop can be (600 s at the session's rate) the mixdown
+spans the longest lane and the shorter ones repeat within it (SEG-107).
 
 ## Layers, ordinals, and undo/redo
 

@@ -103,9 +103,10 @@ pixel_ratio = 1.6
 
   [view.output]
   drm_connector = 'HDMI-A-1'
-  # The 7"'s controller, a wch.cn "USB2IIC_CTP_CONTROL" (USB 1a86:e5e3,
-  # verified on the bench unit): a substring of its libinput device name.
-  # Touch that matches no view's touch_device goes to the first view, the
-  # main screen, so the main panel's own controller (a SiS HID touch
-  # controller on the bench unit) and any replacement panel need no entry.
-  touch_device = 'USB2IIC_CTP_CONTROL'
+  # The 7"'s controller: a substring of its libinput device name. The
+  # console's 7" is a Waveshare panel whose touch reports as "WaveShare
+  # WS170120" (USB 0eef:0005, verified on the console 2026-11-26). Touch that
+  # matches no view's touch_device goes to the first view, the main screen,
+  # so the main panel's own controller (a SiS HID touch controller) needs no
+  # entry, and a replacement 7" with another controller needs its name here.
+  touch_device = 'WS170120'

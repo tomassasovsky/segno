@@ -1072,7 +1072,8 @@ class TrackSnapshot {
   /// RMS level for the most recent block, in `0..1`.
   final double rms;
 
-  /// Peak level for the most recent block, in `0..1`.
+  /// The track's meter peak, in `0..1`: a block's peak at once, otherwise
+  /// falling 11.8 dB/s (SEG-114; see [EngineSnapshot.outputPeak]).
   final double peak;
 
   /// Whether this track is soloed (`EngineRouting.setTrackSolo`). While any
@@ -1082,9 +1083,10 @@ class TrackSnapshot {
   /// Generation of the image actually applied at the last capture start.
   final int imageRevision;
 
-  /// The track's absolute peak on the left side over the most recent block,
-  /// read after volume, pan and track FX, before output folding/master bus.
-  /// Peaks can exceed unity. `0` while no enabled route is audible.
+  /// The track's absolute meter peak on the left side, read after volume,
+  /// pan and track FX, before output folding/master bus. Peaks can exceed
+  /// unity. Falls to `0` once no enabled route is audible (a meter peak, see
+  /// [EngineSnapshot.outputPeak]).
   /// Unlike [peak] (the dry loop content) this follows the fader.
   final double peakL;
 
@@ -2298,15 +2300,23 @@ class EngineSnapshot {
   /// Input RMS level for the most recent block, in `0..1`.
   final double inputRms;
 
-  /// Input peak level for the most recent block, in `0..1`.
+  /// Input meter peak, in `0..1` (see [outputPeak]).
   final double inputPeak;
 
   /// Output RMS level for the most recent block, in `0..1`.
   final double outputRms;
 
-  /// Master-bus absolute peak for the most recent block, in `0..1`, read after
-  /// the master gain and limiter — what reaches the outputs. A sum can clip
-  /// when no single track does, so the stage footer meters this.
+  /// Master-bus absolute meter peak, in `0..1`, read after the master gain
+  /// and limiter — what reaches the outputs. A sum can clip when no single
+  /// track does, so the stage footer meters this.
+  ///
+  /// Every meter peak ([inputPeak], [outputPeak], [inputPeaks],
+  /// [monitorPeaks], [outputPeaks], and a track's `peak`, `peakL` and
+  /// `peakR`) is a peak meter (SEG-114): it takes a block's peak at once and
+  /// otherwise falls 11.8 dB/s (20 dB in 1.7 s), reading `0` under
+  /// -120 dBFS. A poll between blocks therefore sees the loudest recent
+  /// peak, and a falling level moves smoothly. Lane peaks and instrument
+  /// peaks stay the last block's.
   final double outputPeak;
 
   /// Phase of the latency harness.
@@ -2603,12 +2613,11 @@ class EngineSnapshot {
   /// [TrackSnapshot.overdubFeedbackOverride].
   final double overdubFeedback;
 
-  /// Per-input RAW device level over the most recent block, `0..1`, indexed
+  /// Per-input RAW device meter peak, `0..1` (see [outputPeak]), indexed
   /// by hardware channel: one entry per channel the device has (length
   /// [inputChannels]; empty while no device is open). Read before the
   /// trim, like [inputClipMask], so a hot ADC reads hot
-  /// however the trim is set. A block peak like [outputPeak]: written once
-  /// per block, not a per-callback counter.
+  /// however the trim is set. A meter peak like [outputPeak].
   final List<double> inputPeaks;
 
   /// Last atomically applied mix edit. Zero after reconfigure.
