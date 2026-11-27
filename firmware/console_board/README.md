@@ -161,12 +161,17 @@ Record/Play, Stop, Undo, Mode, Track1–4, Clear, Bank order.
 
 The app supplies every pill's active bit and RGB hue. Inactive means dark;
 local switch contact, legacy track colors and mode do not override that fact.
-Optical output retains the sourced peak 191, center weights
-38/92/201/255/255/201/92/38 and color gamma. The pills have no total-current
-limit (firmware 2.8, #1957): an earlier budget of 6000 channel units dimmed
-every pill when a pressed switch lit white, so each press flickered the rest.
-All ten pills white is about 2.07 A on the 20 mA/channel model, inside the v3 pill power bar
-and the BUCK_AUX budget in segno-hardware's `segno_wiring.md`. NeoPixelBus
+Optical output is the diffused curve: center weights
+38/92/201/255/255/201/92/38 and color gamma, with the two centre LEDs at full
+brightness (`PILL_PEAK` 255 since firmware 2.9, SEG-115; the owner's call of
+2026-08-28; it was 191 before). The pills have no total-current limit
+(firmware 2.8, #1957): an earlier budget of 6000 channel units dimmed every
+pill when a pressed switch lit white, so each press flickered the rest. All
+ten pills white on the curve is about 2.76 A on the 20 mA/channel model
+(2.07 A at the old peak 191), inside the 20 AWG pill feed and the BUCK_AUX
+budget in segno-hardware's `segno_wiring.md`. Never drive the pills flat at
+255: ten white pills would draw about 4.8 A. The app's LED level (#1564) and
+the idle dim (#1349) scale everything below this ceiling. NeoPixelBus
 PIO/DMA preserves interrupts during the 80-pixel transfer. Forced refresh,
 goodbye and stale-link darkening cover the whole chain. RGB black is a valid
 deliberately dark hue.
@@ -175,9 +180,9 @@ deliberately dark hue.
 sounding one's end, STATE byte 51 names the footswitch whose pill shows it and
 byte 52 how much of the wait has played (0..254 of 255). The board fills that
 pill left to right in the hue and activity the app gave it. Since firmware
-2.5, every filled pixel has one level (110, the mean of the diffused levels,
-so a fully filled queued pill has the same total brightness as the diffused
-curve) with no centre curve, and the leading pixel fills partially so the edge moves
+2.5, every filled pixel has one level (`PILL_FILL_LEVEL`, 147 since 2.9:
+the mean of the diffused levels, so a fully filled queued pill has the same
+total brightness as the diffused curve) with no centre curve, and the leading pixel fills partially so the edge moves
 smoothly. Nothing local advances the fill, and a queue never lights the whole
 pill. The engine ends the wait by starting the section, and the next frame
 carries no queue. A pill that leaves the queue and stays lit blends from its
@@ -194,12 +199,14 @@ with the held footswitch and how much of the long-press threshold has run
 fill starts after that pause and runs the whole threshold, so the clear fires
 350 ms later than other holds, with no firmware change. The board draws red
 from both ends of that pill toward the centre over whatever the pill shows,
-at the same uniform level as the Song queue (110), with the leading pixel on
+at the same uniform level as the Song queue (147), with the leading pixel on
 each side partly filled so the edges move smoothly. While the fill runs, the app colours the held pill with its own
 state (green playing, red recording) instead of the pressed colour. On a pill
 the app shows red (a recording track, or any state it colours red), the pill's own red drops to about a third
 (`PILL_CLEAR_UNDER_RED`, 85 of 255) and the fill is drawn at full brightness
-(`PILL_PEAK`) over it. A hold released early or cancelled (or one that can no
+(`PILL_PEAK`, 255) over it, so it stays three times the pill's own red. That
+fill is one channel, so a fully covered red pill draws less than a white pill
+on the curve. A hold released early or cancelled (or one that can no
 longer fire) gets a message with no footswitch, and the pill shows its normal
 state again at once. A fill that no message refreshes for 500 ms is dropped
 and forgotten, so a lost message cannot leave a pill red; a pill the app does

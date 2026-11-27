@@ -25,8 +25,9 @@ struct Rgb { uint8_t r, g, b; };
 // updates the ring when the version differs from the image it ships.
 static const uint8_t FW_MAJOR = 1;
 // 1.1: dims with the screens (#1349). 1.2: the console's LED brightness, the
-// ring link's LEVEL (#1564).
-static const uint8_t FW_MINOR = 2;
+// ring link's LEVEL (#1564). 1.3: no total current limit, and the breathe,
+// the gain arc and the comet's lead share one ceiling, RING_CEILING (SEG-115).
+static const uint8_t FW_MINOR = 3;
 
 // Seeed variant pin aliases, matching ring_board.py's D-number pads.
 static const uint8_t PIN_RING = D0, PIN_ENC_A = D1, PIN_ENC_B = D2, PIN_ENC_SW = D3;
@@ -42,8 +43,13 @@ static const uint16_t RING_N = 35;
 // PIO + DMA, so the link and encoder interrupts keep running during a push.
 PanelPixels ring(RING_N, PIN_RING);
 static uint32_t g_pixels[RING_N];
-static const uint8_t RING_AMBIENT_BRIGHTNESS = 96;
-static const uint32_t RING_CHANNEL_BUDGET = RING_N * 3UL * RING_AMBIENT_BRIGHTNESS;
+// The brightest any pattern draws, as a physical channel duty: the breathe's
+// and the gain arc's peak and the comet's lead (SEG-115). It replaces the
+// v2 board's ambient 96 and comet lead 192. The console's LED level (#1564)
+// and the idle dim (#1349) scale everything below it. The owner picks it
+// after an outdoor test of 128, 192 and 255; until then the branch stays a
+// draft at 255.
+static const uint8_t RING_CEILING = 255;
 
 // ---- link -----------------------------------------------------------------------
 static ring_link::Parser g_parser;
@@ -168,42 +174,32 @@ static uint32_t scaled(uint8_t r, uint8_t g, uint8_t b, uint8_t level) {
                                   (uint8_t)((((c >> 8) & 0xFF) * k + 127) / 255),
                                   (uint8_t)(((c & 0xFF) * k + 127) / 255));
 }
-// The breathe and the gain arc run at the ambient brightness; the comet uses
-// its own physical duties for a brighter, localized head.
-static uint32_t ambientRingColor(uint32_t c) {
-  const uint16_t k = RING_AMBIENT_BRIGHTNESS + 1;
-  return Adafruit_NeoPixel::Color(((c >> 16) & 255) * k >> 8,
-                                  ((c >> 8) & 255) * k >> 8,
-                                  (c & 255) * k >> 8);
+// A colour, already gamma-corrected, scaled linearly to RING_CEILING: the
+// breathe and the gain arc. The comet's duties already include it.
+static uint32_t ceiled(uint32_t c) {
+  return Adafruit_NeoPixel::Color((((c >> 16) & 255) * RING_CEILING + 127) / 255,
+                                  (((c >> 8) & 255) * RING_CEILING + 127) / 255,
+                                  ((c & 255) * RING_CEILING + 127) / 255);
 }
 
-// Every push shares one full-white current ceiling. Normal patterns fit
-// without dimming; a larger frame is scaled uniformly, keeping its hue. While
-// the console is idle and the screens are dimmed, the output drops to about
-// 20 % (#1349), at once even on a still frame. The console's LED brightness
-// (#1564) scales it first, also at once.
+// Every push goes out as painted: the ring has no total current limit
+// (SEG-115). The ring trunk feeds the 35 pixels at full white, about 2.3 A
+// (segno-hardware hardware/segno_wiring.md); RING_CEILING is the patterns'
+// brightness, not a current limit. The console's LED brightness
+// (#1564) scales every push, at once; while the console is idle and the
+// screens are dimmed, the output drops to about 20 % (#1349), at once even on
+// a still frame.
 static uint8_t g_shownOutput = ring_link::LEVEL_FULL;
 static bool dimmedNow() { return g_haveState && (g_state.flags & ring_link::FLAG_DIMMED); }
 static uint8_t outputNow() { return ring_link::outputLevel(g_level, dimmedNow()); }
 static void showRing() {
   const uint8_t output = outputNow();
   g_shownOutput = output;
-  uint32_t total = 0;
   for (uint16_t i = 0; i < RING_N; ++i) {
     const uint32_t c = g_pixels[i];
-    total += ((c >> 16) & 255) + ((c >> 8) & 255) + (c & 255);
-  }
-  for (uint16_t i = 0; i < RING_N; ++i) {
-    uint32_t c = g_pixels[i];
-    if (total > RING_CHANNEL_BUDGET) {
-      c = Adafruit_NeoPixel::Color(((c >> 16) & 255) * RING_CHANNEL_BUDGET / total,
-                                   ((c >> 8) & 255) * RING_CHANNEL_BUDGET / total,
-                                   (c & 255) * RING_CHANNEL_BUDGET / total);
-    }
     uint8_t r = (c >> 16) & 255, g = (c >> 8) & 255, b = c & 255;
     ring_link::scalePixel(r, g, b, output);
-    c = Adafruit_NeoPixel::Color(r, g, b);
-    ring.setPixelColor(i, c);
+    ring.setPixelColor(i, Adafruit_NeoPixel::Color(r, g, b));
   }
   ring.show();
 }
@@ -218,7 +214,8 @@ static const uint32_t BREATHE_MS = 1200;
 static const float BREATHE_FLOOR = 0.35f;
 // The owner-approved sustained-fade profile on the 40-pixel preview: physical
 // channel duties, head first, the last quarter dark. It already describes LED
-// output, so only the hue receives gamma.
+// output, so only the hue receives gamma. It was approved with its lead at
+// 192; the ring draws the same shape with the lead at RING_CEILING.
 static const uint16_t APPROVED_N = 40;
 static const uint8_t APPROVED_DUTY[APPROVED_N] = {
   192, 192, 180, 174, 168, 162, 156, 150, 144, 138,
@@ -226,8 +223,9 @@ static const uint8_t APPROVED_DUTY[APPROVED_N] = {
   66, 58, 50, 41, 33, 25, 18, 11, 6, 2,
   0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 };
-// The same profile at the same angles on RING_N pixels, linearly resampled,
-// with the two-pixel lead held at the approved 192.
+// The same profile at the same angles on RING_N pixels, linearly resampled
+// and scaled by RING_CEILING / 192, with the two-pixel lead held at
+// RING_CEILING.
 static uint8_t g_cometDuty[RING_N];
 static void buildCometDuty() {
   for (uint16_t i = 0; i < RING_N; ++i) {
@@ -235,7 +233,8 @@ static void buildCometDuty() {
     const uint16_t lo = (uint16_t)at;
     const float t = at - lo;
     const uint8_t a = APPROVED_DUTY[lo], b = APPROVED_DUTY[(lo + 1) % APPROVED_N];
-    g_cometDuty[i] = i < 2 ? APPROVED_DUTY[0] : (uint8_t)(a * (1.0f - t) + b * t + 0.5f);
+    const float duty = (a * (1.0f - t) + b * t) * RING_CEILING / APPROVED_DUTY[0];
+    g_cometDuty[i] = i < 2 ? RING_CEILING : (uint8_t)(duty + 0.5f);
   }
 }
 
@@ -296,7 +295,7 @@ static bool renderRing() {
     const uint8_t lit = (uint8_t)((g_state.gain * RING_N + 254) / 255);
     if (!settle(RING_ARC, lit, activityKey)) return false;
     for (uint16_t i = 0; i < RING_N; i++)
-      g_pixels[i] = i < lit ? ambientRingColor(rgb(c.r, c.g, c.b)) : 0;
+      g_pixels[i] = i < lit ? ceiled(rgb(c.r, c.g, c.b)) : 0;
     return true;
   }
   g_gainArmed = false;
@@ -313,7 +312,7 @@ static bool renderRing() {
     float t = (p < half) ? (p / (float)half) : (1.0f - (p - half) / (float)half);
     t = t * t * (3.0f - 2.0f * t);
     const uint8_t level = (uint8_t)((BREATHE_FLOOR + (1.0f - BREATHE_FLOOR) * t) * 255.0f + 0.5f);
-    const uint32_t green = ambientRingColor(scaled(0, 255, 0, level));
+    const uint32_t green = ceiled(scaled(0, 255, 0, level));
     for (uint16_t i = 0; i < RING_N; i++) g_pixels[i] = green;
     settle(RING_BREATHE, level, 0);
     return true;  // it animates every tick
