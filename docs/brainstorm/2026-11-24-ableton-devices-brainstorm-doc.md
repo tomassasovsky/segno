@@ -2383,12 +2383,20 @@ pass E-Piano MKII Hard 89 % of the time and Vibes Soft 49 %; the
 scorer's five happen to fail both. **[measured]** (val1, val2, val4; the
 scripts are in the fit scratchpad's `elwork/spread`)
 
-Still open: on the noise-only renders (round 2, Mallet Stiffness 0,
-Damper Amount 1) Live's three copies ring the tine at nearly one level
-and phase, near the top of Segno's spread, where Segno's seeds scatter
-by 4.5 dB; those copies share one Live Set, so they may share their
-draws. Rounds 3 and 4 (segno-electric-fit3, -fit4) repeat them and four
-presets, two copies a round, to measure Live's spread across Sets.
+On the noise-only renders (round 2, Mallet Stiffness 0, Damper Amount
+1) Live's three copies rang the tine at nearly one level and phase, where
+Segno's seeds scatter by 4.5 dB. Those copies share one Live Set. Rounds
+3 and 4 (segno-electric-fit3, -fit4) repeat them and four presets, two
+copies a round, in two more Sets: across Sets the tine's phase scatters
+freely (five copies from -73 to 99 degrees), and the size of the spread
+of every noise-driven partial (the tine at three damper tones, the tine
+partial, Stiffness 0's tine and partial over ten copies) is an ordinary
+draw from Segno's seeds (30 to 62 % likely, 100 % at Tone 0.75). Live's
+noise response is not fixed; the round-2 agreement was chance or draws
+shared within the Set. Live's noise-only tine and partial sit about 2 dB
+above Segno's mean power at Damper Amount 1 (5 to 12 % likely by chance
+for each), but not at Tone 0.25 or Stiffness 0; too weak to change the
+damper's level on. **[measured]**
 
 
 

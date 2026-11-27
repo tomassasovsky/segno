@@ -180,7 +180,8 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   MKII Hard, are random presets the scorer's five seeds happen to fail:
   over 40 to 80 seeds Segno's spread is Live's or within the limit, and
   no random draw is wider than Live's (the doc's fit notes). Rounds 3
-  and 4 wait in Live: cross-Set copies of the noise renders.
+  and 4 (cross-Set copies of the noise renders) show Live's noise
+  response is as random as Segno's, not fixed.
 - A voice costs 1.4 us per millisecond on the dev machine with the R
   pickup, 0.9 with W. A device holds 40 voices (10 KB).
 
