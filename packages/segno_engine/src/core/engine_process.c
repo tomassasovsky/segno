@@ -505,11 +505,32 @@ static void le_tempo_latch(le_engine* e) {
           ? load_f32(&e->a_tempo_bpm_bits)
           : 0.0f;
   e->rec_bpm = bpm;
+  e->cleared_bpm = 0.0f; /* a new reference: no cleared tempo to restore */
   e->rec_master_len = bpm > 0.0f ? e->clock.length : 0;
   store_i32(&e->a_rec_master_len, e->rec_master_len);
   e->retime_len = 0; /* a new reference: no retime of it yet */
   store_i32(&e->a_retime_len, 0);
   store_f32(&e->a_recorded_tempo_bits, bpm);
+}
+
+/* SEG-117: a tempo derived from a loop goes with it. When every track is
+ * empty, a DERIVED tempo returns to none, so the next free take derives its
+ * own (and its beat is analysed, #1936). A manual or tapped tempo was set on
+ * purpose and survives (D6). The value is kept for a Clear Undo, which puts
+ * the takes back on the tempo they were laid down at
+ * (le_restore_track_clock). Not perf-logged, like Clear tempo.
+ * A count-in or a waiting Record on another track has committed to the
+ * tempo (le_tempo_locked, le_transport_edit_blocked): a clear does not end
+ * either, so the tempo stays for the take they start. */
+static void le_forget_derived_tempo(le_engine* e) {
+  if (load_i32(&e->a_tempo_source) != LE_TEMPO_SOURCE_DERIVED) return;
+  if (e->count_in_total > 0) return;
+  for (int32_t t = 0; t < e->track_count; ++t) {
+    if (e->tracks[t].pending_record) return;
+  }
+  e->cleared_bpm = load_f32(&e->a_tempo_bpm_bits);
+  store_f32(&e->a_tempo_bpm_bits, 0.0f);
+  store_i32(&e->a_tempo_source, LE_TEMPO_SOURCE_NONE);
 }
 
 /* Direction dies with the material (#1162): forward, origin parked, no turn
@@ -875,7 +896,7 @@ static void le_apply_mode_switch(le_engine* e, int32_t m, uint64_t frame) {
     store_i32(&e->a_master_pos, 0);
     /* The grid dies with the master it measured: a shared bar count means
      * nothing once every take runs its own clock. The TEMPO and its source
-     * survive, exactly as at handle_clear's all-empty reset (D6). */
+     * survive: any recorded takes were laid down at it. */
     le_set_loop_grid(e, 0);
     store_i32(&e->a_current_beat, 0);
     e->grid_prev_beat = -1;
@@ -2090,6 +2111,14 @@ static void le_restore_track_clock(le_engine* e, le_track* t, int32_t len,
     le_loop_clock_set_length(&e->clock, base);
     e->loop_iteration = 0;
     store_i32(&e->a_master_len, base);
+    /* The derived tempo the clear took away comes back with its takes
+     * (SEG-117), unless a tempo has been set since. */
+    if (e->cleared_bpm > 0.0f &&
+        load_i32(&e->a_tempo_source) == LE_TEMPO_SOURCE_NONE) {
+      store_f32(&e->a_tempo_bpm_bits, e->cleared_bpm);
+      store_i32(&e->a_tempo_source, LE_TEMPO_SOURCE_DERIVED);
+    }
+    e->cleared_bpm = 0.0f;
     sync_grid_to_loop(e, base);
   }
   le_loop_clock_reset(&t->free_clock);
@@ -2780,8 +2809,8 @@ void le_engine_reopen_settle(le_engine* e, uint32_t drop_mask) {
   /* A drop that leaves every track EMPTY resets the master so a new loop can
    * be defined — exactly handle_clear's rule (a rig that was already all
    * EMPTY, e.g. undone to empty with its redo pending, keeps its master: no
-   * drop happened, nothing changed). The loop-derived grid dies with it; the
-   * tempo value and source survive (D6). */
+   * drop happened, nothing changed). The loop-derived grid dies with it, and
+   * so does a derived tempo (SEG-117); a manual or tapped one survives (D6). */
   if (dropped_any) {
     int all_empty = 1;
     for (int32_t ch = 0; ch < e->track_count; ++ch) {
@@ -2791,6 +2820,7 @@ void le_engine_reopen_settle(le_engine* e, uint32_t drop_mask) {
       le_loop_clock_reset(&e->clock);
       store_i32(&e->a_master_len, 0);
       le_set_loop_grid(e, 0);
+      le_forget_derived_tempo(e);
       le_speed_reset_if_empty(e, 0);
     }
   }
@@ -4146,11 +4176,12 @@ static void handle_clear(le_engine* e, int32_t ch, int freeze, uint64_t frame) {
     e->loop_iteration = 0;
     store_i32(&e->a_master_len, 0);
     store_i32(&e->a_master_pos, 0);
-    /* The grid dies with its loop — but ONLY the loop-derived part. The tempo
-     * value and its source survive (D6 dead-tempo survival: the next defining
-     * loop rounds to the surviving tempo instead of re-deriving), and this
-     * all-empty reset is also exactly what releases the D6 tempo lock. */
+    /* The grid dies with its loop, and so does a tempo derived from it
+     * (SEG-117): the next free take derives its own. A manual or tapped tempo
+     * survives (D6), and the next defining loop rounds to it. This all-empty
+     * reset is also exactly what releases the D6 tempo lock. */
     le_set_loop_grid(e, 0);
+    le_forget_derived_tempo(e);
     store_i32(&e->a_current_beat, 0);
     e->grid_prev_beat = -1;
     /* The tap pair dies with the lock: a tap latched before the D6 lock

@@ -592,12 +592,17 @@ static void test_reopen_pending_state_drops_track(void) {
 
   le_engine* e = make_configured_engine(); /* unapplied CLEAR, only content */
   record_base_loop(e, 1.0f);
+  /* The loop's tempo as if derived from it: the drop takes it too (SEG-117). */
+  store_f32(&e->a_tempo_bpm_bits, 120.0f);
+  store_i32(&e->a_tempo_source, LE_TEMPO_SOURCE_DERIVED);
   CHECK(le_engine_clear(e, 0) == LE_OK);
   CHECK(reopen_same_mask(e, &mask) == LE_REOPEN_RETAINED_PARTIAL);
   CHECK(mask == 0x1);
   le_engine_get_snapshot(e, &s);
   CHECK(s.tracks[0].state == LE_TRACK_EMPTY && s.tracks[0].length_frames == 0);
   CHECK(s.master_length_frames == 0); /* the rig is empty: master reset */
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_NONE);
+  CHECK(s.tempo_bpm == 0.0f);
   CHECK(s.primary_track == -1);
   record_base_loop(e, 0.5f); /* a new defining take works */
   le_engine_get_snapshot(e, &s);

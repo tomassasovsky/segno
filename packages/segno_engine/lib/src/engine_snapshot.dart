@@ -119,8 +119,8 @@ enum TempoSource {
   tapped,
 
   /// Derived from a defining loop finalized with loop↔tempo sync on (D7).
-  /// Survives clearing the loop that produced it — only an explicit reset
-  /// returns the source to [none].
+  /// Goes with that loop (SEG-117): once every track is empty again the
+  /// source is [none], and an undo of that clear brings it back.
   derived,
 
   /// Reserved: MIDI clock receive (Phase E). Unused here.
