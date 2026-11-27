@@ -1343,10 +1343,10 @@ PRD's high-pass is now a ladder of high-passes (Filter and shaper), from
 from one Live Set to the next (the fine spectrum of round 11's
 warble-nornd correlates 0.99 with round 8's copies, Segno's 0.93), so a
 reader could describe Live's loop generator under the owner's rule for
-deterministic random generators. The fit rounds pass 419 of 469 (from
-416 re-scored: cr-tone, lfo-zero-a100 and circ4-hp added, none lost;
-hp-prd-24 passes over time, 2.4 dB to 1.5, and misses the attack by
-0.1), 9 of 10 presets; held out 48 of 67 (from 47: Sweep Wobble, 1.87 to
+deterministic random generators. With the scorer's round 8 (ten
+seeds for random renders) the fit rounds pass 419 of 469 (from 415
+re-scored: cr-tone, lfo-zero-a100, circ4-hp and hp-prd-24 added, none
+lost), 9 of 10 presets; held out 50 of 67 (from 49: Sweep Wobble, 1.87 to
 1.43).
 
 Round 13 (`segno-op-fit13`, 26 renders) asks Live: a square, a saw down,

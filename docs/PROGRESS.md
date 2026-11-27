@@ -156,8 +156,8 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   change and the phase accumulates it (an LFO on Tone needs no smoother),
   the saw LFOs turn back over the last 1/256 of a cycle (the pitch through
   zero is the plain 1 + L), and PRD's high-pass is a ladder of high-passes.
-  419 of 469 fit renders (from 416 re-scored), 9 of 10 presets; held out
-  48 of 67 (from 47). Round 13 (26 renders) asks Live for the LFO shapes'
+  With the scorer's round 8: 419 of 469 fit renders (from 415
+  re-scored), 9 of 10 presets; held out 50 of 67 (from 49). Round 13 (26 renders) asks Live for the LFO shapes'
   turns and smoother, Release Bass taken apart, OSR's even harmonics and
   MS2's loud saw.
 - A voice costs 2.7 us per period at 48 kHz on the dev machine, 4.5 with
