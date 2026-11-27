@@ -187,7 +187,8 @@ class SessionCubit extends Cubit<SessionState> {
     final device = _looper.state.status.deviceName;
     return _run(
       () => _captureSettings.runExclusive(() async {
-        _savedFingerprint = await _asSaveFailure(
+        final heldAudio = await _holdsAudio(id);
+        final saved = await _asSaveFailure(
           () async => await _saveCurrentRig(
             await _repository.bundlePathOf(id),
             name,
@@ -196,15 +197,114 @@ class SessionCubit extends Cubit<SessionState> {
             device,
           ),
         );
+        _savedFingerprint = saved.fingerprint;
+        // A rig with no audio written over a session that held some (SEG-110)
+        // is allowed: a session's settings saved to loop live on. The save
+        // says so, and offers Undo while Clear all can still be undone.
+        final DroppedAudio? dropped;
+        if (!heldAudio || saved.hasAudio) {
+          dropped = null;
+        } else if (_looper.state.clearAllUndoable) {
+          dropped = DroppedAudio.undoable;
+        } else {
+          dropped = DroppedAudio.gone;
+        }
+        _droppedAudioOf = dropped == DroppedAudio.undoable ? id : null;
         // Re-list, like every other mutation: the Library stays open, and its
         // date column reads the catalog — without this a just-saved session
         // goes on saying "yesterday".
         return _ActionResult(
           SessionOutcome.saved,
           sessions: await _repository.listSessions(),
+          droppedAudio: dropped,
         );
       }),
     );
+  }
+
+  /// The session whose audio the last Save dropped while Clear all could
+  /// still be undone, or null. [undoDroppedAudio] gives it back.
+  SessionId? _droppedAudioOf;
+
+  /// How long [undoDroppedAudio] waits for the engine to put the cleared
+  /// takes back before it gives up without saving.
+  static const Duration _restoreTimeout = Duration(seconds: 2);
+
+  /// Whether the saved bundle [id] holds recorded audio, per its manifest.
+  /// A manifest that cannot be read counts as none: the save goes on as it
+  /// always has, and its notice says nothing was dropped.
+  Future<bool> _holdsAudio(SessionId id) async {
+    try {
+      return (await _repository.readPreview(id)).summary.trackCount > 0;
+    } on Object {
+      return false;
+    }
+  }
+
+  /// The Undo on a Save that dropped the open session's audio
+  /// ([DroppedAudio.undoable]): restores the takes Clear all cleared, through
+  /// the same whole-rig undo the pedal and `⌘⇧C` run, then saves the session
+  /// again with them, so the bundle is what it was before the Clear all.
+  ///
+  /// Does nothing when the takes cannot come back: another session was
+  /// opened or saved since, or a new take retired the restore point. When
+  /// the engine refuses the undo, or has not put every cleared track back
+  /// within a moment, nothing is saved and the action fails with
+  /// [SessionError.audioNotRestored], so the player is told.
+  Future<void> undoDroppedAudio() async {
+    final id = _droppedAudioOf;
+    if (_closing || isClosed || id == null) return;
+    if (id != state.currentSessionId || !_looper.state.clearAllUndoable) {
+      _droppedAudioOf = null;
+      return;
+    }
+    final cleared = {
+      for (final track in _looper.state.tracks)
+        if (track.clearRestore) track.channel,
+    };
+    if (!_looper.undoClearAll().isOk) {
+      _failRestore();
+      return;
+    }
+    _droppedAudioOf = null;
+    final restoring = _awaitRestored(cleared);
+    _track(restoring);
+    final restored = await restoring;
+    if (_closing || isClosed) return;
+    if (!restored) {
+      _failRestore();
+      return;
+    }
+    if (id != state.currentSessionId) return;
+    await save();
+  }
+
+  void _failRestore() => emit(
+    state.copyWith(
+      status: SessionStatus.failure,
+      failureCount: state.failureCount + 1,
+      error: SessionError.audioNotRestored,
+      errorMessage: 'the cleared takes did not come back',
+    ),
+  );
+
+  /// Waits until every track in [cleared] holds audio again, or
+  /// [_restoreTimeout] passes. Every one, not the first: a save between two
+  /// tracks' restores would write the rig half back.
+  Future<bool> _awaitRestored(Set<int> cleared) async {
+    bool back() => cleared.every(
+      (channel) =>
+          channel < _looper.state.tracks.length &&
+          _looper.state.tracks[channel].hasContent,
+    );
+    final waited = Stopwatch()..start();
+    while (!back()) {
+      if (_closing || isClosed || waited.elapsed > _restoreTimeout) {
+        return false;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 8));
+    }
+    return true;
   }
 
   /// Saves the live rig under a fresh id, named [name] or, when null, the
@@ -253,7 +353,7 @@ class SessionCubit extends Cubit<SessionState> {
     }
     final id = await _repository.newSessionId();
     try {
-      final fingerprint = await _asSaveFailure(
+      final (:fingerprint, hasAudio: _) = await _asSaveFailure(
         () async => await _saveCurrentRig(
           await _repository.bundlePathOf(id),
           slug,
@@ -356,7 +456,7 @@ class SessionCubit extends Cubit<SessionState> {
     final id = state.currentSessionId;
     if (id != null) {
       final name = state.currentSessionName;
-      _savedFingerprint = await _asSaveFailure(
+      _savedFingerprint = (await _asSaveFailure(
         () async => await _saveCurrentRig(
           await _repository.bundlePathOf(id),
           name,
@@ -364,7 +464,7 @@ class SessionCubit extends Cubit<SessionState> {
           generation,
           device,
         ),
-      );
+      )).fingerprint;
       // A bundle saved before names were metadata is named by its id, as
       // the catalog shows it.
       return name ?? id;
@@ -460,11 +560,12 @@ class SessionCubit extends Cubit<SessionState> {
   }
 
   /// Captures and writes the live rig to [directory], returning the
-  /// fingerprint of what it captured. The fingerprint is taken before the
+  /// fingerprint of what it captured and whether the written manifest names
+  /// any recorded audio. The fingerprint is taken before the
   /// write's own capture, so an edit landing between the two makes it older,
   /// never newer: the next Open then saves once more rather than skipping an
   /// edit.
-  Future<String> _saveCurrentRig(
+  Future<({String fingerprint, bool hasAudio})> _saveCurrentRig(
     String directory,
     String? name,
     int revision,
@@ -486,7 +587,7 @@ class SessionCubit extends Cubit<SessionState> {
       chains: captured.chains,
       pedalBindings: pedalBindings,
     );
-    await _repository.save(
+    final written = await _repository.save(
       directory,
       chains: captured.chains,
       settings: captured.settings,
@@ -494,7 +595,7 @@ class SessionCubit extends Cubit<SessionState> {
       name: name,
       captureStillValid: stillOwned,
     );
-    return fingerprint;
+    return (fingerprint: fingerprint, hasAudio: written.tracks.isNotEmpty);
   }
 
   /// Opens the session [id] into the engine through the looper repository
@@ -657,13 +758,13 @@ class SessionCubit extends Cubit<SessionState> {
         // The outgoing rig's fingerprint no longer describes anything.
         _savedFingerprint = null;
         try {
-          _savedFingerprint = await _saveCurrentRig(
+          _savedFingerprint = (await _saveCurrentRig(
             await _repository.bundlePathOf(id),
             name,
             _looper.sessionRevision,
             _looper.mixGeneration,
             _looper.state.status.deviceName,
-          );
+          )).fingerprint;
         } on Object catch (error) {
           // Not a failed save of the outgoing session, which is safe: the new
           // session is started and named, and only its empty bundle is
@@ -1203,6 +1304,7 @@ class SessionCubit extends Cubit<SessionState> {
           conversion: result.conversion,
           trackNamesNotSaved: result.trackNamesNotSaved,
           keptSessionName: result.keptSessionName,
+          droppedAudio: result.droppedAudio,
         ),
       );
     } on _SessionRefusal catch (refusal) {
@@ -1318,6 +1420,7 @@ class _ActionResult {
     this.conversion,
     this.trackNamesNotSaved = false,
     this.keptSessionName,
+    this.droppedAudio,
   });
 
   final SessionOutcome outcome;
@@ -1327,4 +1430,5 @@ class _ActionResult {
   final SessionConversionNotice? conversion;
   final bool trackNamesNotSaved;
   final String? keptSessionName;
+  final DroppedAudio? droppedAudio;
 }

@@ -112,6 +112,18 @@
     "sessionMenuTooltip": "Session",
     "a11ySessionMenu": "Session menu",
     "sessionSaved": "Session saved",
+    "sessionSavedWithoutAudio": "Session saved without its audio",
+    "@sessionSavedWithoutAudio": {
+        "description": "Stage notice after a Save wrote a rig with no recorded audio over a session that held some, as after a Clear all: the session keeps its settings and its takes are gone from the saved session."
+    },
+    "sessionSavedWithoutAudioUndo": "Undo",
+    "@sessionSavedWithoutAudioUndo": {
+        "description": "Action on the saved-without-audio notice: puts back the takes the Clear all cleared and saves the session again with them."
+    },
+    "sessionAudioNotRestored": "The audio did not come back. The session was not saved again.",
+    "@sessionAudioNotRestored": {
+        "description": "Stage warning when Undo on the saved-without-audio notice could not put the cleared takes back, so the session was not saved again."
+    },
     "sessionOpened": "{name} opened",
     "@sessionOpened": {
         "description": "Stage notice when a session has opened, from the Library or the Sessions face: it names the session, since by foot the name is the confirmation that the right one opened.",
