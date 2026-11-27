@@ -552,6 +552,9 @@ Notice? sessionOutcomeNotice(
         SessionError.captureInProgress => refuse(
           (l10n) => l10n.libraryTakeStillRunning,
         ),
+        SessionError.audioNotRestored => refuse(
+          (l10n) => l10n.sessionAudioNotRestored,
+        ),
         SessionError.templateDoesNotFit => refuse(
           (l10n) => l10n.sessionTemplateDoesNotFit,
         ),

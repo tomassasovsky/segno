@@ -228,6 +228,24 @@ void main() {
       expect(await mixdownOf(id), mixdown);
     });
 
+    test(
+      'an Undo whose takes do not come back saves nothing and says so',
+      () async {
+        final id = await savedWithAudio();
+        await clearAll();
+        await session.save();
+        expect(session.state.droppedAudio, DroppedAudio.undoable);
+
+        // The engine stops running: the restore cannot land.
+        pump.cancel();
+        await session.undoDroppedAudio();
+
+        expect(session.state.status, SessionStatus.failure);
+        expect(session.state.error, SessionError.audioNotRestored);
+        expect(await audioOf(id), isEmpty);
+      },
+    );
+
     test('a track cleared on its own is not restored: the Save offers no '
         'Undo', () async {
       final id = await savedWithAudio();

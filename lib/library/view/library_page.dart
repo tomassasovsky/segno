@@ -361,6 +361,8 @@ LibraryFailure? libraryFailureOf(SessionState state) {
   if (state.failedSessionId != null) return null;
   return switch (state.error) {
     SessionError.bootPersistence => null,
+    // The stage's own Undo failed; the stage says so.
+    SessionError.audioNotRestored => null,
     SessionError.sampleRateMismatch ||
     SessionError.unsupportedVersion ||
     SessionError.unconvertible => LibraryFailure.actionFailed,

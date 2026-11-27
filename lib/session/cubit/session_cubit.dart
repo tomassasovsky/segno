@@ -248,27 +248,57 @@ class SessionCubit extends Cubit<SessionState> {
   ///
   /// Does nothing when the takes cannot come back: another session was
   /// opened or saved since, or a new take retired the restore point. When
-  /// the engine has not put them back within a moment nothing is saved, and
-  /// the rig keeps whatever came back.
+  /// the engine refuses the undo, or has not put every cleared track back
+  /// within a moment, nothing is saved and the action fails with
+  /// [SessionError.audioNotRestored], so the player is told.
   Future<void> undoDroppedAudio() async {
     final id = _droppedAudioOf;
-    _droppedAudioOf = null;
     if (_closing || isClosed || id == null) return;
     if (id != state.currentSessionId || !_looper.state.clearAllUndoable) {
+      _droppedAudioOf = null;
       return;
     }
-    if (!_looper.undoClearAll().isOk) return;
-    final restoring = _awaitRestored();
+    final cleared = {
+      for (final track in _looper.state.tracks)
+        if (track.clearRestore) track.channel,
+    };
+    if (!_looper.undoClearAll().isOk) {
+      _failRestore();
+      return;
+    }
+    _droppedAudioOf = null;
+    final restoring = _awaitRestored(cleared);
     _track(restoring);
-    if (!await restoring || _closing || isClosed) return;
+    final restored = await restoring;
+    if (_closing || isClosed) return;
+    if (!restored) {
+      _failRestore();
+      return;
+    }
     if (id != state.currentSessionId) return;
     await save();
   }
 
-  /// Waits until a track holds audio again, or [_restoreTimeout] passes.
-  Future<bool> _awaitRestored() async {
+  void _failRestore() => emit(
+    state.copyWith(
+      status: SessionStatus.failure,
+      failureCount: state.failureCount + 1,
+      error: SessionError.audioNotRestored,
+      errorMessage: 'the cleared takes did not come back',
+    ),
+  );
+
+  /// Waits until every track in [cleared] holds audio again, or
+  /// [_restoreTimeout] passes. Every one, not the first: a save between two
+  /// tracks' restores would write the rig half back.
+  Future<bool> _awaitRestored(Set<int> cleared) async {
+    bool back() => cleared.every(
+      (channel) =>
+          channel < _looper.state.tracks.length &&
+          _looper.state.tracks[channel].hasContent,
+    );
     final waited = Stopwatch()..start();
-    while (!_looper.state.tracks.any((t) => t.hasContent)) {
+    while (!back()) {
       if (_closing || isClosed || waited.elapsed > _restoreTimeout) {
         return false;
       }

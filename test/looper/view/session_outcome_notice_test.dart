@@ -65,6 +65,23 @@ void main() {
       expect(undone, 1);
     });
 
+    test('an Undo that brought nothing back says the session was not '
+        'saved again', () {
+      expect(
+        said(
+          const SessionState(
+            status: SessionStatus.failure,
+            error: SessionError.audioNotRestored,
+          ),
+        ),
+        (
+          title: l10n.sessionAudioNotRestored,
+          body: null,
+          tone: NoticeTone.warning,
+        ),
+      );
+    });
+
     test('offers no Undo when nothing can come back', () {
       final notice = sessionOutcomeNotice(
         const SessionState(

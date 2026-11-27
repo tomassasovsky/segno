@@ -118,6 +118,11 @@ enum SessionError {
   /// written yet: the first Save writes it.
   newLoopNotSaved,
 
+  /// The Undo on a Save that dropped the audio (SEG-110) did not bring
+  /// every cleared take back: the engine refused it, or it did not land in
+  /// time. The session was not saved again.
+  audioNotRestored,
+
   /// A New session with a template (#1513) was refused because the template
   /// would go over the effects budget. The take in progress has ended and
   /// the outgoing session is saved; no new session started.

@@ -120,6 +120,10 @@
     "@sessionSavedWithoutAudioUndo": {
         "description": "Action on the saved-without-audio notice: puts back the takes the Clear all cleared and saves the session again with them."
     },
+    "sessionAudioNotRestored": "The audio did not come back. The session was not saved again.",
+    "@sessionAudioNotRestored": {
+        "description": "Stage warning when Undo on the saved-without-audio notice could not put the cleared takes back, so the session was not saved again."
+    },
     "sessionOpened": "{name} opened",
     "@sessionOpened": {
         "description": "Stage notice when a session has opened, from the Library or the Sessions face: it names the session, since by foot the name is the confirmation that the right one opened.",

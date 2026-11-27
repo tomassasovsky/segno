@@ -105,6 +105,9 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   (`SessionCubit.undoDroppedAudio`): the takes come back through the same
   whole-rig undo as `⌘⇧C` and the pedal, and the session is saved again
   with them. Each track keeps the clear as a Redo, as that undo leaves it.
+  The save waits until every cleared track is back. When the engine refuses
+  the undo or the takes have not landed in 2 s, nothing is saved and the
+  stage says so (`SessionError.audioNotRestored`).
 - After a restart, a new take, a track cleared on its own or another
   session opened, nothing can come back, and the notice has no Undo. The
   notice ends when the Clear all can no longer be undone. No copy is kept
