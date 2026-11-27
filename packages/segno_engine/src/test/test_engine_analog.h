@@ -368,9 +368,29 @@ static void test_analog_mono_hand_offs(void) {
   }
 }
 
-/* Where the saw and the rectangle start, as Live's do: nothing for the
- * band-limited step's half length, the saw's first reset half a period in,
- * the rectangle without a DC offset from its first cycle. */
+/* A fresh voice's oscillator starts at the oscillator's own pitch, C4, and
+ * its first pitch tick ramps it to the note over 40 samples, so a C2 sine
+ * runs 35.5 samples ahead of one started at C2 (segno-analog-fit1 sine-c2:
+ * 35.4). */
+static void test_analog_fresh_start(void) {
+  printf("test_analog_fresh_start\n");
+  enum { N = 4800 };
+  static float l[N], r[N];
+  const double c4 = opr_note_hz(60) * pow(2.0, -0.98 / 1200.0), p2 = OPR_SR / (c4 / 4.0);
+  analog_reference(&g_analog);
+  CHECK(le_analog_note_on(&g_analog, 1, 36, 127, 0) == 0);
+  le_analog_render(&g_analog, l, r, N);
+  double cross = 0.0;
+  for (int32_t i = (int32_t)(1.5 * p2); i < N - 1 && cross == 0.0; ++i) {
+    if (l[i] <= 0.0f && l[i + 1] > 0.0f) cross = i + l[i] / (l[i] - l[i + 1]);
+  }
+  CHECK(fabs(cross - (2.0 * p2 - 1.0 - 35.5)) < 1.0);
+}
+
+/* The saw and the rectangle at a note: the saw without latency, its first
+ * reset half a C3 period in less the C4 start's lead of 16 samples; the
+ * rectangle without a DC offset (its integrator starts at its mean for the
+ * pulse width it was selected with). */
 static void test_analog_oscillator_start(void) {
   printf("test_analog_oscillator_start\n");
   enum { N = 24000 };
@@ -380,16 +400,16 @@ static void test_analog_oscillator_start(void) {
   analog_chain(&g_analog, 0, LE_ANALOG_OSC_SHAPE, 1.0f);
   CHECK(le_analog_note_on(&g_analog, 1, 48, 127, 0) == 0);
   le_analog_render(&g_analog, l, r, N);
-  CHECK(opr_peak(l, LE_ANALOG_BL_HALF) == 0.0f);
+  CHECK(l[1] > 0.0f);
   int32_t drop = 0;
   for (int32_t i = 1; i < (int32_t)period; ++i) { /* the first cycle */
     if (l[i] - l[i + 1] > l[drop] - l[drop + 1]) drop = i;
   }
-  CHECK(fabs((double)drop - (LE_ANALOG_BL_HALF + 0.5 * period)) < 4.0);
-  /* the narrowest pulse: its mean over whole cycles is 0 from the start */
+  CHECK(fabs((double)drop - (0.5 * period - 16.0)) < 2.0);
+  /* the narrowest pulse, selected after its width is set */
   analog_reference(&g_analog);
-  analog_chain(&g_analog, 0, LE_ANALOG_OSC_SHAPE, 2.0f);
   analog_chain(&g_analog, 0, LE_ANALOG_OSC_PW, 0.0f);
+  analog_chain(&g_analog, 0, LE_ANALOG_OSC_SHAPE, 2.0f);
   CHECK(le_analog_note_on(&g_analog, 1, 48, 127, 0) == 0);
   le_analog_render(&g_analog, l, r, N);
   const int32_t a = 2400, n = (int32_t)(10.0 * period);
@@ -397,6 +417,74 @@ static void test_analog_oscillator_start(void) {
   for (int32_t i = a; i < a + n; ++i) mean += l[i];
   mean /= n;
   CHECK(fabs(mean) < 0.01 * opr_peak(l + a, n));
+}
+
+/* A voice's oscillator stands still while the voice is idle and runs on
+ * from there at its next note: two gaps longer than the 0.101 s run-on give
+ * the same second note, a gap inside it another, and none is a restart. */
+static void test_analog_oscillator_runs_on(void) {
+  printf("test_analog_oscillator_runs_on\n");
+  enum { N = 4800 };
+  static float l[N], r[N], first[N], scratch[N];
+  const int32_t gaps[3] = {14400, 28800, 2400};
+  for (int32_t g = 0; g < 3; ++g) {
+    analog_reference(&g_analog);
+    analog_chain(&g_analog, 0, LE_ANALOG_AMP_ENV + LE_ANALOG_ENV_RELEASE, 0.0f);
+    CHECK(le_analog_note_on(&g_analog, 1, 48, 127, 0) == 0);
+    le_analog_render(&g_analog, scratch, r, N);
+    le_analog_note_off(&g_analog, 1);
+    for (int32_t i = 0; i < gaps[g]; i += 480) le_analog_render(&g_analog, scratch, r, 480);
+    CHECK(le_analog_note_on(&g_analog, 2, 48, 127, 0) == 0);
+    le_analog_render(&g_analog, l, r, N);
+    if (g == 0) memcpy(first, l, sizeof(first));
+    else if (g == 1) CHECK(memcmp(first, l, sizeof(first)) == 0);
+    else CHECK(memcmp(first, l, sizeof(first)) != 0);
+  }
+  analog_reference(&g_analog);
+  CHECK(le_analog_note_on(&g_analog, 1, 48, 127, 0) == 0);
+  le_analog_render(&g_analog, l, r, N);
+  CHECK(memcmp(first, l, sizeof(first)) != 0);
+}
+
+/* A poly note runs the oscillators of the voice that last played its key,
+ * else a fresh voice's (fit: osc9-rect-poly-gap). */
+static void test_analog_same_key_voice(void) {
+  printf("test_analog_same_key_voice\n");
+  enum { N = 4800 };
+  static float l[N], r[N];
+  analog_reference(&g_analog);
+  analog_set(&g_analog, LE_ANALOG_POLYPHONY, 1.0f);
+  analog_chain(&g_analog, 0, LE_ANALOG_AMP_ENV + LE_ANALOG_ENV_RELEASE, 0.0f);
+  const int32_t keys[4] = {48, 48, 55, 48}, want[4] = {0, 0, 1, 0};
+  for (int32_t k = 0; k < 4; ++k) {
+    CHECK(le_analog_note_on(&g_analog, (uint32_t)(k + 1), keys[k], 127, 0) == 0);
+    int32_t got = -1;
+    for (int32_t i = 0; i < LE_ANALOG_VOICE_SLOTS; ++i) {
+      if (g_analog.voices[i].state == 1) got = g_analog.voices[i].osc_lv;
+    }
+    CHECK(got == want[k]);
+    le_analog_render(&g_analog, l, r, N);
+    le_analog_note_off(&g_analog, (uint32_t)(k + 1));
+    for (int32_t i = 0; i < 6; ++i) le_analog_render(&g_analog, l, r, N);
+  }
+}
+
+/* A sync saw at a ratio of 1, whose slave's own resets meet the master's,
+ * stays centred. */
+static void test_analog_sync_saw_centred(void) {
+  printf("test_analog_sync_saw_centred\n");
+  enum { N = 48000 };
+  static float l[N], r[N];
+  analog_reference(&g_analog);
+  analog_chain(&g_analog, 0, LE_ANALOG_OSC_SHAPE, 1.0f);
+  analog_chain(&g_analog, 0, LE_ANALOG_OSC_MODE, 1.0f);
+  analog_chain(&g_analog, 0, LE_ANALOG_OSC_SUB, 0.0f);
+  CHECK(le_analog_note_on(&g_analog, 1, 60, 127, 0) == 0);
+  for (int32_t s = 0; s < 3; ++s) le_analog_render(&g_analog, l, r, N);
+  double mean = 0.0;
+  for (int32_t i = 0; i < N; ++i) mean += l[i];
+  mean /= N;
+  CHECK(opr_peak(l, N) < 0.2f && fabs(mean) < 0.01);
 }
 
 /* A mono key change retriggers the amp envelope through a drop to 0. */
@@ -557,10 +645,11 @@ static void test_analog_key_pitch(void) {
   CHECK(opr_component(l, N, g4 * pow(2.0, 1.15 / 1200.0)) > opr_component(l, N, g4) + 0.01 * kAnalogSinePeak);
 }
 
-/* The pitch envelope at full depth: the oscillator's first 40-sample tick
- * ramps its period from the unmodulated one, so a C-1 sine swept 6
- * octaves first crosses zero after about 104 samples (fit: penv-1-t015,
- * Live's first crossing at 102). */
+/* The pitch envelope at full depth: the pitch ticks 41 samples apart, the
+ * envelope falling 1/N a tick for N = int(T rate / 40) ticks, the first
+ * tick ramping from C1, the oscillator's own pitch: a C-1 sine swept 6
+ * octaves first crosses zero upward 151.9 samples in, as Live's
+ * penv-1-t015 does (its first 12 crossings within 0.5 sample). */
 static void test_analog_pitch_envelope(void) {
   printf("test_analog_pitch_envelope\n");
   enum { N = 4800 };
@@ -571,11 +660,11 @@ static void test_analog_pitch_envelope(void) {
   analog_chain(&g_analog, 0, LE_ANALOG_OSC_ENV_TIME, 0.15f);
   CHECK(le_analog_note_on(&g_analog, 1, 36, 127, 0) == 0);
   le_analog_render(&g_analog, l, r, N);
-  int32_t cross = 0;
-  for (int32_t i = 40; i < N - 1 && cross == 0; ++i) {
-    if ((l[i] > 0.0f) != (l[i + 1] > 0.0f)) cross = i;
+  double cross = 0.0;
+  for (int32_t i = 1; i < N - 1 && cross == 0.0; ++i) {
+    if (l[i] <= 0.0f && l[i + 1] > 0.0f) cross = i + l[i] / (l[i] - l[i + 1]);
   }
-  CHECK(cross > 96 && cross < 112);
+  CHECK(fabs(cross - 151.9) < 1.0);
 }
 
 /* A free-running amp envelope ignores the key's release: it runs its
@@ -696,7 +785,11 @@ static void run_analog_tests(void) {
   test_analog_block_size();
   test_analog_fresh_voice();
   test_analog_mono_hand_offs();
+  test_analog_fresh_start();
   test_analog_oscillator_start();
+  test_analog_oscillator_runs_on();
+  test_analog_same_key_voice();
+  test_analog_sync_saw_centred();
   test_analog_mono_retrigger();
   test_analog_lfo_starts();
   test_analog_copies_and_voices();

@@ -18,28 +18,21 @@
  * oscillator render, at every note) */
 #define AV_C4 261.4776f
 #define AV_PI_D 3.14159265358979323846
-/* The oscillator's pitch tick, samples. */
+/* The oscillator's pitch tick: its counter reloads with 40 and the tick
+ * falls on the sample that finds it at 0, so ticks are 41 samples apart; the
+ * period ramps to each tick's target over 40 samples. */
 #define AV_OSC_TICK 40
-/* fit: the pitch envelope's length over Exp(0.01, 10) s, by the time knob
- * (each value the best fit of a full-depth sweep's onset and 8 Hz tail:
- * segno-analog-fit7 penv7-t005 .. t060, penv-1-t015, Kick Complex Perc);
- * linear between the points, flat beyond them */
-static float penv_factor(float knob) {
-  static const float kAt[9] = {0.05f, 0.10f, 0.15f, 0.20f, 0.25f, 0.30f, 0.40f, 0.50f, 0.60f};
-  static const float kK[9] = {0.99f, 1.04f, 1.035f, 1.0275f, 1.025f, 1.0205f, 1.025f, 1.0243f, 1.0245f};
-  if (knob <= kAt[0]) return kK[0];
-  for (int32_t i = 1; i < 9; ++i) {
-    if (knob <= kAt[i]) return kK[i - 1] + (kK[i] - kK[i - 1]) * (knob - kAt[i - 1]) / (kAt[i] - kAt[i - 1]);
-  }
-  return kK[8];
-}
+/* The integrators' leaks: the saw's, and a sync saw's and the rectangle's. */
+#define AV_SAW_LEAK 0.9995f
+#define AV_LEAK 0.999995f
 
 enum {
   LE_ANALOG_VOICE_FREE = 0,
   LE_ANALOG_VOICE_HELD,
   LE_ANALOG_VOICE_RELEASED,
   LE_ANALOG_VOICE_SUSTAINED,
-  LE_ANALOG_VOICE_FADING
+  LE_ANALOG_VOICE_FADING,
+  LE_ANALOG_VOICE_RUN_ON /* quiet, its oscillators running on silently */
 };
 
 _Static_assert(LE_ANALOG_ENV_FIELDS == LE_AAS_ENV_FIELDS && LE_ANALOG_ENV_RELEASE == LE_AAS_ENV_RELEASE &&
@@ -199,10 +192,10 @@ static float av_sine(double ph) {
   return x * (6.094263f + x * (6.094263f + x * (-85.31969f + x * (121.88526f - 48.754105f * x))));
 }
 
-/* ---- band-limited steps ---- */
+/* ---- band-limited impulses ---- */
 
-/* The step's impulse: a sinc under a raised-cosine window, 13 zero
- * crossings each side. */
+/* The impulse: a sinc under a raised-cosine window, 13 zero crossings each
+ * side. */
 static double bl_kernel(double x) {
   const double h = (double)LE_ANALOG_BL_HALF;
   if (x <= -h || x >= h) return 0.0;
@@ -210,41 +203,118 @@ static double bl_kernel(double x) {
   return s * (0.5 + 0.5 * cos(AV_PI_D * x / (h + 0.5)));
 }
 
-/* The table of what a band-limited unit step adds to the naive one: row r
- * is a step r / LE_ANALOG_BL_PHASES of the way from the last sample to the
- * current one, column j the sample j - LE_ANALOG_BL_HALF from the current
- * one. The step is the running sum of the impulse's samples, scaled to end
- * at exactly 1. */
+/* The impulse's samples: row r is an impulse centred r / LE_ANALOG_BL_PHASES
+ * of a sample after a whole sample c, column j the sample c - 12 + j. Each row
+ * sums to exactly 1, so the integrator turns an impulse into a step of its
+ * height. */
 static void bl_init(le_analog* d) {
   const int32_t H = LE_ANALOG_BL_HALF;
   for (int32_t r = 0; r <= LE_ANALOG_BL_PHASES; ++r) {
     const double frac = (double)r / LE_ANALOG_BL_PHASES;
-    /* the impulse's samples: sample j - H sits x = j - H + 1 - frac after it */
-    double k[2 * LE_ANALOG_BL_HALF + 1];
+    double k[2 * LE_ANALOG_BL_HALF];
     double total = 0.0;
-    for (int32_t j = 0; j <= 2 * H; ++j) total += (k[j] = bl_kernel((double)(j - H) + 1.0 - frac));
-    double run = 0.0;
-    for (int32_t j = 0; j < 2 * H; ++j) {
-      run += k[j];
-      const double x = (double)(j - H) + 1.0 - frac;
-      d->bl[r][j] = (float)(run / total - (x >= 0.0 ? 1.0 : 0.0));
-    }
+    for (int32_t j = 0; j < 2 * H; ++j) total += (k[j] = bl_kernel((double)(j - (H - 1)) - frac));
+    for (int32_t j = 0; j < 2 * H; ++j) d->bl[r][j] = (float)(k[j] / total);
   }
 }
 
-/* A step of height h at `te` of the way from the last sample to the
- * current one, band-limited into the chain's output ring. */
-static void bl_add(const le_analog* d, le_analog_chain* ch, float te, float h) {
-  const float p = le_aas_clamp(te, 0.0f, 1.0f) * (float)LE_ANALOG_BL_PHASES;
+/* An impulse of height h centred `at` samples after the current one into
+ * the oscillator's ring; at 12 or more its first sample is the current one.
+ * The samples of an earlier one that are already past land on the current
+ * sample, or, `undo` set, come off the integrator (an impulse taken back). */
+static void imp_add(const le_analog* d, le_analog_osc* o, float at, float h, int undo) {
+  at = le_aas_clamp(at, -1.0f, 13.99f);
+  const int32_t base = (int32_t)floorf(at);
+  const float p = (at - (float)base) * (float)LE_ANALOG_BL_PHASES;
   int32_t r = (int32_t)p;
   if (r >= LE_ANALOG_BL_PHASES) r = LE_ANALOG_BL_PHASES - 1;
   const float w = p - (float)r;
   const float* a = d->bl[r];
   const float* b = d->bl[r + 1];
   for (int32_t j = 0; j < 2 * LE_ANALOG_BL_HALF; ++j) {
-    const int32_t at = (ch->ring_at + j - LE_ANALOG_BL_HALF) & (LE_ANALOG_BL_RING - 1);
-    ch->ring[at] += h * (a[j] + w * (b[j] - a[j]));
+    const float v = h * (a[j] + w * (b[j] - a[j]));
+    const int32_t off = base - (LE_ANALOG_BL_HALF - 1) + j;
+    if (off < 0 && undo) o->y += v;
+    else o->ring[(o->ring_at + (off < 0 ? 0 : off)) & (LE_ANALOG_BL_RING - 1)] += v;
   }
+}
+
+/* The ring's value for the current sample, which moves on. */
+static float ring_take(le_analog_osc* o) {
+  const float v = o->ring[o->ring_at];
+  o->ring[o->ring_at] = 0.0f;
+  o->ring_at = (o->ring_at + 1) & (LE_ANALOG_BL_RING - 1);
+  return v;
+}
+
+/* ---- the oscillators' state ---- */
+
+/* An oscillator as setting its Waveform or Sync mode leaves it: the sine at
+ * phase 0 (its sub too), the saw halfway up its ramp with its integrator at
+ * 0, the rectangle at the start of its low part with its integrator at
+ * w + s/2, its mean with the sub (a sync rectangle plays no sub, so it starts
+ * s/2 low and leaks back over 4.2 s), nothing left to play, the next sample a
+ * pitch tick. The period is not touched. Nothing else sets the phase: a note
+ * does not. [code: an-03 0.3, 1.3, 2] */
+static void osc_set(const le_analog* d, le_analog_osc* o, int32_t c) {
+  const int32_t shape = ci(d, c, LE_ANALOG_OSC_SHAPE);
+  o->ph = shape == 1 ? 0.5 : 0.0;
+  o->ph2 = 0.0;
+  o->high = 0;
+  o->sub_sign = -1;
+  o->y = 0.0f;
+  if (shape == 2) {
+    const float w = 0.0365f + 0.4635f * le_aas_knob(cf(d, c, LE_ANALOG_OSC_PW));
+    const float sub = le_aas_exp(0.01f, 1.0f, cf(d, c, LE_ANALOG_OSC_SUB));
+    o->y = -(w + 0.5f * (ci(d, c, LE_ANALOG_OSC_MODE) == 1 || sub > 0.0101f ? sub : 0.0f));
+  }
+  memset(o->ring, 0, sizeof(o->ring));
+  o->ring_at = 0;
+  o->npend = 0;
+  o->otick = 0;
+}
+
+/* An idle oscillator after any parameter change: its period back to the
+ * oscillator's own pitch (set at its next note, without the keyboard), its
+ * ramps and pitch envelope cleared, its phase kept. [code: an-03 0.3] */
+static void osc_reset(le_analog_osc* o) {
+  o->per = o->per_m = 0.0f;
+  o->ramp = 0;
+  o->penv = 0.0f;
+  o->penv_n = 0;
+}
+
+/* The oscillator's own pitch, Hz: C4 at its octave, semitone and detune
+ * (+-1/4 octave as a square). */
+static float osc_base_hz(const le_analog* d, int32_t c) {
+  const float det = le_aas_knob(cf(d, c, LE_ANALOG_OSC_DETUNE)) * 127.0f / 64.0f - 1.0f;
+  const float base = (float)ci(d, c, LE_ANALOG_OSC_OCT) + (float)ci(d, c, LE_ANALOG_OSC_SEMI) / 12.0f +
+                     (det < 0.0f ? -0.25f : 0.25f) * det * det;
+  return AV_C4 * exp2f(base);
+}
+
+/* A note on a reset oscillator: its period, and a sync master's, are its
+ * own pitch's; the first tick ramps them to the note's [code: an-03 0.3,
+ * 1.1]. fit: a sync slave starts there too, the ratio arriving with the
+ * first tick (segno-analog-fit1 saw-sync03 and -07's first master cycle:
+ * their attack 0.26 and 0.29 dB with the slave at the ratio from the start,
+ * 0.16 and 0.27 so) */
+static void osc_start(const le_analog* d, le_analog_osc* o, int32_t c) {
+  if (o->per > 0.0f && o->per_m > 0.0f) return;
+  o->per = o->per_m = (float)d->sample_rate / osc_base_hz(d, c);
+  o->ramp = 0;
+}
+
+/* The pitch envelope's start at the gate: 1, falling by 1/N at each of the
+ * next N pitch ticks, N = int(T rate / 40) for T = Exp(0.01, 10) s, so it
+ * lasts T 41/40. [code: an-03 0.1] */
+static void osc_trigger(const le_analog* d, le_analog_osc* o, int32_t c) {
+  const float T = le_aas_exp(0.01f, 10.0f, cf(d, c, LE_ANALOG_OSC_ENV_TIME));
+  int32_t n = (int32_t)(T * (float)d->sample_rate / (float)AV_OSC_TICK);
+  if (n < 1) n = 1;
+  o->penv = 1.0f;
+  o->penv_n = n;
+  o->penv_dec = 1.0f / (float)n;
 }
 
 /* A chain's envelope settings, from its knobs at `base`. */
@@ -262,7 +332,7 @@ static int sounding(const le_analog_voice* v) {
 }
 
 static void fade_voice(le_analog_voice* v) {
-  if (v->state == LE_ANALOG_VOICE_FREE) return;
+  if (v->state == LE_ANALOG_VOICE_FREE || v->state == LE_ANALOG_VOICE_RUN_ON) return;
   v->state = LE_ANALOG_VOICE_FADING;
   if (v->fade_left <= 0) v->fade_left = LE_ANALOG_FADE_MS * v->fade_len;
 }
@@ -295,11 +365,19 @@ static le_analog_voice* oldest(le_analog* d, int32_t state) {
   return old;
 }
 
+static void osc_store(le_analog* d, le_analog_voice* v);
+
 static le_analog_voice* free_slot(le_analog* d) {
   for (int32_t i = 0; i < LE_ANALOG_VOICE_SLOTS; ++i) {
     if (d->voices[i].state == LE_ANALOG_VOICE_FREE) return &d->voices[i];
   }
-  le_analog_voice* v = oldest(d, LE_ANALOG_VOICE_FADING);
+  le_analog_voice* v = oldest(d, LE_ANALOG_VOICE_RUN_ON);
+  if (v != NULL) {
+    osc_store(d, v);
+    v->state = LE_ANALOG_VOICE_FREE;
+    return v;
+  }
+  v = oldest(d, LE_ANALOG_VOICE_FADING);
   return v != NULL ? v : oldest(d, LE_ANALOG_VOICE_RELEASED);
 }
 
@@ -320,6 +398,19 @@ static void lv_store(le_analog* d, le_analog_voice* v, int32_t at) {
   v->lv = -1;
 }
 
+/* A slot hands its oscillators back to its device voice, which keeps them
+ * as they are until its next note (an idle voice's oscillators stand
+ * still). */
+static void osc_store(le_analog* d, le_analog_voice* v) {
+  if (v->osc_lv < 0) return;
+  for (int32_t k = 0; k < v->copies; ++k) {
+    for (int32_t c = 0; c < 2; ++c) d->lv_osc[v->osc_lv][k][c] = v->c[k].ch[c].o;
+  }
+  d->lv_note[v->osc_lv] = v->note;
+  d->osc_quiet[v->osc_lv] = d->age;
+  v->osc_lv = -1;
+}
+
 /* The device voice a new note takes: the stolen one's, else an idle one. */
 static float lfo_hz(const le_analog* d, int32_t c);
 
@@ -330,6 +421,13 @@ static float lfo_hz(const le_analog* d, int32_t c);
  * two, gaps of 150 ms and more find the first one idle again). */
 #define AV_LV_RUN_ON 0.1125
 #define AV_LV_RETAKE 0.06
+/* fit: a quiet voice's oscillators run on for 0.101 s after its amp
+ * envelopes end, then stand still (segno-analog-fit9's osc9 gap renders:
+ * a C3 sine, saw and rectangle reused after 0.6 s gaps land within 2
+ * samples of Live's phase at each note with 4848 samples, 7 to 20 samples
+ * off 2 samples either way); the reading has 0.1 s and a whole processing
+ * block more [code: an-03 0.2] */
+#define AV_OSC_RUN_ON 0.101
 
 static int32_t lv_pick(le_analog* d) {
   if (d->lv_steal >= 0) return d->lv_steal;
@@ -367,7 +465,7 @@ static void lv_run_on(le_analog* d, int32_t frames) {
   int active = 0;
   for (int32_t i = 0; i < LE_ANALOG_VOICE_SLOTS; ++i) {
     const le_analog_voice* v = &d->voices[i];
-    if (v->state == LE_ANALOG_VOICE_FREE) continue;
+    if (v->state == LE_ANALOG_VOICE_FREE || v->state == LE_ANALOG_VOICE_RUN_ON) continue;
     active = 1;
     if (v->lv >= 0) attached[v->lv] = 1;
   }
@@ -453,8 +551,9 @@ static void env_advance(le_aas_env* e, int32_t n) {
   e->left -= n;
 }
 
-/* A copy starts from rest: its filters, the integrator's leak and the
- * noise filter cleared, so nothing of the slot's last note rings on. */
+/* A copy starts with its filters and the noise filter cleared, so nothing
+ * of the slot's last note rings on, and its oscillators as its device voice
+ * left them. */
 static void start_copy(le_analog* d, le_analog_voice* v, le_analog_copy* cp) {
   const float rate = (float)d->sample_rate;
   cp->noise_lp = 0.0f;
@@ -483,21 +582,12 @@ static void start_copy(le_analog* d, le_analog_voice* v, le_analog_copy* cp) {
     le_aas_env_start(&ch->aenv, &ae, v->velocity, rate, 0);
     memset(ch->f.s, 0, sizeof(ch->f.s));
     ch->noise_lp = 0.0f;
-    memset(ch->ring, 0, sizeof(ch->ring));
-    ch->ring_at = 0;
-    ch->penv = 1.0f;
-    ch->per = 0.0f;
-    ch->otick = 0;
-    ch->penv_step = 1.0f / fmaxf(penv_factor(cf(d, c, LE_ANALOG_OSC_ENV_TIME)) * le_aas_exp(0.01f, 10.0f, cf(d, c, LE_ANALOG_OSC_ENV_TIME)) * rate, 1.0f);
-    /* fit: the oscillators start where Live's do (the oscillator renders):
-     * the saw halfway up its ramp (the sync slave too), the rectangle at the
-     * start of its low part, the sub square low, the sync master at its
-     * reset; the rectangle's integrator holds its mean already */
-    const int32_t shape = ci(d, c, LE_ANALOG_OSC_SHAPE);
-    ch->ph = shape == 1 ? 0.5 : 0.0;
-    ch->ph2 = 0.0;
-    ch->sub_sign = -1;
-    ch->dc = shape == 2 ? 0.0365f + 0.4635f * le_aas_knob(cf(d, c, LE_ANALOG_OSC_PW)) : 0.0f;
+    /* the oscillator runs on from where its device voice left it: no reset
+     * at a note, a fresh voice as the preset's Waveform left it; a delayed
+     * copy's pitch envelope starts at its own note (render_voice) [code:
+     * an-03 1.1, 1.2] */
+    ch->o = d->lv_osc[v->osc_lv][cp - v->c][c];
+    osc_start(d, &ch->o, c);
     /* with Retrigger the LFO restarts at its Phase at each note. fit:
      * without, each of the device's voices (as many as the Voices setting,
      * a stolen one handing its LFOs to the note that takes it) runs its
@@ -565,6 +655,43 @@ static float unison_expz(float lo, float hi, float v) {
   return m <= 0.0f ? 0.0f : lo * powf(hi / lo, m / 127.0f);
 }
 
+/* The device voice whose oscillators a new note runs: the stolen one's,
+ * else an idle one that last played the same note, else one that never
+ * played, else the one idle longest; a mono device runs one. fit: segno-
+ * analog-fit9 osc9-rect-poly-gap's G3 after two C3s starts as a fresh
+ * voice's oscillator and the C3 after it as the first voice's left off
+ * (within 2 and 3 samples of Live's phase; on one voice they are 61 and 89
+ * samples off), as fit7 poly-saw-2notes' and fit9 st9-poly's second notes
+ * start fresh (within 5 and 3 samples, from 284 and 226). The free LFOs
+ * keep their own voices (lv_pick): their renders fit that model, not this
+ * one, so one of the two stands in for something not yet known. */
+static int32_t osc_pick(le_analog* d, int32_t note) {
+  if (d->osc_steal >= 0) {
+    const int32_t j = d->osc_steal;
+    d->osc_steal = -1;
+    return j;
+  }
+  int32_t n = mono(d) ? 1 : kVoices[vi(d, LE_ANALOG_POLYPHONY)];
+  if (n > LE_ANALOG_DEVICE_VOICES) n = LE_ANALOG_DEVICE_VOICES;
+  int32_t busy[LE_ANALOG_DEVICE_VOICES] = {0};
+  for (int32_t i = 0; i < LE_ANALOG_VOICE_SLOTS; ++i) {
+    const le_analog_voice* u = &d->voices[i];
+    if (u->state != LE_ANALOG_VOICE_FREE && u->state != LE_ANALOG_VOICE_RUN_ON && u->osc_lv >= 0) busy[u->osc_lv] = 1;
+  }
+  int32_t pick = -1;
+  for (int32_t j = 0; j < n && pick < 0; ++j) {
+    if (!busy[j] && d->lv_note[j] == note) pick = j;
+  }
+  for (int32_t j = 0; j < n && pick < 0; ++j) {
+    if (!busy[j] && d->lv_note[j] < 0) pick = j;
+  }
+  if (pick >= 0) return pick;
+  for (int32_t j = 0; j < n; ++j) {
+    if (!busy[j] && (pick < 0 || d->osc_quiet[j] < d->osc_quiet[pick])) pick = j;
+  }
+  return pick >= 0 ? pick : 0;
+}
+
 static void start_voice(le_analog* d, le_analog_voice* v, uint32_t origin, int32_t note, float vel,
                         uint64_t serial, int glide) {
   v->state = LE_ANALOG_VOICE_HELD;
@@ -575,6 +702,7 @@ static void start_voice(le_analog* d, le_analog_voice* v, uint32_t origin, int32
   v->copies = copies_per_note(d);
   v->tick_left = 0;
   v->since = 0;
+  v->amp_end = -1;
   v->fade_left = 0;
   v->fade_len = (int32_t)lroundf(0.001f * (float)d->sample_rate);
   v->vib_t = 0.0f;
@@ -592,6 +720,16 @@ static void start_voice(le_analog* d, le_analog_voice* v, uint32_t origin, int32
   v->lv = lv_pick(d);
   d->lv_last = v->lv;
   d->lv_steal = -1;
+  const int32_t ov = osc_pick(d, note);
+  /* a slot still running the device voice's oscillators on hands them over */
+  for (int32_t i = 0; i < LE_ANALOG_VOICE_SLOTS; ++i) {
+    le_analog_voice* u = &d->voices[i];
+    if (u == v || u->osc_lv != ov) continue;
+    osc_store(d, u);
+    if (u->state == LE_ANALOG_VOICE_RUN_ON) u->state = LE_ANALOG_VOICE_FREE;
+  }
+  v->osc_lv = ov;
+  v->pre = key_pitch(d, d->lv_note[ov] >= 0 ? d->lv_note[ov] : 60);
   /* fit: a mono voice's vibrato runs on through the silence between its
    * notes, from the device's start (segno-analog-fit6 Square Pure Bass's
    * median pitch error from 0.38 to 0.04 cent, Saw Detune Sync Lead's from
@@ -611,16 +749,12 @@ static void start_voice(le_analog* d, le_analog_voice* v, uint32_t origin, int32
   for (int32_t k = 0; k < v->copies; ++k) {
     le_analog_copy* cp = &v->c[k];
     cp->detune = step * kSteps[k] + key_error(d, cp);
-    /* fit: copy k starts k delays after the note (uni4-dly-100's copies
-     * enter at 0.1, 0.2 and 0.3 s; its level from 5.4 dB low to 0.7), and
-     * its release comes as late. It starts ahead of a copy begun at that
-     * moment, by four times its own pitch over the delay and 13 samples
-     * (segno-analog-fit8: separating the ud8 sines' copies puts copy k at
-     * 4 (k D) / P cycles, D from 2.9 to 100 ms; the ud8 sines from 5 to 20
-     * dB to 0.2 to 3, the saws from 8 to 0.3 to 1.6) */
-    cp->delay = (int32_t)(delay * (float)k);
+    /* copy k plays the note k delays late, its release as late (fit:
+     * uni4-dly-100's copies enter at 0.1, 0.2 and 0.3 s; its level from 5.4
+     * dB low to 0.7); its oscillators run from the note on, at the device
+     * voice's last pitch until the copy's own note [code: an-03 3] */
+    cp->delay = (int32_t)delay * k; /* the delay in whole samples, then times k [code: an-03 3] */
     cp->rel_at = -1;
-    for (int32_t c = 0; c < 2; ++c) cp->ch[c].ph_lead = cp->delay > 0 ? (float)cp->delay + 13.0f : 0.0f;
     start_copy(d, v, cp);
   }
   d->last_pitch = v->pitch_to;
@@ -690,10 +824,17 @@ int32_t le_analog_init(le_analog* d, int32_t sample_rate) {
   d->voice_limit = LE_ANALOG_VOICE_SLOTS;
   d->rng = 0x2545f491u;
   d->lv_steal = -1;
+  d->osc_steal = -1;
   d->lv_last = -1;
-  for (int32_t i = 0; i < LE_ANALOG_VOICE_SLOTS; ++i) d->voices[i].lv = -1;
+  for (int32_t i = 0; i < LE_ANALOG_VOICE_SLOTS; ++i) d->voices[i].lv = d->voices[i].osc_lv = -1;
   bl_init(d);
   for (int32_t p = 0; p < LE_ANALOG_PARAMS; ++p) d->values[p] = param_def(p).def;
+  for (int32_t j = 0; j < LE_ANALOG_DEVICE_VOICES; ++j) {
+    d->lv_note[j] = -1;
+    for (int32_t k = 0; k < LE_ANALOG_COPIES; ++k) {
+      for (int32_t c = 0; c < 2; ++c) osc_set(d, &d->lv_osc[j][k][c], c);
+    }
+  }
   for (int32_t i = 0; i < LE_ANALOG_VOICE_SLOTS; ++i) {
     for (int32_t k = 0; k < LE_ANALOG_COPIES; ++k) {
       d->voices[i].c[k].rng = 0x9e3779b9u ^ (uint32_t)((i * LE_ANALOG_COPIES + k + 1) * 2654435761u);
@@ -705,7 +846,37 @@ int32_t le_analog_init(le_analog* d, int32_t sample_rate) {
 
 void le_analog_set_values(le_analog* d, const float* values) {
   if (d == NULL || values == NULL) return;
-  for (int32_t p = 0; p < LE_ANALOG_PARAMS; ++p) d->values[p] = le_analog_clamp(p, values[p]);
+  int32_t shape[2], mode[2];
+  for (int32_t c = 0; c < 2; ++c) shape[c] = ci(d, c, LE_ANALOG_OSC_SHAPE), mode[c] = ci(d, c, LE_ANALOG_OSC_MODE);
+  int changed = 0;
+  for (int32_t p = 0; p < LE_ANALOG_PARAMS; ++p) {
+    const float v = le_analog_clamp(p, values[p]);
+    changed |= v != d->values[p];
+    d->values[p] = v;
+  }
+  if (!changed) return;
+  /* a new Waveform or Sync mode restarts that oscillator in every voice,
+   * sounding or not [code: an-03 0.3] */
+  for (int32_t c = 0; c < 2; ++c) {
+    if (ci(d, c, LE_ANALOG_OSC_SHAPE) == shape[c] && ci(d, c, LE_ANALOG_OSC_MODE) == mode[c]) continue;
+    for (int32_t j = 0; j < LE_ANALOG_DEVICE_VOICES; ++j) {
+      for (int32_t k = 0; k < LE_ANALOG_COPIES; ++k) osc_set(d, &d->lv_osc[j][k][c], c);
+    }
+    for (int32_t i = 0; i < LE_ANALOG_VOICE_SLOTS; ++i) {
+      if (d->voices[i].state == LE_ANALOG_VOICE_FREE) continue;
+      for (int32_t k = 0; k < LE_ANALOG_COPIES; ++k) osc_set(d, &d->voices[i].c[k].ch[c].o, c);
+    }
+  }
+  /* any change sends the idle voices' periods back to their oscillators'
+   * own pitch [code: an-03 0.3; Segno: at once, not one voice a block] */
+  for (int32_t j = 0; j < LE_ANALOG_DEVICE_VOICES; ++j) {
+    int busy = 0;
+    for (int32_t i = 0; i < LE_ANALOG_VOICE_SLOTS; ++i) busy |= d->voices[i].state != LE_ANALOG_VOICE_FREE && d->voices[i].osc_lv == j;
+    if (busy) continue;
+    for (int32_t k = 0; k < LE_ANALOG_COPIES; ++k) {
+      for (int32_t c = 0; c < 2; ++c) osc_reset(&d->lv_osc[j][k][c]);
+    }
+  }
 }
 
 void le_analog_set_tempo(le_analog* d, float bpm) {
@@ -767,7 +938,7 @@ int32_t le_analog_note_on(le_analog* d, uint32_t origin, int32_t note, int32_t v
           if (!fleg) le_aas_env_drop(&ch->fenv, &fe, vel, (float)d->sample_rate);
           if (!aleg) le_aas_env_drop(&ch->aenv, &ae, vel, (float)d->sample_rate);
           if (!aleg) {
-            ch->penv = 1.0f; /* the pitch envelope restarts with the amp's */
+            osc_trigger(d, &ch->o, c); /* the pitch envelope restarts with the amp's */
             lfo_restart(d, &v->c[k], c);
           }
         }
@@ -785,7 +956,9 @@ int32_t le_analog_note_on(le_analog* d, uint32_t origin, int32_t note, int32_t v
     if (v == NULL) v = oldest(d, LE_ANALOG_VOICE_HELD);
     if (v == NULL) break;
     d->lv_steal = v->lv;
+    d->osc_steal = v->osc_lv;
     lv_store(d, v, d->age);
+    osc_store(d, v); /* the note that takes the voice runs its oscillators on */
     fade_voice(v);
     d->stolen++;
   }
@@ -806,7 +979,7 @@ static void retrigger(le_analog* d, le_analog_voice* v) {
       if (!ci(d, c, LE_ANALOG_FILTER_ENV + LE_ANALOG_ENV_LEGATO)) le_aas_env_drop(&ch->fenv, &fe, v->velocity, (float)d->sample_rate);
       if (!ci(d, c, LE_ANALOG_AMP_ENV + LE_ANALOG_ENV_LEGATO)) {
         le_aas_env_drop(&ch->aenv, &ae, v->velocity, (float)d->sample_rate);
-        ch->penv = 1.0f;
+        osc_trigger(d, &ch->o, c);
         lfo_restart(d, &v->c[k], c);
       }
     }
@@ -986,9 +1159,6 @@ static void tick_chain(le_analog* d, le_analog_voice* v, le_analog_copy* cp, int
   }
   ch->lfo = lfo;
   /* the oscillator's pitch */
-  const float det = le_aas_knob(cf(d, c, LE_ANALOG_OSC_DETUNE)) * 127.0f / 64.0f - 1.0f;
-  const float base = (float)ci(d, c, LE_ANALOG_OSC_OCT) + (float)ci(d, c, LE_ANALOG_OSC_SEMI) / 12.0f +
-                     (det < 0.0f ? -0.25f : 0.25f) * det * det;
   const float m1 = le_aas_knob(cf(d, c, LE_ANALOG_OSC_MOD1)) * 127.0f / 64.0f;
   const float k1 = m1 * m1;
   const float env_amt = cf(d, c, LE_ANALOG_OSC_ENV_AMOUNT) != 0.0f
@@ -996,7 +1166,6 @@ static void tick_chain(le_analog* d, le_analog_voice* v, le_analog_copy* cp, int
                                   le_aas_exp(0.01f, 6.0f, fabsf(cf(d, c, LE_ANALOG_OSC_ENV_AMOUNT)))
                             : 0.0f;
   const float lfo_pitch = le_aas_bsq(4.0f, cf(d, c, LE_ANALOG_OSC_LFO_PITCH)) * lfo;
-  const float key = le_aas_clamp(pitch_cv + cp->detune + vib, -8.0f, 8.0f);
   const float sync = ci(d, c, LE_ANALOG_OSC_MODE) == 1 && ci(d, c, LE_ANALOG_OSC_SHAPE) != 0;
   /* fit: the keyboard pitch (with the unison offsets and the vibrato) and
    * the pitch envelope go through the cubic 2^x, the oscillator's own
@@ -1004,25 +1173,23 @@ static void tick_chain(le_analog* d, le_analog_voice* v, le_analog_copy* cp, int
    * sits 1.16 cents sharp of a C4's fifth, as the cubic puts it, the poly
    * chord's E4 and G4 too; the unison renders' lower copy 0.3 cent sharp;
    * the LFO renders fit closer with the LFO exact) */
-  const float f_base = AV_C4 * exp2f(base);
-  const float f_key = f_base * exp2_cubic(k1 * key);
-  /* the oscillator's own tick turns these into its period (osc_pitch) */
+  /* the oscillator's own tick turns these into its period (osc_pitch); a
+   * delayed copy's oscillators hear the device voice's last note until the
+   * copy's own [code: an-03 3] */
+  t->f_base = osc_base_hz(d, c);
+  t->lfo_mul = exp2f(lfo_pitch);
+  t->k1 = k1;
+  t->key = le_aas_clamp(pitch_cv + cp->detune + vib, -8.0f, 8.0f);
+  t->key_pre = le_aas_clamp(v->pre + (pitch_cv - v->pitch) + cp->detune + vib, -8.0f, 8.0f);
   t->env_amt = env_amt;
   if (sync) {
     t->ratio = le_aas_exp(1.0f, 20.0f, cf(d, c, LE_ANALOG_OSC_SUB));
-    ch->inc_m = fminf(f_key, 0.25f * rate) / rate;
-    t->f_osc = f_key * t->ratio * exp2f(lfo_pitch);
-    t->x_osc = 0.0f;
-    t->f_lo = f_key;
     t->f_hi = 0.45f * rate;
     t->sub = 0.0f;
   } else {
-    t->f_osc = f_base * exp2f(lfo_pitch);
-    t->x_osc = k1 * key;
     /* the saw and rectangle stop at a quarter of the rate (their 4-sample
      * period); fit: the sine goes on to 16 kHz and beyond (penv-1-t04's
      * 3-sample periods) */
-    t->f_lo = 0.0f;
     t->f_hi = (ci(d, c, LE_ANALOG_OSC_SHAPE) == 0 ? 0.45f : 0.25f) * rate;
     /* the knob is the sub's level only in Sub mode: a sine set to Sync has
      * neither (fit: segno-analog-fit4 Soft Morning Keys with amp 1 off,
@@ -1104,124 +1271,163 @@ static void tick_chain(le_analog* d, le_analog_voice* v, le_analog_copy* cp, int
 
 /* ---- rendering ---- */
 
-/* The naive saw or rectangle at phase `ph`: the saw rising across
- * -0.5..0.5, the rectangle 0 then 1 for the last w of the cycle. */
-static float osc_naive(int32_t shape, double ph, float w) {
-  if (shape == 1) return (float)ph - 0.5f;
-  return ph >= 1.0 - (double)w ? 1.0f : 0.0f;
-}
-
-/* Moves a saw or rectangle from t0 to t1 of the way from the last sample
- * to the current one, a band-limited step at each edge it crosses: the
- * rectangle's rise, and the reset, where the sub square turns over. */
-static void osc_run(const le_analog* d, le_analog_chain* ch, int32_t shape, float w, float sub, float t0,
-                    float t1) {
-  const double dt = (double)ch->inc;
-  const double ph = ch->ph;
-  double end = ph + dt * (double)(t1 - t0);
-  if (shape == 2) {
-    const double hi = 1.0 - (double)w;
-    if (ph < hi && end >= hi) bl_add(d, ch, t0 + (float)((hi - ph) / dt), 1.0f);
-  }
-  if (end >= 1.0) {
-    const float h = -1.0f - sub * (float)ch->sub_sign;
-    ch->sub_sign = -ch->sub_sign;
-    bl_add(d, ch, t0 + (float)((1.0 - ph) / dt), h);
-    end -= 1.0;
-  }
-  ch->ph = end;
-}
-
-/* The oscillator's pitch, on its own tick of AV_OSC_TICK samples: at each
- * tick the period's target from the chain's control values and the pitch
- * envelope's value at the tick's end, the period ramping to it linearly
- * across the tick. A copy's first tick ramps from the period without the
- * pitch envelope. fit: the pitch envelope renders (penv-1-t015's zero
- * crossings within 3 samples and its tail's phase, penv-1-t04's and
- * penv-saw-1-t03's sweeps) */
-static void osc_pitch(le_analog_chain* ch, const av_tick* t, float rate) {
-  if (ch->otick <= 0) {
-    const float e = fmaxf(ch->penv - ch->penv_step * (float)AV_OSC_TICK, 0.0f);
-    const float target = rate / le_aas_clamp(t->f_osc * exp2_cubic(t->x_osc + t->env_amt * e), t->f_lo, t->f_hi);
-    if (ch->per <= 0.0f) {
-      ch->per = rate / le_aas_clamp(t->f_osc * exp2_cubic(t->x_osc), t->f_lo, t->f_hi);
-      if (ch->ph_lead > 0.0f) {
-        /* a delayed copy's lead (start_voice); a sine's sub at half */
-        const double a = 4.0 * (double)ch->ph_lead / (double)ch->per;
-        ch->ph += a - floor(a);
-        ch->ph -= floor(ch->ph);
-        if (t->ratio <= 0.0f) {
-          ch->ph2 += 0.5 * a;
-          ch->ph2 -= floor(ch->ph2);
-        }
-        ch->ph_lead = 0.0f;
-      }
-    }
-    ch->per_step = (target - ch->per) / (float)AV_OSC_TICK;
-    ch->penv = e;
-    ch->otick = AV_OSC_TICK;
-  }
-  ch->per += ch->per_step;
-  ch->otick--;
-  ch->inc = 1.0f / ch->per;
-}
-
-/* One oscillator sample, LE_ANALOG_BL_HALF samples late as Live's are:
- * the shape at the chain's phase, its sub square or its sync slave; saw and
- * rectangle peak-to-peak 1, the sine 0.7. */
-static float osc_tick(const le_analog* d, le_analog_chain* ch, int32_t shape, const av_tick* t, uint32_t* rng) {
-  float y;
-  if (shape != 3) osc_pitch(ch, t, (float)d->sample_rate);
-  switch (shape) {
-    case 0: {
-      ch->ph += ch->inc;
-      if (ch->ph >= 1.0) ch->ph -= 1.0;
-      ch->ph2 += 0.5 * ch->inc;
-      if (ch->ph2 >= 1.0) ch->ph2 -= 1.0;
-      y = 0.7f * av_sine(ch->ph);
-      if (t->sub > 0.0f) y += 0.7f * t->sub * av_sine(ch->ph2);
-      break;
-    }
-    case 3:
-      y = 0.9f * le_aas_bipolar(rng);
-      break;
-    default: {
-      const float w = t->pw;
-      const float sub = t->sub;
-      float reset = -1.0f;
-      if (t->ratio > 0.0f) {
-        /* the master resets the slave, at a ratio of 1 too (fit: Saw Pure
-         * Brass's chains beat in Live's phase only so) */
-        ch->ph2 += ch->inc_m;
-        if (ch->ph2 >= 1.0) {
-          ch->ph2 -= 1.0;
-          reset = 1.0f - (float)(ch->ph2 / ch->inc_m);
-        }
-      }
-      if (reset >= 0.0f) {
-        osc_run(d, ch, shape, w, sub, 0.0f, reset);
-        bl_add(d, ch, reset, osc_naive(shape, 0.0, w) - osc_naive(shape, ch->ph, w));
-        ch->ph = 0.0;
-        osc_run(d, ch, shape, w, sub, reset, 1.0f);
-      } else {
-        osc_run(d, ch, shape, w, sub, 0.0f, 1.0f);
-      }
-      y = osc_naive(shape, ch->ph, w);
-      if (sub > 0.0f) y += 0.5f * sub * (float)ch->sub_sign;
-      /* the integrator's leak: the saw's 0.9995, the rectangle's 0.999995 */
-      const float leak = shape == 1 ? 0.0005f : 0.000005f;
-      ch->dc += leak * (y - ch->dc);
-      y -= ch->dc;
-      break;
+/* The oscillator's pitch, once a pitch tick: the counter reloads with
+ * AV_OSC_TICK and the tick falls on the sample that finds it at 0, 41 samples
+ * apart. A tick steps the pitch envelope down, takes the period this
+ * sample's pitch input asks for (`key` the keyboard's, octaves) and starts a
+ * linear ramp of the period there over the next 40 samples; the sample
+ * itself still runs at the period it had. Keyboard, vibrato, LFO, pitch
+ * envelope: all reach the period only so. [code: an-03 0.1] */
+static void osc_pitch(le_analog_osc* o, const av_tick* t, float key, float rate) {
+  if (o->ramp > 0) {
+    if (--o->ramp == 0) {
+      o->per = o->per_to;
+      o->per_m = o->per_m_to;
+    } else {
+      o->per += o->per_step;
+      o->per_m += o->per_m_step;
     }
   }
-  const int32_t m = LE_ANALOG_BL_RING - 1;
-  ch->ring[ch->ring_at] += y;
-  const int32_t out = (ch->ring_at - LE_ANALOG_BL_HALF) & m;
-  y = ch->ring[out];
-  ch->ring[out] = 0.0f;
-  ch->ring_at = (ch->ring_at + 1) & m;
-  return y;
+  if (o->otick > 0) {
+    o->otick--;
+    return;
+  }
+  o->otick = AV_OSC_TICK;
+  if (o->penv_n > 0) o->penv = --o->penv_n > 0 ? o->penv - o->penv_dec : 0.0f;
+  const float x = t->k1 * key;
+  float to, to_m = o->per_m;
+  if (t->ratio > 0.0f) {
+    /* sync: the master at the note, the slave the ratio above it with the
+     * LFO and the pitch envelope */
+    const float f_key = t->f_base * exp2_cubic(x);
+    to_m = rate / fminf(f_key, 0.25f * rate);
+    to = rate / le_aas_clamp(f_key * t->ratio * t->lfo_mul * exp2_cubic(t->env_amt * o->penv), f_key, t->f_hi);
+  } else {
+    to = rate / fminf(t->f_base * t->lfo_mul * exp2_cubic(x + t->env_amt * o->penv), t->f_hi);
+  }
+  o->per_to = to;
+  o->per_m_to = to_m;
+  o->per_step = (to - o->per) / (float)AV_OSC_TICK;
+  o->per_m_step = (to_m - o->per_m) / (float)AV_OSC_TICK;
+  o->ramp = AV_OSC_TICK;
+}
+
+/* One oscillator sample [code: an-03 1.3]. The sine: the phase steps by
+ * 1/P, then the quintic at 0.7, a sub at half the rate. The saw and the
+ * rectangle are integrators of band-limited impulses, leaking: the saw rises
+ * 1/P a sample and each of its resets is an impulse placed as soon as it is
+ * under 13 samples ahead, centred on it, so the saw has no latency; the
+ * rectangle's edges, and a sync master's resets, are placed when they
+ * happen, centred 13 samples later. With a sub the saw's resets fall 1 - s
+ * and 1 + s in turn, the rectangle's falls too. Noise has no state. */
+static float osc_tick(const le_analog* d, le_analog_osc* o, int32_t shape, const av_tick* t, float key, uint32_t* rng) {
+  if (shape == 3) return 0.9f * le_aas_bipolar(rng);
+  osc_pitch(o, t, key, (float)d->sample_rate);
+  const double per = (double)o->per, inc = 1.0 / per;
+  const int sync = t->ratio > 0.0f;
+  const float sub = sync ? 0.0f : t->sub;
+  if (shape == 0) {
+    o->ph += inc;
+    if (o->ph >= 1.0) o->ph -= 1.0;
+    float y = 0.7f * av_sine(o->ph);
+    if (sub > 0.0f) {
+      o->ph2 += 0.5 * inc;
+      if (o->ph2 >= 1.0) o->ph2 -= 1.0;
+      y += 0.7f * sub * av_sine(o->ph2);
+    } else {
+      o->ph2 = o->ph; /* an unused sub follows the oscillator */
+    }
+    return y;
+  }
+  if (shape == 1) {
+    if (sync && o->ph2 >= (double)o->per_m) {
+      /* a master reset: 13 samples on, where its impulse lands, the slave
+       * drops to the start of its ramp and starts its cycle; its own resets
+       * up to there still fall, later ones are taken back. fit: the slave
+       * restarts there, not at the master's reset (saw-sync07 from 5.5 dB
+       * to 0.42, saw-sync03 2.2 to 0.16, Saw Pure Brass 3.0 to 1.8) */
+      const double ov = o->ph2 - (double)o->per_m;
+      const double at = 13.0 - ov;
+      o->ph2 = ov;
+      for (int32_t k = 0; k < o->npend; ++k) {
+        if (o->pend[k] <= (float)at) continue;
+        imp_add(d, o, o->pend[k], 1.0f, 1);
+        o->ph -= 1.0;
+      }
+      o->npend = 0;
+      while (o->ph * per < at) {
+        imp_add(d, o, (float)(o->ph * per), -1.0f, 0);
+        o->ph += 1.0;
+      }
+      imp_add(d, o, (float)at, -le_aas_clamp((float)(1.0 - (o->ph - at * inc)), 0.0f, 1.0f), 0);
+      o->ph = 1.0 + at * inc;
+    }
+    while (o->ph * per < 13.0) {
+      const float at = (float)(o->ph * per);
+      imp_add(d, o, at, -1.0f - sub * (float)o->sub_sign, 0);
+      o->sub_sign = -o->sub_sign;
+      if (sync && o->npend < LE_ANALOG_BL_PENDING) o->pend[o->npend++] = at;
+      o->ph += 1.0;
+    }
+    o->y = (sync ? AV_LEAK : AV_SAW_LEAK) * o->y + (float)inc + ring_take(o);
+    o->ph -= inc;
+  } else {
+    if (sync && o->ph2 >= (double)o->per_m) {
+      /* a master reset: a fall if it is high, its low part starting again */
+      const double ov = o->ph2 - (double)o->per_m;
+      o->ph2 = ov;
+      if (o->high) imp_add(d, o, 13.0f - (float)ov, -1.0f, 0);
+      o->high = 0;
+      o->ph = ov;
+    }
+    const double W = (double)t->pw * per;
+    for (;;) {
+      const double len = o->high ? W : per - W;
+      if (o->ph < len) break;
+      const double ov = o->ph - len;
+      float h = 1.0f;
+      if (o->high) {
+        h = -1.0f - sub * (float)o->sub_sign;
+        o->sub_sign = -o->sub_sign;
+      }
+      imp_add(d, o, 13.0f - (float)ov, h, 0);
+      o->high = !o->high;
+      o->ph = ov;
+    }
+    o->y = AV_LEAK * o->y + ring_take(o);
+    o->ph += 1.0;
+  }
+  if (sync) {
+    o->ph2 += 1.0;
+    int32_t keep = 0;
+    for (int32_t k = 0; k < o->npend; ++k) {
+      if (o->pend[k] > 0.0f) o->pend[keep++] = o->pend[k] - 1.0f;
+    }
+    o->npend = keep;
+  }
+  return o->y;
+}
+
+/* A quiet voice's oscillators run on, silent, at their last pitch until
+ * AV_LV_RUN_ON after it went quiet; then they stand still with its device
+ * voice until its next note. [code: an-03 0.2, a voice stays on 0.1 s after
+ * its amp envelopes end] */
+static void run_on_voice(le_analog* d, le_analog_voice* v, int32_t from, int32_t frames) {
+  int32_t end = v->quiet_at + (int32_t)(AV_OSC_RUN_ON * (double)d->sample_rate);
+  int32_t n = end - (d->age + from);
+  if (n > frames - from) n = frames - from;
+  for (int32_t k = 0; k < v->copies; ++k) {
+    le_analog_copy* cp = &v->c[k];
+    for (int32_t c = 0; c < 2; ++c) {
+      if (!ci(d, c, LE_ANALOG_OSC_ON)) continue;
+      const int32_t shape = ci(d, c, LE_ANALOG_OSC_SHAPE);
+      for (int32_t s = 0; s < n; ++s) (void)osc_tick(d, &cp->ch[c].o, shape, &cp->ch[c].t, cp->ch[c].t.key, &cp->rng);
+    }
+  }
+  if (d->age + from + (n > 0 ? n : 0) >= end) {
+    osc_store(d, v);
+    v->state = LE_ANALOG_VOICE_FREE;
+  }
 }
 
 static void render_voice(le_analog* d, le_analog_voice* v, float* left, float* right, int32_t frames) {
@@ -1235,7 +1441,11 @@ static void render_voice(le_analog* d, le_analog_voice* v, float* left, float* r
   const float noise_bal = le_aas_knob(vf(d, LE_ANALOG_NOISE_BALANCE));
   const float noise_a = fminf(2.0f * LE_AAS_PI * le_aas_exp(20.0f, 22000.0f, vf(d, LE_ANALOG_NOISE_COLOR)) / rate, 1.0f);
   int32_t i = 0;
-  while (i < frames && v->state != LE_ANALOG_VOICE_FREE) {
+  if (v->state == LE_ANALOG_VOICE_RUN_ON) {
+    run_on_voice(d, v, 0, frames);
+    return;
+  }
+  while (i < frames && v->state != LE_ANALOG_VOICE_FREE && v->state != LE_ANALOG_VOICE_RUN_ON) {
     if (v->tick_left == 0) {
       /* glide, vibrato, bend: the voice's pitch */
       if (vi(d, LE_ANALOG_GLIDE_ON) && v->pitch != v->pitch_to) {
@@ -1292,12 +1502,22 @@ static void render_voice(le_analog* d, le_analog_voice* v, float* left, float* r
     int idle = 1;
     for (int32_t k = 0; k < v->copies; ++k) {
       le_analog_copy* cp = &v->c[k];
-      /* a delayed copy starts at its own sample, whatever the block */
-      if (v->since + n <= cp->delay) {
+      /* a delayed copy is silent until its own sample, whatever the block,
+       * its oscillators running at the device voice's last pitch; its note
+       * starts its pitch envelopes [code: an-03 3] */
+      const int32_t s0 = v->since < cp->delay ? (cp->delay - v->since < n ? cp->delay - v->since : n) : 0;
+      for (int32_t c = 0; c < 2 && s0 > 0; ++c) {
+        if (!ci(d, c, LE_ANALOG_OSC_ON)) continue;
+        const int32_t shape = ci(d, c, LE_ANALOG_OSC_SHAPE);
+        for (int32_t s = 0; s < s0; ++s) (void)osc_tick(d, &cp->ch[c].o, shape, &cp->ch[c].t, cp->ch[c].t.key_pre, &cp->rng);
+      }
+      if (s0 >= n) {
         idle = 0;
         continue;
       }
-      const int32_t s0 = v->since < cp->delay ? cp->delay - v->since : 0;
+      if (v->since + s0 == cp->delay) {
+        for (int32_t c = 0; c < 2; ++c) osc_trigger(d, &cp->ch[c].o, c);
+      }
       int held = v->state == LE_ANALOG_VOICE_HELD || v->state == LE_ANALOG_VOICE_SUSTAINED || cp->rel_at >= 0;
       le_aas_env_set fe[2], ae[2];
       for (int32_t c = 0; c < 2; ++c) {
@@ -1321,17 +1541,20 @@ static void render_voice(le_analog* d, le_analog_voice* v, float* left, float* r
         for (int32_t c = 0; c < 2; ++c) {
           le_analog_chain* ch = &cp->ch[c];
           (void)le_aas_env_tick(&ch->fenv, &fe[c], held, v->velocity, rate);
+          const int32_t was = ch->aenv.seg;
           (void)le_aas_env_tick(&ch->aenv, &ae[c], held, v->velocity, rate);
+          if (was != LE_AAS_SEG_IDLE && ch->aenv.seg == LE_AAS_SEG_IDLE) v->amp_end = age;
           if (ci(d, c, LE_ANALOG_OSC_ON)) {
-            const float o = osc_tick(d, ch, ci(d, c, LE_ANALOG_OSC_SHAPE), &cp->ch[c].t, &cp->rng);
+            const float o = osc_tick(d, &ch->o, ci(d, c, LE_ANALOG_OSC_SHAPE), &ch->t, ch->t.key, &cp->rng);
             pre[0] += cp->ch[c].t.to_f1 * o;
             pre[1] += cp->ch[c].t.to_f2 * o;
           }
         }
         if (noise_on) {
           cp->noise_lp += noise_a * (0.9f * le_aas_bipolar(&cp->rng) - cp->noise_lp);
-          /* fit: the noise comes out as late as the oscillators (Zap's and
-           * the noise renders' onsets) */
+          /* fit: the noise source comes out 13 samples late (Zap's and the
+           * noise renders' onsets, fitted when the oscillators were taken
+           * to be as late; the noise renders cannot tell either way now) */
           cp->noise_ring[cp->noise_at] = cp->noise_lp;
           const float nz = cp->noise_ring[(cp->noise_at - LE_ANALOG_BL_HALF) & (LE_ANALOG_BL_RING - 1)];
           cp->noise_at = (cp->noise_at + 1) & (LE_ANALOG_BL_RING - 1);
@@ -1367,15 +1590,20 @@ static void render_voice(le_analog* d, le_analog_voice* v, float* left, float* r
     v->tick_left -= n;
     if (v->state == LE_ANALOG_VOICE_FADING) {
       v->fade_left -= n;
-      if (v->fade_left <= 0) v->state = LE_ANALOG_VOICE_FREE;
+      if (v->fade_left <= 0) {
+        v->state = LE_ANALOG_VOICE_FREE;
+        osc_store(d, v);
+      }
     } else if (idle && v->tick_left == 0 && v->state != LE_ANALOG_VOICE_HELD) {
       /* on a tick's edge, so in any block size */
-      v->state = LE_ANALOG_VOICE_FREE;
-      lv_store(d, v, d->age + i + n);
+      v->state = LE_ANALOG_VOICE_RUN_ON;
+      v->quiet_at = v->amp_end > d->age + i + n - LE_ANALOG_TICK ? v->amp_end : d->age + i + n;
+      lv_store(d, v, d->age + i + n); /* the LFOs' and vibrato's clock: the tick's edge */
     }
     if (v->since < (1 << 30)) v->since += n; /* only the copies' delays read it */
     i += n;
   }
+  if (v->state == LE_ANALOG_VOICE_RUN_ON && i < frames) run_on_voice(d, v, i, frames);
 }
 
 void le_analog_render(le_analog* d, float* left, float* right, int32_t frames) {
