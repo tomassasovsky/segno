@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -150,8 +149,6 @@ void main() {
       await looper.dispose();
       directory.deleteSync(recursive: true);
     });
-
-    Float32List track(int channel) => engine.exportTrack(channel);
 
     /// The bundle's audio files: its layer WAVs and its mixdown.
     Future<List<String>> audioOf(SessionId id) async => [

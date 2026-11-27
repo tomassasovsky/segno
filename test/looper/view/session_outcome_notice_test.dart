@@ -42,7 +42,7 @@ void main() {
     );
   });
 
-  group('a Save that dropped the open session\'s audio (SEG-110)', () {
+  group("a Save that dropped the open session's audio (SEG-110)", () {
     const undoable = SessionState(
       status: SessionStatus.success,
       outcome: SessionOutcome.saved,

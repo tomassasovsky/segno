@@ -27,6 +27,7 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/application/fade_settings.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/view/shortcuts_help_sheet.dart';
+import 'package:segno/looper/view/tracks_commands.dart';
 import 'package:segno/notices/notices.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
@@ -1830,6 +1831,21 @@ void main() {
         ),
       );
       await shoot(tester, 'undo');
+    }, skip: !rendersScreenshots);
+
+    testWidgets('a Save that dropped the audio, with Undo', (tester) async {
+      await stage(tester);
+      notices.show(
+        sessionOutcomeNotice(
+          const SessionState(
+            status: SessionStatus.success,
+            outcome: SessionOutcome.saved,
+            droppedAudio: DroppedAudio.undoable,
+          ),
+          undoDroppedAudio: () {},
+        )!,
+      );
+      await shoot(tester, 'saved_without_audio');
     }, skip: !rendersScreenshots);
 
     testWidgets('warning in the top bar', (tester) async {
