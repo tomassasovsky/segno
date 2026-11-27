@@ -2549,8 +2549,8 @@ from 2.82 dB to 2.66 and the renders within 1.5 dB from 38 to 50 (Kick
 Complex Perc's phrase 2.2 to 0.3, Strings Detuned Pad's 5.8 to 0.4, the
 uni2 delays 4.5 to 0.1 to 0.3). Under the round-7 rule: fit 333 to 366
 of 461, factory presets 25 to 37 of 79. Under the round-8 rule (ten seeds
-for random renders): fit 364 of 461, factory presets 36 of 79, held out 18
-of 58 (16 before, under round 7). Left:
+for random renders): fit 326 to 364 of 461, factory presets 26 to 36 of
+79, held out 16 to 18 of 58. Left:
 
 - Dual OSC Buzz Lead (p9-buzz): from its second note Live's oscillator 2,
   a sync rectangle at ratio 1 with its pulse width on a free LFO at full

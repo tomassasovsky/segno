@@ -149,8 +149,8 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
   their note; measured: a poly note takes the voice that last played its
   key, else a fresh one, and a sync saw restarts at its master's impulse.
   The scratch harness places Live's events as its export does. Fit 333 to
-  366 of 461 and factory presets 25 to 37 (round-7 rule); 364 and 36 of 79,
-  held out 18 of 58 (round-8 rule). Kick Complex Perc, Strings Detuned Pad
+  366 of 461 and factory presets 25 to 37 (round-7 rule); 326 to 364 and 26
+  to 36 of 79, held out 16 to 18 of 58 (round-8 rule). Kick Complex Perc, Strings Detuned Pad
   and Dual OSC Rubber Bass pass on their own notes; Dual OSC Buzz Lead's
   silent sync rectangle is open.
 - A voice of two saw chains through LP24 costs 0.9 us per millisecond on
