@@ -176,6 +176,22 @@ static void test_operator_tone_route_accumulates(void) {
   CHECK(side > 0.07 * h3 && side < 0.28 * h3);
 }
 
+/* Noise Looped plays one fixed table: the generator's low 23 bits from the
+ * seed 0x275B6ACF, read at the phase after its first step, so every
+ * instance starts a C3 at the same values (op-05; Live's round 1 wave-20
+ * starts 0.3752467, 0.3621948 ... 0.3230393). */
+static void test_operator_noise_looped_table(void) {
+  printf("test_operator_noise_looped_table\n");
+  static float l[64], r[64];
+  opr_reference(&g_opr);
+  opr_op(&g_opr, 0, LE_OPERATOR_OP_WAVE, 20.0f);
+  CHECK(le_operator_note_on(&g_opr, 1, 48, 127, 0) == 0);
+  le_operator_render(&g_opr, l, r, 64);
+  CHECK(fabsf(l[0] - 0.3752467f) < 1e-5f);
+  CHECK(fabsf(l[1] - 0.3621948f) < 1e-5f);
+  CHECK(fabsf(l[4] - 0.3230393f) < 1e-5f);
+}
+
 /* Feedback acts only on operators nothing modulates: in algorithm 0, A's
  * feedback changes nothing, D's does; in algorithm 10, A's does. */
 static void test_operator_feedback_only_on_unmodulated(void) {
@@ -713,6 +729,7 @@ static void run_operator_tests(void) {
   test_operator_every_wave_and_algorithm();
   test_operator_fm_depth();
   test_operator_tone_route_accumulates();
+  test_operator_noise_looped_table();
   test_operator_feedback_only_on_unmodulated();
   test_operator_envelope_slopes();
   test_operator_spread_pair();
