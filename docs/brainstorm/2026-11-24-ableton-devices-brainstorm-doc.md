@@ -1,6 +1,6 @@
 # Ableton Live device presets on the pedal — brainstorm
 
-<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance kModBy kCarriers Celesta transconductances Bandpass Bitgrunge Csound Drivetime Extratone Filther Lofi Lowpass Megatripolis Minnaert Sawstyle Starchestra polyBLEP Metalic Formant formants Barney Asym quintic Wurli MKII Perc halvings retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations penv Unisono pul meldfit Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penvd rndpan Bassic Bitgrunge's Catchem Filther's Kaneda Werkstuecktraeger Whley Whley's filt nloop avel fleg unmodulated Basscycle spr prewarping Floot Halfstep Gametal Plucks Neurotimbre sqperc unnormalized fenv restruck fmdrive oscvol unsmoothed colfm rand elwork circ nornd -->
+<!-- cspell:words adv adg Ghidra devicekit Lfo Vec analyzeHeadless gpr Wavetable wavetables ADSR BLEP BLAMP wavefolder crossfading prewarp Modwheel detuned unnormalised Clob Sallen linearised transconductance kModBy kCarriers Celesta transconductances Bandpass Bitgrunge Csound Drivetime Extratone Filther Lofi Lowpass Megatripolis Minnaert Sawstyle Starchestra polyBLEP Metalic Formant formants Barney Asym quintic Wurli MKII Perc halvings retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations penv Unisono pul meldfit Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penvd rndpan Bassic Bitgrunge's Catchem Filther's Kaneda Werkstuecktraeger Whley Whley's filt nloop avel fleg unmodulated Basscycle spr prewarping Floot Halfstep Gametal Plucks Neurotimbre sqperc unnormalized fenv restruck fmdrive oscvol unsmoothed colfm rand elwork circ nornd retunes -->
 
 **Date:** 2026-11-24
 **Issue:** SEG-109 (related: SEG-57, Segno's own instrument voices)
@@ -1962,17 +1962,31 @@ Tags as for Meld. Segno's implementation is `analog_voice.c`.
 - Sine (a quintic of the phase, at 0.7), saw and rectangle (peak to peak
   1, pulse width 3.65 % to 50 %), and noise. **[code]** **[measured]**
   (the sine's level)
-- The saw's and rectangle's edges are band-limited steps: the running sum
-  of a sinc under a raised-cosine window, 13 zero crossings each side,
-  centred on the edge, so every oscillator (and the noise) comes out 13
-  samples late. **[code]** **[measured]** (the phase against the
-  envelope; the saw's top octave, which polyBLEP left 2 to 8 dB low)
-- Where they start: the saw halfway up its ramp (its first reset half a
-  period in, a sync slave too), the rectangle at the start of its low
-  part, high for the last w of the cycle, with no DC offset from the first
-  cycle (Live's integrator starts at its steady state: the rectangle
-  renders are DC-free, which took 1.6 dB off the square's level), the sub
-  square low. **[measured]**
+- The saw and the rectangle are leaky integrators of band-limited
+  impulses (a sinc under a raised-cosine window, 13 zero crossings each
+  side; leaks 0.9995 for the saw, 0.999995 for a sync saw and the
+  rectangle). The saw rises 1/P a sample and each reset is placed as soon
+  as it is under 13 samples ahead, centred on it, so the saw has no
+  latency; the rectangle's edges, and a sync master's resets, are placed
+  when they happen and centred 13 samples later. The sine steps its phase
+  by 1/P before its output; the noise oscillator has no state. **[code:
+  an-03]** **[measured]** (each oscillator's phase against its amp
+  envelope on single notes, segno-analog-fit1 sine, sine-c2, saw, rect,
+  rect-pw0, rect-sub1, saw-sub05 and fit5 saw-n024 to n096: all within
+  0.05 sample of Live's, where the earlier model had every oscillator 13
+  samples late; the noise source stays 13 samples late, as measured
+  before)
+- A voice's oscillators keep their state from one note to the next:
+  nothing resets a phase at a note. Selecting a Waveform (or Sync mode)
+  sets where they start: the sine at phase 0, the saw halfway up its ramp
+  with its integrator at 0 (with a sub it starts s/2 off centre and leaks
+  back), the rectangle at the start of its low part with its integrator at
+  w + s/2, its mean for the pulse width it was selected with (a sync
+  rectangle plays no sub, so it starts s/2 low), the next sample a pitch
+  tick. A new Waveform or Sync mode restarts that oscillator in every
+  voice. Any parameter change sends an idle voice's period back to the
+  oscillator's own pitch, its phase kept. **[code: an-03]** **[Segno]**
+  (every idle voice at once; Live resets one voice a processing block)
 - C4 sits 0.98 cent below equal temperament at every C the renders play.
   The keyboard pitch (with the unison offsets, the vibrato and the pitch
   envelope) goes through the engine's cubic 2^x, exact at whole octaves
@@ -1991,24 +2005,37 @@ Tags as for Meld. Segno's implementation is `analog_voice.c`.
   envelope of Exp(0.01, 6) octaves falling to 0 over Exp(0.01, 10) s, LFO
   to pitch and to pulse width. Key tracking (Mod 1) at 0.5 is 1.
   **[code]**
-- The oscillator sets its pitch on its own tick of 40 samples: each tick
-  takes the period the control values and the pitch envelope's value at
-  the tick's end ask for, and the period ramps there linearly across the
-  tick; a copy's first tick ramps from the period without the envelope.
-  **[code]** (the 40-sample tick and the period ramp) **[measured]** (the
-  envelope's value at the tick's end, the first ramp's start: penv-1-t015's
-  zero crossings fall within 3 samples of Live's, from 102 to 839, and its
-  8 Hz tail lands in Live's phase). The envelope falls over Exp(0.01, 10)
-  s times a factor of the time knob: 0.99 at 0.05, 1.04 at 0.1, 1.035 at
-  0.15, 1.0275 at 0.2, 1.025 at 0.25, 1.0205 at 0.3, 1.025 at 0.4, 1.0243
-  at 0.5 and 1.0245 at 0.6, linear between and flat beyond. Each is the
-  best fit of one full-depth sweep of a C-1 sine (segno-analog-fit7
-  penv7-t005 to t060, penv-1-t015, Kick Complex Perc), whose 8 Hz tail
-  pins the length to 0.1 % on the long sweeps; no smooth law in the knob
-  fits them all. **[measured]** A mono retrigger restarts the pitch
-  envelope with the amp's. **[code]**
+- The pitch reaches the oscillator only on its tick: the counter reloads
+  with 40 and the tick falls on the sample that finds it at 0, so ticks
+  are 41 samples apart. A tick steps the pitch envelope down, takes the
+  period the pitch input of that sample asks for (keyboard, unison offset,
+  vibrato, LFO, pitch envelope) and ramps the period there linearly over
+  the next 40 samples; the tick's own sample still runs at the old period.
+  The pitch envelope starts at 1 at the gate and falls 1/N a tick for N =
+  int(T rate / 40) ticks, T = Exp(0.01, 10) s, so it lasts T 41/40. A
+  fresh voice's period starts at the oscillator's own pitch (C4 at its
+  octave, semitone and detune, no keyboard), and its first tick, on the
+  note's sample, ramps it to the note: a C2 note runs 35.5 samples ahead
+  of a C2 begun at its pitch, a C5 12.5 behind. **[code: an-03 0.1, 1.1]**
+  **[measured]** (sine-c2 35.4 samples, the fit5 saws from C1 to C7 within
+  0.05 sample; penv-1-t015's, penv-m1's and penv7-t005 to t060's zero
+  crossings within 0.5 sample of Live's over 1.2 s, which retires the
+  measured factor table on the envelope's length that stood in for 41/40
+  and the tick grid). A mono retrigger restarts the pitch envelope with
+  the amp's. **[code]**
+- Sync: the master's period ramps as the slave's does. A master reset's
+  impulse lands 13 samples after it; there the slave drops to the start of
+  its ramp and starts its cycle, its own resets up to there still falling
+  and later ones taken back (a sync saw), or falls if it is high and
+  starts its low part (a sync rectangle). **[code: an-03 1.3]**
+  **[measured]** (the saw's restart at the landing, not at the reset:
+  saw-sync07 from 5.5 dB to 0.42, saw-sync03 2.2 to 0.16, Saw Pure Brass
+  3.0 to 1.8). A fresh sync slave starts at the oscillator's own pitch too,
+  the ratio arriving with the first tick. **[measured]** (saw-sync03 and
+  -07's first master cycle, attack 0.26 and 0.29 dB with the slave at the
+  ratio from the start, 0.16 and 0.27 so)
 
-### Filters
+### Filters### Filters
 
 - LP12/24, BP6/12, Notch 2/4 and HP12/24: bilinear 2-pole sections,
   linear, at Exp(30, 22000) Hz and Q Exp(0.1, 120) (each stage's Q at
@@ -2117,6 +2144,24 @@ Tags as for Meld. Segno's implementation is `analog_voice.c`.
   triad, whose onset cells go from 11 dB too bright to within 0.1 dB;
   Muted Dark Bass and Accordion Unisono Pad, without Legato, worse with
   the carry-on)
+- A voice's oscillators run on, silent, for 0.101 s after its amp
+  envelopes end, then stand still until the voice's next note, which they
+  start from where they stopped; a note starts them at its own sample.
+  **[code: an-03 0.2]** (a voice stays on 0.1 s after its amp envelopes
+  finish and is processed only while on) **[measured]** (segno-analog-
+  fit9's osc9 sine, saw and rectangle gap renders, notes reused after 0.6
+  s: within 2 to 4 samples of Live's phase at every note with 4848
+  samples, 7 to 20 off two samples either way, with the events placed where
+  Live put them). A poly note runs the oscillators of an idle voice that
+  last played its key, else a voice's that never played, else the one idle
+  longest; a mono device runs one. **[measured]** (osc9-rect-poly-gap's G3
+  after two C3s starts as a fresh oscillator and the C3 after it where the
+  first voice stopped, within 2 and 3 samples, against 61 and 89 on one
+  voice; fit7 poly-saw-2notes' and fit9 st9-poly's second notes fresh,
+  within 5 and 3 samples, from 284 and 226) The free LFOs keep the voice
+  choice above, which their renders fit and this one does not (lv-idle2
+  from 3.0 to 10.9 dB with it), so one of the two models stands in for
+  something not yet known. **[Segno]**
 - Glide: a one-pole on the pitch with time constant T / 2 pi, T =
   Exp(3 ms, 9 s), times sqrt of the interval in Prop mode; Legato limits
   it to overlapping notes. In Const mode the keys that arrive with the key
@@ -2129,15 +2174,16 @@ Tags as for Meld. Segno's implementation is `analog_voice.c`.
 - Unison: the copies sit 0, +1, -1, +2 steps from the note, a step of
   ExpZ(0.001, 1) octaves on 127 times the stored value (0.379 semitone at
   0.5, an octave at 1); copy k starts k times ExpZ(0.002, 0.1) s after
-  the note (uni4-dly-100's copies enter at 0.1, 0.2 and 0.3 s) and
-  releases as many samples after the gate's end. It does not start where
-  a fresh copy would: its oscillator starts 4 (kD + 13) / P cycles on, P
-  its period (segno-analog-fit8's ud8 sines, C-1 with two copies at ten
-  delays and four at three, separated copy by copy: 4 kD / P to within
-  0.02 cycle; the ud8 sines from 5 to 23 dB to 0.2 to 3, the saws from 8
-  to 0.3 to 1.6). The round-4 saws at C3 fit 2 D / P instead, so the
-  factor is not settled away from the oscillator octave of -3 those
-  renders use. A copy's
+  the note (uni4-dly-100's copies enter at 0.1, 0.2 and 0.3 s), the delay
+  int(delay rate) samples times k, and releases as many samples after the
+  gate's end. Each copy is a voice of its own, switched on with the note:
+  its oscillators run from then on, silent, at the device voice's last
+  pitch (C4's for a fresh one), until the copy's own note retunes them at
+  the next pitch tick and starts its pitch envelope. **[code: an-03 3]**
+  This replaces the measured lead of 4 (kD + 13) / P cycles: the 4 (and
+  the round-4 saws' 2) is the note's period over C4's, two octaves (one)
+  below it, and the 13 the first tick's ramp. **[measured]** (segno-
+  analog-fit8's ud8 sines, saws and rectangles, all within 0.8 dB). A copy's
   offset goes through the engine's cubic 2^x (exact at whole octaves, up
   to 1.3 cents sharp between), which puts the lower copy 0.3 cent sharp
   as the renders show. Vibrato: Lin(0.25, 10) Hz, each cycle's rate off by
@@ -2681,9 +2727,50 @@ from 4.2 to 5.2 dB), the one preset where it does:
   later note-on 12, 28 or 44 samples early (a 16-sample grid), at the
   same times in every render, and ev-offs puts 1.0 s at 44 where ev9-fit6
   puts it at 28, so the offset depends on the sequence, not the time.
-  No fixed harness lead helps across the renders; the harness places
-  events where they are.
+  No fixed harness lead fits every render (see round 10 for the one
+  that helps most).
 - Q below 0.01: q9-neg-saw-v127 passes at 0.17 dB with no floor.
+
+Round 10 (no new renders): the oscillators rewritten from the reader's
+description of how Live starts them (`segno-re-findings/an-03-oscillator-
+start.md`), every claim checked on the fit renders above: the 41-sample
+pitch tick and its 40-sample ramp, the pitch envelope's N ticks, no phase
+reset at a note, a fresh voice starting at C4, the saw without latency and
+the rectangle 13 samples late, a voice's oscillators running on 0.101 s
+and then standing still, delayed unison copies running at the last pitch.
+The empirical forms they replace: the copies' 4 (kD + 13) / P lead, the
+envelope-length factor table, the 13-sample latency on every oscillator.
+Two measured additions: which voice's oscillators a poly note takes, and
+the sync saw's restart at its master impulse. The scratch harness now
+places events as Live's export does, as Tension's harness does: the first
+note on time, every later event 48 samples earlier (Live puts the first
+16 samples late and the later ones 32 early; some land 16 or 32 off
+that), and a unison copy's note at the start of Live's 1 ms block it falls
+in. On round 4 to 9's 116 multi-note renders that alone takes mean tf
+from 2.82 dB to 2.66 and the renders within 1.5 dB from 38 to 50 (Kick
+Complex Perc's phrase 2.2 to 0.3, Strings Detuned Pad's 5.8 to 0.4, the
+uni2 delays 4.5 to 0.1 to 0.3). Under the round-7 rule: fit 333 to 366
+of 461, factory presets 25 to 37 of 79. Under the round-8 rule (ten seeds
+for random renders): fit 326 to 364 of 461, factory presets 26 to 36 of
+79, held out 16 to 18 of 58. Left:
+
+- Dual OSC Buzz Lead (p9-buzz): from its second note Live's oscillator 2,
+  a sync rectangle at ratio 1 with its pulse width on a free LFO at full
+  depth, falls silent and leaves its low level as DC (-0.22 to -0.33 at
+  the output); Segno's keeps playing (160 and 320 Hz cells 13 dB loud).
+  Its Sub/Sync knob is 0, so the reader's -s/2 is only -0.005: not that.
+  A pulse width modulated below 0, which would hold the slave low, is the
+  next guess; open.
+- Square Percussive Bass and the other Keyboard Error presets: the per-
+  note error is random, and the pitch metric has no noise floor.
+- The LFO renders that reuse a voice after a gap (lvr-gap150 to 800)
+  lose 0.4 to 0.6 dB, where Live put those notes 16 or 32 samples off its
+  usual -32. The stretch renders (five different keys 0.1 s apart) lose
+  0.6 dB: their second note starts 80 samples off a fresh oscillator's
+  phase, so the voice choice for a note 0.1 s after another's release is
+  not settled (taking over the voice still running on is worse, 1.6 to
+  2.1 dB).
+- Free LFOs and oscillators keep separate voice choices (Voices, above).
 
 
 ## Decisions
