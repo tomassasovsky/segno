@@ -592,6 +592,14 @@ jobs:
       # can lag a few seconds after publish, so the mirror may honestly report
       # the previous tag as "up to date". Retry until the channel manifest
       # actually carries EXPECTED_VERSION.
+      #
+      # Keep retrying for six minutes, not a fixed count. A sync killed midway
+      # (its container restarted) leaves its lock behind, and every POST
+      # answers "another sync cycle is running" until the mirror treats the
+      # lock as dead: about three minutes after the last heartbeat. Twelve
+      # quick tries gave up after two minutes, before that, so .299 waited for
+      # the next poll. Six minutes also covers the host's nightly backup, which
+      # stops the mirror's VM for about a minute.
       - name: Trigger segno mirror sync
         if: github.event.inputs.publish != 'no'
         env:
@@ -605,7 +613,10 @@ jobs:
             echo "::warning::SEGNO_SYNC_TOKEN unset; segno will catch up on next poll"
             exit 0
           fi
-          for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
+          deadline=$(( $(date +%s) + 360 ))
+          i=0
+          while [ "$(date +%s)" -lt "$deadline" ]; do
+            i=$((i + 1))
             echo "segno sync attempt $i…"
             out=$(curl -fsS -X POST \
                 -H "Authorization: Bearer ${SEGNO_SYNC_TOKEN}" \
@@ -648,4 +659,4 @@ jobs:
             echo "segno still at '${mirrored:-unknown}', want $EXPECTED_VERSION"
             sleep 10
           done
-          echo "::warning::segno did not reach $EXPECTED_VERSION after retries; poll will catch up"
+          echo "::warning::segno did not reach $EXPECTED_VERSION after six minutes; poll will catch up"

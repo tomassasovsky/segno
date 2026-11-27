@@ -114,9 +114,10 @@ typedef enum le_track_state {
  * when a defining loop finalizes with sync on and the source was NONE (a set
  * tempo is never re-derived); EXTERNAL is reserved for the Phase E MIDI-clock
  * follower (#1228): written once per beat while an external clock source is
- * selected and the tempo is not locked. A DERIVED tempo survives clearing the loop that
- * produced it (the "dead tempo" lesson): only an explicit reset returns the
- * source to NONE. */
+ * selected and the tempo is not locked. A DERIVED tempo goes with the loop
+ * that produced it (SEG-117): when every track is empty again the source
+ * returns to NONE, and an undo of that clear brings it back. A MANUAL or
+ * TAPPED tempo survives the clear (D6). */
 typedef enum le_tempo_source {
   LE_TEMPO_SOURCE_NONE = 0,     /* no tempo set; tempo_bpm reads 0 */
   LE_TEMPO_SOURCE_MANUAL = 1,   /* LE_CMD_SET_TEMPO */

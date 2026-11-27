@@ -3060,6 +3060,10 @@ struct le_engine {
   _Atomic int32_t a_pitch_follows;
   _Atomic uint32_t a_recorded_tempo_bits;
   float rec_bpm; /* kept through an all-empty reset for a Clear Undo */
+  /* A derived tempo the all-empty reset took away (SEG-117), kept for the
+   * Clear Undo that brings its takes back; 0 when there is none. Audio
+   * thread only. */
+  float cleared_bpm;
   int32_t rec_master_len;
   _Atomic int32_t a_rec_master_len; /* published for control's history fit */
   int32_t retime_len;
