@@ -1,4 +1,4 @@
-<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Metalic Wurli MKII Perc halvings retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations penv Unisono pul meldfit Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penvd rndpan Bassic Bitgrunge's Catchem Filther's Kaneda Werkstuecktraeger Whley Whley's filt nloop avel fleg unmodulated Basscycle spr prewarping prewarp Floot Halfstep Gametal Plucks Neurotimbre sqperc fenv restruck fmdrive oscvol unsmoothed colfm rand elwork circ nornd retunes Detuned Cardano baselined prewarped -->
+<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Metalic Wurli MKII Perc halvings retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations penv Unisono pul meldfit Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penvd rndpan Bassic Bitgrunge's Catchem Filther's Kaneda Werkstuecktraeger Whley Whley's filt nloop avel fleg unmodulated Basscycle spr prewarping prewarp Floot Halfstep Gametal Plucks Neurotimbre sqperc fenv restruck fmdrive oscvol unsmoothed colfm rand elwork circ nornd retunes Detuned Cardano baselined prewarped unnormalized -->
 # Segno — Progress & Roadmap
 
 <!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs multicore smarttune -->
@@ -544,7 +544,7 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
 ## November 2026 Drift fitted against Live renders (SEG-109 P4, round 1)
 
 - Live 12.2.7 renders of controlled patches (one setting changed per render
-  from a plain saw or white noise, exported unnormalised) against Segno's
+  from a plain saw or white noise, exported unnormalized) against Segno's
   renders of the same patches settled most of P3's provisional values. The
   brainstorm's "Open items and the fits" lists each with its measurement.
   Fitted: the Volume curve (linear), the noise level and both filters'
