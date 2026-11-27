@@ -1,4 +1,4 @@
-<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Metalic Wurli MKII Perc halvings retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations penv Unisono pul meldfit Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penvd rndpan Bassic Bitgrunge's Catchem Filther's Kaneda Werkstuecktraeger Whley Whley's filt nloop avel fleg unmodulated Basscycle spr prewarping prewarp Floot Halfstep Gametal Plucks Neurotimbre sqperc fenv restruck fmdrive oscvol unsmoothed colfm rand elwork circ nornd retunes Detuned Cardano baselined prewarped unnormalized -->
+<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Metalic Wurli MKII Schroeder Fretless Perc halvings Inharmonicity travelled retrigger retriggers unsynced Quantizer autocorrelation tfz unmeasured retriggered isolations atan filt voicecut penv Unisono pul meldfit Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penvd rndpan Bassic Bitgrunge's Catchem Filther's Kaneda Werkstuecktraeger Whley Whley's filt nloop avel fleg unmodulated Basscycle spr ccg Clav restruck restrikes restrike prewarping prewarp Floot Halfstep Gametal Plucks Neurotimbre sqperc fenv scalings fmdrive oscvol unsmoothed relc colfm rand elwork circ nornd retunes Detuned Cardano baselined prewarped unnormalized -->
 # Segno — Progress & Roadmap
 
 <!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs multicore smarttune -->
@@ -61,9 +61,59 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
 | SEG-22 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track and lane chains) is #1729 | build | needs-plan-approval | `claude/fx-multicore-1515-p1b` |
 | SEG-107 | Save As failed with Out of Memory: the mixdown asked for the LCM of two Song-mode tracks (24.7 GB); it now spans the longest lane past 600 s, and the save refuses a length no loop can hold | in-review | needs-hardware | `claude/save-oom-SEG-107` |
 | SEG-63 | Console WiFi against an ASUS RT-AX89X with 802.11ax on: firmware already matches Pi OS; brcmfmac options aligned with Pi OS and a troubleshooting note; failure not reproduced, issue stays open until it recurs | in-review | agent-merges | `claude/wifi-firmware-1816` |
-| SEG-109 | Ableton Live device presets on the pedal, Drift first: presets read from the user's own copy; Drift's behavior learned with rea + Ghidra from Live 12.2.7 and reimplemented, no Ableton code or presets in the repo. Plan approved 2026-11-25 (P1-P6); P1 stereo buses, P2 preset reader, P3 the Drift device and P4 its fit in review; the Operator (P7), Meld (P8), Analog (P9) and Electric (P10) devices in review | in-review | needs-merge | `claude/ableton-devices-SEG-109`, `claude/ableton-operator-SEG-109-p7`, `claude/ableton-meld-SEG-109-p8`, `claude/ableton-analog-SEG-109-p9`, `claude/ableton-electric-SEG-109-p10` |
+| SEG-109 | Ableton Live device presets on the pedal, Drift first: presets read from the user's own copy; Drift's behavior learned with rea + Ghidra from Live 12.2.7 and reimplemented, no Ableton code or presets in the repo. Plan approved 2026-11-25 (P1-P6); P1 stereo buses, P2 preset reader, P3 the Drift device and P4 its fit in review; the Operator (P7), Meld (P8), Analog (P9), Electric (P10) and Tension (P11) devices in review | in-review | needs-merge | `claude/ableton-devices-SEG-109`, `claude/ableton-operator-SEG-109-p7`, `claude/ableton-meld-SEG-109-p8`, `claude/ableton-analog-SEG-109-p9`, `claude/ableton-electric-SEG-109-p10`, `claude/ableton-tension-SEG-109-p11` |
 
 ---
+
+## November 2026 The Tension device plays on an instrument slot (SEG-109 P11)
+
+- Live 12.2.7's Tension read with rea + Ghidra from its AAS engine and
+  written as "Tension: behavior" in the Ableton devices brainstorm;
+  `tension_voice.c` is written from it. `LE_INST_DEVICE_TENSION` takes a
+  Tension preset's 107 values (`le_tension_param`), one more entry in the
+  device table.
+- A waveguide string per voice, struck by a hammer (or one that bounces),
+  plucked or bowed, with a damper, a finger on a fret, a pickup and a
+  pitch shifter for pitches above the strike; Analog's filter, envelope and
+  LFO; one body for every voice.
+- Analog's envelope, LFO waves, filter (with the formants) and drive move
+  into `aas_parts.h`, which both devices use; Analog's 201 fit renders are
+  bit-identical across the move.
+- Fitted against 379 Live renders in nine rounds. Strict score (five
+  noise seeds): 330 of 379 pass, 47 of the 67 factory-preset renders; the
+  held-out round of every factory preset 89 of 107 (from 8); the chaotic bowed and bouncing
+  renders are scored against Segno's own spread. Measured: the keyboard's
+  Stretch and Fine Tune, the key amounts' resting 0.1, the bridge read's
+  1.5 samples, the termination's loss, the output stage, the body's line
+  lengths (each wet-only render fitted sample by sample against the dry
+  reference) and its diffusion's growth with size, the damper's side and
+  the string starting bent under it, the straight filter envelope, vibrato
+  kept off the pitch shifter, the body at every size, the output gain, the
+  bow's first block. Read and confirmed: the felt following the hammer
+  only through itself, the fret on the exciters' side, the engine's 2^x
+  and C4 of 261.62 Hz, the gated damper thrown off from rest, no ranges on
+  the exciters' values, the finger and contacts in double precision.
+  Measured: Body Level on the knob's value as it stands, a released
+  voice's 84 one-millisecond blocks of silence; in round 5: unison strings
+  counting as voices, the unison delay in whole milliseconds; read:
+  velocity as (v - 1) / 126. Then read and confirmed: the bridge's
+  Lagrange read on the taps about its middle (the loud high notes' highs),
+  the bent string's tap at the damper (Soft Buzz Bass); measured: a
+  restruck string's envelope dropping first, a unison copy letting go its
+  delay after the key; in round 8: a chord's keys arriving with a key
+  that did not glide do not glide; read and confirmed: vibrato's random
+  rate Error. Then read in the engine's voice loop and confirmed: a voice
+  without a note processed one 1 ms block in 32 for 2048 samples, which
+  leaves its vibrato's phase on (never reset; the error drawn per note),
+  the voices taken in turn, the bow's new speed on the next block's
+  first sample, the filter worked out per 1 ms block, and the voice's
+  end (after the filter, 4000 samples under 0.005 with the damper,
+  1e-4 with the finger, 1e-5 otherwise). Open (round 10 built): Strings
+  Quartet's light gated damper under the bow, a mono string falling back
+  to a held key or struck again on its key, Soft Buzz Bass with its
+  filter envelope off, and Live's random Keyboard Error.
+- A voice costs 1.8 us per millisecond with the hammer, 0.6 with the bow,
+  the body 0.4 more. A device holds 32 strings (1.7 MB).
 
 ## November 2026 The Electric device plays on an instrument slot (SEG-109 P10)
 

@@ -5286,6 +5286,7 @@ LE_EXPORT int32_t le_engine_instrument_sustain(le_engine* engine, int32_t slot,
 #define LE_INST_DEVICE_MELD 3
 #define LE_INST_DEVICE_ANALOG 4
 #define LE_INST_DEVICE_ELECTRIC 5
+#define LE_INST_DEVICE_TENSION 6
 
 typedef enum le_drift_param {
   LE_DRIFT_OSC1_TYPE = 0,      /* 0..6: Sine, Triangle, Shark Tooth, Saturated,
@@ -5785,15 +5786,133 @@ typedef enum le_electric_param {
   LE_ELECTRIC_PARAMS
 } le_electric_param;
 
+/* Tension (docs/brainstorm/2026-11-24-ableton-devices-brainstorm-doc.md,
+ * "Tension: behavior"): a physically modelled string, struck, plucked or
+ * bowed, with a damper, a finger on a fret, a pickup, Analog's filter with
+ * its envelope and LFO, and a body, in the values its presets store: knob
+ * positions 0..1, key and velocity amounts -1..1, switches 0/1 and enum
+ * indices, in the presets' order. */
+
+typedef enum le_tension_param {
+  LE_TENSION_POLYPHONY = 0,          /* 0..9: Mono, 2, 4, 8, 12 .. 32 */
+  LE_TENSION_BEND_RANGE,             /* semitones, 0..12 */
+  LE_TENSION_OCTAVE,                 /* -3..3 */
+  LE_TENSION_TRANSPOSE,              /* -12..12 */
+  LE_TENSION_FINE_TUNE,              /* 0..1, 0.5 in tune */
+  LE_TENSION_PRIORITY,               /* 0..2: High, Low, Last */
+  LE_TENSION_UNISON_ON,              /* 0/1 */
+  LE_TENSION_UNISON,                 /* 0: 2 voices, 1: 4 */
+  LE_TENSION_UNISON_DETUNE,          /* 0..1 */
+  LE_TENSION_UNISON_DELAY,           /* 0..1 */
+  LE_TENSION_STRETCH,                /* 0..1: the key 0.992..1.008 times about A4 */
+  LE_TENSION_ERROR,                  /* 0..1: a random rise up to 0.02 octave */
+  LE_TENSION_VIBRATO_ON,             /* 0/1 */
+  LE_TENSION_VIBRATO_SPEED,          /* 0..1 */
+  LE_TENSION_VIBRATO_FADE,
+  LE_TENSION_VIBRATO_AMOUNT,
+  LE_TENSION_VIBRATO_ERROR,
+  LE_TENSION_VIBRATO_DELAY,
+  LE_TENSION_VIBRATO_WHEEL,
+  LE_TENSION_GLIDE_ON,               /* 0/1 */
+  LE_TENSION_GLIDE_TIME,             /* 0..1 */
+  LE_TENSION_GLIDE_PROP,             /* 0/1 */
+  LE_TENSION_GLIDE_LEGATO,           /* 0/1 */
+  LE_TENSION_EXC_POS,                /* 0..1: 5 % .. 50 % of the string */
+  LE_TENSION_EXC_POS_ABS,            /* 0/1 */
+  LE_TENSION_EXC_POS_KEY,            /* -1..1 */
+  LE_TENSION_EXC_POS_VEL,            /* -1..1 */
+  LE_TENSION_DAMPER_POS,             /* 0..1 */
+  LE_TENSION_DAMPER_POS_ABS,         /* 0/1 */
+  LE_TENSION_DAMPER_POS_KEY,         /* -1..1 */
+  LE_TENSION_DAMPER_POS_VEL,         /* -1..1 */
+  LE_TENSION_EXC_ON,                 /* 0/1 */
+  LE_TENSION_EXC_TYPE,               /* 0..3: Bow, Hammer, Bouncing Hammer, Plectrum */
+  LE_TENSION_EXC_X,                  /* 0..1: force, mass or protrusion */
+  LE_TENSION_EXC_X_KEY,              /* -1..1 */
+  LE_TENSION_EXC_X_VEL,              /* -1..1 */
+  LE_TENSION_EXC_STIFF,              /* 0..1: friction or stiffness */
+  LE_TENSION_EXC_STIFF_KEY,
+  LE_TENSION_EXC_STIFF_VEL,
+  LE_TENSION_EXC_VEL,                /* 0..1: the exciter's velocity */
+  LE_TENSION_EXC_VEL_KEY,
+  LE_TENSION_EXC_VEL_VEL,
+  LE_TENSION_EXC_DAMPING,            /* 0..1 */
+  LE_TENSION_PICKUP_ON,              /* 0/1 */
+  LE_TENSION_PICKUP_POS,             /* 0..1 */
+  LE_TENSION_DAMPER_ON,              /* 0/1 */
+  LE_TENSION_DAMPER_MASS,            /* 0..1 */
+  LE_TENSION_DAMPER_MASS_KEY,        /* -1..1 */
+  LE_TENSION_DAMPER_STIFF,
+  LE_TENSION_DAMPER_STIFF_KEY,
+  LE_TENSION_DAMPER_VEL,
+  LE_TENSION_DAMPER_VEL_KEY,
+  LE_TENSION_DAMPER_DAMPING,
+  LE_TENSION_DAMPER_GATED,           /* 0/1 */
+  LE_TENSION_STRING_DAMPING,         /* 0..1 */
+  LE_TENSION_STRING_DAMPING_KEY,     /* -1..1 */
+  LE_TENSION_STRING_DECAY,           /* 0..1 */
+  LE_TENSION_STRING_DECAY_KEY,       /* -1..1 */
+  LE_TENSION_STRING_RATIO,           /* 0..1: the release's decay ratio */
+  LE_TENSION_STRING_INHARM,          /* 0..1 */
+  LE_TENSION_TERM_ON,                /* 0/1 */
+  LE_TENSION_TERM_FINGER_STIFF,      /* 0..1 */
+  LE_TENSION_TERM_FINGER_FORCE,      /* 0..1 */
+  LE_TENSION_TERM_FINGER_FORCE_KEY,  /* -1..1 */
+  LE_TENSION_TERM_FINGER_FORCE_VEL,  /* -1..1 */
+  LE_TENSION_TERM_FRET_STIFF,        /* 0..1 */
+  LE_TENSION_LFO_ON,                 /* 0/1 */
+  LE_TENSION_LFO_WAVE,               /* 0..4 */
+  LE_TENSION_LFO_SYNC,               /* 0..23 */
+  LE_TENSION_LFO_SYNC_ON,            /* 0/1 */
+  LE_TENSION_LFO_DELAY,              /* 0..1 */
+  LE_TENSION_LFO_SPEED,              /* 0..1 */
+  LE_TENSION_LFO_FADE,               /* 0..1 */
+  LE_TENSION_FILTER_ON,              /* 0/1 */
+  LE_TENSION_FILTER_TYPE,            /* 0..9, as Analog's */
+  LE_TENSION_FILTER_CUTOFF,          /* 0..1 */
+  LE_TENSION_FILTER_KEY_CUTOFF,      /* -1..1 */
+  LE_TENSION_FILTER_LFO_CUTOFF,      /* -1..1 */
+  LE_TENSION_FILTER_ENV_CUTOFF,      /* -1..1 */
+  LE_TENSION_FILTER_Q,               /* 0..1 */
+  LE_TENSION_FILTER_KEY_Q,           /* -1..1 */
+  LE_TENSION_FILTER_LFO_Q,           /* -1..1 */
+  LE_TENSION_FILTER_ENV_Q,           /* -1..1 */
+  LE_TENSION_FENV_ON,                /* 0/1 */
+  LE_TENSION_FENV_ATTACK,            /* 0..1 */
+  LE_TENSION_FENV_DECAY,
+  LE_TENSION_FENV_SUSTAIN,
+  LE_TENSION_FENV_RELEASE,
+  LE_TENSION_FENV_ATTACK_VEL,
+  LE_TENSION_FENV_VEL,
+  LE_TENSION_BODY_ON,                /* 0/1 */
+  LE_TENSION_BODY_TYPE,              /* 0..3 */
+  LE_TENSION_BODY_SIZE,              /* 0..4 */
+  LE_TENSION_BODY_DECAY,             /* 0..1 */
+  LE_TENSION_BODY_LOW_CUT,           /* 0..1 */
+  LE_TENSION_BODY_HIGH_CUT,          /* 0..1 */
+  LE_TENSION_BODY_LEVEL,             /* 0..1: the device's volume */
+  LE_TENSION_BODY_MIX,               /* 0..1: string .. body */
+  LE_TENSION_NOTE_BEND_RANGE,        /* semitones, 0..48 (MPE, stored) */
+  LE_TENSION_PRESSURE_TARGET1,       /* (stored) */
+  LE_TENSION_PRESSURE_AMOUNT1,
+  LE_TENSION_PRESSURE_TARGET2,
+  LE_TENSION_PRESSURE_AMOUNT2,
+  LE_TENSION_SLIDE_TARGET1,
+  LE_TENSION_SLIDE_AMOUNT1,
+  LE_TENSION_SLIDE_TARGET2,
+  LE_TENSION_SLIDE_AMOUNT2,
+  LE_TENSION_PARAMS
+} le_tension_param;
+
 /* The most parameters any device takes. */
 #define LE_INST_DEVICE_MAX_PARAMS LE_MELD_PARAMS
 
 /* Gives `slot` device `device` (LE_INST_DEVICE_DRIFT, _OPERATOR, _MELD,
- * _ANALOG or _ELECTRIC) with `values` (the device's parameter count of
- * them, in its le_<device>_param order: LE_DRIFT_PARAMS,
- * LE_OPERATOR_PARAMS, LE_MELD_PARAMS, LE_ANALOG_PARAMS or
- * LE_ELECTRIC_PARAMS; NULL: the device's defaults; each clamped to its
- * range). Ends a patch or device the slot
+ * _ANALOG, _ELECTRIC or _TENSION) with `values` (the device's parameter
+ * count of them, in its le_<device>_param order: LE_DRIFT_PARAMS,
+ * LE_OPERATOR_PARAMS, LE_MELD_PARAMS, LE_ANALOG_PARAMS,
+ * LE_ELECTRIC_PARAMS or LE_TENSION_PARAMS; NULL: the device's defaults;
+ * each clamped to its range). Ends a patch or device the slot
  * played (its voices fade). Returns LE_OK, LE_ERR_INVALID (a bad slot,
  * device or NaN value), LE_ERR_CAPACITY (the note-on ring is full: nothing
  * changed, retry) or LE_ERR_NOT_RUNNING before configure. */

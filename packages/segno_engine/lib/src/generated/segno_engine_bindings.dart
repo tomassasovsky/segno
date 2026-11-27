@@ -2033,11 +2033,11 @@ external int le_engine_set_instrument(
 );
 
 /// Gives `slot` device `device` (LE_INST_DEVICE_DRIFT, _OPERATOR, _MELD,
-/// _ANALOG or _ELECTRIC) with `values` (the device's parameter count of
-/// them, in its le_<device>_param order: LE_DRIFT_PARAMS,
-/// LE_OPERATOR_PARAMS, LE_MELD_PARAMS, LE_ANALOG_PARAMS or
-/// LE_ELECTRIC_PARAMS; NULL: the device's defaults; each clamped to its
-/// range). Ends a patch or device the slot
+/// _ANALOG, _ELECTRIC or _TENSION) with `values` (the device's parameter
+/// count of them, in its le_<device>_param order: LE_DRIFT_PARAMS,
+/// LE_OPERATOR_PARAMS, LE_MELD_PARAMS, LE_ANALOG_PARAMS,
+/// LE_ELECTRIC_PARAMS or LE_TENSION_PARAMS; NULL: the device's defaults;
+/// each clamped to its range). Ends a patch or device the slot
 /// played (its voices fade). Returns LE_OK, LE_ERR_INVALID (a bad slot,
 /// device or NaN value), LE_ERR_CAPACITY (the note-on ring is full: nothing
 /// changed, retry) or LE_ERR_NOT_RUNNING before configure.
@@ -4277,6 +4277,8 @@ const int LE_INST_DEVICE_MELD = 3;
 const int LE_INST_DEVICE_NONE = 0;
 
 const int LE_INST_DEVICE_OPERATOR = 2;
+
+const int LE_INST_DEVICE_TENSION = 6;
 
 const int LE_INST_EVENT_CAPACITY = 256;
 
@@ -8573,6 +8575,399 @@ final class le_synth_patch_desc extends ffi.Struct {
 
   @ffi.Array.multi([3])
   external ffi.Array<ffi.Float> defaults;
+}
+
+/// Tension (docs/brainstorm/2026-11-24-ableton-devices-brainstorm-doc.md,
+/// "Tension: behavior"): a physically modelled string, struck, plucked or
+/// bowed, with a damper, a finger on a fret, a pickup, Analog's filter with
+/// its envelope and LFO, and a body, in the values its presets store: knob
+/// positions 0..1, key and velocity amounts -1..1, switches 0/1 and enum
+/// indices, in the presets' order.
+enum le_tension_param {
+  /// 0..9: Mono, 2, 4, 8, 12 .. 32
+  LE_TENSION_POLYPHONY(0),
+
+  /// semitones, 0..12
+  LE_TENSION_BEND_RANGE(1),
+
+  /// -3..3
+  LE_TENSION_OCTAVE(2),
+
+  /// -12..12
+  LE_TENSION_TRANSPOSE(3),
+
+  /// 0..1, 0.5 in tune
+  LE_TENSION_FINE_TUNE(4),
+
+  /// 0..2: High, Low, Last
+  LE_TENSION_PRIORITY(5),
+
+  /// 0/1
+  LE_TENSION_UNISON_ON(6),
+
+  /// 0: 2 voices, 1: 4
+  LE_TENSION_UNISON(7),
+
+  /// 0..1
+  LE_TENSION_UNISON_DETUNE(8),
+
+  /// 0..1
+  LE_TENSION_UNISON_DELAY(9),
+
+  /// 0..1: the key 0.992..1.008 times about A4
+  LE_TENSION_STRETCH(10),
+
+  /// 0..1: a random rise up to 0.02 octave
+  LE_TENSION_ERROR(11),
+
+  /// 0/1
+  LE_TENSION_VIBRATO_ON(12),
+
+  /// 0..1
+  LE_TENSION_VIBRATO_SPEED(13),
+  LE_TENSION_VIBRATO_FADE(14),
+  LE_TENSION_VIBRATO_AMOUNT(15),
+  LE_TENSION_VIBRATO_ERROR(16),
+  LE_TENSION_VIBRATO_DELAY(17),
+  LE_TENSION_VIBRATO_WHEEL(18),
+
+  /// 0/1
+  LE_TENSION_GLIDE_ON(19),
+
+  /// 0..1
+  LE_TENSION_GLIDE_TIME(20),
+
+  /// 0/1
+  LE_TENSION_GLIDE_PROP(21),
+
+  /// 0/1
+  LE_TENSION_GLIDE_LEGATO(22),
+
+  /// 0..1: 5 % .. 50 % of the string
+  LE_TENSION_EXC_POS(23),
+
+  /// 0/1
+  LE_TENSION_EXC_POS_ABS(24),
+
+  /// -1..1
+  LE_TENSION_EXC_POS_KEY(25),
+
+  /// -1..1
+  LE_TENSION_EXC_POS_VEL(26),
+
+  /// 0..1
+  LE_TENSION_DAMPER_POS(27),
+
+  /// 0/1
+  LE_TENSION_DAMPER_POS_ABS(28),
+
+  /// -1..1
+  LE_TENSION_DAMPER_POS_KEY(29),
+
+  /// -1..1
+  LE_TENSION_DAMPER_POS_VEL(30),
+
+  /// 0/1
+  LE_TENSION_EXC_ON(31),
+
+  /// 0..3: Bow, Hammer, Bouncing Hammer, Plectrum
+  LE_TENSION_EXC_TYPE(32),
+
+  /// 0..1: force, mass or protrusion
+  LE_TENSION_EXC_X(33),
+
+  /// -1..1
+  LE_TENSION_EXC_X_KEY(34),
+
+  /// -1..1
+  LE_TENSION_EXC_X_VEL(35),
+
+  /// 0..1: friction or stiffness
+  LE_TENSION_EXC_STIFF(36),
+  LE_TENSION_EXC_STIFF_KEY(37),
+  LE_TENSION_EXC_STIFF_VEL(38),
+
+  /// 0..1: the exciter's velocity
+  LE_TENSION_EXC_VEL(39),
+  LE_TENSION_EXC_VEL_KEY(40),
+  LE_TENSION_EXC_VEL_VEL(41),
+
+  /// 0..1
+  LE_TENSION_EXC_DAMPING(42),
+
+  /// 0/1
+  LE_TENSION_PICKUP_ON(43),
+
+  /// 0..1
+  LE_TENSION_PICKUP_POS(44),
+
+  /// 0/1
+  LE_TENSION_DAMPER_ON(45),
+
+  /// 0..1
+  LE_TENSION_DAMPER_MASS(46),
+
+  /// -1..1
+  LE_TENSION_DAMPER_MASS_KEY(47),
+  LE_TENSION_DAMPER_STIFF(48),
+  LE_TENSION_DAMPER_STIFF_KEY(49),
+  LE_TENSION_DAMPER_VEL(50),
+  LE_TENSION_DAMPER_VEL_KEY(51),
+  LE_TENSION_DAMPER_DAMPING(52),
+
+  /// 0/1
+  LE_TENSION_DAMPER_GATED(53),
+
+  /// 0..1
+  LE_TENSION_STRING_DAMPING(54),
+
+  /// -1..1
+  LE_TENSION_STRING_DAMPING_KEY(55),
+
+  /// 0..1
+  LE_TENSION_STRING_DECAY(56),
+
+  /// -1..1
+  LE_TENSION_STRING_DECAY_KEY(57),
+
+  /// 0..1: the release's decay ratio
+  LE_TENSION_STRING_RATIO(58),
+
+  /// 0..1
+  LE_TENSION_STRING_INHARM(59),
+
+  /// 0/1
+  LE_TENSION_TERM_ON(60),
+
+  /// 0..1
+  LE_TENSION_TERM_FINGER_STIFF(61),
+
+  /// 0..1
+  LE_TENSION_TERM_FINGER_FORCE(62),
+
+  /// -1..1
+  LE_TENSION_TERM_FINGER_FORCE_KEY(63),
+
+  /// -1..1
+  LE_TENSION_TERM_FINGER_FORCE_VEL(64),
+
+  /// 0..1
+  LE_TENSION_TERM_FRET_STIFF(65),
+
+  /// 0/1
+  LE_TENSION_LFO_ON(66),
+
+  /// 0..4
+  LE_TENSION_LFO_WAVE(67),
+
+  /// 0..23
+  LE_TENSION_LFO_SYNC(68),
+
+  /// 0/1
+  LE_TENSION_LFO_SYNC_ON(69),
+
+  /// 0..1
+  LE_TENSION_LFO_DELAY(70),
+
+  /// 0..1
+  LE_TENSION_LFO_SPEED(71),
+
+  /// 0..1
+  LE_TENSION_LFO_FADE(72),
+
+  /// 0/1
+  LE_TENSION_FILTER_ON(73),
+
+  /// 0..9, as Analog's
+  LE_TENSION_FILTER_TYPE(74),
+
+  /// 0..1
+  LE_TENSION_FILTER_CUTOFF(75),
+
+  /// -1..1
+  LE_TENSION_FILTER_KEY_CUTOFF(76),
+
+  /// -1..1
+  LE_TENSION_FILTER_LFO_CUTOFF(77),
+
+  /// -1..1
+  LE_TENSION_FILTER_ENV_CUTOFF(78),
+
+  /// 0..1
+  LE_TENSION_FILTER_Q(79),
+
+  /// -1..1
+  LE_TENSION_FILTER_KEY_Q(80),
+
+  /// -1..1
+  LE_TENSION_FILTER_LFO_Q(81),
+
+  /// -1..1
+  LE_TENSION_FILTER_ENV_Q(82),
+
+  /// 0/1
+  LE_TENSION_FENV_ON(83),
+
+  /// 0..1
+  LE_TENSION_FENV_ATTACK(84),
+  LE_TENSION_FENV_DECAY(85),
+  LE_TENSION_FENV_SUSTAIN(86),
+  LE_TENSION_FENV_RELEASE(87),
+  LE_TENSION_FENV_ATTACK_VEL(88),
+  LE_TENSION_FENV_VEL(89),
+
+  /// 0/1
+  LE_TENSION_BODY_ON(90),
+
+  /// 0..3
+  LE_TENSION_BODY_TYPE(91),
+
+  /// 0..4
+  LE_TENSION_BODY_SIZE(92),
+
+  /// 0..1
+  LE_TENSION_BODY_DECAY(93),
+
+  /// 0..1
+  LE_TENSION_BODY_LOW_CUT(94),
+
+  /// 0..1
+  LE_TENSION_BODY_HIGH_CUT(95),
+
+  /// 0..1: the device's volume
+  LE_TENSION_BODY_LEVEL(96),
+
+  /// 0..1: string .. body
+  LE_TENSION_BODY_MIX(97),
+
+  /// semitones, 0..48 (MPE, stored)
+  LE_TENSION_NOTE_BEND_RANGE(98),
+
+  /// (stored)
+  LE_TENSION_PRESSURE_TARGET1(99),
+  LE_TENSION_PRESSURE_AMOUNT1(100),
+  LE_TENSION_PRESSURE_TARGET2(101),
+  LE_TENSION_PRESSURE_AMOUNT2(102),
+  LE_TENSION_SLIDE_TARGET1(103),
+  LE_TENSION_SLIDE_AMOUNT1(104),
+  LE_TENSION_SLIDE_TARGET2(105),
+  LE_TENSION_SLIDE_AMOUNT2(106),
+  LE_TENSION_PARAMS(107);
+
+  final int value;
+  const le_tension_param(this.value);
+
+  static le_tension_param fromValue(int value) => switch (value) {
+    0 => LE_TENSION_POLYPHONY,
+    1 => LE_TENSION_BEND_RANGE,
+    2 => LE_TENSION_OCTAVE,
+    3 => LE_TENSION_TRANSPOSE,
+    4 => LE_TENSION_FINE_TUNE,
+    5 => LE_TENSION_PRIORITY,
+    6 => LE_TENSION_UNISON_ON,
+    7 => LE_TENSION_UNISON,
+    8 => LE_TENSION_UNISON_DETUNE,
+    9 => LE_TENSION_UNISON_DELAY,
+    10 => LE_TENSION_STRETCH,
+    11 => LE_TENSION_ERROR,
+    12 => LE_TENSION_VIBRATO_ON,
+    13 => LE_TENSION_VIBRATO_SPEED,
+    14 => LE_TENSION_VIBRATO_FADE,
+    15 => LE_TENSION_VIBRATO_AMOUNT,
+    16 => LE_TENSION_VIBRATO_ERROR,
+    17 => LE_TENSION_VIBRATO_DELAY,
+    18 => LE_TENSION_VIBRATO_WHEEL,
+    19 => LE_TENSION_GLIDE_ON,
+    20 => LE_TENSION_GLIDE_TIME,
+    21 => LE_TENSION_GLIDE_PROP,
+    22 => LE_TENSION_GLIDE_LEGATO,
+    23 => LE_TENSION_EXC_POS,
+    24 => LE_TENSION_EXC_POS_ABS,
+    25 => LE_TENSION_EXC_POS_KEY,
+    26 => LE_TENSION_EXC_POS_VEL,
+    27 => LE_TENSION_DAMPER_POS,
+    28 => LE_TENSION_DAMPER_POS_ABS,
+    29 => LE_TENSION_DAMPER_POS_KEY,
+    30 => LE_TENSION_DAMPER_POS_VEL,
+    31 => LE_TENSION_EXC_ON,
+    32 => LE_TENSION_EXC_TYPE,
+    33 => LE_TENSION_EXC_X,
+    34 => LE_TENSION_EXC_X_KEY,
+    35 => LE_TENSION_EXC_X_VEL,
+    36 => LE_TENSION_EXC_STIFF,
+    37 => LE_TENSION_EXC_STIFF_KEY,
+    38 => LE_TENSION_EXC_STIFF_VEL,
+    39 => LE_TENSION_EXC_VEL,
+    40 => LE_TENSION_EXC_VEL_KEY,
+    41 => LE_TENSION_EXC_VEL_VEL,
+    42 => LE_TENSION_EXC_DAMPING,
+    43 => LE_TENSION_PICKUP_ON,
+    44 => LE_TENSION_PICKUP_POS,
+    45 => LE_TENSION_DAMPER_ON,
+    46 => LE_TENSION_DAMPER_MASS,
+    47 => LE_TENSION_DAMPER_MASS_KEY,
+    48 => LE_TENSION_DAMPER_STIFF,
+    49 => LE_TENSION_DAMPER_STIFF_KEY,
+    50 => LE_TENSION_DAMPER_VEL,
+    51 => LE_TENSION_DAMPER_VEL_KEY,
+    52 => LE_TENSION_DAMPER_DAMPING,
+    53 => LE_TENSION_DAMPER_GATED,
+    54 => LE_TENSION_STRING_DAMPING,
+    55 => LE_TENSION_STRING_DAMPING_KEY,
+    56 => LE_TENSION_STRING_DECAY,
+    57 => LE_TENSION_STRING_DECAY_KEY,
+    58 => LE_TENSION_STRING_RATIO,
+    59 => LE_TENSION_STRING_INHARM,
+    60 => LE_TENSION_TERM_ON,
+    61 => LE_TENSION_TERM_FINGER_STIFF,
+    62 => LE_TENSION_TERM_FINGER_FORCE,
+    63 => LE_TENSION_TERM_FINGER_FORCE_KEY,
+    64 => LE_TENSION_TERM_FINGER_FORCE_VEL,
+    65 => LE_TENSION_TERM_FRET_STIFF,
+    66 => LE_TENSION_LFO_ON,
+    67 => LE_TENSION_LFO_WAVE,
+    68 => LE_TENSION_LFO_SYNC,
+    69 => LE_TENSION_LFO_SYNC_ON,
+    70 => LE_TENSION_LFO_DELAY,
+    71 => LE_TENSION_LFO_SPEED,
+    72 => LE_TENSION_LFO_FADE,
+    73 => LE_TENSION_FILTER_ON,
+    74 => LE_TENSION_FILTER_TYPE,
+    75 => LE_TENSION_FILTER_CUTOFF,
+    76 => LE_TENSION_FILTER_KEY_CUTOFF,
+    77 => LE_TENSION_FILTER_LFO_CUTOFF,
+    78 => LE_TENSION_FILTER_ENV_CUTOFF,
+    79 => LE_TENSION_FILTER_Q,
+    80 => LE_TENSION_FILTER_KEY_Q,
+    81 => LE_TENSION_FILTER_LFO_Q,
+    82 => LE_TENSION_FILTER_ENV_Q,
+    83 => LE_TENSION_FENV_ON,
+    84 => LE_TENSION_FENV_ATTACK,
+    85 => LE_TENSION_FENV_DECAY,
+    86 => LE_TENSION_FENV_SUSTAIN,
+    87 => LE_TENSION_FENV_RELEASE,
+    88 => LE_TENSION_FENV_ATTACK_VEL,
+    89 => LE_TENSION_FENV_VEL,
+    90 => LE_TENSION_BODY_ON,
+    91 => LE_TENSION_BODY_TYPE,
+    92 => LE_TENSION_BODY_SIZE,
+    93 => LE_TENSION_BODY_DECAY,
+    94 => LE_TENSION_BODY_LOW_CUT,
+    95 => LE_TENSION_BODY_HIGH_CUT,
+    96 => LE_TENSION_BODY_LEVEL,
+    97 => LE_TENSION_BODY_MIX,
+    98 => LE_TENSION_NOTE_BEND_RANGE,
+    99 => LE_TENSION_PRESSURE_TARGET1,
+    100 => LE_TENSION_PRESSURE_AMOUNT1,
+    101 => LE_TENSION_PRESSURE_TARGET2,
+    102 => LE_TENSION_PRESSURE_AMOUNT2,
+    103 => LE_TENSION_SLIDE_TARGET1,
+    104 => LE_TENSION_SLIDE_AMOUNT1,
+    105 => LE_TENSION_SLIDE_TARGET2,
+    106 => LE_TENSION_SLIDE_AMOUNT2,
+    107 => LE_TENSION_PARAMS,
+    _ => throw ArgumentError('Unknown value for le_tension_param: $value'),
+  };
 }
 
 final class le_track_snapshot extends ffi.Struct {
