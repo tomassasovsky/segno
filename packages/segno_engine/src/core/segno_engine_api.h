@@ -5283,6 +5283,7 @@ LE_EXPORT int32_t le_engine_instrument_sustain(le_engine* engine, int32_t slot,
 #define LE_INST_DEVICE_NONE 0
 #define LE_INST_DEVICE_DRIFT 1
 #define LE_INST_DEVICE_OPERATOR 2
+#define LE_INST_DEVICE_MELD 3
 
 typedef enum le_drift_param {
   LE_DRIFT_OSC1_TYPE = 0,      /* 0..6: Sine, Triangle, Shark Tooth, Saturated,
@@ -5506,8 +5507,116 @@ typedef enum le_operator_param {
   LE_OPERATOR_PARAMS = LE_OPERATOR_ROUTE + LE_OPERATOR_ROUTE_SOURCES * 4
 } le_operator_param;
 
+/* Meld (docs/brainstorm/2026-11-24-ableton-devices-brainstorm-doc.md, "Meld:
+ * behavior"): two engines (A, B), each an oscillator of 25 types, a filter of
+ * 17, an amplitude and a modulation envelope and two LFOs, then the voice's
+ * drive and limiter, in the units its presets store (seconds, Hz, dB, -1..1
+ * amounts, enum indices in Live's order). The parameters are two engine
+ * blocks (LE_MELD_ENGINE), the device's own, then the modulation matrix. */
+
+/* One engine's fields. */
+enum {
+  LE_MELD_E_ON = 0,             /* 0/1 */
+  LE_MELD_E_OSC_TYPE,           /* 0..24 (meld_osc.h) */
+  LE_MELD_E_OSC_MACRO1,         /* 0..1 */
+  LE_MELD_E_OSC_MACRO2,         /* 0..1 */
+  LE_MELD_E_KEYTRACK,           /* 0/1: off plays C3 */
+  LE_MELD_E_TRANSPOSE,          /* semitones, -12..12 */
+  LE_MELD_E_SCALE_DEGREES,      /* -48..48 (semitones without a scale) */
+  LE_MELD_E_OCTAVES,            /* -3..3 */
+  LE_MELD_E_DETUNE,             /* semitones, -0.5..0.5 */
+  LE_MELD_E_OSC_USE_SCALE,      /* 0/1, stored: Segno sends no scale */
+  LE_MELD_E_RESET,              /* 0/1: the phase restarts at each note */
+  LE_MELD_E_RESET_OFFSET,       /* 0/1: ... at the voice's spread offset */
+  LE_MELD_E_FILTER_ON,          /* 0/1 */
+  LE_MELD_E_FILTER_TYPE,        /* 0..16 (meld_filter.h) */
+  LE_MELD_E_FILTER_FREQ,        /* Hz, 20..20480 */
+  LE_MELD_E_FILTER_MACRO1,      /* 0..1 */
+  LE_MELD_E_FILTER_MACRO2,      /* 0..1 */
+  LE_MELD_E_FILTER_USE_SCALE,   /* 0/1, stored */
+  LE_MELD_E_LFO1_TYPE,          /* 0..5: Basic Shapes, Ramp, Wander,
+                                 * Alternate, Euclid, Pulsate */
+  LE_MELD_E_LFO1_SYNC,          /* 0/1: Free, Tempo */
+  LE_MELD_E_LFO1_RETRIGGER,     /* 0/1 */
+  LE_MELD_E_LFO1_RATE,          /* Hz, 0.01..200 */
+  LE_MELD_E_LFO1_SYNCED_RATE,   /* 0..21: 8 bars .. 1/64 */
+  LE_MELD_E_LFO1_PHASE,         /* degrees, 0..360 */
+  LE_MELD_E_LFO1_MACRO1,        /* 0..1 */
+  LE_MELD_E_LFO1_MACRO2,        /* 0..1 */
+  LE_MELD_E_LFO1_FX1_TYPE,      /* 0..18: None .. Scrambler */
+  LE_MELD_E_LFO1_FX1_MACRO,     /* 0..1 */
+  LE_MELD_E_LFO1_FX2_TYPE,      /* 0..18 */
+  LE_MELD_E_LFO1_FX2_MACRO,     /* 0..1 */
+  LE_MELD_E_LFO2_WAVE,          /* 0..5: Sine, Triangle, Saw Up, Saw Down,
+                                 * Rectangle, Random */
+  LE_MELD_E_LFO2_SYNC,          /* 0/1 */
+  LE_MELD_E_LFO2_RETRIGGER,     /* 0/1 */
+  LE_MELD_E_LFO2_RATE,          /* Hz, 0.01..200 */
+  LE_MELD_E_LFO2_SYNCED_RATE,   /* 0..21 */
+  LE_MELD_E_LFO2_PHASE,         /* degrees, 0..360 */
+  LE_MELD_E_AMP_ATTACK,         /* seconds, 0..40 */
+  LE_MELD_E_AMP_DECAY,          /* seconds, 0.0015..40 */
+  LE_MELD_E_AMP_RELEASE,        /* seconds, 0.0015..40 */
+  LE_MELD_E_AMP_ATTACK_SLOPE,   /* -1..1 */
+  LE_MELD_E_AMP_DECAY_SLOPE,    /* -1..1 */
+  LE_MELD_E_AMP_RELEASE_SLOPE,  /* -1..1 */
+  LE_MELD_E_AMP_SUSTAIN,        /* 0..1 */
+  LE_MELD_E_AMP_LOOP,           /* 0..3: None, Trigger, Loop, AD Loop */
+  LE_MELD_E_MOD_ATTACK,         /* seconds, 0..40 */
+  LE_MELD_E_MOD_DECAY,          /* seconds, 0.0015..40 */
+  LE_MELD_E_MOD_RELEASE,        /* seconds, 0.0015..40 */
+  LE_MELD_E_MOD_INITIAL,        /* 0..1 */
+  LE_MELD_E_MOD_PEAK,           /* 0..1 */
+  LE_MELD_E_MOD_SUSTAIN,        /* 0..1 */
+  LE_MELD_E_MOD_FINAL,          /* 0..1 */
+  LE_MELD_E_MOD_ATTACK_SLOPE,   /* -1..1 */
+  LE_MELD_E_MOD_DECAY_SLOPE,    /* -1..1 */
+  LE_MELD_E_MOD_RELEASE_SLOPE,  /* -1..1 */
+  LE_MELD_E_MOD_LOOP,           /* 0..3 */
+  LE_MELD_E_TONE,               /* -1..1: low-pass below 0, high-pass above */
+  LE_MELD_E_PAN,                /* -1..1 */
+  LE_MELD_E_VOLUME,             /* dB, -50..24 */
+  LE_MELD_E_GLIDE_MODE,         /* 0/1: Portamento, Glissando */
+  LE_MELD_E_GLIDE_TIME,         /* seconds, 0..20 */
+  LE_MELD_ENGINE_FIELDS
+};
+
+/* Engine `e` (0: A, 1: B), field `field`. */
+#define LE_MELD_ENGINE(e, field) ((e) * LE_MELD_ENGINE_FIELDS + (field))
+
+/* The modulation matrix: per engine, 25 targets (Detune, Pitch Mod, Pitch
+ * Quant, Osc Macro 1, 2, Filter Freq, Filter Macro 1, 2, LFO 1 Rate, LFO 1
+ * Macro 1, 2, LFO 1 FX 1, 2 Macro, LFO 2 Rate, Amp Attack, Decay, Release,
+ * Sustain, Mod Attack, Decay, Release, Sustain, Tone, Pan, Volume), each with
+ * an amount -1..1 from each of 19 sources (engine A's Amp Env, Mod Env, LFO 1,
+ * LFO 1 FX, LFO 2, the same of engine B, Velocity, Note, Pitch Bend, Note PB,
+ * Pressure, Slide, Mod Wheel, Random, Spread). */
+#define LE_MELD_MOD_TARGETS 25
+#define LE_MELD_MOD_SOURCES 19
+
+typedef enum le_meld_param {
+  LE_MELD_DRIVE = 2 * LE_MELD_ENGINE_FIELDS, /* 0..1 */
+  LE_MELD_LIMITER,              /* 0/1 */
+  LE_MELD_LINK_ENVELOPES,       /* 0/1: engine B's envelopes follow A's */
+  LE_MELD_LEGACY_LOOP,          /* 0/1: a looping Mod envelope releases */
+  LE_MELD_USE_SCALE,            /* 0/1, stored: Segno sends no scale */
+  LE_MELD_SPREAD,               /* 0..1: the Spread source's depth */
+  LE_MELD_ENGINE_B_DELAY,       /* seconds, 0..10 */
+  LE_MELD_MONO_POLY,            /* 0: Mono, 1: Poly */
+  LE_MELD_POLY_VOICES,          /* 0..6: 2, 3, 4, 5, 6, 8, 12 */
+  LE_MELD_UNISON,               /* 0..2: 1..3 copies per note */
+  LE_MELD_MONO_LEGATO,          /* 0/1 */
+  LE_MELD_VOLUME,               /* linear, 0..1.995 */
+  LE_MELD_MOD,                  /* the matrix: LE_MELD_MOD_AMOUNT */
+  LE_MELD_PARAMS = LE_MELD_MOD + 2 * LE_MELD_MOD_TARGETS * LE_MELD_MOD_SOURCES
+} le_meld_param;
+
+/* The amount from `source` to engine `e`'s `target`. */
+#define LE_MELD_MOD_AMOUNT(e, target, source) \
+  (LE_MELD_MOD + ((e) * LE_MELD_MOD_TARGETS + (target)) * LE_MELD_MOD_SOURCES + (source))
+
 /* The most parameters any device takes. */
-#define LE_INST_DEVICE_MAX_PARAMS LE_OPERATOR_PARAMS
+#define LE_INST_DEVICE_MAX_PARAMS LE_MELD_PARAMS
 
 /* Gives `slot` device `device` (LE_INST_DEVICE_DRIFT or
  * LE_INST_DEVICE_OPERATOR) with `values` (the device's parameter count of

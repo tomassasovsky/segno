@@ -61,7 +61,7 @@ extern "C" {
 /* The instrument devices (SEG-109), LE_INST_DEVICE_DRIFT onwards: an
  * instance's index in per-device arrays is its LE_INST_DEVICE_* minus
  * LE_INST_DEVICE_DRIFT. */
-#define LE_INST_DEVICE_COUNT (LE_INST_DEVICE_OPERATOR - LE_INST_DEVICE_DRIFT + 1)
+#define LE_INST_DEVICE_COUNT (LE_INST_DEVICE_MELD - LE_INST_DEVICE_DRIFT + 1)
 
 /* MIDI clock output ring (C1, D15): audio-thread producer, drained by
  * whichever consumer forwards the bytes to le_midi_out_send (a native test's
@@ -2782,6 +2782,7 @@ struct le_engine {
   struct le_drift* drift;
   /* and one Operator device per slot */
   struct le_operator* op;
+  struct le_meld* meld;
   /* Whether slot k's instance of a device (index: the device's
    * LE_INST_DEVICE_* minus LE_INST_DEVICE_DRIFT) may differ from a freshly
    * initialised one: set on the audio thread when the slot is given that

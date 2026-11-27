@@ -13,6 +13,11 @@
 
 #include "fft.h"
 #include "ms2_section.h"
+/* Operator's OSR fit (round 9: self-oscillation level within 0.6 dB, pitch within
+ * 1 cent at 100 Hz and 6 at 1 kHz); Meld's Bandpass keeps the section's defaults. */
+#define LE_OSR_DK 0.75f /* round 11: refitted with the damping at q = 1 */
+#define LE_OSR_KAPPA 0.145f
+#include "osr_section.h"
 #include "synth_voice.h" /* LE_SYNTH_BEND, LE_SYNTH_MOD, LE_SYNTH_PRESSURE */
 
 #define N_TABLE 4096
@@ -1436,75 +1441,11 @@ static float clean_pick(int32_t type, const float* w, float l, float b, float h)
 #ifndef OP_PRD_K
 #define OP_PRD_K 0.8f /* fit: the feedback, 0.8 x 4.04 q */
 #endif
-/* OSR: Segno's model of Ableton's state-variable circuit. A two-integrator
- * loop whose transconductances both saturate (the curve PRD's stages use,
- * on the node voltages scaled by 0.145 per volt), damped by 2 (1 - q) +
- * 0.05 and by a diode across the band node that conducts above a knee: so
- * from about resonance 1 the loop rings at the level where the diode's
- * damping makes up the negative linear damping. The input passes an op-amp
- * stage that saturates softly near its 5 V rails. Linearised at the last
- * estimate and solved in closed form, twice per sample; one core gives the
- * low, band and high outputs, 24 dB two cores. */
-#ifndef OP_OSR_IN
-#define OP_OSR_IN 2.59076f /* the signal into the circuit, in volts */
-#endif
-#ifndef OP_OSR_G
-#define OP_OSR_G 1.00934f /* the cutoff calibration */
-#endif
+/* OSR: the state-variable circuit of osr_section.h (shared with Meld's
+ * Bandpass); 24 dB takes two cores. */
 #ifndef OP_OSR_K2
 #define OP_OSR_K2 0.5f /* fit: the second 24 dB core's share of q */
 #endif
-#ifndef OP_OSR_VK
-#define OP_OSR_VK 0.5f /* fit: the diode's knee, volts */
-#endif
-#ifndef OP_OSR_DK
-#define OP_OSR_DK 0.75f /* fit: its conductance above the knee (round 9's self-oscillation levels) */
-#endif
-/* fit: the transconductances' scale, volts to the curve (round 9: the
- * self-oscillation at 100 Hz to 1 kHz within 6 cents of Live's) */
-#define OP_OSR_KAPPA 0.145f
-
-#ifndef OP_OSR_RAIL
-#define OP_OSR_RAIL 20.0f /* fit: the input stage saturates far above the 5 V rails the reading names */
-#endif
-static float osr_input(float u) { return OP_OSR_RAIL * tanhf(u / OP_OSR_RAIL); }
-
-static float osr_ota_secant(float v) {
-  const float z = clampf(OP_OSR_KAPPA * v, -2.0f, 2.0f);
-  const float az = fabsf(z);
-  return 1.0f - 0.25f * z * z + 0.0625f * az * az * az;
-}
-
-static float osr_diode_secant(float v) {
-  const float a = fabsf(v);
-  return a <= OP_OSR_VK ? 0.0f : OP_OSR_DK * (a - OP_OSR_VK) / a;
-}
-
-/* One OSR core: st[0], st[1] the integrators, st[2..4] the last secants
- * (the two transconductances and the diode). Writes high, band and low to
- * o[0..2]. */
-static void osr_tick(float* st, float u, float g, float k, float* o) {
-  float s1 = st[2], s2 = st[3], sd = st[4];
-  float vh = 0.0f, vb = 0.0f, vl = 0.0f;
-  for (int pass = 0; pass < 2; ++pass) {
-    const float g1 = g * s1, g2 = g * s2, kk = k + sd;
-    vh = (u - (kk + g2) * st[0] - st[1]) / (1.0f + kk * g1 + g1 * g2);
-    vh = clampf(vh, -5.2f * OP_OSR_IN, 5.2f * OP_OSR_IN);
-    vb = g1 * vh + st[0];
-    vl = g2 * vb + st[1];
-    s1 = osr_ota_secant(vh);
-    s2 = osr_ota_secant(vb);
-    sd = osr_diode_secant(vb);
-  }
-  st[2] = s1;
-  st[3] = s2;
-  st[4] = sd;
-  st[0] = 2.0f * vb - st[0];
-  st[1] = 2.0f * vl - st[1];
-  o[0] = vh;
-  o[1] = vb;
-  o[2] = vl;
-}
 
 static const float kPrdOffset[5] = {-0.0135f, 0.0211f, -0.0031f, 0.0299f, 0.0217f};
 
@@ -2030,7 +1971,7 @@ static void render_voice(le_operator* d, le_operator_voice* v, const chunk_ctx* 
   }
   if (circuit == CIRC_OSR) {
     const float fcs = fminf(fmaxf(ft.fc, 1.0f), 0.48f * rate);
-    ms2.g = OP_OSR_G * tanf(fminf((float)OP_PI * fcs / rate, 1.54f));
+    ms2.g = LE_OSR_G * tanf(fminf((float)OP_PI * fcs / rate, 1.54f));
     /* damped by 0.05 at q = 1, so resonance 1 does not self-oscillate
      * (measured: round 11 tess-res1, Live's 30 Hz ring 20 dB under
      * Segno's undamped one; 6.9 dB to 5.0) */
@@ -2087,15 +2028,15 @@ static void render_voice(le_operator* d, le_operator_voice* v, const chunk_ctx* 
       if (circuit == CIRC_OSR) {
         /* OSR's Morph takes no drive (measured: round 11 morph-osr-drive12,
          * at drive 0's level, 11 dB under Segno's driven input) */
-        const float u = osr_input(OP_OSR_IN * (c->filter_type == 4 ? 1.0f : ft.drive) * x);
+        const float u = le_osr_input(LE_OSR_IN * (c->filter_type == 4 ? 1.0f : ft.drive) * x);
         float o[3];
-        osr_tick(v->f_an, u, ms2.g, k1, o);
+        le_osr_tick(v->f_an, u, ms2.g, k1, o);
         y = clean_pick(c->filter_type, v->f_w, o[2], o[1], o[0]);
         if (c->slope) {
-          osr_tick(v->f_an + 8, y, ms2.g, k2, o);
+          le_osr_tick(v->f_an + 8, y, ms2.g, k2, o);
           y = clean_pick(c->filter_type, v->f_w, o[2], o[1], o[0]);
         }
-        y *= 1.0f / OP_OSR_IN;
+        y *= 1.0f / LE_OSR_IN;
       } else if (circuit == CIRC_PRD) {
         float yy[5];
         prd_tick(v->f_an, OP_PRD_IN * ft.drive * x, ms2.g, k1, yy);

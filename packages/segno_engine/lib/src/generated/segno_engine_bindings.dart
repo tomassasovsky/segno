@@ -4145,7 +4145,9 @@ const int LE_INST_CHORD_NOTES = 8;
 
 const int LE_INST_DEVICE_DRIFT = 1;
 
-const int LE_INST_DEVICE_MAX_PARAMS = 507;
+const int LE_INST_DEVICE_MAX_PARAMS = 1082;
+
+const int LE_INST_DEVICE_MELD = 3;
 
 const int LE_INST_DEVICE_NONE = 0;
 
@@ -4196,6 +4198,132 @@ const int LE_MAX_OUTPUT_BUSES = 16;
 const int LE_MAX_SOURCES = 40;
 
 const int LE_MAX_TRACKS = 8;
+
+const int LE_MELD_ENGINE_FIELDS = 60;
+
+const int LE_MELD_E_AMP_ATTACK = 36;
+
+const int LE_MELD_E_AMP_ATTACK_SLOPE = 39;
+
+const int LE_MELD_E_AMP_DECAY = 37;
+
+const int LE_MELD_E_AMP_DECAY_SLOPE = 40;
+
+const int LE_MELD_E_AMP_LOOP = 43;
+
+const int LE_MELD_E_AMP_RELEASE = 38;
+
+const int LE_MELD_E_AMP_RELEASE_SLOPE = 41;
+
+const int LE_MELD_E_AMP_SUSTAIN = 42;
+
+const int LE_MELD_E_DETUNE = 8;
+
+const int LE_MELD_E_FILTER_FREQ = 14;
+
+const int LE_MELD_E_FILTER_MACRO1 = 15;
+
+const int LE_MELD_E_FILTER_MACRO2 = 16;
+
+const int LE_MELD_E_FILTER_ON = 12;
+
+const int LE_MELD_E_FILTER_TYPE = 13;
+
+const int LE_MELD_E_FILTER_USE_SCALE = 17;
+
+const int LE_MELD_E_GLIDE_MODE = 58;
+
+const int LE_MELD_E_GLIDE_TIME = 59;
+
+const int LE_MELD_E_KEYTRACK = 4;
+
+const int LE_MELD_E_LFO1_FX1_MACRO = 27;
+
+const int LE_MELD_E_LFO1_FX1_TYPE = 26;
+
+const int LE_MELD_E_LFO1_FX2_MACRO = 29;
+
+const int LE_MELD_E_LFO1_FX2_TYPE = 28;
+
+const int LE_MELD_E_LFO1_MACRO1 = 24;
+
+const int LE_MELD_E_LFO1_MACRO2 = 25;
+
+const int LE_MELD_E_LFO1_PHASE = 23;
+
+const int LE_MELD_E_LFO1_RATE = 21;
+
+const int LE_MELD_E_LFO1_RETRIGGER = 20;
+
+const int LE_MELD_E_LFO1_SYNC = 19;
+
+const int LE_MELD_E_LFO1_SYNCED_RATE = 22;
+
+const int LE_MELD_E_LFO1_TYPE = 18;
+
+const int LE_MELD_E_LFO2_PHASE = 35;
+
+const int LE_MELD_E_LFO2_RATE = 33;
+
+const int LE_MELD_E_LFO2_RETRIGGER = 32;
+
+const int LE_MELD_E_LFO2_SYNC = 31;
+
+const int LE_MELD_E_LFO2_SYNCED_RATE = 34;
+
+const int LE_MELD_E_LFO2_WAVE = 30;
+
+const int LE_MELD_E_MOD_ATTACK = 44;
+
+const int LE_MELD_E_MOD_ATTACK_SLOPE = 51;
+
+const int LE_MELD_E_MOD_DECAY = 45;
+
+const int LE_MELD_E_MOD_DECAY_SLOPE = 52;
+
+const int LE_MELD_E_MOD_FINAL = 50;
+
+const int LE_MELD_E_MOD_INITIAL = 47;
+
+const int LE_MELD_E_MOD_LOOP = 54;
+
+const int LE_MELD_E_MOD_PEAK = 48;
+
+const int LE_MELD_E_MOD_RELEASE = 46;
+
+const int LE_MELD_E_MOD_RELEASE_SLOPE = 53;
+
+const int LE_MELD_E_MOD_SUSTAIN = 49;
+
+const int LE_MELD_E_OCTAVES = 7;
+
+const int LE_MELD_E_ON = 0;
+
+const int LE_MELD_E_OSC_MACRO1 = 2;
+
+const int LE_MELD_E_OSC_MACRO2 = 3;
+
+const int LE_MELD_E_OSC_TYPE = 1;
+
+const int LE_MELD_E_OSC_USE_SCALE = 9;
+
+const int LE_MELD_E_PAN = 56;
+
+const int LE_MELD_E_RESET = 10;
+
+const int LE_MELD_E_RESET_OFFSET = 11;
+
+const int LE_MELD_E_SCALE_DEGREES = 6;
+
+const int LE_MELD_E_TONE = 55;
+
+const int LE_MELD_E_TRANSPOSE = 5;
+
+const int LE_MELD_E_VOLUME = 57;
+
+const int LE_MELD_MOD_SOURCES = 19;
+
+const int LE_MELD_MOD_TARGETS = 25;
 
 const int LE_MEM_RESERVE_BYTES = 536870912;
 
@@ -6294,6 +6422,69 @@ enum le_loopback_kind {
     2 => LE_LOOPBACK_MONITOR,
     3 => LE_LOOPBACK_VIRTUAL,
     _ => throw ArgumentError('Unknown value for le_loopback_kind: $value'),
+  };
+}
+
+enum le_meld_param {
+  /// 0..1
+  LE_MELD_DRIVE(120),
+
+  /// 0/1
+  LE_MELD_LIMITER(121),
+
+  /// 0/1: engine B's envelopes follow A's
+  LE_MELD_LINK_ENVELOPES(122),
+
+  /// 0/1: a looping Mod envelope releases
+  LE_MELD_LEGACY_LOOP(123),
+
+  /// 0/1, stored: Segno sends no scale
+  LE_MELD_USE_SCALE(124),
+
+  /// 0..1: the Spread source's depth
+  LE_MELD_SPREAD(125),
+
+  /// seconds, 0..10
+  LE_MELD_ENGINE_B_DELAY(126),
+
+  /// 0: Mono, 1: Poly
+  LE_MELD_MONO_POLY(127),
+
+  /// 0..6: 2, 3, 4, 5, 6, 8, 12
+  LE_MELD_POLY_VOICES(128),
+
+  /// 0..2: 1..3 copies per note
+  LE_MELD_UNISON(129),
+
+  /// 0/1
+  LE_MELD_MONO_LEGATO(130),
+
+  /// linear, 0..1.995
+  LE_MELD_VOLUME(131),
+
+  /// the matrix: LE_MELD_MOD_AMOUNT
+  LE_MELD_MOD(132),
+  LE_MELD_PARAMS(1082);
+
+  final int value;
+  const le_meld_param(this.value);
+
+  static le_meld_param fromValue(int value) => switch (value) {
+    120 => LE_MELD_DRIVE,
+    121 => LE_MELD_LIMITER,
+    122 => LE_MELD_LINK_ENVELOPES,
+    123 => LE_MELD_LEGACY_LOOP,
+    124 => LE_MELD_USE_SCALE,
+    125 => LE_MELD_SPREAD,
+    126 => LE_MELD_ENGINE_B_DELAY,
+    127 => LE_MELD_MONO_POLY,
+    128 => LE_MELD_POLY_VOICES,
+    129 => LE_MELD_UNISON,
+    130 => LE_MELD_MONO_LEGATO,
+    131 => LE_MELD_VOLUME,
+    132 => LE_MELD_MOD,
+    1082 => LE_MELD_PARAMS,
+    _ => throw ArgumentError('Unknown value for le_meld_param: $value'),
   };
 }
 

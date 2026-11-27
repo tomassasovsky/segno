@@ -691,7 +691,7 @@ static void test_engine_operator_params_and_switching(void) {
   CHECK(le_engine_set_instrument_device_param(e, 1, LE_DRIFT_PARAMS, 0.0f) == LE_ERR_INVALID);
   CHECK(le_engine_set_instrument_device(e, 1, LE_INST_DEVICE_OPERATOR, NULL) == LE_OK);
   CHECK(le_engine_set_instrument_device_param(e, 1, LE_DRIFT_PARAMS, 0.0f) == LE_OK);
-  CHECK(le_engine_set_instrument_device(e, 1, 3, NULL) == LE_ERR_INVALID);
+  CHECK(le_engine_set_instrument_device(e, 1, LE_INST_DEVICE_MELD + 1, NULL) == LE_ERR_INVALID);
   le_engine_destroy(e);
 }
 

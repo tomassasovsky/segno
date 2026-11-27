@@ -1,4 +1,4 @@
-<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalized Clob Sallen linearised transconductance unmodulated autocorrelation tfz unmeasured retriggered isolations Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Perc Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penv penvd rndpan Basscycle spr Floot Halfstep fenv restruck fmdrive oscvol unsmoothed circ nornd Cardano baselined prewarped -->
+<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated Bandpass Lowpass Quantizer autocorrelation tfz unmeasured retriggered isolations pul meldfit Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Perc Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penv penvd rndpan Bassic Bitgrunge's Catchem Filther's Kaneda Werkstuecktraeger Whley Whley's filt nloop Basscycle spr Floot Halfstep Gametal Plucks Neurotimbre fenv restruck fmdrive oscvol unsmoothed colfm circ nornd Cardano baselined prewarped unnormalized -->
 # Segno — Progress & Roadmap
 
 <!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs multicore smarttune -->
@@ -61,9 +61,86 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
 | SEG-22 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track and lane chains) is #1729 | build | needs-plan-approval | `claude/fx-multicore-1515-p1b` |
 | SEG-107 | Save As failed with Out of Memory: the mixdown asked for the LCM of two Song-mode tracks (24.7 GB); it now spans the longest lane past 600 s, and the save refuses a length no loop can hold | in-review | needs-hardware | `claude/save-oom-SEG-107` |
 | SEG-63 | Console WiFi against an ASUS RT-AX89X with 802.11ax on: firmware already matches Pi OS; brcmfmac options aligned with Pi OS and a troubleshooting note; failure not reproduced, issue stays open until it recurs | in-review | agent-merges | `claude/wifi-firmware-1816` |
-| SEG-109 | Ableton Live device presets on the pedal, Drift first: presets read from the user's own copy; Drift's behavior learned with rea + Ghidra from Live 12.2.7 and reimplemented, no Ableton code or presets in the repo. Plan approved 2026-11-25 (P1-P6); P1 stereo buses, P2 preset reader, P3 the Drift device and P4 its fit in review; the Operator device (P7, the next instrument) in review | in-review | needs-merge | `claude/ableton-devices-SEG-109`, `claude/ableton-operator-SEG-109-p7` |
+| SEG-109 | Ableton Live device presets on the pedal, Drift first: presets read from the user's own copy; Drift's behavior learned with rea + Ghidra from Live 12.2.7 and reimplemented, no Ableton code or presets in the repo. Plan approved 2026-11-25 (P1-P6); P1 stereo buses, P2 preset reader, P3 the Drift device and P4 its fit in review; the Operator device (P7) and the Meld device (P8) in review | in-review | needs-merge | `claude/ableton-devices-SEG-109`, `claude/ableton-operator-SEG-109-p7`, `claude/ableton-meld-SEG-109-p8` |
 
 ---
+
+## November 2026 The Meld device plays on an instrument slot (SEG-109 P8)
+
+- Live 12.2.7's Meld read with rea + Ghidra (seven readers: the oscillators
+  in three passes, the filters in two, the modulation, the voices) and
+  written as "Meld: behavior" in the Ableton devices brainstorm;
+  `meld_voice.c`, `meld_osc.c` and `meld_filter.c` are written from it.
+  `LE_INST_DEVICE_MELD` takes a Meld preset's 1082 values (`le_meld_param`:
+  two engine blocks of 60, the device's own, then the 50 x 19 modulation
+  matrix) through the same slot API as Drift and Operator.
+- Two engines per voice, each one of 25 oscillators (all built) and 17
+  filters (all built), an Amp and a Mod envelope, LFO 1 with six generators
+  and 19 transformers, LFO 2; the matrix's sums and gain products; unison
+  up to three copies with Spread; Mono, legato and glide; the per-copy
+  drive and limiter.
+- Shared with Operator: its OSR circuit, now `osr_section.h`, is Meld's
+  Bandpass (Operator's renders bit-identical). Meld's Lowpass is the
+  shared MS-20 section with its second integrator saturating too.
+- Fitted against 282 Live renders: the output chain, levels, pan, tone,
+  drive, limiter, tuning, unison, envelopes, both LFOs and every matrix
+  target within 0.1 dB rms; most oscillators within 0.6 and 13 of 17
+  filters within 0.5. Measured where the reading was silent: the matrix
+  targets' scales, the times' and rates' cubic knob positions, where the
+  limiter listens, Sub's clip, the comb's loop length.
+- 21 factory presets, octave bands rms: 14 within 1 dB, Sugar Bass among
+  them once a third round measured the note's key tracking of Filter Freq;
+  that round also settled Chord's fourth voice and Square Sync's second
+  slave. The Highpass is Segno's model of the MS-20 high-pass circuit
+  (within 2.6 dB short of full drive); Lively Ringer is 9 dB off.
+- The strict score (50 ms third-octave cells, the attack in 5 ms frames,
+  stereo, pitch) passes 261 of 339 renders and 10 of 21 presets (from 245
+  and 8): linked envelopes carry the matrix, Chord's tones start in phase,
+  the Mod envelope's tick timing, Note into Tone, the free rate curve, the
+  Quantizer, Tarp's sweep and the membrane's modes. Most of the rest is
+  random (Pulsate, Swarm, Rand, S&H). With the scoring's three seeds and
+  the random sources reaching LE_SEED: 309 of 385 renders and 16 of 21
+  presets after a fourth round (the Bandpass's drive ends) and the
+  held-out round's lesson (stealing counts fading voices and drops a note
+  with no victim): 13 of 84 held-out presets, from 8. A fifth round
+  confirmed the stealing on five fit renders and showed the LFOs' random
+  draws repeat on every note and instance. Measured from Live's renders
+  (rounds 7 and 8, allowed by the owner): the Pulsate, Wander and S&H
+  sequences, Fold FM's eight intervals at position 7 M1^2, the times'
+  fourth-power law, the triad's octave doubling, a 4.8 ms gain smoothing
+  and the Mod envelope's legato restart: 484 of 559 fit renders and 13 of
+  21 presets (from 333 of the same 559). Round 9 settled the Filther's
+  settled start and, with the training phrase, Mono's LFO hand-over: 493
+  of 573 fit renders, 13 of 21 presets, 15 of 84 held-out (tf mean 5.07
+  to 4.32 dB). Round 10 measured free LFOs running from their voice's
+  first note through silences, a silent voice's oscillator starting as
+  Reset does, and Bitgrunge's skips (now a table): 503 of 594 fit
+  renders, 13 of 21 presets, 17 of 84 held-out (tf mean 4.2 dB). Live's
+  Noise Loop is a fixed noise sequence, not yet measured. With Live's
+  spread from five instances: 19 of 84 held-out. Round 11 measured the
+  Vowel filter's formants and resonance: 522 of 618 fit renders, 13 of 21
+  presets, 24 of 84 held-out (tf mean 4.05 dB). Noise Loop is now Live's
+  generator, written from the reader's description: 528 of 618 fit
+  renders, 27 of 84 held-out. The held-out failures sorted by kind gave
+  four details, each fixed on fit renders: the voice end measured to the
+  sample (every Noise Loop note after the first now matches Live's), a
+  legato restart lets the oscillator run on, a single copy's voice
+  offset follows its Spread source, Harmonic FM's modulators go by
+  parity: 537 of 618 fit renders, 14 of 21 presets, 32 of 84 held-out
+  (tf mean 3.88 dB). Round 12 measured the voice end's level (it scales
+  with Volume and holds in unison) and Note into an Amp attack of 0 (the
+  attack the matrix sets at the first tick is played). Envelope positions
+  are now double, and the output gain is 0.5 again (the 0.4988 before was
+  a measurement error). At five seeds: 554 of 644 fit renders, 13 of 21
+  presets, 34 of 84 held-out (from 33; tf mean 3.90 dB). Round 13 and the
+  Sub reading: the Sub written from Live's description (its A6 renders
+  match to the sample), the limiter hearing a peak envelope, engine B's
+  first tick taking its own attack: 572 of 657 fit renders, 13 of 21
+  presets, 34 of 84 held-out. Round 14 (Gotta Catchem's looping Mod
+  envelope under a moved decay, its engines alone) is built.
+- A voice with both engines on a Basic Shapes saw and SVF 12 costs 1.8 us
+  per millisecond on the dev machine; MS2 6.8, a Swarm 3.7, three unison
+  copies 5.6.
 
 ## November 2026 The Operator device plays on an instrument slot (SEG-109 P7)
 

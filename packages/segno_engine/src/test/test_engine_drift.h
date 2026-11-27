@@ -1047,7 +1047,7 @@ static void test_engine_drift_refusals(void) {
   CHECK(le_engine_set_instrument_device(e, LE_MAX_INSTRUMENTS, LE_INST_DEVICE_DRIFT, NULL) ==
         LE_ERR_INVALID);
   CHECK(le_engine_set_instrument_device(e, 0, LE_INST_DEVICE_NONE, NULL) == LE_ERR_INVALID);
-  CHECK(le_engine_set_instrument_device(e, 0, 3, NULL) == LE_ERR_INVALID);
+  CHECK(le_engine_set_instrument_device(e, 0, LE_INST_DEVICE_MELD + 1, NULL) == LE_ERR_INVALID);
   float values[LE_DRIFT_PARAMS];
   for (int p = 0; p < LE_DRIFT_PARAMS; ++p) values[p] = le_drift_default(p);
   values[LE_DRIFT_GLIDE] = NAN;
@@ -1100,6 +1100,7 @@ static void test_engine_drift_midi(void) {
 /* ---- configure re-initialises only the device instances a slot used ---- */
 
 #include "operator_voice.h"
+#include "meld_voice.h"
 
 /* Every instrument device, as the reset test drives it. */
 typedef struct cfg_device {
@@ -1126,6 +1127,12 @@ static void cfg_op_render(void* d, float* l, float* r, int32_t n) {
   le_operator_render(d, l, r, n);
 }
 static int32_t cfg_op_active(const void* d) { return le_operator_active(d); }
+static int32_t cfg_meld_init(void* d, int32_t sr) { return le_meld_init(d, sr); }
+static void cfg_meld_limit(void* d, int32_t n) { le_meld_set_voice_limit(d, n); }
+static void cfg_meld_render(void* d, float* l, float* r, int32_t n) {
+  le_meld_render(d, l, r, n);
+}
+static int32_t cfg_meld_active(const void* d) { return le_meld_active(d); }
 
 static const cfg_device kCfgDevices[LE_INST_DEVICE_COUNT] = {
     {LE_INST_DEVICE_DRIFT, sizeof(le_drift), cfg_drift_init, cfg_drift_limit,
@@ -1134,12 +1141,17 @@ static const cfg_device kCfgDevices[LE_INST_DEVICE_COUNT] = {
     {LE_INST_DEVICE_OPERATOR, sizeof(le_operator), cfg_op_init, cfg_op_limit,
      cfg_op_render, cfg_op_active, le_operator_default, LE_OPERATOR_ALGORITHM,
      3.0f},
+    {LE_INST_DEVICE_MELD, sizeof(le_meld), cfg_meld_init, cfg_meld_limit,
+     cfg_meld_render, cfg_meld_active, le_meld_default, LE_MELD_UNISON, 2.0f},
 };
 
 /* Slot k's instance of device entry i. */
 static void* cfg_instance(le_engine* e, int i, int32_t k) {
-  return kCfgDevices[i].id == LE_INST_DEVICE_DRIFT ? (void*)&e->drift[k]
-                                                   : (void*)&e->op[k];
+  switch (kCfgDevices[i].id) {
+    case LE_INST_DEVICE_DRIFT: return &e->drift[k];
+    case LE_INST_DEVICE_OPERATOR: return &e->op[k];
+    default: return &e->meld[k];
+  }
 }
 
 /* The largest device instance, for the byte copies below. */
