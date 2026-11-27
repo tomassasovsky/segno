@@ -2182,7 +2182,7 @@ of entries. So the grouping rides the entries.
 - `module` — what the factory catalogue calls this entry. One string, because
   the catalogue maps a module name to both a display name and a picture.
 
-Denormalised on purpose. The chain crosses four persistence boundaries — a
+Denormalized on purpose. The chain crosses four persistence boundaries — a
 session file, a performance arm snapshot, the settings store and the
 repository's own maps — as one encoded list, so a field on the entry rides all
 of them for free. A rename rewrites the run; that is cheaper than a second

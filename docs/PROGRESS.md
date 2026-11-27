@@ -1,4 +1,4 @@
-<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalised Clob Sallen linearised transconductance unmodulated autocorrelation tfz unmeasured retriggered isolations Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Perc Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penv penvd rndpan Basscycle spr Floot Halfstep fenv restruck fmdrive oscvol unsmoothed circ nornd Cardano baselined prewarped -->
+<!-- cspell:words heatsinks Omron lofi powf aubio Ghidra BLEP BLAMP unnormalized Clob Sallen linearised transconductance unmodulated autocorrelation tfz unmeasured retriggered isolations Geigerzaehler Bellatine Keystrike Numan uncentred dfit Grimer Perc Tesseract Tesseract's auxenv fdrive fltkey keyscale lfofree minatt noteoff penv penvd rndpan Basscycle spr Floot Halfstep fenv restruck fmdrive oscvol unsmoothed circ nornd Cardano baselined prewarped -->
 # Segno — Progress & Roadmap
 
 <!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs multicore smarttune -->
@@ -342,7 +342,7 @@ Jira issue (project `SEG`), which is authoritative; if a row disagrees, fix the 
 ## November 2026 Drift fitted against Live renders (SEG-109 P4, round 1)
 
 - Live 12.2.7 renders of controlled patches (one setting changed per render
-  from a plain saw or white noise, exported unnormalised) against Segno's
+  from a plain saw or white noise, exported unnormalized) against Segno's
   renders of the same patches settled most of P3's provisional values. The
   brainstorm's "Open items and the fits" lists each with its measurement.
   Fitted: the Volume curve (linear), the noise level and both filters'
