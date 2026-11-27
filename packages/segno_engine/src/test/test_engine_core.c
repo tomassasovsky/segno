@@ -28249,7 +28249,8 @@ static void test_free_mode_dub_layer_retires_not_stuck(void) {
 static void test_free_mode_commit_session_rejected_leaves_master_dormant(void) {
   printf("test_free_mode_commit_session_rejected_leaves_master_dormant\n");
   /* Regression pin for BUG 2 (adversarial review): le_engine_commit_session
-   * used to post LE_CMD_COMMIT_SESSION unconditionally, which would set
+   * with a base (Free's own commit takes none, SEG-108) used to post
+   * LE_CMD_COMMIT_SESSION unconditionally, which would set
    * e->clock/a_master_len to a nonzero value even while a_looper_mode ==
    * FREE -- violating the invariant every other Free-mode code path in this
    * file depends on staying dormant. Covers BOTH layers of the fix: the
@@ -29467,12 +29468,11 @@ static void test_song_mode_one_capturer_handoff_finalizes_to_own_length(
 static void test_song_mode_commit_session_rejected_leaves_master_dormant(
     void) {
   printf("test_song_mode_commit_session_rejected_leaves_master_dormant\n");
-  /* NEW guard (B4): session import's single-shared-base COMMIT_SESSION is
-   * just as incompatible with Song's independent per-track lengths as it is
-   * with Free's -- le_engine_commit_session (engine_session.c) and the
-   * audio-thread handler's own defensive copy (engine_process.c) both now
-   * reject SONG, mirroring the exact two-layer guard B2b already had for
-   * FREE (adversarial-review BUG 2). */
+  /* A commit with a shared base is just as incompatible with Song's
+   * independent per-track lengths as it is with Free's: the wrapper
+   * (engine_session.c) and the audio-thread handler (engine_process.c) both
+   * refuse one in SONG, as in FREE. Song's own commit takes no base
+   * (SEG-108, test_own_clock_modes_commit_session_parks_each_take). */
   le_engine* e = sm_make_song_engine(1000);
 
   /* Layer 1: the normal wrapper rejects synchronously, before posting. */
@@ -29489,6 +29489,48 @@ static void test_song_mode_commit_session_rejected_leaves_master_dormant(
   CHECK(load_i32(&e->a_master_len) == 0);
 
   le_engine_destroy(e);
+}
+
+/* SEG-108: a saved Free or Song session commits with no base. Each take is
+ * parked STOPPED on its own clock at its own length, the master stays
+ * dormant, and Play laps each take at its own length. A base or a grid is
+ * still refused in these modes. */
+static void test_own_clock_modes_commit_session_parks_each_take(void) {
+  printf("test_own_clock_modes_commit_session_parks_each_take\n");
+  const int32_t modes[] = {LE_LOOPER_MODE_SONG, LE_LOOPER_MODE_FREE};
+  for (int m = 0; m < 2; ++m) {
+    le_engine* e = tg_make_engine(1000);
+    CHECK(le_engine_set_looper_mode(e, modes[m]) == LE_OK);
+    tg_advance(e, 1);
+    float a[144], b[313];
+    for (int i = 0; i < 144; ++i) a[i] = 0.25f;
+    for (int i = 0; i < 313; ++i) b[i] = 0.5f;
+    CHECK(le_engine_import_track(e, 0, a, 144) == LE_OK);
+    CHECK(le_engine_import_track(e, 1, b, 313) == LE_OK);
+    CHECK(le_engine_commit_session(e, 144, 0) == LE_ERR_INVALID);
+    CHECK(le_engine_commit_session(e, 0, 4) == LE_ERR_INVALID);
+    CHECK(le_engine_commit_session(e, 0, 0) == LE_OK);
+    tg_advance(e, 1);
+    le_snapshot s;
+    le_engine_get_snapshot(e, &s);
+    CHECK(s.master_length_frames == 0);
+    CHECK(e->clock.length == 0);
+    CHECK(s.tracks[0].state == LE_TRACK_STOPPED);
+    CHECK(s.tracks[0].length_frames == 144);
+    CHECK(s.tracks[1].state == LE_TRACK_STOPPED);
+    CHECK(s.tracks[1].length_frames == 313);
+    CHECK(e->tracks[0].free_clock.length == 144);
+    CHECK(e->tracks[1].free_clock.length == 313);
+    CHECK(s.primary_track == 0);
+
+    CHECK(le_engine_play(e, 1) == LE_OK);
+    tg_advance(e, 400);
+    le_engine_get_snapshot(e, &s);
+    CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+    CHECK(e->tracks[1].free_clock.position == 400 - 313);
+    CHECK(load_i32(&e->a_master_len) == 0);
+    le_engine_destroy(e);
+  }
 }
 
 static void test_song_mode_dub_layer_retires_not_stuck(void) {
@@ -40911,6 +40953,7 @@ int main(void) {
   SHARD(test_song_mode_independent_lengths_wraps);
   SHARD(test_song_mode_one_capturer_handoff_finalizes_to_own_length);
   SHARD(test_song_mode_commit_session_rejected_leaves_master_dormant);
+  SHARD(test_own_clock_modes_commit_session_parks_each_take);
   SHARD(test_song_mode_dub_layer_retires_not_stuck);
   SHARD(test_song_mode_clear_resets_targeted_track_only);
   SHARD(test_song_mode_undo_to_empty_resets_targeted_track_only);

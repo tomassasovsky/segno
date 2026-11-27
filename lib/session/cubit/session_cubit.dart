@@ -716,6 +716,10 @@ class SessionCubit extends Cubit<SessionState> {
     SessionConversion? conversion,
   }) async {
     var applied = false;
+    // The apply's own failure, logged where it is caught (SEG-108).
+    Object? applyFailure;
+    // Whether audio comes back after a failed apply rolled back (SEG-108).
+    var restartAudio = false;
     // Held from the commit point to the end of the boot (#1198 P11).
     OperationGuard? applying;
     try {
@@ -804,7 +808,10 @@ class SessionCubit extends Cubit<SessionState> {
         _looper.blockStartForSessionBoot();
         try {
           await _looper.applySession(rig);
-        } on Object {
+        } on Object catch (error, stack) {
+          // Logged before the rollback, which can replace it (SEG-108).
+          applyFailure = error;
+          AppLog.error('session: apply failed', error: error, stack: stack);
           _looper
             ..stopEngine()
             ..clearSessionBootStartBlock();
@@ -815,6 +822,7 @@ class SessionCubit extends Cubit<SessionState> {
           if (rollback.status == MixSettingsStatus.recoveryRequired) {
             throw MixSettingsRecoveryException(rollback);
           }
+          restartAudio = true;
           rethrow;
         }
         applied = true;
@@ -855,9 +863,17 @@ class SessionCubit extends Cubit<SessionState> {
         _pendingLoadedBacking = null;
         _pendingConversion = null;
         return (sessions: sessions, notice: notice);
-      } on Object catch (error) {
+      } on Object catch (error, stack) {
+        if (!identical(error, applyFailure)) {
+          AppLog.error(
+            applied ? 'session: boot failed' : 'session: load failed',
+            error: error,
+            stack: stack,
+          );
+        }
         if (!applied) {
           _fxPersistence.cancelSessionLoad();
+          if (restartAudio) _restartAudioAfterFailedApply();
           rethrow;
         }
         _looper.stopEngine();
@@ -867,6 +883,20 @@ class SessionCubit extends Cubit<SessionState> {
     } finally {
       applying?.release();
     }
+  }
+
+  /// Opens the audio device again after an apply that failed and rolled
+  /// back (SEG-108). The apply's failure stopped the engine so the
+  /// half-applied rig could not sound; the start brings audio back on the
+  /// emptied rig, warm, as at boot. A refused start leaves the engine
+  /// stopped, which the stage reports ("Audio engine stopped").
+  void _restartAudioAfterFailedApply() {
+    final config = _looper.lastEngineConfig;
+    if (config == null) return;
+    final result = _looper.startEngine(config, warmUp: true);
+    AppLog.info(
+      'session: audio restarted after a failed apply: ${result.name}',
+    );
   }
 
   /// Installs an Open's recalled backing setup and click pan (#1200 D9),

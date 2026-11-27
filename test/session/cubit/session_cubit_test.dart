@@ -88,6 +88,9 @@ const _conversion = SessionConversion(
   changes: {SessionConversionChange.monitorLevelLowered},
 );
 
+/// The config the console's audio ran on before an Open.
+const _engineConfig = EngineConfig(sampleRate: 48000, bufferFrames: 128);
+
 const _session = Session(
   sampleRate: 48000,
   channels: 1,
@@ -778,6 +781,43 @@ void main() {
           () => looper.applySession(any()),
           looper.stopEngine,
           looper.clearSessionBootStartBlock,
+        ]);
+        expect(fxPersistence.sessionTransitionActive, isFalse);
+      },
+    );
+
+    blocTest<SessionCubit, SessionState>(
+      'a failed apply brings audio back, warm, on the config that ran '
+      '(SEG-108)',
+      setUp: () {
+        stubCatalog();
+        when(
+          () =>
+              repository.open(any(), liveSettings: any(named: 'liveSettings')),
+        ).thenAnswer(
+          _opened(
+            (_) async => (
+              session: _session,
+              heardStems: const <(int, int), List<Float32List>>{},
+              laneStems: <(int, int), List<Float32List>>{},
+            ),
+          ),
+        );
+        when(() => looper.applySession(any())).thenThrow(StateError('refused'));
+        when(() => looper.lastEngineConfig).thenReturn(_engineConfig);
+        when(() => looper.startEngine(_engineConfig, warmUp: true))
+            .thenReturn(EngineResult.ok);
+      },
+      build: build,
+      act: (cubit) => cubit.open('A'),
+      verify: (cubit) {
+        expect(cubit.state.status, SessionStatus.failure);
+        expect(cubit.state.errorMessage, contains('refused'));
+        verifyInOrder([
+          () => looper.applySession(any()),
+          looper.stopEngine,
+          looper.clearSessionBootStartBlock,
+          () => looper.startEngine(_engineConfig, warmUp: true),
         ]);
         expect(fxPersistence.sessionTransitionActive, isFalse);
       },
